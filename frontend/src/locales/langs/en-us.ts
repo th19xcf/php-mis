@@ -229,7 +229,11 @@ const local: App.I18n.Schema = {
     404: 'Page Not Found',
     500: 'Server Error',
     'iframe-page': 'Iframe',
-    home: 'Home'
+    home: 'Home',
+    'permission-demo': 'Permission Demo',
+    system: 'System',
+    system_user: 'User Management',
+    system_role: 'Role Management'
   },
   page: {
     login: {
@@ -308,6 +312,17 @@ const local: App.I18n.Schema = {
         desc5: 'Soybean just wrote some of the workbench pages casually, and it was enough to see!'
       },
       creativity: 'Creativity'
+    },
+    permissionDemo: {
+      title: 'Permission Demo (Menu + Buttons)',
+      desc: 'This page verifies whether backend roles and buttons are applied.',
+      visibleRoles: 'Current Roles',
+      visibleButtons: 'Current Button Codes',
+      btnView: 'Dashboard View Button (dashboard:view)',
+      btnAdd: 'Add Button (system:user:add)',
+      btnEdit: 'Edit Button (system:user:edit)',
+      btnDelete: 'Delete Button (system:user:delete)',
+      noButtonAuth: 'No button permission found for current account. Please check backend buttons payload.'
     }
   },
   form: {

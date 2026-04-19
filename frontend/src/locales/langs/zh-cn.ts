@@ -225,7 +225,11 @@ const local: App.I18n.Schema = {
     404: '页面不存在',
     500: '服务器错误',
     'iframe-page': '外链页面',
-    home: '首页'
+    home: '首页',
+    'permission-demo': '权限演示',
+    system: '系统管理',
+    system_user: '用户管理',
+    system_role: '角色管理'
   },
   page: {
     login: {
@@ -304,6 +308,17 @@ const local: App.I18n.Schema = {
         desc5: 'Soybean 刚才把工作台页面随便写了一些，凑合能看了！'
       },
       creativity: '创意'
+    },
+    permissionDemo: {
+      title: '权限演示（左侧菜单 + 按钮）',
+      desc: '此页面用于验证后端返回的 roles 和 buttons 是否生效。',
+      visibleRoles: '当前角色',
+      visibleButtons: '当前按钮权限',
+      btnView: '看板查看按钮（dashboard:view）',
+      btnAdd: '新增按钮（system:user:add）',
+      btnEdit: '编辑按钮（system:user:edit）',
+      btnDelete: '删除按钮（system:user:delete）',
+      noButtonAuth: '当前账号没有任何按钮权限，请检查后端 buttons 回传。'
     }
   },
   form: {
