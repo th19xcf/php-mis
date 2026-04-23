@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Constants\ApiCode;
 use App\Models\AuthModel;
 use App\Models\Mcommon;
 use Firebase\JWT\JWT;
@@ -32,14 +33,14 @@ class Auth extends BaseController
 
         if ($userName === '' || $password === '') {
             return $this->response->setJSON([
-                'code' => '1001',
+                'code' => ApiCode::AUTH_USERNAME_PASSWORD_REQUIRED,
                 'msg' => '用户名和密码不能为空'
             ]);
         }
 
         if ($region === '') {
             return $this->response->setJSON([
-                'code' => '1002',
+                'code' => ApiCode::AUTH_REGION_REQUIRED,
                 'msg' => '请选择属地'
             ]);
         }
@@ -60,7 +61,7 @@ class Auth extends BaseController
 
         if (!$user) {
             return $this->response->setJSON([
-                'code' => '1003',
+                'code' => ApiCode::AUTH_CREDENTIAL_INVALID,
                 'msg' => '工号、密码或属地错误'
             ]);
         }
@@ -71,7 +72,7 @@ class Auth extends BaseController
         $token = $this->generateToken($user);
 
         return $this->response->setJSON([
-            'code' => '0000',
+            'code' => ApiCode::SUCCESS,
             'msg' => 'success',
             'data' => [
                 'token' => $token,
@@ -89,7 +90,7 @@ class Auth extends BaseController
 
         if (!$token) {
             return $this->response->setJSON([
-                'code' => '8888',
+                'code' => ApiCode::AUTH_UNAUTHORIZED,
                 'msg' => '未登录'
             ]);
         }
@@ -99,7 +100,7 @@ class Auth extends BaseController
 
             if (!empty($decoded->isDebug)) {
                 return $this->response->setJSON([
-                    'code' => '0000',
+                    'code' => ApiCode::SUCCESS,
                     'msg' => 'success',
                     'data' => $this->buildDebugUserInfo($decoded)
                 ]);
@@ -119,14 +120,14 @@ class Auth extends BaseController
 
             if (!$user) {
                 return $this->response->setJSON([
-                    'code' => '8888',
+                    'code' => ApiCode::AUTH_UNAUTHORIZED,
                     'msg' => '用户不存在'
                 ]);
             }
 
             if ($tokenWorkId !== '' && $user['work_id'] !== $tokenWorkId) {
                 return $this->response->setJSON([
-                    'code' => '8888',
+                    'code' => ApiCode::AUTH_UNAUTHORIZED,
                     'msg' => '用户信息不匹配，请重新登录'
                 ]);
             }
@@ -141,7 +142,7 @@ class Auth extends BaseController
             }
 
             return $this->response->setJSON([
-                'code' => '0000',
+                'code' => ApiCode::SUCCESS,
                 'msg' => 'success',
                 'data' => [
                     'userId' => (string) $user['id'],
@@ -156,7 +157,7 @@ class Auth extends BaseController
             ]);
         } catch (\Throwable $e) {
             return $this->response->setJSON([
-                'code' => '9999',
+                'code' => ApiCode::AUTH_TOKEN_EXPIRED,
                 'msg' => 'token无效或已过期'
             ]);
         }
@@ -172,7 +173,7 @@ class Auth extends BaseController
 
         if ($refreshToken === '') {
             return $this->response->setJSON([
-                'code' => '1007',
+                'code' => ApiCode::AUTH_REFRESH_TOKEN_REQUIRED,
                 'msg' => 'refreshToken不能为空'
             ]);
         }
@@ -194,14 +195,14 @@ class Auth extends BaseController
 
             if (!$user) {
                 return $this->response->setJSON([
-                    'code' => '8889',
+                    'code' => ApiCode::AUTH_REFRESH_TOKEN_INVALID,
                     'msg' => '用户不存在'
                 ]);
             }
 
             if ($tokenWorkId !== '' && $user['work_id'] !== $tokenWorkId) {
                 return $this->response->setJSON([
-                    'code' => '8889',
+                    'code' => ApiCode::AUTH_REFRESH_TOKEN_INVALID,
                     'msg' => '用户信息不匹配，请重新登录'
                 ]);
             }
@@ -209,7 +210,7 @@ class Auth extends BaseController
             $newToken = $this->generateToken($user);
 
             return $this->response->setJSON([
-                'code' => '0000',
+                'code' => ApiCode::SUCCESS,
                 'msg' => 'success',
                 'data' => [
                     'token' => $newToken,
@@ -218,7 +219,7 @@ class Auth extends BaseController
             ]);
         } catch (\Throwable $e) {
             return $this->response->setJSON([
-                'code' => '8889',
+                'code' => ApiCode::AUTH_REFRESH_TOKEN_INVALID,
                 'msg' => 'refreshToken无效或已过期'
             ]);
         }

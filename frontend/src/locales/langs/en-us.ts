@@ -224,12 +224,14 @@ const local: App.I18n.Schema = {
     }
   },
   route: {
+    common: 'Common',
     login: 'Login',
     403: 'No Permission',
     404: 'Page Not Found',
     500: 'Server Error',
     'iframe-page': 'Iframe',
     home: 'Home',
+    'menu-bridge': 'Dynamic Menu',
     'permission-demo': 'Permission Demo',
     system: 'System',
     system_user: 'User Management',

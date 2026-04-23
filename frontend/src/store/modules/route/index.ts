@@ -220,11 +220,23 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
       return [];
     }
 
+    // 一级菜单图标映射
+    const zhTitleIconMap: Record<string, string> = {
+      系统管理: 'mdi:settings',
+      管理信息: 'mdi:database',
+      人员管理: 'mdi:account-heart',
+      收入成本: 'mdi:cash',
+      经营分析: 'mdi:chart-line'
+    };
+
     const routes: ElegantConstRoute[] = [];
     const usedNames = new Set<string>();
 
     rawMenus.forEach((menu1, menu1Index) => {
-      const parentName = buildUniqueRouteName(`dyn_${normalizeRouteName(menu1?.name || `menu_${menu1Index + 1}`)}`, usedNames);
+      const parentName = buildUniqueFirstLevelRouteName(
+        `dyn${normalizeRouteName(menu1?.name || `menu_${menu1Index + 1}`).replace(/_/g, '')}`,
+        usedNames
+      );
       const childrenRaw = Array.isArray(menu1?.children) ? menu1.children : [];
 
       const children: ElegantConstRoute[] = childrenRaw.map((menu2: any, menu2Index: number) => {
@@ -239,9 +251,18 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
           props: true,
           meta: {
             title: String(menu2?.name || `菜单${menu2Index + 1}`),
+            i18nKey: '',
             icon: 'mdi:menu-right-outline',
             order: Number(menu2?.order) || menu2Index + 1,
             hideInMenu: false,
+            multiTab: true,
+            query: [
+              { key: 'functionCode', value: funcCode },
+              { key: 'menu1', value: String(menu1?.name || '') },
+              { key: 'menu2', value: String(menu2?.name || '') },
+              { key: 'module', value: String(menu2?.module || '') },
+              { key: 'params', value: String(menu2?.params || '') }
+            ],
             functionCode: funcCode,
             menu1: String(menu1?.name || ''),
             menu2: String(menu2?.name || ''),
@@ -255,13 +276,17 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
         return;
       }
 
+      // 获取一级菜单的图标
+      const menuTitle = String(menu1?.name || '动态菜单');
+      const menuIcon = zhTitleIconMap[menuTitle] || 'mdi:folder-outline';
+
       routes.push({
         name: parentName,
-        path: `/dynamic/${encodeURIComponent(String(menu1?.name || parentName))}`,
+        path: `/dynamic/${encodeURIComponent(menuTitle)}`,
         component: 'layout.base',
         meta: {
-          title: String(menu1?.name || '动态菜单'),
-          icon: 'mdi:folder-outline',
+          title: menuTitle,
+          icon: menuIcon,
           order: Number(menu1?.order) || menu1Index + 100,
           hideInMenu: false
         },
@@ -293,6 +318,25 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
     while (usedNames.has(candidate)) {
       index += 1;
       candidate = `${base}_${index}`;
+    }
+
+    usedNames.add(candidate);
+    return candidate;
+  }
+
+  function buildUniqueFirstLevelRouteName(base: string, usedNames: Set<string>) {
+    const normalizedBase = base.replace(/_/g, '') || 'dynroute';
+
+    if (!usedNames.has(normalizedBase)) {
+      usedNames.add(normalizedBase);
+      return normalizedBase;
+    }
+
+    let index = 2;
+    let candidate = `${normalizedBase}v${index}`;
+    while (usedNames.has(candidate)) {
+      index += 1;
+      candidate = `${normalizedBase}v${index}`;
     }
 
     usedNames.add(candidate);

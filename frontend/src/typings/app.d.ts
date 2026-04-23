@@ -557,6 +557,17 @@ declare namespace App {
           };
           creativity: string;
         };
+        permissionDemo: {
+          title: string;
+          desc: string;
+          visibleRoles: string;
+          visibleButtons: string;
+          btnView: string;
+          btnAdd: string;
+          btnEdit: string;
+          btnDelete: string;
+          noButtonAuth: string;
+        };
       };
       form: {
         required: string;

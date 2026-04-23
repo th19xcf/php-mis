@@ -220,12 +220,14 @@ const local: App.I18n.Schema = {
     }
   },
   route: {
+    common: '通用页面',
     login: '登录',
     403: '无权限',
     404: '页面不存在',
     500: '服务器错误',
     'iframe-page': '外链页面',
     home: '首页',
+    'menu-bridge': '动态菜单',
     'permission-demo': '权限演示',
     system: '系统管理',
     system_user: '用户管理',

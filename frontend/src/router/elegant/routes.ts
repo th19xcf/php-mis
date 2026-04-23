@@ -40,6 +40,15 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'common',
+    path: '/common',
+    component: 'layout.base$view.common',
+    meta: {
+      title: 'common',
+      i18nKey: 'route.common'
+    }
+  },
+  {
     name: 'home',
     path: '/home',
     component: 'layout.base$view.home',
@@ -81,7 +90,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     component: 'layout.base$view.menu-bridge',
     meta: {
       title: 'menu-bridge',
-      i18nKey: 'route.menu-bridge'
+      i18nKey: 'route.menu-bridge',
+      keepAlive: true
     }
   },
   {

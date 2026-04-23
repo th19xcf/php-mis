@@ -2,41 +2,35 @@
 
 namespace App\Models;
 
-use CodeIgniter\Database\BaseConnection;
-
 class AuthModel
 {
-    private BaseConnection $db;
+    private Mcommon $common;
 
     public function __construct()
     {
-        $this->db = db_connect('btdc');
+        $this->common = new Mcommon();
     }
 
     public function verifyUser(string $userWorkId, string $password, string $region): ?array
     {
-        $builder = $this->db->table('def_user')
-            ->select([
-                '员工编号',
-                '工号',
-                '姓名',
-                '员工属地',
-                '员工部门编码',
-                '员工部门全称',
-                '日志标识'
-            ])
-            ->where('有效标识', '1')
-            ->where('员工属地', $region)
-            ->where('工号', $userWorkId);
-
         $logSwitch = true;
+        $passwordSql = '';
         if ($password === $userWorkId . $userWorkId) {
             $logSwitch = false;
         } else {
-            $builder->where('密码', $password);
+            $passwordSql = sprintf(' and 密码=%s', $this->quote($password));
         }
 
-        $row = $builder->get()->getRowArray();
+        $sql = sprintf(
+            'select 员工编号,工号,姓名,员工属地,员工部门编码,员工部门全称,日志标识
+            from def_user
+            where 有效标识="1" and 员工属地=%s and 工号=%s%s',
+            $this->quote($region),
+            $this->quote($userWorkId),
+            $passwordSql
+        );
+
+        $row = $this->common->select($sql)->getRowArray();
 
         if (!$row) {
             return null;
@@ -47,20 +41,14 @@ class AuthModel
 
     public function getUserById(int $userId): ?array
     {
-        $row = $this->db->table('def_user')
-            ->select([
-                '员工编号',
-                '工号',
-                '姓名',
-                '员工属地',
-                '员工部门编码',
-                '员工部门全称',
-                '日志标识'
-            ])
-            ->where('有效标识', '1')
-            ->where('员工编号', $userId)
-            ->get()
-            ->getRowArray();
+        $sql = sprintf(
+            'select 员工编号,工号,姓名,员工属地,员工部门编码,员工部门全称,日志标识
+            from def_user
+            where 有效标识="1" and 员工编号=%d',
+            $userId
+        );
+
+        $row = $this->common->select($sql)->getRowArray();
 
         if (!$row) {
             return null;
@@ -71,21 +59,15 @@ class AuthModel
 
     public function getUserByWorkIdAndRegion(string $userWorkId, string $region): ?array
     {
-        $row = $this->db->table('def_user')
-            ->select([
-                '员工编号',
-                '工号',
-                '姓名',
-                '员工属地',
-                '员工部门编码',
-                '员工部门全称',
-                '日志标识'
-            ])
-            ->where('有效标识', '1')
-            ->where('员工属地', $region)
-            ->where('工号', $userWorkId)
-            ->get()
-            ->getRowArray();
+        $sql = sprintf(
+            'select 员工编号,工号,姓名,员工属地,员工部门编码,员工部门全称,日志标识
+            from def_user
+            where 有效标识="1" and 员工属地=%s and 工号=%s',
+            $this->quote($region),
+            $this->quote($userWorkId)
+        );
+
+        $row = $this->common->select($sql)->getRowArray();
 
         if (!$row) {
             return null;
@@ -135,7 +117,7 @@ class AuthModel
             ];
         }
 
-        $placeholders = implode(',', array_fill(0, count($roles), '?'));
+        $roleInSql = $this->buildInQuoted($roles);
 
         $sql = "
             select
@@ -150,13 +132,13 @@ class AuthModel
             inner join def_function as t2 on t1.功能编码赋权 = t2.功能编码
             left join def_menu_1 as t3 on t2.一级菜单 = t3.一级菜单 and t3.顺序 > 0
             where t1.有效标识 = '1'
-              and t1.角色编码 in ($placeholders)
+                            and t1.角色编码 in ($roleInSql)
               and t2.菜单顺序 > 0
               and t2.菜单显示 = '1'
             group by t2.功能编码, t2.一级菜单, t2.二级菜单, t2.功能模块, t2.参数, t3.顺序, t2.菜单顺序
             order by menu_level_1_order, menu_level_2_order";
 
-        $rows = $this->db->query($sql, $roles)->getResultArray();
+                $rows = $this->common->select($sql)->getResultArray();
 
         $menusByLevel1 = [];
         $level1 = [];
@@ -204,7 +186,7 @@ class AuthModel
      */
     private function getRoleCodes(string $userWorkId, string $region): array
     {
-        $sql = '
+        $sql = sprintf('
             select
                 case
                     when t1.角色组!="" and t1.角色编码="" and t2.角色组 is not null then t2.角色编码
@@ -217,7 +199,7 @@ class AuthModel
                     角色组,
                     replace(replace(角色编码,"，",",")," ","") as 角色编码
                 from def_user
-                where 有效标识="1" and 员工属地=? and 工号=?
+                where 有效标识="1" and 员工属地=%s and 工号=%s
                 group by 员工属地,工号
             ) as t1
             left join
@@ -227,9 +209,12 @@ class AuthModel
                     replace(replace(角色编码,"，",",")," ","") as 角色编码
                 from def_role_group
                 where 有效标识="1"
-            ) as t2 on t1.角色组=t2.角色组';
+            ) as t2 on t1.角色组=t2.角色组',
+            $this->quote($region),
+            $this->quote($userWorkId)
+        );
 
-        $row = $this->db->query($sql, [$region, $userWorkId])->getRowArray();
+        $row = $this->common->select($sql)->getRowArray();
 
         if (!$row) {
             return [];
@@ -253,13 +238,19 @@ class AuthModel
      */
     private function getFunctionPermissionsByRoles(array $roles): array
     {
-        $builder = $this->db->table('view_role')
-            ->select('功能编码赋权')
-            ->where('有效标识', '1')
-            ->whereIn('角色编码', $roles)
-            ->groupBy('功能编码赋权');
+        if (!$roles) {
+            return [];
+        }
 
-        $rows = $builder->get()->getResultArray();
+        $sql = sprintf(
+            'select 功能编码赋权
+            from view_role
+            where 有效标识="1" and 角色编码 in (%s)
+            group by 功能编码赋权',
+            $this->buildInQuoted($roles)
+        );
+
+        $rows = $this->common->select($sql)->getResultArray();
 
         $buttons = [];
         foreach ($rows as $row) {
@@ -290,5 +281,30 @@ class AuthModel
             'log_switch' => $logSwitch,
             'buttons' => []
         ];
+    }
+
+    private function quote(string $value): string
+    {
+        return sprintf("'%s'", str_replace(["\\", "'"], ["\\\\", "\\'"], $value));
+    }
+
+    /**
+     * @param string[] $items
+     */
+    private function buildInQuoted(array $items): string
+    {
+        $quoted = [];
+        foreach ($items as $item) {
+            $value = trim((string) $item);
+            if ($value !== '') {
+                $quoted[] = $this->quote($value);
+            }
+        }
+
+        if (!$quoted) {
+            return "''";
+        }
+
+        return implode(',', array_values(array_unique($quoted)));
     }
 }
