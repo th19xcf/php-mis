@@ -145,12 +145,11 @@ async function initRoute(to: RouteLocationNormalized): Promise<RouteLocationRaw 
       path: '/menu-bridge',
       query: {
         functionCode,
-        ...Object.fromEntries(
-          Object.entries(to.query).filter(([key]) => key !== 'functionCode')
-        )
+        ...Object.fromEntries(Object.entries(to.query).filter(([key]) => key !== 'functionCode'))
       },
       replace: true
     };
+    console.log('[Route Guard] /dynamic-menu redirect:', { originalQuery: to.query, newLocation: location });
     return location;
   }
 

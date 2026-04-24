@@ -1,26 +1,51 @@
 <script setup lang="ts">
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { useThemeStore } from '@/store/modules/theme';
+import { useTabStore } from '@/store/modules/tab';
 import { getServiceBaseURL } from '@/utils/service';
 import GenericQueryWorkbench from './modules/generic-query-workbench.vue';
 
 const route = useRoute();
 const themeStore = useThemeStore();
+const tabStore = useTabStore();
 const isDarkMode = computed(() => themeStore.darkMode);
+
+// 从 sessionStorage 读取钻取参数（如果有）
+const drillParams = (() => {
+  try {
+    const stored = sessionStorage.getItem('drillParams');
+    if (stored) {
+      sessionStorage.removeItem('drillParams');
+      return JSON.parse(stored);
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return null;
+})();
 
 const meta = computed(() => {
   const routeMeta = (route.meta || {}) as Record<string, unknown>;
 
+  // 优先使用 drillParams（钻取参数），其次使用 query 参数
+  const functionCode = drillParams?.functionCode || String(route.query.functionCode || routeMeta.functionCode || '');
+  const module = drillParams?.module || String(route.query.module || routeMeta.module || '');
+  const rawParams = drillParams?.params || route.query.params || routeMeta.params || '';
+  // 确保 params 是字符串，如果是对象则转成 JSON
+  const params = typeof rawParams === 'string' ? rawParams : JSON.stringify(rawParams);
+  const menu1 = drillParams?.menu1 || String(route.query.menu1 || routeMeta.menu1 || '');
+  const menu2 = drillParams?.menu2 || String(route.query.menu2 || routeMeta.menu2 || '');
+
   return {
     ...routeMeta,
-    functionCode: String(route.query.functionCode || routeMeta.functionCode || ''),
-    module: String(route.query.module || routeMeta.module || ''),
-    params: String(route.query.params || routeMeta.params || ''),
-    menu1: String(route.query.menu1 || routeMeta.menu1 || ''),
-    menu2: String(route.query.menu2 || routeMeta.menu2 || ''),
-    title: String(route.query.menu2 || routeMeta.title || '动态菜单页面')
+    functionCode,
+    module,
+    params,
+    menu1,
+    menu2,
+    title: menu2 || routeMeta.title || '动态菜单页面'
   };
 });
 const iframeLoaded = ref(false);
@@ -46,6 +71,18 @@ onActivated(() => {
   // Always re-enter with unified Vue layout to keep dynamic-menu pages consistent.
   activeView.value = 'workbench';
   iframeLoaded.value = false;
+});
+
+onMounted(() => {
+  // 如果有钻取参数，延迟更新 Tab 标签标题，确保 Tab 已创建
+  if (drillParams?.menu2) {
+    setTimeout(() => {
+      console.log('[menu-bridge] Setting tab label to:', drillParams.menu2);
+      tabStore.setTabLabel(drillParams.menu2);
+    }, 100);
+  } else {
+    console.log('[menu-bridge] drillParams is null, sessionStorage:', sessionStorage.getItem('drillParams'));
+  }
 });
 
 const isHttpProxy = import.meta.env.DEV && import.meta.env.VITE_HTTP_PROXY === 'Y';

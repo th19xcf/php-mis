@@ -261,6 +261,8 @@ async function loadPage() {
     if (!api) return;
 
     const columnState = api.getColumnState();
+    if (!columnState || !Array.isArray(columnState)) return;
+
     const allColIds = columnState
       .map((state: any) => state.colId)
       .filter((colId: string) => {
@@ -504,6 +506,9 @@ function handleDataDrill() {
         console.log('options isArray:', Array.isArray(data.options));
         console.log('options length:', data.options?.length);
         console.log('condition result:', !!(data.options && data.options.length > 0));
+        const debugInfo = data.debug as any;
+        console.log('functionAuth (from current context):', debugInfo.functionAuth);
+        console.log('drillOptionsRaw (from SQL):', debugInfo.drillOptionsRaw);
       }
 
       console.log('Checking if should show dialog...');
@@ -597,15 +602,19 @@ function handleDataDrill() {
           const targetMenu2 = drillItem.menu2 || '';
 
           // 跳转到目标功能页面，使用与菜单点击一致的路径格式
+          // 先存储钻取参数到 sessionStorage，让 menu-bridge 可以获取正确的菜单标题
+          const drillParams = {
+            functionCode: targetFunctionCode,
+            menu1: targetMenu1,
+            menu2: targetMenu2,
+            module: targetModule,
+            params: sendObj
+          };
+          sessionStorage.setItem('drillParams', JSON.stringify(drillParams));
+
           router.push({
-            path: `/dynamic-menu/${encodeURIComponent(targetFunctionCode)}`,
-            query: {
-              functionCode: targetFunctionCode,
-              menu1: targetMenu1,
-              menu2: targetMenu2,
-              module: targetModule,
-              params: JSON.stringify(sendObj)
-            }
+            path: `/menu-bridge`,
+            query: { functionCode: targetFunctionCode }
           });
         };
 
