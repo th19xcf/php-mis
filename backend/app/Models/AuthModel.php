@@ -132,13 +132,13 @@ class AuthModel
             inner join def_function as t2 on t1.功能编码赋权 = t2.功能编码
             left join def_menu_1 as t3 on t2.一级菜单 = t3.一级菜单 and t3.顺序 > 0
             where t1.有效标识 = '1'
-                            and t1.角色编码 in ($roleInSql)
+              and t1.角色编码 in ($roleInSql)
               and t2.菜单顺序 > 0
               and t2.菜单显示 = '1'
             group by t2.功能编码, t2.一级菜单, t2.二级菜单, t2.功能模块, t2.参数, t3.顺序, t2.菜单顺序
             order by menu_level_1_order, menu_level_2_order";
 
-                $rows = $this->common->select($sql)->getResultArray();
+        $rows = $this->common->select($sql)->getResultArray();
 
         $menusByLevel1 = [];
         $level1 = [];

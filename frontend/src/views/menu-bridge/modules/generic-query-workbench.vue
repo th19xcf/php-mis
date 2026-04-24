@@ -516,8 +516,12 @@ function handleDataDrill() {
         const options = data.options.map((opt: Api.Workbench.DrillOption) => ({
           label: opt.label,
           value: opt.functionCode,
+          functionCode: opt.functionCode,
+          module: opt.module || '',
           drillFields: opt.drillFields || '',
           drillCondition: opt.drillCondition || '',
+          menu1: opt.menu1 || '',
+          menu2: opt.menu2 || '',
           raw: opt
         }));
 
@@ -589,15 +593,18 @@ function handleDataDrill() {
           // 参考旧版 parent.window.goto 跳转逻辑
           const targetFunctionCode = drillItem.functionCode;
           const targetModule = drillItem.module || '';
+          const targetMenu1 = drillItem.menu1 || '';
+          const targetMenu2 = drillItem.menu2 || '';
 
-          // 跳转到目标功能页面
+          // 跳转到目标功能页面，使用与菜单点击一致的路径格式
           router.push({
-            path: '/menu-bridge',
+            path: `/dynamic-menu/${encodeURIComponent(targetFunctionCode)}`,
             query: {
               functionCode: targetFunctionCode,
+              menu1: targetMenu1,
+              menu2: targetMenu2,
               module: targetModule,
-              params: JSON.stringify(sendObj),
-              drill: '1'
+              params: JSON.stringify(sendObj)
             }
           });
         };

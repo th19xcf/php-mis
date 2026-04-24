@@ -766,10 +766,12 @@ class Workbench extends BaseController
         }
 
         $sql = sprintf(
-            'select 
+            'select
                 钻取模块,页面选项,t1.功能编码,钻取字段,钻取条件,
                 if(t2.二级菜单 is null,"",if(t1.标签副名称="",t2.二级菜单,concat(t2.二级菜单,"-",t1.标签副名称))) as 标签名称,
-                t2.功能模块
+                t2.功能模块,
+                ifnull(t2.一级菜单,"") as menu1,
+                ifnull(t2.二级菜单,"") as menu2
             from def_drill_config as t1
             left join def_function as t2 on t1.功能编码=t2.功能编码
             where 钻取模块=%s
@@ -792,7 +794,9 @@ class Workbench extends BaseController
                 'functionCode' => $functionCode,
                 'module' => (string) ($row['功能模块'] ?? ''),
                 'drillFields' => (string) ($row['钻取字段'] ?? ''),
-                'drillCondition' => (string) ($row['钻取条件'] ?? '')
+                'drillCondition' => (string) ($row['钻取条件'] ?? ''),
+                'menu1' => (string) ($row['menu1'] ?? ''),
+                'menu2' => (string) ($row['menu2'] ?? '')
             ];
         }
 

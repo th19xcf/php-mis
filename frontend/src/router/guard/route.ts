@@ -135,6 +135,25 @@ async function initRoute(to: RouteLocationNormalized): Promise<RouteLocationRaw 
     return null;
   }
 
+  // 检查是否是 /dynamic-menu/{functionCode} 模式的路由
+  // 这种路由可能不在菜单中显示但用户有权限通过钻取访问
+  const dynamicMenuMatch = to.path.match(/^\/dynamic-menu\/([^/]+)$/);
+  if (dynamicMenuMatch) {
+    // 重定向到 menu-bridge 页面，让后端处理权限检查
+    const functionCode = dynamicMenuMatch[1];
+    const location: RouteLocationRaw = {
+      path: '/menu-bridge',
+      query: {
+        functionCode,
+        ...Object.fromEntries(
+          Object.entries(to.query).filter(([key]) => key !== 'functionCode')
+        )
+      },
+      replace: true
+    };
+    return location;
+  }
+
   // it is captured by the "not-found" route, then check whether the route exists
   const exist = await routeStore.getIsAuthRouteExist(to.path as RoutePath);
   const noPermissionRoute: RouteKey = '403';

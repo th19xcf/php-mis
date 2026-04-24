@@ -76,6 +76,8 @@ declare namespace Api {
       module?: string;
       drillFields?: string;
       drillCondition?: string;
+      menu1?: string;
+      menu2?: string;
     }
 
     interface DrillData {
