@@ -175,6 +175,11 @@ function handleRouteSwitch(to: RouteLocationNormalized, from: RouteLocationNorma
 
     return { path: from.fullPath, replace: true, query: from.query, hash: to.hash };
   }
+
+  // menu-bridge 路由支持多 Tab（数据钻取场景）
+  if (to.name === 'menu-bridge' && to.query.functionCode) {
+    to.meta.multiTab = true;
+  }
 }
 
 function getRouteQueryOfLoginRoute(to: RouteLocationNormalized, routeHome: RouteKey) {

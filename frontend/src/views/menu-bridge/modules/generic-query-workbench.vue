@@ -231,7 +231,10 @@ async function loadPage() {
           if (key === '钻取字段' || key === '钻取条件' || key === '字段选择') continue;
           const variable = `$${key}`;
           const valueStr = typeof value === 'string' ? value : JSON.stringify(value);
-          drillConditionSql = drillConditionSql.replace(new RegExp(variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), valueStr);
+          drillConditionSql = drillConditionSql.replace(
+            new RegExp(variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
+            valueStr
+          );
         }
         // 将反引号替换为单引号（SQL 语法）
         drillConditionSql = drillConditionSql.replace(/`/g, "'");
@@ -619,20 +622,16 @@ function handleDataDrill() {
           const targetMenu1 = drillItem.menu1 || '';
           const targetMenu2 = drillItem.menu2 || '';
 
-          // 跳转到目标功能页面，使用与菜单点击一致的路径格式
-          // 先存储钻取参数到 sessionStorage，让 menu-bridge 可以获取正确的菜单标题
-          const drillParams = {
-            functionCode: targetFunctionCode,
-            menu1: targetMenu1,
-            menu2: targetMenu2,
-            module: targetModule,
-            params: sendObj
-          };
-          sessionStorage.setItem('drillParams', JSON.stringify(drillParams));
-
+          // 跳转到目标功能页面，将所有钻取参数放到 query 中，避免 sessionStorage 时序问题
           router.push({
             path: `/menu-bridge`,
-            query: { functionCode: targetFunctionCode }
+            query: {
+              functionCode: targetFunctionCode,
+              module: targetModule,
+              menu1: targetMenu1,
+              menu2: targetMenu2,
+              params: JSON.stringify(sendObj)
+            }
           });
         };
 
@@ -743,16 +742,39 @@ import { onMounted, onActivated } from 'vue';
 // 缓存数据，避免重复请求
 const isDataLoaded = ref(false);
 
+// 记录当前已加载的 functionCode 和 params，用于检测是否真的需要重新加载
+const loadedFunctionCode = ref<string>('');
+const loadedParams = ref<string>('');
+
 onMounted(() => {
-  if (!isDataLoaded.value) {
+  const currentFunctionCode = String(props.meta.functionCode || '');
+  const currentParams = String(props.meta.params || '');
+  
+  // 只有当数据未加载，或者 functionCode/params 发生变化时才加载
+  if (!isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
+    console.log('onMounted: loading page', { currentFunctionCode, currentParams, loadedFunctionCode: loadedFunctionCode.value, loadedParams: loadedParams.value });
+    loadedFunctionCode.value = currentFunctionCode;
+    loadedParams.value = currentParams;
     loadPage();
     isDataLoaded.value = true;
+  } else {
+    console.log('onMounted: using cached data');
   }
 });
 
 onActivated(() => {
-  // 组件被激活时，不需要重新加载数据，使用缓存的数据
-  console.log('Component activated, using cached data');
+  const currentFunctionCode = String(props.meta.functionCode || '');
+  const currentParams = String(props.meta.params || '');
+  
+  // 组件被激活时，检查是否需要重新加载数据
+  if (currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
+    console.log('onActivated: meta changed, reloading page', { currentFunctionCode, currentParams, loadedFunctionCode: loadedFunctionCode.value, loadedParams: loadedParams.value });
+    loadedFunctionCode.value = currentFunctionCode;
+    loadedParams.value = currentParams;
+    loadPage();
+  } else {
+    console.log('Component activated, using cached data');
+  }
 });
 </script>
 

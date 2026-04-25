@@ -12,31 +12,17 @@ const themeStore = useThemeStore();
 const tabStore = useTabStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 
-// 从 sessionStorage 读取钻取参数（如果有）
-const drillParams = (() => {
-  try {
-    const stored = sessionStorage.getItem('drillParams');
-    if (stored) {
-      sessionStorage.removeItem('drillParams');
-      return JSON.parse(stored);
-    }
-  } catch {
-    // ignore parse errors
-  }
-  return null;
-})();
-
 const meta = computed(() => {
   const routeMeta = (route.meta || {}) as Record<string, unknown>;
 
-  // 优先使用 drillParams（钻取参数），其次使用 query 参数
-  const functionCode = drillParams?.functionCode || String(route.query.functionCode || routeMeta.functionCode || '');
-  const module = drillParams?.module || String(route.query.module || routeMeta.module || '');
-  const rawParams = drillParams?.params || route.query.params || routeMeta.params || '';
+  // 优先使用 query 参数（钻取时传递），其次使用 route.meta
+  const functionCode = String(route.query.functionCode || routeMeta.functionCode || '');
+  const module = String(route.query.module || routeMeta.module || '');
+  const rawParams = route.query.params || routeMeta.params || '';
   // 确保 params 是字符串，如果是对象则转成 JSON
   const params = typeof rawParams === 'string' ? rawParams : JSON.stringify(rawParams);
-  const menu1 = drillParams?.menu1 || String(route.query.menu1 || routeMeta.menu1 || '');
-  const menu2 = drillParams?.menu2 || String(route.query.menu2 || routeMeta.menu2 || '');
+  const menu1 = String(route.query.menu1 || routeMeta.menu1 || '');
+  const menu2 = String(route.query.menu2 || routeMeta.menu2 || '');
 
   return {
     ...routeMeta,
@@ -73,17 +59,19 @@ onActivated(() => {
   iframeLoaded.value = false;
 });
 
-onMounted(() => {
-  // 如果有钻取参数，延迟更新 Tab 标签标题，确保 Tab 已创建
-  if (drillParams?.menu2) {
-    setTimeout(() => {
-      console.log('[menu-bridge] Setting tab label to:', drillParams.menu2);
-      tabStore.setTabLabel(drillParams.menu2);
-    }, 100);
-  } else {
-    console.log('[menu-bridge] drillParams is null, sessionStorage:', sessionStorage.getItem('drillParams'));
-  }
-});
+// 监听 route.query.menu2 变化，更新 Tab 标签（处理钻取场景）
+watch(
+  () => String(route.query.menu2 || '').trim(),
+  (menu2) => {
+    if (menu2) {
+      setTimeout(() => {
+        console.log('[menu-bridge] Setting tab label to:', menu2);
+        tabStore.setTabLabel(menu2);
+      }, 100);
+    }
+  },
+  { immediate: true }
+);
 
 const isHttpProxy = import.meta.env.DEV && import.meta.env.VITE_HTTP_PROXY === 'Y';
 const { baseURL } = getServiceBaseURL(import.meta.env, isHttpProxy);
