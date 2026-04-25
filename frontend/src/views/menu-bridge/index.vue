@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { useThemeStore } from '@/store/modules/theme';
@@ -62,7 +62,7 @@ onActivated(() => {
 // 监听 route.query.menu2 变化，更新 Tab 标签（处理钻取场景）
 watch(
   () => String(route.query.menu2 || '').trim(),
-  (menu2) => {
+  menu2 => {
     if (menu2) {
       setTimeout(() => {
         console.log('[menu-bridge] Setting tab label to:', menu2);

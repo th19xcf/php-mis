@@ -749,10 +749,15 @@ const loadedParams = ref<string>('');
 onMounted(() => {
   const currentFunctionCode = String(props.meta.functionCode || '');
   const currentParams = String(props.meta.params || '');
-  
+
   // 只有当数据未加载，或者 functionCode/params 发生变化时才加载
   if (!isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
-    console.log('onMounted: loading page', { currentFunctionCode, currentParams, loadedFunctionCode: loadedFunctionCode.value, loadedParams: loadedParams.value });
+    console.log('onMounted: loading page', {
+      currentFunctionCode,
+      currentParams,
+      loadedFunctionCode: loadedFunctionCode.value,
+      loadedParams: loadedParams.value
+    });
     loadedFunctionCode.value = currentFunctionCode;
     loadedParams.value = currentParams;
     loadPage();
@@ -765,10 +770,15 @@ onMounted(() => {
 onActivated(() => {
   const currentFunctionCode = String(props.meta.functionCode || '');
   const currentParams = String(props.meta.params || '');
-  
+
   // 组件被激活时，检查是否需要重新加载数据
   if (currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
-    console.log('onActivated: meta changed, reloading page', { currentFunctionCode, currentParams, loadedFunctionCode: loadedFunctionCode.value, loadedParams: loadedParams.value });
+    console.log('onActivated: meta changed, reloading page', {
+      currentFunctionCode,
+      currentParams,
+      loadedFunctionCode: loadedFunctionCode.value,
+      loadedParams: loadedParams.value
+    });
     loadedFunctionCode.value = currentFunctionCode;
     loadedParams.value = currentParams;
     loadPage();
