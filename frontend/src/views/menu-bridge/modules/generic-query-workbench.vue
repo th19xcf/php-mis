@@ -1109,8 +1109,8 @@ onActivated(() => {
 }
 
 /* 异常和提示单元格样式 - 使用属性选择器提高优先级 */
-:deep(.query-grid .ag-cell[style*="color"]),
-:deep(.query-grid .ag-cell-value[style*="color"]) {
+:deep(.query-grid .ag-cell[style*='color']),
+:deep(.query-grid .ag-cell-value[style*='color']) {
   /* 允许 cellStyle 的样式生效 */
 }
 
