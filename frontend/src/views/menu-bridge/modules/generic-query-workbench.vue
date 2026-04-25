@@ -215,13 +215,30 @@ async function loadPage() {
 
   // 解析钻取参数
   const drillFilters: QueryFilter[] = [];
+  let drillConditionSql = '';
   const drillParamsStr = String(props.meta.params || '').trim();
   if (drillParamsStr && drillParamsStr !== '') {
     try {
       const drillParams = JSON.parse(drillParamsStr);
       console.log('解析钻取参数:', drillParams);
 
-      // 从钻取参数中提取字段和值作为过滤条件
+      // 获取原始钻取条件 SQL（如：财务月份=`$本年度月份` or 工作预算月份=`$本年度月份`）
+      const rawDrillCondition = drillParams['钻取条件'] || '';
+      if (rawDrillCondition) {
+        // 替换 SQL 变量为实际值
+        drillConditionSql = rawDrillCondition;
+        for (const [key, value] of Object.entries(drillParams)) {
+          if (key === '钻取字段' || key === '钻取条件' || key === '字段选择') continue;
+          const variable = `$${key}`;
+          const valueStr = typeof value === 'string' ? value : JSON.stringify(value);
+          drillConditionSql = drillConditionSql.replace(new RegExp(variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), valueStr);
+        }
+        // 将反引号替换为单引号（SQL 语法）
+        drillConditionSql = drillConditionSql.replace(/`/g, "'");
+        console.log('钻取条件 SQL:', drillConditionSql);
+      }
+
+      // 从钻取参数中提取字段和值作为过滤条件（备用逻辑）
       const drillFieldsStr = drillParams['钻取字段'] || '';
       const nlArr = drillFieldsStr.split(';').filter((f: string) => f.trim());
 
@@ -241,7 +258,7 @@ async function loadPage() {
     }
   }
 
-  const allRows = await fetchAllRows(functionCode, drillFilters);
+  const allRows = await fetchAllRows(functionCode, drillFilters, drillConditionSql);
   if (!allRows) {
     loading.value = false;
     return;
@@ -296,12 +313,13 @@ async function loadPage() {
   }, 300);
 }
 
-async function fetchAllRows(functionCode: string, filters: QueryFilter[]) {
+async function fetchAllRows(functionCode: string, filters: QueryFilter[], drillConditionSql?: string) {
   const result = await fetchWorkbenchQuery(functionCode, {
     current: 1,
     size: pageSize.value,
     all: true,
-    filters
+    filters,
+    drillCondition: drillConditionSql || ''
   });
 
   if (result.error) {

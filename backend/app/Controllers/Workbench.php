@@ -478,6 +478,12 @@ class Workbench extends BaseController
             }
         }
 
+        // 处理钻取条件 SQL
+        $drillCondition = trim((string) ($payload['drillCondition'] ?? ''));
+        if ($drillCondition !== '') {
+            $whereParts[] = $drillCondition;
+        }
+
         $baseFromSql = sprintf(' from %s', $queryConfig['queryTable']);
         $whereSql = $whereParts ? ' where ' . implode(' and ', $whereParts) : '';
         $groupSql = $queryConfig['queryGroup'] !== '' ? ' group by ' . $queryConfig['queryGroup'] : '';
@@ -511,6 +517,9 @@ class Workbench extends BaseController
                 $offset
             );
         }
+
+        // Debug: log the SQL query
+        log_message('debug', 'Workbench query SQL: ' . $querySql);
 
         $rows = $this->common->select($querySql)->getResultArray();
         foreach ($rows as &$row) {

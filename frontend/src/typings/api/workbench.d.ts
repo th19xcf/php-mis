@@ -67,6 +67,7 @@ declare namespace Api {
         operator: 'contains' | 'equals' | 'startsWith';
         value: string;
       }>;
+      drillCondition?: string;
     }
 
     interface DrillOption {
