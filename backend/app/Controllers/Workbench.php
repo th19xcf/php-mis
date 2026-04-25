@@ -376,7 +376,12 @@ class Workbench extends BaseController
                 'hidden' => (string) ($column['主键'] ?? '0') === '1',
                 'editable' => in_array((string) ($column['可修改'] ?? '0'), ['1', '2'], true),
                 'required' => (string) ($column['不可为空'] ?? '0') === '1',
-                'sortable' => true
+                'sortable' => true,
+                // 提示和异常显示相关配置
+                'hintCondition' => (string) ($column['提示条件'] ?? ''),
+                'hintStyle' => (string) ($column['提示样式设置'] ?? ''),
+                'errorCondition' => (string) ($column['异常条件'] ?? ''),
+                'errorStyle' => (string) ($column['异常样式设置'] ?? '')
             ];
         }
 
@@ -413,6 +418,7 @@ class Workbench extends BaseController
         }
 
         $selectParts = [];
+        $hintErrorParts = []; // 提示和异常标记字段
         foreach ($columns as $column) {
             $alias = (string) ($column['列名'] ?? '');
             $queryName = (string) ($column['查询名'] ?? '');
@@ -435,6 +441,21 @@ class Workbench extends BaseController
             } else {
                 $selectParts[] = sprintf('%s as `%s`', $queryName, $alias);
             }
+
+            // 添加提示和异常标记字段
+            $hintCondition = trim((string) ($column['提示条件'] ?? ''));
+            $errorCondition = trim((string) ($column['异常条件'] ?? ''));
+            if ($hintCondition !== '') {
+                $hintErrorParts[] = sprintf('if(%s,"1","0") as `提示^%s`', $hintCondition, $alias);
+            }
+            if ($errorCondition !== '') {
+                $hintErrorParts[] = sprintf('if(%s,"1","0") as `异常^%s`', $errorCondition, $alias);
+            }
+        }
+
+        // 合并提示和异常字段到 selectParts
+        if (!empty($hintErrorParts)) {
+            $selectParts = array_merge($selectParts, $hintErrorParts);
         }
 
         $whereParts = [];

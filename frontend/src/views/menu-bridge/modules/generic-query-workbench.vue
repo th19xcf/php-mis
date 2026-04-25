@@ -95,6 +95,27 @@ const defaultColDef = {
   }
 } as const;
 
+/**
+ * 解析样式字符串为 CSS 对象
+ * 格式: "color:red,background-color:#f7acbc,font-weight:bold"
+ */
+function parseStyleString(styleStr: string): Record<string, string> {
+  const defaultStyle = { color: 'red', fontWeight: 'bold', backgroundColor: '#f7acbc' };
+  if (!styleStr) return defaultStyle;
+
+  const styleObj: Record<string, string> = {};
+  const items = styleStr.split(',');
+  for (const item of items) {
+    const [key, value] = item.split(':');
+    if (key && value) {
+      // 将 CSS 属性名转换为 camelCase
+      const camelKey = key.trim().replace(/-([a-z])/g, g => g[1].toUpperCase());
+      styleObj[camelKey] = value.trim();
+    }
+  }
+  return Object.keys(styleObj).length > 0 ? styleObj : defaultStyle;
+}
+
 const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
   return (pageMeta.value?.columns || []).map(column => {
     const headerClasses: string[] = [];
@@ -117,6 +138,32 @@ const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
 
     if (column.type === '数值') {
       definition.type = 'numericColumn';
+    }
+
+    // 添加提示和异常样式处理
+    if (column.errorCondition || column.hintCondition) {
+      definition.cellStyle = (params: any) => {
+        const field = column.field;
+        const data = params.data || {};
+
+        // 优先检查异常条件
+        if (column.errorCondition) {
+          const errorKey = `异常^${field}`;
+          if (data[errorKey] === '1' || data[errorKey] === 1) {
+            return parseStyleString(column.errorStyle || '');
+          }
+        }
+
+        // 然后检查提示条件
+        if (column.hintCondition) {
+          const hintKey = `提示^${field}`;
+          if (data[hintKey] === '1' || data[hintKey] === 1) {
+            return parseStyleString(column.hintStyle || '');
+          }
+        }
+
+        return null;
+      };
     }
 
     return definition;
@@ -1058,7 +1105,13 @@ onActivated(() => {
 :deep(.query-grid .ag-cell),
 :deep(.query-grid .ag-header-cell-text),
 :deep(.query-grid .ag-cell-value) {
-  color: var(--wb-grid-text) !important;
+  color: var(--wb-grid-text);
+}
+
+/* 异常和提示单元格样式 - 使用属性选择器提高优先级 */
+:deep(.query-grid .ag-cell[style*="color"]),
+:deep(.query-grid .ag-cell-value[style*="color"]) {
+  /* 允许 cellStyle 的样式生效 */
 }
 
 :deep(.query-grid .ag-cell-wrapper),

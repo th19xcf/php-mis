@@ -21,6 +21,11 @@ declare namespace Api {
       editable: boolean;
       required: boolean;
       sortable: boolean;
+      // 提示和异常显示相关配置
+      hintCondition?: string;
+      hintStyle?: string;
+      errorCondition?: string;
+      errorStyle?: string;
     }
 
     interface ConditionMeta {
