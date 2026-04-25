@@ -12,7 +12,7 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton } from 'naive-ui';
+import { NButton, NRadio, NRadioGroup } from 'naive-ui';
 
 import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
 import { useThemeStore } from '@/store/modules/theme';
@@ -518,9 +518,9 @@ function handleDataDrill() {
       if (data.options && data.options.length > 0) {
         // 参考旧版：显示钻取选项（单选按钮）
         let dialogInstance: any = null;
-        const options = data.options.map((opt: Api.Workbench.DrillOption) => ({
+        const options = data.options.map((opt: Api.Workbench.DrillOption, index: number) => ({
           label: opt.label,
-          value: opt.functionCode,
+          value: `${opt.functionCode}_${index}`,
           functionCode: opt.functionCode,
           module: opt.module || '',
           drillFields: opt.drillFields || '',
@@ -636,32 +636,28 @@ function handleDataDrill() {
           return h('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '250px' } }, [
             // 选项区域
             h(
-              'div',
-              { style: { flex: 1, overflow: 'auto', padding: '16px' } },
-              options.map(opt =>
-                h(
-                  'div',
-                  {
-                    style: {
-                      marginBottom: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      cursor: 'pointer'
-                    },
-                    onClick: () => handleRadioClick(opt.value)
-                  },
-                  [
-                    h('input', {
-                      type: 'radio',
-                      name: 'drillOption',
-                      value: opt.value,
-                      checked: drillSelectedValue.value === opt.value,
-                      style: { marginRight: '8px' }
-                    }),
-                    h('span', { style: { userSelect: 'none' } }, opt.label)
-                  ]
-                )
-              )
+              NRadioGroup,
+              {
+                value: drillSelectedValue.value,
+                'onUpdate:value': (value: string) => {
+                  console.log('NRadioGroup value changed:', value);
+                  handleRadioClick(value);
+                },
+                style: { flex: 1, overflow: 'auto', padding: '16px' }
+              },
+              {
+                default: () =>
+                  options.map(opt =>
+                    h(
+                      NRadio,
+                      {
+                        value: opt.value,
+                        style: { display: 'flex', marginBottom: '8px', alignItems: 'center' }
+                      },
+                      { default: () => opt.label }
+                    )
+                  )
+              }
             ),
             // 底部按钮区域
             h(
