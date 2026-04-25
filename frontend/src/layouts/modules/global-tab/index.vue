@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useElementBounding } from '@vueuse/core';
 import { PageTab } from '@sa/materials';
 import { useAppStore } from '@/store/modules/app';
@@ -15,6 +15,7 @@ defineOptions({
 });
 
 const route = useRoute();
+const routerInstance = useRouter();
 const appStore = useAppStore();
 const themeStore = useThemeStore();
 const tabStore = useTabStore();
@@ -160,6 +161,10 @@ async function handleContextMenu(e: MouseEvent, tabId: string) {
 
 function init() {
   tabStore.initTabStore(route);
+  // 如果当前路由不是首页，强制跳转到首页
+  if (route.fullPath !== tabStore.homeTab?.fullPath) {
+    routerInstance.replace(tabStore.homeTab?.fullPath || '/');
+  }
 }
 
 function removeFocus() {

@@ -61,13 +61,17 @@ export const useTabStore = defineStore(SetupStoreId.Tab, () => {
    */
   function initTabStore(currentRoute: App.Global.TabRoute) {
     const storageTabs = localStg.get('globalTabs');
-
+    // 只恢复首页 tab
     if (themeStore.tab.cache && storageTabs) {
       const extractedTabs = extractTabsByAllRoutes(router, storageTabs);
-      tabs.value = updateTabsByI18nKey(extractedTabs);
+      tabs.value = updateTabsByI18nKey(extractedTabs).filter(tab => tab.id === homeTab.value?.id);
+    } else {
+      tabs.value = [getDefaultHomeTab(router, routeStore.routeHome)];
     }
-
-    addTab(currentRoute);
+    // 只在首页时添加 tab
+    if (currentRoute.fullPath === homeTab.value?.fullPath) {
+      addTab(currentRoute);
+    }
   }
 
   /**
@@ -348,8 +352,7 @@ export const useTabStore = defineStore(SetupStoreId.Tab, () => {
   /** Cache tabs */
   function cacheTabs() {
     if (!themeStore.tab.cache) return;
-
-    localStg.set('globalTabs', tabs.value);
+    localStg.set('globalTabs', tabs.value.filter(tab => tab.id === homeTab.value?.id));
   }
 
   // cache tabs when page is closed or refreshed
