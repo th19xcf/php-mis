@@ -221,27 +221,11 @@ const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
         const field = column.field;
         const data = params.data || {};
 
-        // 优先检查异常条件
-        if (column.errorCondition) {
-          const errorKey = `异常^${field}`;
-          if (data[errorKey] === '1' || data[errorKey] === 1) {
-            return parseStyleString(column.errorStyle || '');
-          }
-        }
-
-        // 然后检查提示条件
-        if (column.hintCondition) {
-          const hintKey = `提示^${field}`;
-          if (data[hintKey] === '1' || data[hintKey] === 1) {
-            return parseStyleString(column.hintStyle || '');
-          }
-        }
-
-        // 最后检查颜色标注条件
+        // 优先检查颜色标注条件（用户主动设置的优先级最高）
         if (column.colorMarkEnabled && colorMarkConfig.value) {
           const { field1, operator, field2, style } = colorMarkConfig.value;
-          // 只处理当前列是字段一的情况
-          if (field === field1) {
+          // 处理当前列是字段一或字段二的情况
+          if (field === field1 || field === field2) {
             const val1 = Number(data[field1]);
             const val2 = Number(data[field2]);
             let match = false;
@@ -266,6 +250,22 @@ const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
                 break;
             }
             if (match) return style;
+          }
+        }
+
+        // 然后检查异常条件
+        if (column.errorCondition) {
+          const errorKey = `异常^${field}`;
+          if (data[errorKey] === '1' || data[errorKey] === 1) {
+            return parseStyleString(column.errorStyle || '');
+          }
+        }
+
+        // 最后检查提示条件
+        if (column.hintCondition) {
+          const hintKey = `提示^${field}`;
+          if (data[hintKey] === '1' || data[hintKey] === 1) {
+            return parseStyleString(column.hintStyle || '');
           }
         }
 
@@ -668,10 +668,15 @@ function handleReset() {
     gridApi.value.setFilterModel(null);
   }
 
+  // 7. 刷新表格以清除颜色标注样式
+  if (gridApi.value) {
+    gridApi.value.redrawRows();
+  }
+
   // 重置提示
   useLegacyTabHint.value = false;
 
-  // 7. 显示提示
+  // 8. 显示提示
   window.$message?.success('已重置到初始状态');
 }
 
@@ -1085,7 +1090,6 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
   console.log('Grid ready, API initialized:', !!gridApi.value);
 }
-
 </script>
 
 <template>
