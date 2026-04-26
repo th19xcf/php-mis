@@ -465,17 +465,111 @@ async function queryPage() {
 }
 
 async function handleRefresh() {
-  await loadPage();
-  useLegacyTabHint.value = false;
-  window.$message?.success('已刷新工作台数据');
-}
-
-function handleReset() {
+  // 重置所有查询条件到初始状态
   quickKeyword.value = '';
   selectedField.value = pageMeta.value?.conditions[0]?.fieldKey || '';
   selectedOperator.value = 'contains';
   selectedValue.value = '';
+
+  // 重置颜色标注
+  colorMarkConfig.value = null;
+  colorMarkField1.value = colorMarkEnabledColumns.value[0]?.value || '';
+  colorMarkField2.value = colorMarkEnabledColumns.value[0]?.value || '';
+  colorMarkOperator.value = '大于';
+  colorMarkColor.value = '白底红字';
+
+  // 重置字段选择（显示所有字段）
+  visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
+  if (gridApi.value) {
+    const allColumnFields = fieldColumnOptions.value.map(item => String(item.value));
+    gridApi.value.setColumnsVisible(allColumnFields, true);
+  }
+
+  // 重置固定列
+  pinTargetFields.value = [];
+  if (gridApi.value) {
+    gridApi.value.applyColumnState({
+      state: fieldColumnOptions.value.map(item => ({
+        colId: String(item.value),
+        pinned: null
+      })),
+      defaultState: { pinned: null }
+    });
+  }
+
+  // 清除 AG Grid 筛选条件
+  if (gridApi.value) {
+    gridApi.value.setFilterModel(null);
+  }
+
+  // 重置提示
   useLegacyTabHint.value = false;
+
+  // 重新加载数据
+  await loadPage();
+
+  // 刷新表格
+  if (gridApi.value) {
+    gridApi.value.refreshCells({ force: true });
+  }
+
+  window.$message?.success('已刷新并恢复到初始状态');
+}
+
+function handleReset() {
+  // 1. 清除所有查询条件
+  quickKeyword.value = '';
+  selectedField.value = pageMeta.value?.conditions[0]?.fieldKey || '';
+  selectedOperator.value = 'contains';
+  selectedValue.value = '';
+
+  // 2. 清除颜色标注
+  colorMarkConfig.value = null;
+  colorMarkField1.value = colorMarkEnabledColumns.value[0]?.value || '';
+  colorMarkField2.value = colorMarkEnabledColumns.value[0]?.value || '';
+  colorMarkOperator.value = '大于';
+  colorMarkColor.value = '白底红字';
+
+  // 3. 显示所有字段（取消隐藏）
+  visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
+  if (gridApi.value) {
+    const allColumnFields = fieldColumnOptions.value.map(item => String(item.value));
+    gridApi.value.setColumnsVisible(allColumnFields, true);
+  }
+
+  // 4. 取消固定列
+  pinTargetFields.value = [];
+  if (gridApi.value) {
+    gridApi.value.applyColumnState({
+      state: fieldColumnOptions.value.map(item => ({
+        colId: String(item.value),
+        pinned: null
+      })),
+      defaultState: { pinned: null }
+    });
+  }
+
+  // 5. 清除排序
+  if (gridApi.value) {
+    gridApi.value.applyColumnState({
+      state: fieldColumnOptions.value.map(item => ({
+        colId: String(item.value),
+        sort: null
+      })),
+      defaultState: { sort: null }
+    });
+  }
+
+  // 6. 清除筛选
+  if (gridApi.value) {
+    gridApi.value.setFilterModel(null);
+  }
+
+  // 重置提示
+  useLegacyTabHint.value = false;
+
+  // 7. 显示提示
+  window.$message?.success('已重置到初始状态');
 }
 
 function handleOpenCondition() {
@@ -950,12 +1044,12 @@ onActivated(() => {
       <div class="flex flex-wrap items-center justify-between gap-12px">
         <NSpace>
           <NButton @click="handleRefresh">刷新</NButton>
+          <NButton @click="handleReset">重置</NButton>
           <NButton @click="handleOpenPinColumn">固定列</NButton>
           <NButton @click="handleOpenFieldColumn">字段选择</NButton>
           <NButton @click="handleOpenCondition">条件面板</NButton>
           <NButton @click="handleDataDrill">数据钻取</NButton>
           <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
-          <NButton @click="handleReset">重置</NButton>
           <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
           <NButton secondary :disabled="props.nativeOnly" @click="handleOpenLegacyHint">复杂操作提示</NButton>
         </NSpace>
