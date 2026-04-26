@@ -16,6 +16,7 @@ import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal } from 
 
 import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
 import { useThemeStore } from '@/store/modules/theme';
+import { useWorkbenchStore } from '@/store/modules/workbench';
 
 const router = useRouter();
 
@@ -296,12 +297,38 @@ const filteredRows = computed(() => {
   return rows;
 });
 
+const workbenchStore = useWorkbenchStore();
+
 async function loadPage() {
   const functionCode = String(props.meta.functionCode || '').trim();
   if (!functionCode) {
     pageMeta.value = null;
     serverRows.value = [];
     total.value = 0;
+    return;
+  }
+
+  // 检查 store 缓存
+  const cached = workbenchStore.getCache(functionCode);
+  if (cached && cached.isDataLoaded) {
+    console.log('Using cached data for:', functionCode);
+    pageMeta.value = cached.pageMeta;
+    serverRows.value = cached.serverRows;
+    total.value = cached.total;
+    loading.value = false;
+
+    // 恢复已加载状态
+    loadedFunctionCode.value = functionCode;
+    loadedParams.value = String(props.meta.params || '');
+    isDataLoaded.value = true;
+
+    // 刷新表格
+    setTimeout(() => {
+      if (gridApi.value) {
+        gridApi.value.refreshCells({ force: true });
+      }
+    }, 100);
+
     return;
   }
 
@@ -376,6 +403,14 @@ async function loadPage() {
   selectedField.value = data.meta.conditions[0]?.fieldKey || '';
   selectedValue.value = '';
   loading.value = false;
+
+  // 保存到 store 缓存
+  workbenchStore.setCache(functionCode, {
+    pageMeta: data.meta,
+    serverRows: allRows,
+    total: allRows.length,
+    isDataLoaded: true
+  });
 
   // 数据加载完成后，调整列宽度
   setTimeout(() => {
@@ -465,6 +500,13 @@ async function queryPage() {
 }
 
 async function handleRefresh() {
+  const functionCode = String(props.meta.functionCode || '').trim();
+
+  // 清除 store 缓存，强制重新加载
+  if (functionCode) {
+    workbenchStore.clearCache(functionCode);
+  }
+
   // 重置所有查询条件到初始状态
   quickKeyword.value = '';
   selectedField.value = pageMeta.value?.conditions[0]?.fieldKey || '';
