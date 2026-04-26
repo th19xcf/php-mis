@@ -112,13 +112,13 @@ export const useTabStore = defineStore(SetupStoreId.Tab, () => {
     // remove tab
     tabs.value.splice(removeTabIndex, 1);
 
+    // reset route cache first (before route switch to avoid KeepAlive issues)
+    await routeStore.resetRouteCache(removedTabRouteKey);
+
     // if current tab is removed, then switch to next tab
     if (isRemoveActiveTab && nextTab) {
       await switchRouteByTab(nextTab);
     }
-
-    // reset route cache
-    routeStore.resetRouteCache(removedTabRouteKey);
   }
 
   /** remove active tab */
@@ -352,7 +352,10 @@ export const useTabStore = defineStore(SetupStoreId.Tab, () => {
   /** Cache tabs */
   function cacheTabs() {
     if (!themeStore.tab.cache) return;
-    localStg.set('globalTabs', tabs.value.filter(tab => tab.id === homeTab.value?.id));
+    localStg.set(
+      'globalTabs',
+      tabs.value.filter(tab => tab.id === homeTab.value?.id)
+    );
   }
 
   // cache tabs when page is closed or refreshed

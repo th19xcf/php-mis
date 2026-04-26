@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, h } from 'vue';
+import { computed, ref, h, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -79,6 +79,67 @@ const selectedOperator = ref<ConditionOperator>('contains');
 const selectedValue = ref('');
 const useLegacyTabHint = ref(false);
 const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
+
+// 缓存数据，避免重复请求
+const isDataLoaded = ref(false);
+
+// 记录当前已加载的 functionCode 和 params，用于检测是否真的需要重新加载
+const loadedFunctionCode = ref<string>('');
+const loadedParams = ref<string>('');
+
+// 加载数据的逻辑
+function checkAndLoadData() {
+  const currentFunctionCode = String(props.meta.functionCode || '');
+  const currentParams = String(props.meta.params || '');
+
+  // 只有当数据未加载，或者 functionCode/params 发生变化时才加载
+  if (!isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
+    console.log('Loading page', {
+      currentFunctionCode,
+      currentParams,
+      loadedFunctionCode: loadedFunctionCode.value,
+      loadedParams: loadedParams.value
+    });
+    loadedFunctionCode.value = currentFunctionCode;
+    loadedParams.value = currentParams;
+    loadPage();
+    isDataLoaded.value = true;
+  } else {
+    console.log('Using cached data');
+  }
+}
+
+// 生命周期钩子
+onMounted(() => {
+  checkAndLoadData();
+});
+
+// 监听 props.meta 的变化，处理 Tab 切换和数据钻取
+watch(
+  () => props.meta,
+  (newMeta, oldMeta) => {
+    const newFunctionCode = String(newMeta?.functionCode || '');
+    const newParams = String(newMeta?.params || '');
+    const oldFunctionCode = String(oldMeta?.functionCode || '');
+    const oldParams = String(oldMeta?.params || '');
+
+    // 只有当 functionCode 或 params 发生变化时才重新加载
+    if (newFunctionCode !== oldFunctionCode || newParams !== oldParams) {
+      console.log('Meta changed, reloading page', {
+        newFunctionCode,
+        newParams,
+        oldFunctionCode,
+        oldParams
+      });
+      loadedFunctionCode.value = newFunctionCode;
+      loadedParams.value = newParams;
+      isDataLoaded.value = false;
+      loadPage();
+      isDataLoaded.value = true;
+    }
+  },
+  { deep: true }
+);
 
 // 颜色标注相关
 const colorMarkVisible = ref(false);
@@ -1025,55 +1086,6 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   console.log('Grid ready, API initialized:', !!gridApi.value);
 }
 
-import { onMounted, onActivated } from 'vue';
-
-// 缓存数据，避免重复请求
-const isDataLoaded = ref(false);
-
-// 记录当前已加载的 functionCode 和 params，用于检测是否真的需要重新加载
-const loadedFunctionCode = ref<string>('');
-const loadedParams = ref<string>('');
-
-onMounted(() => {
-  const currentFunctionCode = String(props.meta.functionCode || '');
-  const currentParams = String(props.meta.params || '');
-
-  // 只有当数据未加载，或者 functionCode/params 发生变化时才加载
-  if (!isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
-    console.log('onMounted: loading page', {
-      currentFunctionCode,
-      currentParams,
-      loadedFunctionCode: loadedFunctionCode.value,
-      loadedParams: loadedParams.value
-    });
-    loadedFunctionCode.value = currentFunctionCode;
-    loadedParams.value = currentParams;
-    loadPage();
-    isDataLoaded.value = true;
-  } else {
-    console.log('onMounted: using cached data');
-  }
-});
-
-onActivated(() => {
-  const currentFunctionCode = String(props.meta.functionCode || '');
-  const currentParams = String(props.meta.params || '');
-
-  // 组件被激活时，检查是否需要重新加载数据
-  if (currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
-    console.log('onActivated: meta changed, reloading page', {
-      currentFunctionCode,
-      currentParams,
-      loadedFunctionCode: loadedFunctionCode.value,
-      loadedParams: loadedParams.value
-    });
-    loadedFunctionCode.value = currentFunctionCode;
-    loadedParams.value = currentParams;
-    loadPage();
-  } else {
-    console.log('Component activated, using cached data');
-  }
-});
 </script>
 
 <template>
