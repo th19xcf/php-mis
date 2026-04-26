@@ -46,13 +46,17 @@ const props = defineProps<{
 const lightGridTheme = themeAlpine.withParams({
   browserColorScheme: 'light',
   rowBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  columnBorder: { style: 'dotted', width: 1, color: '#c1ccc7' }
+  columnBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
+  rangeSelectionBorderColor: '#2196F3',
+  rangeSelectionBorderStyle: 'solid'
 });
 
 const darkGridTheme = themeAlpine.withParams({
   browserColorScheme: 'dark',
   rowBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  columnBorder: { style: 'dotted', width: 1, color: '#4b5965' }
+  columnBorder: { style: 'dotted', width: 1, color: '#4b5965' },
+  rangeSelectionBorderColor: '#64B5F6',
+  rangeSelectionBorderStyle: 'solid'
 });
 
 const themeStore = useThemeStore();
@@ -1725,6 +1729,15 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   border-right: 1px dotted #c1ccc7 !important;
 }
 
+/* 选中单元格的边框样式 - 修复右侧选中线缺失问题 */
+:deep(.query-grid .ag-cell-focus),
+:deep(.query-grid .ag-cell-range-selected) {
+  border-right: 1px solid #2196F3 !important;
+  border-left: 1px solid #2196F3 !important;
+  border-top: 1px solid #2196F3 !important;
+  border-bottom: 1px solid #2196F3 !important;
+}
+
 :deep(.query-grid .ag-row),
 :deep(.query-grid .ag-header-row) {
   border-bottom: 1px dotted #c1ccc7 !important;
@@ -1818,6 +1831,15 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 .system-dark :deep(.query-grid .ag-header-cell),
 .system-dark :deep(.query-grid .ag-cell) {
   border-right: 1px dotted #4b5965 !important;
+}
+
+/* 深色主题选中单元格的边框样式 */
+.system-dark :deep(.query-grid .ag-cell-focus),
+.system-dark :deep(.query-grid .ag-cell-range-selected) {
+  border-right: 2px solid #64B5F6 !important;
+  border-left: 2px solid #64B5F6 !important;
+  border-top: 2px solid #64B5F6 !important;
+  border-bottom: 2px solid #64B5F6 !important;
 }
 
 .system-dark :deep(.query-grid .ag-row),
