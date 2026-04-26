@@ -12,7 +12,7 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton, NRadio, NRadioGroup } from 'naive-ui';
+import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal } from 'naive-ui';
 
 import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
 import { useThemeStore } from '@/store/modules/theme';
@@ -79,6 +79,19 @@ const selectedValue = ref('');
 const useLegacyTabHint = ref(false);
 const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
 
+// 颜色标注相关
+const colorMarkVisible = ref(false);
+const colorMarkField1 = ref('');
+const colorMarkOperator = ref('大于');
+const colorMarkField2 = ref('');
+const colorMarkColor = ref('白底红字');
+const colorMarkConfig = ref<{
+  field1: string;
+  operator: string;
+  field2: string;
+  style: Record<string, string>;
+} | null>(null);
+
 function normalizePageSize(size?: number) {
   return PAGE_SIZE_OPTIONS.includes(size as (typeof PAGE_SIZE_OPTIONS)[number]) ? size! : PAGE_SIZE_OPTIONS[0];
 }
@@ -140,8 +153,8 @@ const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
       definition.type = 'numericColumn';
     }
 
-    // 添加提示和异常样式处理
-    if (column.errorCondition || column.hintCondition) {
+    // 添加提示、异常和颜色标注样式处理
+    if (column.errorCondition || column.hintCondition || column.colorMarkEnabled) {
       definition.cellStyle = (params: any) => {
         const field = column.field;
         const data = params.data || {};
@@ -162,6 +175,38 @@ const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
           }
         }
 
+        // 最后检查颜色标注条件
+        if (column.colorMarkEnabled && colorMarkConfig.value) {
+          const { field1, operator, field2, style } = colorMarkConfig.value;
+          // 只处理当前列是字段一的情况
+          if (field === field1) {
+            const val1 = Number(data[field1]);
+            const val2 = Number(data[field2]);
+            let match = false;
+            switch (operator) {
+              case '大于':
+                match = val1 > val2;
+                break;
+              case '小于':
+                match = val1 < val2;
+                break;
+              case '等于':
+                match = val1 === val2;
+                break;
+              case '大于等于':
+                match = val1 >= val2;
+                break;
+              case '小于等于':
+                match = val1 <= val2;
+                break;
+              case '不等于':
+                match = val1 !== val2;
+                break;
+            }
+            if (match) return style;
+          }
+        }
+
         return null;
       };
     }
@@ -173,6 +218,16 @@ const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
 const filterableFields = computed(() => {
   return (pageMeta.value?.conditions || []).filter(item => item.filterable).map(item => item.fieldKey);
 });
+
+// 可颜色标注的列
+const colorMarkEnabledColumns = computed(() => {
+  return (pageMeta.value?.columns || [])
+    .filter(column => column.colorMarkEnabled)
+    .map(column => ({ label: column.title || column.field, value: column.field }));
+});
+
+// 是否有可颜色标注的列
+const hasColorMarkEnabledColumns = computed(() => colorMarkEnabledColumns.value.length > 0);
 
 const pinColumnOptions = computed(() => {
   const columns = gridApi.value?.getColumns() ?? [];
@@ -777,6 +832,56 @@ function handleDataDrill() {
     });
 }
 
+// 颜色标注相关函数
+function handleOpenColorMark() {
+  // 初始化默认值
+  if (colorMarkEnabledColumns.value.length > 0) {
+    colorMarkField1.value = colorMarkEnabledColumns.value[0]?.value || '';
+    colorMarkField2.value = colorMarkEnabledColumns.value[0]?.value || '';
+  }
+  colorMarkVisible.value = true;
+}
+
+function handleApplyColorMark() {
+  if (!colorMarkField1.value || !colorMarkField2.value) {
+    window.$message?.warning('请选择字段一和字段二');
+    return;
+  }
+
+  // 根据选择的颜色设置样式
+  let style: Record<string, string> = { color: 'red', fontWeight: 'bold' };
+  if (colorMarkColor.value === '白底蓝字') {
+    style = { color: 'blue', fontWeight: 'bold' };
+  } else if (colorMarkColor.value === '黄底红色') {
+    style = { backgroundColor: 'yellow', color: 'red', fontWeight: 'bold' };
+  }
+
+  // 保存颜色标注配置
+  colorMarkConfig.value = {
+    field1: colorMarkField1.value,
+    operator: colorMarkOperator.value,
+    field2: colorMarkField2.value,
+    style
+  };
+
+  // 刷新表格以应用样式
+  if (gridApi.value) {
+    gridApi.value.refreshCells({ force: true });
+  }
+
+  colorMarkVisible.value = false;
+  window.$message?.success('颜色标注已应用');
+}
+
+function handleClearColorMark() {
+  colorMarkConfig.value = null;
+  if (gridApi.value) {
+    gridApi.value.refreshCells({ force: true });
+  }
+  colorMarkVisible.value = false;
+  window.$message?.success('颜色标注已清除');
+}
+
 function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   gridApi.value = event.api;
   visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
@@ -849,6 +954,7 @@ onActivated(() => {
           <NButton @click="handleOpenFieldColumn">字段选择</NButton>
           <NButton @click="handleOpenCondition">条件面板</NButton>
           <NButton @click="handleDataDrill">数据钻取</NButton>
+          <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
           <NButton @click="handleReset">重置</NButton>
           <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
           <NButton secondary :disabled="props.nativeOnly" @click="handleOpenLegacyHint">复杂操作提示</NButton>
@@ -1014,6 +1120,49 @@ onActivated(() => {
         </NSpace>
       </NDrawerContent>
     </NDrawer>
+
+    <!-- 颜色标注弹窗 -->
+    <NModal v-model:show="colorMarkVisible" preset="card" title="颜色标注设置" class="w-480px" :mask-closable="false">
+      <NSpace vertical :size="16">
+        <NForm label-placement="left" label-width="80">
+          <NFormItem label="字段一">
+            <NSelect v-model:value="colorMarkField1" :options="colorMarkEnabledColumns" />
+          </NFormItem>
+          <NFormItem label="比较符">
+            <NSelect
+              v-model:value="colorMarkOperator"
+              :options="[
+                { label: '大于', value: '大于' },
+                { label: '小于', value: '小于' },
+                { label: '等于', value: '等于' },
+                { label: '大于等于', value: '大于等于' },
+                { label: '小于等于', value: '小于等于' },
+                { label: '不等于', value: '不等于' }
+              ]"
+            />
+          </NFormItem>
+          <NFormItem label="字段二">
+            <NSelect v-model:value="colorMarkField2" :options="colorMarkEnabledColumns" />
+          </NFormItem>
+          <NFormItem label="颜色">
+            <NSelect
+              v-model:value="colorMarkColor"
+              :options="[
+                { label: '白底红字', value: '白底红字' },
+                { label: '白底蓝字', value: '白底蓝字' },
+                { label: '黄底红色', value: '黄底红色' }
+              ]"
+            />
+          </NFormItem>
+        </NForm>
+
+        <NSpace justify="end">
+          <NButton @click="colorMarkVisible = false">取消</NButton>
+          <NButton @click="handleClearColorMark">清除</NButton>
+          <NButton type="primary" @click="handleApplyColorMark">应用</NButton>
+        </NSpace>
+      </NSpace>
+    </NModal>
   </div>
 </template>
 

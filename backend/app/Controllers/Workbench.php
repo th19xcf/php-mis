@@ -85,6 +85,12 @@ class Workbench extends BaseController
             throw new \RuntimeException('功能未配置列信息');
         }
 
+        $columnDefinitions = $this->buildColumnDefinitions($columns);
+        
+        // 调试：检查返回的列定义
+        $colorMarkCount = count(array_filter($columnDefinitions, fn($col) => $col['colorMarkEnabled'] ?? false));
+        error_log("buildWorkbenchContext: Total columns: " . count($columnDefinitions) . ", Color mark enabled: {$colorMarkCount}");
+        
         $definition = [
             'functionCode' => $functionCode,
             'title' => $functionAuth['menu2'],
@@ -107,7 +113,7 @@ class Workbench extends BaseController
                 'upkeep' => $functionAuth['upkeepAuth'] && $queryConfig['upkeepModule'] !== ''
             ],
             'conditions' => $this->buildConditionDefinitions($columns),
-            'columns' => $this->buildColumnDefinitions($columns),
+            'columns' => $columnDefinitions,
             'supportsStoredProcedure' => $queryConfig['mode'] === '存储过程',
             'fallbackHint' => $queryConfig['mode'] === '存储过程'
                 ? '当前功能为存储过程模式，Vue 工作台暂未接管执行链路，请先走旧页回退。'
@@ -368,6 +374,9 @@ class Workbench extends BaseController
 
         foreach ($columns as $column) {
             $title = (string) ($column['列名'] ?? '');
+            // 调试：检查可颜色标注字段
+            $colorMarkValue = $column['可颜色标注'] ?? 'not_set';
+            error_log("Column: {$title}, 可颜色标注: {$colorMarkValue}");
             $items[] = [
                 'field' => $title,
                 'title' => $title,
@@ -381,7 +390,9 @@ class Workbench extends BaseController
                 'hintCondition' => (string) ($column['提示条件'] ?? ''),
                 'hintStyle' => (string) ($column['提示样式设置'] ?? ''),
                 'errorCondition' => (string) ($column['异常条件'] ?? ''),
-                'errorStyle' => (string) ($column['异常样式设置'] ?? '')
+                'errorStyle' => (string) ($column['异常样式设置'] ?? ''),
+                // 颜色标注相关配置
+                'colorMarkEnabled' => (string) ($column['可颜色标注'] ?? '0') === '1'
             ];
         }
 

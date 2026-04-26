@@ -26,6 +26,8 @@ declare namespace Api {
       hintStyle?: string;
       errorCondition?: string;
       errorStyle?: string;
+      // 颜色标注相关配置
+      colorMarkEnabled?: boolean;
     }
 
     interface ConditionMeta {
