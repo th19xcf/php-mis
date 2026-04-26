@@ -224,10 +224,6 @@ export const useThemeStore = defineStore(SetupStoreId.Theme, () => {
 
   /** Cache theme settings */
   function cacheThemeSettings() {
-    const isProd = import.meta.env.PROD;
-
-    if (!isProd) return;
-
     localStg.set('themeSettings', settings.value);
   }
 
