@@ -46,5 +46,12 @@ declare namespace Api {
       /** record status */
       status: EnableStatus | null;
     } & T;
+
+    /** success response */
+    interface SuccessResponse {
+      code: string;
+      message: string;
+      data: any;
+    }
   }
 }

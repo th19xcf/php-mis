@@ -12,9 +12,22 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal } from 'naive-ui';
+import {
+  NButton,
+  NRadio,
+  NRadioGroup,
+  NForm,
+  NFormItem,
+  NSelect,
+  NModal,
+  NInput,
+  NDataTable,
+  NEmpty,
+  NSpin
+} from 'naive-ui';
 
 import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
+import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
 import { useThemeStore } from '@/store/modules/theme';
 import { useWorkbenchStore } from '@/store/modules/workbench';
 
@@ -157,6 +170,15 @@ const colorMarkConfig = ref<{
   field2: string;
   style: Record<string, string>;
 } | null>(null);
+
+// 批注相关
+const addCommentVisible = ref(false);
+const viewCommentVisible = ref(false);
+const commentFields = ref<Api.Comment.FieldInfo[]>([]);
+const commentKeyFields = ref<string>('');
+const commentList = ref<Api.Comment.CommentRecord[]>([]);
+const commentFormData = ref<Record<string, string>>({});
+const commentLoading = ref(false);
 
 function normalizePageSize(size?: number) {
   return PAGE_SIZE_OPTIONS.includes(size as (typeof PAGE_SIZE_OPTIONS)[number]) ? size! : PAGE_SIZE_OPTIONS[0];
@@ -784,16 +806,6 @@ function handleExport() {
   window.$message?.info('当前仅完成统一查询协议，导出接口待接入后端动作协议');
 }
 
-function handleOpenLegacyHint() {
-  if (props.nativeOnly) {
-    window.$message?.info('当前功能已锁定新协议链路，不再回退旧页。');
-    return;
-  }
-
-  useLegacyTabHint.value = true;
-  window.$message?.info('复杂操作仍建议切换到“旧页回退”标签继续处理');
-}
-
 function handleDataDrill() {
   // 参考旧版 Vgrid_aggrid.php，必须先选择 1 条记录
   const selectedRows = gridApi.value?.getSelectedRows() || [];
@@ -1038,6 +1050,157 @@ function handleDataDrill() {
     });
 }
 
+// 批注相关函数
+function getSelectedRowKeyFields(): Record<string, string | number> | null {
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    window.$message?.warning('请先选择一条记录');
+    return null;
+  }
+  if (selectedRows.length > 1) {
+    window.$message?.warning('只能选择一条记录');
+    return null;
+  }
+
+  const selectedRow = selectedRows[0];
+
+  // 解析关键字段
+  const keyFieldsStr = commentKeyFields.value;
+  if (!keyFieldsStr) {
+    return { id: selectedRow.id || selectedRow.ID || 0 };
+  }
+
+  const keyFields: Record<string, string | number> = {};
+  const fieldPairs = keyFieldsStr.split(';');
+  for (const pair of fieldPairs) {
+    const [fieldName, colName] = pair.split(':');
+    if (fieldName && colName) {
+      const value = selectedRow[colName.trim()];
+      if (value !== undefined && value !== null) {
+        keyFields[fieldName.trim()] = value;
+      }
+    }
+  }
+
+  return Object.keys(keyFields).length > 0 ? keyFields : { id: selectedRow.id || selectedRow.ID || 0 };
+}
+
+async function loadCommentFields() {
+  const functionCode = String(props.meta.functionCode || '').trim();
+  if (!functionCode) return;
+
+  try {
+    const { data, error } = await fetchCommentFields(functionCode);
+    console.log('批注字段接口返回:', { data, error });
+    if (data) {
+      commentFields.value = data.fields || [];
+      commentKeyFields.value = data.keyFields || '';
+      console.log('批注字段加载完成:', commentFields.value);
+    }
+    if (error) {
+      console.error('批注字段接口错误:', error);
+    }
+  } catch (error) {
+    console.error('加载批注字段失败:', error);
+  }
+}
+
+async function handleOpenAddComment() {
+  const keyFields = getSelectedRowKeyFields();
+  if (!keyFields) return;
+
+  await loadCommentFields();
+
+  // 获取当前选中的行数据
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  const selectedRow = selectedRows[0] || {};
+
+  // 初始化表单数据
+  commentFormData.value = {};
+  for (const field of commentFields.value) {
+    if (field.isKeyField && field.sourceColumn) {
+      // 关键字段自动填充选中行的值
+      commentFormData.value[field.name] = String(selectedRow[field.sourceColumn] || '');
+    } else {
+      // 录入字段初始化为空
+      commentFormData.value[field.name] = '';
+    }
+  }
+
+  addCommentVisible.value = true;
+}
+
+async function handleSubmitComment() {
+  const functionCode = String(props.meta.functionCode || '').trim();
+  if (!functionCode) return;
+
+  const keyFields = getSelectedRowKeyFields();
+  if (!keyFields) return;
+
+  // 验证必填字段（只验证非关键字段）
+  const inputFields = commentFields.value.filter(f => !f.isKeyField);
+  for (const field of inputFields) {
+    if (!commentFormData.value[field.name]?.trim()) {
+      window.$message?.warning(`请填写${field.comment || field.name}`);
+      return;
+    }
+  }
+
+  // 构建提交数据（只包含非关键字段）
+  const submitData: Record<string, string> = {};
+  for (const field of inputFields) {
+    submitData[field.name] = commentFormData.value[field.name];
+  }
+
+  commentLoading.value = true;
+  try {
+    const { error } = await addComment(functionCode, {
+      keyFields,
+      data: submitData
+    });
+
+    if (error) {
+      window.$message?.error('添加批注失败');
+      return;
+    }
+
+    window.$message?.success('添加批注成功');
+    addCommentVisible.value = false;
+  } catch {
+    window.$message?.error('添加批注失败');
+  } finally {
+    commentLoading.value = false;
+  }
+}
+
+async function handleOpenViewComment() {
+  const keyFields = getSelectedRowKeyFields();
+  if (!keyFields) return;
+
+  await loadCommentFields();
+  await loadCommentList(keyFields);
+  viewCommentVisible.value = true;
+}
+
+async function loadCommentList(keyFields: Record<string, string | number>) {
+  const functionCode = String(props.meta.functionCode || '').trim();
+  if (!functionCode) return;
+
+  commentLoading.value = true;
+  try {
+    const { data, error } = await fetchCommentList(functionCode, { keyFields });
+    if (error) {
+      window.$message?.error('获取批注列表失败');
+      return;
+    }
+    commentList.value = data?.records || [];
+  } catch {
+    window.$message?.error('获取批注列表失败');
+  } finally {
+    commentLoading.value = false;
+  }
+}
+
 // 颜色标注相关函数
 function handleOpenColorMark() {
   // 初始化默认值
@@ -1111,9 +1274,10 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           <NButton @click="handleOpenFieldColumn">字段选择</NButton>
           <NButton @click="handleOpenCondition">条件面板</NButton>
           <NButton @click="handleDataDrill">数据钻取</NButton>
+          <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddComment">添加批注</NButton>
+          <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
           <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
           <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
-          <NButton secondary :disabled="props.nativeOnly" @click="handleOpenLegacyHint">复杂操作提示</NButton>
         </NSpace>
         <div class="flex items-center gap-12px">
           <NInput v-model:value="quickKeyword" clearable placeholder="快速检索当前结果" class="w-280px" />
@@ -1319,6 +1483,76 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
         </NSpace>
       </NSpace>
     </NModal>
+
+    <!-- 添加批注弹窗 -->
+    <NModal v-model:show="addCommentVisible" preset="card" title="添加批注" class="w-600px" :mask-closable="false">
+      <NSpin :show="commentLoading">
+        <NSpace vertical :size="16">
+          <!-- 参考旧版的三列表头 -->
+          <div v-if="commentFields.length > 0" class="comment-form-header">
+            <div class="comment-form-col comment-col-name">列名</div>
+            <div class="comment-form-col comment-col-type">列类型</div>
+            <div class="comment-form-col comment-col-value">取值</div>
+          </div>
+
+          <!-- 字段列表 -->
+          <div v-if="commentFields.length > 0" class="comment-form-body">
+            <div v-for="field in commentFields" :key="field.name" class="comment-form-row">
+              <div class="comment-form-col comment-col-name">{{ field.comment || field.name }}</div>
+              <div class="comment-form-col comment-col-type">{{ field.type }}</div>
+              <div class="comment-form-col comment-col-value">
+                <NInput
+                  v-if="!field.isKeyField"
+                  v-model:value="commentFormData[field.name]"
+                  :placeholder="`请输入${field.comment || field.name}`"
+                  size="small"
+                />
+                <span v-else class="comment-key-field-value">{{ commentFormData[field.name] }}</span>
+              </div>
+            </div>
+          </div>
+
+          <NEmpty v-else description="该功能未配置批注模块" />
+
+          <NSpace justify="end">
+            <NButton @click="addCommentVisible = false">取消</NButton>
+            <NButton
+              v-if="commentFields.filter(f => !f.isKeyField).length > 0"
+              type="primary"
+              :loading="commentLoading"
+              @click="handleSubmitComment"
+            >
+              确定
+            </NButton>
+          </NSpace>
+        </NSpace>
+      </NSpin>
+    </NModal>
+
+    <!-- 查看批注弹窗 -->
+    <NModal v-model:show="viewCommentVisible" preset="card" title="查看批注" class="w-700px" :mask-closable="false">
+      <NSpin :show="commentLoading">
+        <NSpace vertical :size="16">
+          <NDataTable
+            v-if="commentList.length > 0"
+            :data="commentList"
+            :columns="[
+              { title: '操作人员', key: '操作人员', width: 120 },
+              ...commentFields.map(f => ({ title: f.comment || f.name, key: f.name })),
+              { title: '创建时间', key: '创建时间', width: 160 }
+            ]"
+            :pagination="{ pageSize: 10 }"
+            size="small"
+            bordered
+          />
+          <NEmpty v-else description="暂无批注记录" />
+
+          <NSpace justify="end">
+            <NButton @click="viewCommentVisible = false">关闭</NButton>
+          </NSpace>
+        </NSpace>
+      </NSpin>
+    </NModal>
   </div>
 </template>
 
@@ -1349,6 +1583,85 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 .ag-theme-shell-dynamic {
   height: 100%;
   min-height: 0;
+}
+
+/* 批注表单样式 - 参考旧版 */
+.comment-form-header {
+  display: flex;
+  background-color: #f5f5f5;
+  border: 1px solid #d9d9d9;
+  border-bottom: none;
+  font-weight: bold;
+}
+
+.comment-form-body {
+  border: 1px solid #d9d9d9;
+  border-top: none;
+}
+
+.comment-form-row {
+  display: flex;
+  border-bottom: 1px solid #d9d9d9;
+}
+
+.comment-form-row:last-child {
+  border-bottom: none;
+}
+
+.comment-form-col {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+}
+
+.comment-col-name {
+  width: 120px;
+  border-right: 1px solid #d9d9d9;
+  background-color: #fafafa;
+}
+
+.comment-col-type {
+  width: 80px;
+  border-right: 1px solid #d9d9d9;
+  background-color: #fafafa;
+  justify-content: center;
+}
+
+.comment-col-value {
+  flex: 1;
+}
+
+.comment-key-field-value {
+  color: #666;
+  font-style: italic;
+}
+
+/* 深色主题下的批注表单样式 */
+.system-dark .comment-form-header {
+  background-color: #2d2d2d;
+  border-color: #4b5965;
+}
+
+.system-dark .comment-form-body {
+  border-color: #4b5965;
+}
+
+.system-dark .comment-form-row {
+  border-bottom-color: #4b5965;
+}
+
+.system-dark .comment-form-row:last-child {
+  border-bottom: none;
+}
+
+.system-dark .comment-col-name,
+.system-dark .comment-col-type {
+  background-color: #1f1f1f;
+  border-right-color: #4b5965;
+}
+
+.system-dark .comment-key-field-value {
+  color: #999;
 }
 
 .workbench-grid-card {
@@ -1732,10 +2045,10 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 /* 选中单元格的边框样式 - 修复右侧选中线缺失问题 */
 :deep(.query-grid .ag-cell-focus),
 :deep(.query-grid .ag-cell-range-selected) {
-  border-right: 1px solid #2196F3 !important;
-  border-left: 1px solid #2196F3 !important;
-  border-top: 1px solid #2196F3 !important;
-  border-bottom: 1px solid #2196F3 !important;
+  border-right: 1px solid #2196f3 !important;
+  border-left: 1px solid #2196f3 !important;
+  border-top: 1px solid #2196f3 !important;
+  border-bottom: 1px solid #2196f3 !important;
 }
 
 :deep(.query-grid .ag-row),
@@ -1836,10 +2149,10 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 /* 深色主题选中单元格的边框样式 */
 .system-dark :deep(.query-grid .ag-cell-focus),
 .system-dark :deep(.query-grid .ag-cell-range-selected) {
-  border-right: 2px solid #64B5F6 !important;
-  border-left: 2px solid #64B5F6 !important;
-  border-top: 2px solid #64B5F6 !important;
-  border-bottom: 2px solid #64B5F6 !important;
+  border-right: 2px solid #64b5f6 !important;
+  border-left: 2px solid #64b5f6 !important;
+  border-top: 2px solid #64b5f6 !important;
+  border-bottom: 2px solid #64b5f6 !important;
 }
 
 .system-dark :deep(.query-grid .ag-row),

@@ -16,7 +16,8 @@ const defaultHeaders = apifoxToken ? { apifoxToken } : {};
 export const request = createFlatRequest(
   {
     baseURL,
-    headers: defaultHeaders
+    headers: defaultHeaders,
+    timeout: 30000 // 30秒超时
   },
   {
     defaultState: {

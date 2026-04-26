@@ -53,6 +53,15 @@ export function createStaticRoutes() {
       route.meta.icon = zhTitleIconMap[route.meta.title];
     }
 
+    // 隐藏通用页面、动态菜单、权限演示菜单
+    if (route.name === 'common' || route.name === 'menu-bridge' || route.name === 'permission-demo') {
+      route.meta = {
+        ...route.meta,
+        title: route.meta?.title || String(route.name),
+        hideInMenu: true
+      };
+    }
+
     if (route.name === 'system') {
       route.meta = {
         ...route.meta,
