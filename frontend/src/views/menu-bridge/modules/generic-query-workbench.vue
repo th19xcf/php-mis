@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, h, onMounted, watch } from 'vue';
+import { computed, ref, h, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -179,6 +179,76 @@ const commentKeyFields = ref<string>('');
 const commentList = ref<Api.Comment.CommentRecord[]>([]);
 const commentFormData = ref<Record<string, string>>({});
 const commentLoading = ref(false);
+
+// 工具栏滚动相关
+const toolbarScrollRef = ref<HTMLDivElement | null>(null);
+const showLeftArrow = ref(false);
+const showRightArrow = ref(false);
+let resizeObserver: ResizeObserver | null = null;
+
+// 检查滚动位置，控制箭头显示
+function checkScrollPosition() {
+  nextTick(() => {
+    if (!toolbarScrollRef.value) return;
+    const { scrollWidth, clientWidth } = toolbarScrollRef.value;
+    // 只有当内容真正溢出时才显示箭头
+    const hasOverflow = scrollWidth > clientWidth + 5; // 增加阈值，避免微小差异
+
+    // 当内容溢出时，左右箭头一直可见
+    showLeftArrow.value = hasOverflow;
+    showRightArrow.value = hasOverflow;
+
+    console.log('Toolbar scroll check:', {
+      scrollWidth,
+      clientWidth,
+      hasOverflow,
+      showLeftArrow: showLeftArrow.value,
+      showRightArrow: showRightArrow.value
+    });
+  });
+}
+
+// 滚动工具栏
+function scrollToolbar(direction: 'left' | 'right') {
+  if (!toolbarScrollRef.value) return;
+  const scrollAmount = 150; // 每次滚动距离
+  const targetScrollLeft =
+    direction === 'left'
+      ? toolbarScrollRef.value.scrollLeft - scrollAmount
+      : toolbarScrollRef.value.scrollLeft + scrollAmount;
+
+  toolbarScrollRef.value.scrollTo({
+    left: targetScrollLeft,
+    behavior: 'smooth'
+  });
+}
+
+// 初始化时检查滚动状态
+onMounted(() => {
+  // 初始检查，延迟确保 DOM 渲染完成
+  setTimeout(() => {
+    checkScrollPosition();
+  }, 100);
+
+  // 监听窗口大小变化
+  window.addEventListener('resize', checkScrollPosition);
+
+  // 使用 ResizeObserver 监听容器尺寸变化
+  if (toolbarScrollRef.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(() => {
+      checkScrollPosition();
+    });
+    resizeObserver.observe(toolbarScrollRef.value);
+  }
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkScrollPosition);
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
+});
 
 function normalizePageSize(size?: number) {
   return PAGE_SIZE_OPTIONS.includes(size as (typeof PAGE_SIZE_OPTIONS)[number]) ? size! : PAGE_SIZE_OPTIONS[0];
@@ -416,6 +486,11 @@ async function loadPage() {
       }
     }, 100);
 
+    // 缓存加载完成后，检查工具栏滚动状态
+    setTimeout(() => {
+      checkScrollPosition();
+    }, 150);
+
     return;
   }
 
@@ -428,6 +503,11 @@ async function loadPage() {
   }
 
   pageMeta.value = data.meta;
+
+  // 页面元数据加载完成后，检查工具栏滚动状态
+  setTimeout(() => {
+    checkScrollPosition();
+  }, 100);
 
   // 解析钻取参数
   const drillFilters: QueryFilter[] = [];
@@ -1266,20 +1346,58 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       :content-style="{ padding: '8px 10px' }"
       class="toolbar-card mb-6px rounded-12px shadow-sm"
     >
-      <div class="flex flex-wrap items-center justify-between gap-12px">
-        <NSpace>
-          <NButton @click="handleRefresh">刷新</NButton>
-          <NButton @click="handleReset">重置</NButton>
-          <NButton @click="handleOpenPinColumn">固定列</NButton>
-          <NButton @click="handleOpenFieldColumn">字段选择</NButton>
-          <NButton @click="handleOpenCondition">条件面板</NButton>
-          <NButton @click="handleDataDrill">数据钻取</NButton>
-          <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddComment">添加批注</NButton>
-          <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
-          <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
-          <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
-        </NSpace>
-        <div class="flex items-center gap-12px">
+      <div class="flex items-center gap-12px">
+        <!-- 左侧按钮区域 - 可横向滚动 -->
+        <div class="flex items-center flex-1 min-w-0">
+          <!-- 左箭头 -->
+          <NButton
+            v-if="showLeftArrow"
+            quaternary
+            circle
+            size="small"
+            class="scroll-arrow mr-8px"
+            @click="scrollToolbar('left')"
+          >
+            <template #icon>
+              <SvgIcon icon="material-symbols:chevron-left" />
+            </template>
+          </NButton>
+
+          <!-- 按钮容器 -->
+          <div
+            ref="toolbarScrollRef"
+            class="toolbar-scroll flex items-center gap-8px flex-nowrap overflow-x-hidden"
+            @scroll="checkScrollPosition"
+          >
+            <NButton @click="handleRefresh">刷新</NButton>
+            <NButton @click="handleReset">重置</NButton>
+            <NButton @click="handleOpenPinColumn">固定列</NButton>
+            <NButton @click="handleOpenFieldColumn">字段选择</NButton>
+            <NButton @click="handleOpenCondition">条件面板</NButton>
+            <NButton @click="handleDataDrill">数据钻取</NButton>
+            <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddComment">添加批注</NButton>
+            <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
+            <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
+            <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
+          </div>
+
+          <!-- 右箭头 -->
+          <NButton
+            v-if="showRightArrow"
+            quaternary
+            circle
+            size="small"
+            class="scroll-arrow ml-8px"
+            @click="scrollToolbar('right')"
+          >
+            <template #icon>
+              <SvgIcon icon="material-symbols:chevron-right" />
+            </template>
+          </NButton>
+        </div>
+
+        <!-- 右侧搜索框和信息栏 - 固定 -->
+        <div class="flex items-center gap-12px flex-shrink-0">
           <NInput v-model:value="quickKeyword" clearable placeholder="快速检索当前结果" class="w-280px" />
           <NTag type="success" size="small">{{ String(pageMeta?.functionCode || props.meta.functionCode || '') }}</NTag>
         </div>
@@ -1572,6 +1690,28 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 .toolbar-card,
 .grid-card {
   background: #ffffff;
+}
+
+/* 工具栏滚动样式 */
+.toolbar-scroll {
+  flex: 1;
+  min-width: 0;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.toolbar-scroll::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+.scroll-arrow {
+  flex-shrink: 0;
+  color: var(--n-text-color);
+  transition: opacity 0.2s;
+}
+
+.scroll-arrow:hover {
+  color: var(--n-primary-color);
 }
 
 .ag-theme-shell {
