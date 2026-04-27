@@ -25,7 +25,8 @@ export function createStaticRoutes() {
         i18nKey: 'route.permission-demo',
         icon: 'mdi:shield-account',
         order: 2,
-        roles: ['R_ADMIN']
+        roles: ['R_ADMIN'],
+        title: route.meta?.title || 'Permission Demo'
       };
     }
 
@@ -35,27 +36,8 @@ export function createStaticRoutes() {
         i18nKey: 'route.system',
         icon: 'mdi:cog-outline',
         order: 3,
-        roles: ['R_ADMIN']
-      };
-    }
-
-    if (route.name === 'system_user') {
-      route.meta = {
-        ...route.meta,
-        i18nKey: 'route.system_user',
-        icon: 'mdi:account-multiple-outline',
-        order: 1,
-        roles: ['R_ADMIN']
-      };
-    }
-
-    if (route.name === 'system_role') {
-      route.meta = {
-        ...route.meta,
-        i18nKey: 'route.system_role',
-        icon: 'mdi:badge-account-outline',
-        order: 2,
-        roles: ['R_SUPER', 'R_ADMIN']
+        roles: ['R_ADMIN'],
+        title: route.meta?.title || 'System'
       };
     }
 
