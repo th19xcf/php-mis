@@ -41,6 +41,7 @@ class Comment extends BaseController
         );
 
         $row = $this->common->select($sql)->getRowArray();
+        log_message('debug', "Comment::getCommentConfig 方式1查询结果: " . json_encode($row));
         if ($row && !empty($row['数据表名'])) {
             return $row;
         }
@@ -50,7 +51,7 @@ class Comment extends BaseController
             'select 
                 t2.备注模块,t2.备注表名,t2.功能编码,t2.原表字段,
                 t1.模块名称,
-                t3.数据表名
+                t2.备注表名 as 数据表名
             from def_function as t1
             inner join def_query_config as t3 on t1.模块名称=t3.查询模块
             left join def_comment_config as t2 on t3.备注模块=t2.备注模块
@@ -60,6 +61,9 @@ class Comment extends BaseController
         );
 
         $row = $this->common->select($sql)->getRowArray();
+        
+        log_message('debug', "Comment::getCommentConfig 方式2查询结果: " . json_encode($row));
+        
         return $row ?: null;
     }
 
@@ -71,6 +75,12 @@ class Comment extends BaseController
         $session = \Config\Services::session();
         $userRole = trim((string) $session->get('user_role'));
 
+        // 如果没有用户角色，返回无权限
+        if (empty($userRole)) {
+            log_message('warning', "Comment::checkCommentAuth - 用户角色为空");
+            return false;
+        }
+
         $sql = sprintf(
             'select max(备注授权) as 备注授权
             from view_role
@@ -79,8 +89,13 @@ class Comment extends BaseController
             $this->quote($functionCode)
         );
 
-        $row = $this->common->select($sql)->getRowArray();
-        return ($row['备注授权'] ?? '0') === '1';
+        try {
+            $row = $this->common->select($sql)->getRowArray();
+            return ($row['备注授权'] ?? '0') === '1';
+        } catch (\Throwable $e) {
+            log_message('error', "Comment::checkCommentAuth - SQL错误: " . $e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -92,7 +107,10 @@ class Comment extends BaseController
     {
         try {
             if ($functionCode === '') {
-                return $this->error(ApiCode::PARAM_ERROR, '功能编码不能为空');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '功能编码不能为空'
+                ]);
             }
 
             // 获取请求参数
@@ -100,18 +118,28 @@ class Comment extends BaseController
             $keyFields = $payload['keyFields'] ?? [];
 
             if (empty($keyFields)) {
-                return $this->success(['records' => [], 'total' => 0]);
+                return $this->response->setJSON([
+                    'code' => ApiCode::SUCCESS,
+                    'msg' => 'success',
+                    'data' => ['records' => [], 'total' => 0]
+                ]);
             }
 
             // 获取批注配置
             $config = $this->getCommentConfig($functionCode);
             if (!$config) {
-                return $this->error(ApiCode::PARAM_ERROR, '该功能未配置批注模块');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '该功能未配置批注模块'
+                ]);
             }
 
             $commentTable = $config['数据表名'];
             if (empty($commentTable)) {
-                return $this->error(ApiCode::PARAM_ERROR, '批注表名未配置');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '批注表名未配置'
+                ]);
             }
 
             // 构建查询条件
@@ -125,7 +153,11 @@ class Comment extends BaseController
             }
 
             if (empty($whereConditions)) {
-                return $this->success(['records' => [], 'total' => 0]);
+                return $this->response->setJSON([
+                    'code' => ApiCode::SUCCESS,
+                    'msg' => 'success',
+                    'data' => ['records' => [], 'total' => 0]
+                ]);
             }
 
             $whereStr = implode(' and ', $whereConditions);
@@ -139,12 +171,19 @@ class Comment extends BaseController
 
             $results = $this->common->select($sql)->getResultArray();
 
-            return $this->success([
-                'records' => $results,
-                'total' => count($results)
+            return $this->response->setJSON([
+                'code' => ApiCode::SUCCESS,
+                'msg' => 'success',
+                'data' => [
+                    'records' => $results,
+                    'total' => count($results)
+                ]
             ]);
         } catch (\Throwable $e) {
-            return $this->error(ApiCode::SERVER_ERROR, '获取批注列表失败：' . $e->getMessage());
+            return $this->response->setJSON([
+                'code' => ApiCode::SERVER_ERROR,
+                'msg' => '获取批注列表失败：' . $e->getMessage()
+            ]);
         }
     }
 
@@ -157,12 +196,18 @@ class Comment extends BaseController
     {
         try {
             if ($functionCode === '') {
-                return $this->error(ApiCode::PARAM_ERROR, '功能编码不能为空');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '功能编码不能为空'
+                ]);
             }
 
             // 检查权限
             if (!$this->checkCommentAuth($functionCode)) {
-                return $this->error(ApiCode::AUTH_UNAUTHORIZED, '无批注权限');
+                return $this->response->setJSON([
+                    'code' => ApiCode::AUTH_UNAUTHORIZED,
+                    'msg' => '无批注权限'
+                ]);
             }
 
             // 获取请求参数
@@ -171,23 +216,47 @@ class Comment extends BaseController
             $commentData = $payload['data'] ?? [];
 
             if (empty($keyFields)) {
-                return $this->error(ApiCode::PARAM_ERROR, '关键字段不能为空');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '关键字段不能为空'
+                ]);
             }
 
             if (empty($commentData)) {
-                return $this->error(ApiCode::PARAM_ERROR, '批注内容不能为空');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '批注内容不能为空'
+                ]);
             }
 
             // 获取批注配置
             $config = $this->getCommentConfig($functionCode);
             if (!$config) {
-                return $this->error(ApiCode::PARAM_ERROR, '该功能未配置批注模块');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '该功能未配置批注模块'
+                ]);
             }
 
             $commentTable = $config['数据表名'];
             if (empty($commentTable)) {
-                return $this->error(ApiCode::PARAM_ERROR, '批注表名未配置');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '批注表名未配置'
+                ]);
             }
+
+            // 获取表结构，验证字段是否存在
+            $sql = sprintf('show columns from %s', $commentTable);
+            $tableColumns = $this->common->select($sql)->getResultArray();
+            $validFields = [];
+            foreach ($tableColumns as $col) {
+                $fieldName = $col['Field'] ?? $col['field'] ?? '';
+                if ($fieldName) {
+                    $validFields[] = $fieldName;
+                }
+            }
+            log_message('debug', "Comment::add - 表 {$commentTable} 的有效字段: " . json_encode($validFields));
 
             // 获取当前用户信息
             $session = \Config\Services::session();
@@ -197,18 +266,28 @@ class Comment extends BaseController
             $fields = [];
             $values = [];
 
-            // 添加关键字段
+            // 添加关键字段（验证字段是否存在）
+            log_message('debug', "Comment::add - 接收到的关键字段: " . json_encode($keyFields));
             foreach ($keyFields as $field => $value) {
+                if (!in_array($field, $validFields, true)) {
+                    log_message('warning', "Comment::add - 字段 {$field} 不存在于表 {$commentTable}");
+                    continue;
+                }
                 $fields[] = $field;
                 if (is_numeric($value)) {
                     $values[] = $value;
                 } else {
                     $values[] = sprintf('"%s"', $value);
                 }
+                log_message('debug', "Comment::add - 添加关键字段 {$field} = {$value}");
             }
 
-            // 添加批注数据字段
+            // 添加批注数据字段（验证字段是否存在）
             foreach ($commentData as $field => $value) {
+                if (!in_array($field, $validFields, true)) {
+                    log_message('warning', "Comment::add - 字段 {$field} 不存在于表 {$commentTable}");
+                    continue;
+                }
                 $fields[] = $field;
                 if (is_numeric($value)) {
                     $values[] = $value;
@@ -229,11 +308,26 @@ class Comment extends BaseController
                 implode(',', $values)
             );
 
-            $this->common->exec($sql);
+            log_message('debug', "Comment::add - 执行SQL: {$sql}");
 
-            return $this->success(null, '添加批注成功');
+            try {
+                $this->common->exec($sql);
+            } catch (\Throwable $e) {
+                log_message('error', "Comment::add - SQL执行失败: " . $e->getMessage());
+                log_message('error', "Comment::add - SQL语句: {$sql}");
+                throw $e;
+            }
+
+            return $this->response->setJSON([
+                'code' => ApiCode::SUCCESS,
+                'msg' => '添加批注成功'
+            ]);
         } catch (\Throwable $e) {
-            return $this->error(ApiCode::SERVER_ERROR, '添加批注失败：' . $e->getMessage());
+            log_message('error', 'Comment::add - 异常: ' . $e->getMessage());
+            return $this->response->setJSON([
+                'code' => ApiCode::SERVER_ERROR,
+                'msg' => '添加批注失败：' . $e->getMessage()
+            ]);
         }
     }
 
@@ -246,20 +340,35 @@ class Comment extends BaseController
     {
         try {
             if ($functionCode === '') {
-                return $this->error(ApiCode::PARAM_ERROR, '功能编码不能为空');
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => '功能编码不能为空'
+                ]);
             }
 
             // 获取批注配置
             $config = $this->getCommentConfig($functionCode);
             if (!$config) {
-                return $this->success(['fields' => []]);
+                log_message('debug', "Comment::fields - 未找到功能编码 {$functionCode} 的批注配置");
+                return $this->response->setJSON([
+                    'code' => ApiCode::SUCCESS,
+                    'msg' => 'success',
+                    'data' => ['fields' => []]
+                ]);
             }
 
             // 查询批注表的字段结构
-            $commentTable = $config['数据表名'];
+            $commentTable = $config['数据表名'] ?? '';
             if (empty($commentTable)) {
-                return $this->success(['fields' => []]);
+                log_message('debug', "Comment::fields - 功能编码 {$functionCode} 的数据表名为空");
+                return $this->response->setJSON([
+                    'code' => ApiCode::SUCCESS,
+                    'msg' => 'success',
+                    'data' => ['fields' => []]
+                ]);
             }
+
+            log_message('debug', "Comment::fields - 查询表 {$commentTable} 的字段结构");
 
             // 获取表字段信息
             $sql = sprintf(
@@ -267,11 +376,22 @@ class Comment extends BaseController
                 $commentTable
             );
 
-            $results = $this->common->select($sql)->getResultArray();
+            try {
+                $results = $this->common->select($sql)->getResultArray();
+                log_message('debug', "Comment::fields - 表字段查询结果: " . json_encode($results));
+            } catch (\Throwable $e) {
+                log_message('error', "Comment::fields - 查询表字段失败: " . $e->getMessage());
+                return $this->response->setJSON([
+                    'code' => ApiCode::SUCCESS,
+                    'msg' => 'success',
+                    'data' => ['fields' => []]
+                ]);
+            }
 
             // 解析关键字段映射（字段名 -> 列名）
             $keyFieldMap = [];
             $keyFieldsStr = $config['原表字段'] ?? '';
+            log_message('debug', "Comment::fields - 原表字段配置: {$keyFieldsStr}");
             if ($keyFieldsStr !== '') {
                 // 格式: "字段名1:列名1;字段名2:列名2" 或 "字段名1;字段名2"
                 $pairs = explode(';', $keyFieldsStr);
@@ -289,12 +409,18 @@ class Comment extends BaseController
                     }
                 }
             }
+            log_message('debug', "Comment::fields - 解析后的关键字段映射: " . json_encode($keyFieldMap));
 
             // 过滤掉系统字段，但保留关键字段用于显示
             $excludeFields = ['id', '操作人员', '创建时间', '更新时间'];
             $fields = [];
             foreach ($results as $row) {
-                $fieldName = $row['Field'];
+                // 处理字段名大小写（MySQL 返回的可能是大写或小写）
+                $fieldName = $row['Field'] ?? $row['field'] ?? '';
+                if (empty($fieldName)) {
+                    continue;
+                }
+                
                 // 跳过系统字段
                 if (in_array($fieldName, $excludeFields, true)) {
                     continue;
@@ -303,21 +429,36 @@ class Comment extends BaseController
                 // 判断是否为关键字段
                 $isKeyField = isset($keyFieldMap[$fieldName]);
                 
+                // 获取字段类型和注释（处理大小写）
+                $fieldType = $row['Type'] ?? $row['type'] ?? 'varchar';
+                $fieldComment = $row['Comment'] ?? $row['comment'] ?? $fieldName;
+                
                 $fields[] = [
                     'name' => $fieldName,
-                    'type' => $this->getFieldType($row['Type']),
-                    'comment' => $row['Comment'] ?? $fieldName,
+                    'type' => $this->getFieldType($fieldType),
+                    'comment' => $fieldComment,
                     'isKeyField' => $isKeyField,
                     'sourceColumn' => $keyFieldMap[$fieldName] ?? ''
                 ];
             }
+            
+            log_message('debug', "Comment::fields - 处理后的字段列表: " . json_encode($fields));
 
-            return $this->success([
-                'fields' => $fields,
-                'keyFields' => $config['原表字段'] ?? ''
+            return $this->response->setJSON([
+                'code' => ApiCode::SUCCESS,
+                'msg' => 'success',
+                'data' => [
+                    'fields' => $fields,
+                    'keyFields' => $config['原表字段'] ?? ''
+                ]
             ]);
         } catch (\Throwable $e) {
-            return $this->success(['fields' => []]);
+            log_message('error', 'Comment::fields - 异常: ' . $e->getMessage());
+            return $this->response->setJSON([
+                'code' => ApiCode::SUCCESS,
+                'msg' => 'success',
+                'data' => ['fields' => []]
+            ]);
         }
     }
 
@@ -334,5 +475,13 @@ class Comment extends BaseController
             return '日期';
         }
         return '字符';
+    }
+
+    /**
+     * 辅助方法：转义字符串
+     */
+    private function quote(string $value): string
+    {
+        return '"' . $value . '"';
     }
 }

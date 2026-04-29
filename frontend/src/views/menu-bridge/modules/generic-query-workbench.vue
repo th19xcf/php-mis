@@ -179,12 +179,22 @@ const commentKeyFields = ref<string>('');
 const commentList = ref<Api.Comment.CommentRecord[]>([]);
 const commentFormData = ref<Record<string, string>>({});
 const commentLoading = ref(false);
-// 存储从主表带过来的关键字段值
+// 存储从主表带过来的关键字段值（使用全局变量确保数据不丢失）
 const commentKeyFieldValues = ref<Record<string, string | number>>({});
 // 备注模块名称
 const commentModuleName = ref<string>('');
 // 备注说明内容
 const commentRemark = ref<string>('');
+
+// 计算属性：获取关键字段列表（用于模板显示）
+const keyFieldList = computed(() => {
+  return commentFields.value.filter(f => f.isKeyField);
+});
+
+// 计算属性：关键字段值的数量
+const keyFieldCount = computed(() => {
+  return Object.keys(commentKeyFieldValues.value).length;
+});
 
 // 工具栏滚动相关
 const toolbarScrollRef = ref<HTMLDivElement | null>(null);
@@ -1221,19 +1231,27 @@ async function handleOpenAddComment() {
   // 先加载字段配置（获取 keyFields 配置）
   await loadCommentFields();
 
+  // 调试：检查 commentKeyFields 的值
+  console.log('loadCommentFields 后 commentKeyFields.value:', commentKeyFields.value);
+
   // 现在有了 keyFields 配置，可以正确解析关键字段值
   const keyFields = getSelectedRowKeyFields();
   if (!keyFields) return;
 
   console.log('获取到的关键字段值:', keyFields);
+  console.log('keyFields 中的键:', Object.keys(keyFields));
   console.log('选中行数据:', selectedRow);
 
   // 保存关键字段值用于显示
   commentKeyFieldValues.value = keyFields;
+  
+  // 同时保存到 window 对象，确保数据不会丢失
+  (window as any).__commentKeyFieldValues = keyFields;
+  console.log('保存到 window.__commentKeyFieldValues:', keyFields);
 
   // 设置备注模块名称（从功能编码或配置中获取）
   const functionCode = String(props.meta.functionCode || '').trim();
-  commentModuleName.value = pageMeta.value?.moduleName || functionCode;
+  commentModuleName.value = (pageMeta.value as any)?.module || functionCode;
 
   // 重置备注说明
   commentRemark.value = '';
@@ -1263,8 +1281,20 @@ async function handleSubmitComment() {
   const functionCode = String(props.meta.functionCode || '').trim();
   if (!functionCode) return;
 
-  const keyFields = getSelectedRowKeyFields();
-  if (!keyFields) return;
+  // 从 commentFormData 构建关键字段（因为 commentFormData 包含正确的关键字段值）
+  const keyFields: Record<string, string | number> = {};
+  for (const field of commentFields.value) {
+    if (field.isKeyField && commentFormData.value[field.name]) {
+      keyFields[field.name] = commentFormData.value[field.name];
+    }
+  }
+  
+  console.log('从 commentFormData 构建的关键字段:', keyFields);
+
+  if (Object.keys(keyFields).length === 0) {
+    window.$message?.warning('关键字段为空，请重新选择记录');
+    return;
+  }
 
   // 验证备注说明必填
   if (!commentRemark.value.trim()) {
@@ -1660,7 +1690,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       <NSpin :show="commentLoading">
         <NSpace vertical :size="16">
           <!-- 1. 关键字段列表（从原表字段配置中提取） -->
-          <div v-if="Object.keys(commentKeyFieldValues).length > 0" class="comment-form-wrapper">
+          <div v-if="keyFieldCount > 0" class="comment-form-wrapper">
             <!-- 表头 -->
             <div
               class="comment-form-header"
@@ -1687,10 +1717,10 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
               :style="isDarkMode ? { borderColor: '#4b5965' } : {}"
             >
               <div
-                v-for="(field, index) in commentFields.filter(f => f.isKeyField)"
+                v-for="(field, index) in keyFieldList"
                 :key="field.name"
                 class="comment-form-row"
-                :style="isDarkMode ? { borderBottomColor: '#4b5965', borderBottom: index === commentFields.filter(f => f.isKeyField).length - 1 ? 'none' : '1px solid #4b5965' } : {}"
+                :style="isDarkMode ? { borderBottomColor: '#4b5965', borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965' } : {}"
               >
                 <div
                   class="comment-form-col comment-col-name"
