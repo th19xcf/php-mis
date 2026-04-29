@@ -179,6 +179,12 @@ const commentKeyFields = ref<string>('');
 const commentList = ref<Api.Comment.CommentRecord[]>([]);
 const commentFormData = ref<Record<string, string>>({});
 const commentLoading = ref(false);
+// 存储从主表带过来的关键字段值
+const commentKeyFieldValues = ref<Record<string, string | number>>({});
+// 备注模块名称
+const commentModuleName = ref<string>('');
+// 备注说明内容
+const commentRemark = ref<string>('');
 
 // 工具栏滚动相关
 const toolbarScrollRef = ref<HTMLDivElement | null>(null);
@@ -1131,27 +1137,14 @@ function handleDataDrill() {
 }
 
 // 批注相关函数
-function getSelectedRowKeyFields(): Record<string, string | number> | null {
-  const selectedRows = gridApi.value?.getSelectedRows() || [];
-  if (selectedRows.length === 0) {
-    window.$message?.warning('请先选择一条记录');
-    return null;
-  }
-  if (selectedRows.length > 1) {
-    window.$message?.warning('只能选择一条记录');
-    return null;
-  }
-
-  const selectedRow = selectedRows[0];
-
-  // 解析关键字段
-  const keyFieldsStr = commentKeyFields.value;
-  if (!keyFieldsStr) {
+// 从 keyFieldsConfig 字符串解析关键字段值（格式：字段名:列名;字段名:列名）
+function parseKeyFieldsFromRow(selectedRow: any, keyFieldsConfig: string): Record<string, string | number> {
+  if (!keyFieldsConfig) {
     return { id: selectedRow.id || selectedRow.ID || 0 };
   }
 
   const keyFields: Record<string, string | number> = {};
-  const fieldPairs = keyFieldsStr.split(';');
+  const fieldPairs = keyFieldsConfig.split(';');
   for (const pair of fieldPairs) {
     const [fieldName, colName] = pair.split(':');
     if (fieldName && colName) {
@@ -1165,6 +1158,22 @@ function getSelectedRowKeyFields(): Record<string, string | number> | null {
   return Object.keys(keyFields).length > 0 ? keyFields : { id: selectedRow.id || selectedRow.ID || 0 };
 }
 
+function getSelectedRowKeyFields(keyFieldsConfig?: string): Record<string, string | number> | null {
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    window.$message?.warning('请先选择一条记录');
+    return null;
+  }
+  if (selectedRows.length > 1) {
+    window.$message?.warning('只能选择一条记录');
+    return null;
+  }
+
+  const selectedRow = selectedRows[0];
+  const config = keyFieldsConfig || commentKeyFields.value;
+  return parseKeyFieldsFromRow(selectedRow, config);
+}
+
 async function loadCommentFields() {
   const functionCode = String(props.meta.functionCode || '').trim();
   if (!functionCode) return;
@@ -1176,6 +1185,17 @@ async function loadCommentFields() {
       commentFields.value = data.fields || [];
       commentKeyFields.value = data.keyFields || '';
       console.log('批注字段加载完成:', commentFields.value);
+      console.log('关键字段配置:', commentKeyFields.value);
+      // 打印每个字段的详细信息
+      commentFields.value.forEach((field, index) => {
+        console.log(`字段 ${index}:`, {
+          name: field.name,
+          comment: field.comment,
+          type: field.type,
+          isKeyField: field.isKeyField,
+          sourceColumn: field.sourceColumn
+        });
+      });
     }
     if (error) {
       console.error('批注字段接口错误:', error);
@@ -1186,27 +1206,56 @@ async function loadCommentFields() {
 }
 
 async function handleOpenAddComment() {
+  // 先检查是否有选中行
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    window.$message?.warning('请先选择一条记录');
+    return;
+  }
+  if (selectedRows.length > 1) {
+    window.$message?.warning('只能选择一条记录');
+    return;
+  }
+  const selectedRow = selectedRows[0];
+
+  // 先加载字段配置（获取 keyFields 配置）
+  await loadCommentFields();
+
+  // 现在有了 keyFields 配置，可以正确解析关键字段值
   const keyFields = getSelectedRowKeyFields();
   if (!keyFields) return;
 
-  await loadCommentFields();
+  console.log('获取到的关键字段值:', keyFields);
+  console.log('选中行数据:', selectedRow);
 
-  // 获取当前选中的行数据
-  const selectedRows = gridApi.value?.getSelectedRows() || [];
-  const selectedRow = selectedRows[0] || {};
+  // 保存关键字段值用于显示
+  commentKeyFieldValues.value = keyFields;
 
-  // 初始化表单数据
+  // 设置备注模块名称（从功能编码或配置中获取）
+  const functionCode = String(props.meta.functionCode || '').trim();
+  commentModuleName.value = pageMeta.value?.moduleName || functionCode;
+
+  // 重置备注说明
+  commentRemark.value = '';
+
+  // 初始化表单数据 - 只包含关键字段
   commentFormData.value = {};
   for (const field of commentFields.value) {
-    if (field.isKeyField && field.sourceColumn) {
-      // 关键字段自动填充选中行的值
-      commentFormData.value[field.name] = String(selectedRow[field.sourceColumn] || '');
-    } else {
-      // 录入字段初始化为空
-      commentFormData.value[field.name] = '';
+    if (field.isKeyField) {
+      // 关键字段：优先使用从keyFields获取的值，其次使用sourceColumn从选中行获取
+      const keyValue = keyFields[field.name];
+      if (keyValue !== undefined) {
+        commentFormData.value[field.name] = String(keyValue);
+      } else if (field.sourceColumn) {
+        commentFormData.value[field.name] = String(selectedRow[field.sourceColumn] || '');
+      } else {
+        commentFormData.value[field.name] = '';
+      }
+      console.log(`关键字段 ${field.name} 赋值:`, commentFormData.value[field.name]);
     }
   }
 
+  console.log('最终表单数据:', commentFormData.value);
   addCommentVisible.value = true;
 }
 
@@ -1217,20 +1266,17 @@ async function handleSubmitComment() {
   const keyFields = getSelectedRowKeyFields();
   if (!keyFields) return;
 
-  // 验证必填字段（只验证非关键字段）
-  const inputFields = commentFields.value.filter(f => !f.isKeyField);
-  for (const field of inputFields) {
-    if (!commentFormData.value[field.name]?.trim()) {
-      window.$message?.warning(`请填写${field.comment || field.name}`);
-      return;
-    }
+  // 验证备注说明必填
+  if (!commentRemark.value.trim()) {
+    window.$message?.warning('请填写备注说明');
+    return;
   }
 
-  // 构建提交数据（只包含非关键字段）
-  const submitData: Record<string, string> = {};
-  for (const field of inputFields) {
-    submitData[field.name] = commentFormData.value[field.name];
-  }
+  // 构建提交数据：备注模块 + 备注说明
+  const submitData: Record<string, string> = {
+    '备注模块': commentModuleName.value,
+    '备注说明': commentRemark.value
+  };
 
   commentLoading.value = true;
   try {
@@ -1603,39 +1649,128 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     </NModal>
 
     <!-- 添加批注弹窗 -->
-    <NModal v-model:show="addCommentVisible" preset="card" title="添加批注" class="w-600px" :mask-closable="false">
+    <NModal
+      v-model:show="addCommentVisible"
+      preset="card"
+      title="添加批注"
+      class="w-600px"
+      :class="{ 'comment-modal-dark': isDarkMode }"
+      :mask-closable="false"
+    >
       <NSpin :show="commentLoading">
         <NSpace vertical :size="16">
-          <!-- 参考旧版的三列表头 -->
-          <div v-if="commentFields.length > 0" class="comment-form-header">
-            <div class="comment-form-col comment-col-name">列名</div>
-            <div class="comment-form-col comment-col-type">列类型</div>
-            <div class="comment-form-col comment-col-value">取值</div>
-          </div>
+          <!-- 1. 关键字段列表（从原表字段配置中提取） -->
+          <div v-if="Object.keys(commentKeyFieldValues).length > 0" class="comment-form-wrapper">
+            <!-- 表头 -->
+            <div
+              class="comment-form-header"
+              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
+            >
+              <div
+                class="comment-form-col comment-col-name"
+                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+              >
+                列名
+              </div>
+              <div
+                class="comment-form-col comment-col-type"
+                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+              >
+                列类型
+              </div>
+              <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">取值</div>
+            </div>
 
-          <!-- 字段列表 -->
-          <div v-if="commentFields.length > 0" class="comment-form-body">
-            <div v-for="field in commentFields" :key="field.name" class="comment-form-row">
-              <div class="comment-form-col comment-col-name">{{ field.comment || field.name }}</div>
-              <div class="comment-form-col comment-col-type">{{ field.type }}</div>
-              <div class="comment-form-col comment-col-value">
-                <NInput
-                  v-if="!field.isKeyField"
-                  v-model:value="commentFormData[field.name]"
-                  :placeholder="`请输入${field.comment || field.name}`"
-                  size="small"
-                />
-                <span v-else class="comment-key-field-value">{{ commentFormData[field.name] }}</span>
+            <!-- 关键字段数据 -->
+            <div
+              class="comment-form-body"
+              :style="isDarkMode ? { borderColor: '#4b5965' } : {}"
+            >
+              <div
+                v-for="(field, index) in commentFields.filter(f => f.isKeyField)"
+                :key="field.name"
+                class="comment-form-row"
+                :style="isDarkMode ? { borderBottomColor: '#4b5965', borderBottom: index === commentFields.filter(f => f.isKeyField).length - 1 ? 'none' : '1px solid #4b5965' } : {}"
+              >
+                <div
+                  class="comment-form-col comment-col-name"
+                  :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+                >
+                  {{ field.comment || field.name }}
+                </div>
+                <div
+                  class="comment-form-col comment-col-type"
+                  :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+                >
+                  {{ field.type }}
+                </div>
+                <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
+                  <span class="comment-key-field-value" :style="isDarkMode ? { color: '#b0b0b0' } : {}">
+                    {{ commentFormData[field.name] }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
           <NEmpty v-else description="该功能未配置批注模块" />
 
+          <!-- 2. 备注模块 -->
+          <div class="comment-form-wrapper">
+            <div
+              class="comment-form-header"
+              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
+            >
+              <div
+                class="comment-form-col comment-col-name"
+                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+              >
+                备注模块
+              </div>
+              <div
+                class="comment-form-col comment-col-type"
+                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+              >
+                字符
+              </div>
+              <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
+                <span :style="isDarkMode ? { color: '#e0e0e0' } : {}">{{ commentModuleName }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 备注说明 -->
+          <div class="comment-form-wrapper">
+            <div
+              class="comment-form-header"
+              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
+            >
+              <div
+                class="comment-form-col comment-col-name"
+                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+              >
+                备注说明
+              </div>
+              <div
+                class="comment-form-col comment-col-type"
+                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+              >
+                文本
+              </div>
+              <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
+                <NInput
+                  v-model:value="commentRemark"
+                  type="textarea"
+                  placeholder="请输入备注说明"
+                  :rows="3"
+                />
+              </div>
+            </div>
+          </div>
+
           <NSpace justify="end">
             <NButton @click="addCommentVisible = false">取消</NButton>
             <NButton
-              v-if="commentFields.filter(f => !f.isKeyField).length > 0"
               type="primary"
               :loading="commentLoading"
               @click="handleSubmitComment"
@@ -1726,11 +1861,15 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 }
 
 /* 批注表单样式 - 参考旧版 */
+.comment-form-wrapper {
+  /* 确保表头和数据之间无间隔 */
+}
+
 .comment-form-header {
   display: flex;
   background-color: #f5f5f5;
   border: 1px solid #d9d9d9;
-  border-bottom: none;
+  border-bottom: 1px solid #d9d9d9;
   font-weight: bold;
 }
 
@@ -1776,32 +1915,80 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   font-style: italic;
 }
 
-/* 深色主题下的批注表单样式 */
-.system-dark .comment-form-header {
-  background-color: #2d2d2d;
-  border-color: #4b5965;
+/* 深色主题下的批注表单样式 - 使用 !important 确保覆盖 */
+.system-dark .comment-form-header,
+.system-dark .generic-query-workbench .comment-form-header {
+  background-color: #1f1f1f !important;
+  border-color: #4b5965 !important;
+  color: #e0e0e0 !important;
 }
 
-.system-dark .comment-form-body {
-  border-color: #4b5965;
+.system-dark .comment-form-body,
+.system-dark .generic-query-workbench .comment-form-body {
+  border-color: #4b5965 !important;
 }
 
-.system-dark .comment-form-row {
-  border-bottom-color: #4b5965;
+.system-dark .comment-form-row,
+.system-dark .generic-query-workbench .comment-form-row {
+  border-bottom-color: #4b5965 !important;
 }
 
-.system-dark .comment-form-row:last-child {
-  border-bottom: none;
+.system-dark .comment-form-row:last-child,
+.system-dark .generic-query-workbench .comment-form-row:last-child {
+  border-bottom: none !important;
 }
 
 .system-dark .comment-col-name,
-.system-dark .comment-col-type {
-  background-color: #1f1f1f;
-  border-right-color: #4b5965;
+.system-dark .comment-col-type,
+.system-dark .generic-query-workbench .comment-col-name,
+.system-dark .generic-query-workbench .comment-col-type {
+  background-color: #1f1f1f !important;
+  border-right-color: #4b5965 !important;
+  color: #e0e0e0 !important;
 }
 
-.system-dark .comment-key-field-value {
-  color: #999;
+.system-dark .comment-col-value,
+.system-dark .generic-query-workbench .comment-col-value {
+  color: #e0e0e0 !important;
+}
+
+.system-dark .comment-key-field-value,
+.system-dark .generic-query-workbench .comment-key-field-value {
+  color: #b0b0b0 !important;
+}
+
+/* 批注弹窗深色主题 - 使用 :deep 穿透 */
+:deep(.comment-modal-dark) .comment-form-header {
+  background-color: #1f1f1f !important;
+  border-color: #4b5965 !important;
+  color: #e0e0e0 !important;
+}
+
+:deep(.comment-modal-dark) .comment-form-body {
+  border-color: #4b5965 !important;
+}
+
+:deep(.comment-modal-dark) .comment-form-row {
+  border-bottom-color: #4b5965 !important;
+}
+
+:deep(.comment-modal-dark) .comment-form-row:last-child {
+  border-bottom: none !important;
+}
+
+:deep(.comment-modal-dark) .comment-col-name,
+:deep(.comment-modal-dark) .comment-col-type {
+  background-color: #1f1f1f !important;
+  border-right-color: #4b5965 !important;
+  color: #e0e0e0 !important;
+}
+
+:deep(.comment-modal-dark) .comment-col-value {
+  color: #e0e0e0 !important;
+}
+
+:deep(.comment-modal-dark) .comment-key-field-value {
+  color: #b0b0b0 !important;
 }
 
 .workbench-grid-card {
