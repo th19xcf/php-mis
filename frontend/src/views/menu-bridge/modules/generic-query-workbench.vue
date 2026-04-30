@@ -1880,21 +1880,47 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     </NModal>
 
     <!-- 查看批注弹窗 -->
-    <NModal v-model:show="viewCommentVisible" preset="card" title="查看批注" class="w-700px" :mask-closable="false">
+    <NModal v-model:show="viewCommentVisible" preset="card" title="查看批注" class="w-800px" :mask-closable="false">
       <NSpin :show="commentLoading">
         <NSpace vertical :size="16">
-          <NDataTable
-            v-if="commentList.length > 0"
-            :data="commentList"
-            :columns="[
-              { title: '操作人员', key: '操作人员', width: 120 },
-              ...commentFields.map(f => ({ title: f.comment || f.name, key: f.name })),
-              { title: '创建时间', key: '创建时间', width: 160 }
-            ]"
-            :pagination="{ pageSize: 10 }"
-            size="small"
-            bordered
-          />
+          <!-- 卡片式批注列表 -->
+          <div v-if="commentList.length > 0" class="comment-card-list">
+            <div
+              v-for="(item, index) in commentList"
+              :key="index"
+              class="comment-card"
+              :class="{ 'comment-card-dark': isDarkMode }"
+            >
+              <!-- 头部：操作人员和时间 -->
+              <div class="comment-card-header">
+                <div class="comment-card-user">
+                  <span class="comment-card-user-icon">👤</span>
+                  <span>{{ item.操作人员 || '未知用户' }}</span>
+                </div>
+                <div class="comment-card-time">
+                  {{ item.操作时间 || item.创建时间 || '-' }}
+                </div>
+              </div>
+
+              <!-- 中部：备注说明 -->
+              <div class="comment-card-content">
+                <div class="comment-card-label">备注说明</div>
+                <div class="comment-card-text">{{ item.备注说明 || '无' }}</div>
+              </div>
+
+              <!-- 底部：关键字段信息 -->
+              <div class="comment-card-footer">
+                <div
+                  v-for="field in commentFields.filter(f => f.isKeyField && item[f.name])"
+                  :key="field.name"
+                  class="comment-card-tag"
+                >
+                  <span class="comment-card-tag-label">{{ field.comment || field.name }}:</span>
+                  <span class="comment-card-tag-value" :title="String(item[field.name])">{{ item[field.name] }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
           <NEmpty v-else description="暂无批注记录" />
 
           <NSpace justify="end">
@@ -2605,5 +2631,152 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 .system-dark :deep(.query-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
   border-color: #4ea4f3;
   background-color: #2f7fc5;
+}
+
+/* 卡片式批注列表样式 */
+.comment-card-list {
+  max-height: 500px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.comment-card {
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transition: all 0.2s ease;
+}
+
+.comment-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #d9d9d9;
+}
+
+.comment-card-dark {
+  background: #1f1f1f;
+  border-color: #4b5965;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.comment-card-dark:hover {
+  border-color: #5a6a7a;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.comment-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.comment-card-dark .comment-card-header {
+  border-bottom-color: #4b5965;
+}
+
+.comment-card-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: #1890ff;
+  font-size: 14px;
+}
+
+.comment-card-dark .comment-card-user {
+  color: #4ea4f3;
+}
+
+.comment-card-user-icon {
+  font-size: 16px;
+}
+
+.comment-card-time {
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+.comment-card-dark .comment-card-time {
+  color: #a0a0a0;
+}
+
+.comment-card-content {
+  margin-bottom: 12px;
+}
+
+.comment-card-label {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-bottom: 4px;
+}
+
+.comment-card-dark .comment-card-label {
+  color: #a0a0a0;
+}
+
+.comment-card-text {
+  font-size: 14px;
+  color: #262626;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.comment-card-dark .comment-card-text {
+  color: #e0e0e0;
+}
+
+.comment-card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px dashed #f0f0f0;
+}
+
+.comment-card-dark .comment-card-footer {
+  border-top-color: #4b5965;
+}
+
+.comment-card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.comment-card-dark .comment-card-tag {
+  background: #2a2a2a;
+}
+
+.comment-card-tag-label {
+  color: #8c8c8c;
+  flex-shrink: 0;
+}
+
+.comment-card-dark .comment-card-tag-label {
+  color: #a0a0a0;
+}
+
+.comment-card-tag-value {
+  color: #595959;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-card-dark .comment-card-tag-value {
+  color: #c0c0c0;
 }
 </style>
