@@ -1283,9 +1283,9 @@ async function handleOpenAddComment() {
   (window as any).__commentKeyFieldValues = keyFields;
   console.log('保存到 window.__commentKeyFieldValues:', keyFields);
 
-  // 设置备注模块名称（从功能编码或配置中获取）
+  // 设置备注模块名称（优先使用备注模块配置，其次使用功能编码）
   const functionCode = String(props.meta.functionCode || '').trim();
-  commentModuleName.value = (pageMeta.value as any)?.module || functionCode;
+  commentModuleName.value = pageMeta.value?.commentModule || functionCode;
 
   // 重置备注说明
   commentRemark.value = '';

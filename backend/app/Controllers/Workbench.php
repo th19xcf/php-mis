@@ -101,6 +101,7 @@ class Workbench extends BaseController
             'mode' => $queryConfig['mode'],
             'queryModule' => $queryConfig['queryModule'],
             'fieldModule' => $queryConfig['fieldModule'],
+            'commentModule' => $queryConfig['commentModule'],
             'toolbar' => [
                 'comment' => $functionAuth['commentAuth'],
                 'add' => $functionAuth['addAuth'],
