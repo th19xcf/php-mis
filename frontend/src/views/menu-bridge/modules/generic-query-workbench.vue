@@ -12,7 +12,7 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NEmpty, NSpin } from 'naive-ui';
+import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NEmpty, NSpin, NAlert, NDataTable } from 'naive-ui';
 import * as XLSX from 'xlsx';
 
 import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
@@ -180,6 +180,15 @@ const commentKeyFieldValues = ref<Record<string, string | number>>({});
 const commentModuleName = ref<string>('');
 // 备注说明内容
 const commentRemark = ref<string>('');
+
+// 导入相关状态
+const importVisible = ref(false);
+const importLoading = ref(false);
+const importFile = ref<File | null>(null);
+const importPreviewData = ref<any[]>([]);
+const importError = ref<string>('');
+const importSuccess = ref<{ count: number; message: string } | null>(null);
+const fileInputRef = ref<HTMLInputElement | null>(null);
 
 // 计算属性：获取关键字段列表（用于模板显示）
 const keyFieldList = computed(() => {
@@ -919,8 +928,173 @@ async function handleApplyCondition() {
   msg('success', '已应用筛选条件');
 }
 
+// 打开导入弹窗
 function handleImport() {
-  msg('info', '导入功能待实现');
+  importVisible.value = true;
+  importFile.value = null;
+  importPreviewData.value = [];
+  importError.value = '';
+  importSuccess.value = null;
+}
+
+// 触发文件选择
+function triggerFileInput() {
+  fileInputRef.value?.click();
+}
+
+// 处理文件选择
+function handleFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (file) {
+    processImportFile(file);
+  }
+  // 清空 input 以便下次选择同一文件
+  input.value = '';
+}
+
+// 处理拖拽上传
+function handleDrop(event: DragEvent) {
+  event.preventDefault();
+  const file = event.dataTransfer?.files[0];
+  if (file) {
+    processImportFile(file);
+  }
+}
+
+// 解析导入文件
+async function processImportFile(file: File) {
+  // 验证文件类型
+  const validTypes = ['.xlsx', '.xls', '.csv'];
+  const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+  if (!validTypes.includes(fileExt)) {
+    importError.value = '请上传 Excel 文件 (.xlsx, .xls) 或 CSV 文件 (.csv)';
+    return;
+  }
+
+  importLoading.value = true;
+  importError.value = '';
+  importFile.value = file;
+
+  try {
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data, { type: 'array' });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as any[][];
+
+    if (jsonData.length < 2) {
+      importError.value = '文件数据不足，至少需要包含表头和一行数据';
+      importPreviewData.value = [];
+      return;
+    }
+
+    // 解析表头和数据
+    const headers = jsonData[0] as string[];
+    const rows = jsonData.slice(1).filter(row => row.some(cell => cell !== undefined && cell !== ''));
+
+    if (rows.length === 0) {
+      importError.value = '未找到有效数据行';
+      importPreviewData.value = [];
+      return;
+    }
+
+    // 转换为对象数组
+    importPreviewData.value = rows.map((row, index) => {
+      const obj: Record<string, any> = { _rowIndex: index + 2 };
+      headers.forEach((header, colIndex) => {
+        if (header) {
+          obj[header] = row[colIndex] ?? '';
+        }
+      });
+      return obj;
+    });
+
+    msg('success', `成功解析 ${rows.length} 条数据`);
+  } catch (error) {
+    console.error('导入文件解析失败:', error);
+    importError.value = '文件解析失败，请检查文件格式是否正确';
+    importPreviewData.value = [];
+  } finally {
+    importLoading.value = false;
+  }
+}
+
+// 确认导入
+async function confirmImport() {
+  if (importPreviewData.value.length === 0) {
+    msg('warning', '没有可导入的数据');
+    return;
+  }
+
+  importLoading.value = true;
+
+  try {
+    // TODO: 调用后端导入 API
+    // const functionCode = props.meta?.functionCode;
+    // const { data, error } = await importData(functionCode, importPreviewData.value);
+
+    // 模拟导入成功
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    importSuccess.value = {
+      count: importPreviewData.value.length,
+      message: `成功导入 ${importPreviewData.value.length} 条数据`
+    };
+
+    msg('success', importSuccess.value.message);
+
+    // 关闭弹窗并刷新数据
+    setTimeout(() => {
+      importVisible.value = false;
+      loadPage(); // 刷新页面数据
+    }, 1500);
+  } catch (error) {
+    console.error('导入失败:', error);
+    importError.value = '导入失败，请稍后重试';
+  } finally {
+    importLoading.value = false;
+  }
+}
+
+// 下载导入模板
+function downloadImportTemplate() {
+  // 获取当前表格的列定义作为模板
+  const columns = gridApi.value?.getColumns() || [];
+  const visibleColumns = columns.filter(col => {
+    const colDef = col.getColDef();
+    return !colDef.hide && colDef.field && colDef.field !== '';
+  });
+
+  const headers = visibleColumns.map(col => {
+    const colDef = col.getColDef();
+    return colDef.headerName || colDef.field || '';
+  });
+
+  // 创建示例数据
+  const exampleData: Record<string, string>[] = [];
+  const exampleRow: Record<string, string> = {};
+  headers.forEach(header => {
+    exampleRow[header] = '示例数据';
+  });
+  exampleData.push(exampleRow);
+
+  // 创建工作簿
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(exampleData, { header: headers });
+
+  // 设置列宽
+  const colWidths = headers.map(header => ({
+    wch: Math.max(header.length * 2, 15)
+  }));
+  ws['!cols'] = colWidths;
+
+  XLSX.utils.book_append_sheet(wb, ws, '导入模板');
+
+  // 下载
+  const functionCode = props.meta?.functionCode || 'template';
+  XLSX.writeFile(wb, `${functionCode}_导入模板.xlsx`);
+
+  msg('success', '模板下载成功');
 }
 
 function handleExport() {
@@ -1983,6 +2157,93 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
         </NSpace>
       </NSpin>
     </NModal>
+
+    <!-- 导入弹窗 -->
+    <NModal v-model:show="importVisible" preset="card" title="数据导入" class="w-900px" :mask-closable="false">
+      <NSpin :show="importLoading">
+        <NSpace vertical :size="16">
+          <!-- 上传区域 -->
+          <div
+            v-if="importPreviewData.length === 0 && !importSuccess"
+            class="import-upload-area"
+            :class="{ 'import-upload-area-dark': isDarkMode }"
+            @click="triggerFileInput"
+            @dragover.prevent
+            @drop="handleDrop"
+          >
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              style="display: none"
+              @change="handleFileSelect"
+            />
+            <div class="import-upload-content">
+              <div class="import-upload-icon">📁</div>
+              <div class="import-upload-text">
+                <div>点击或拖拽文件到此处上传</div>
+                <div class="import-upload-hint">支持 .xlsx, .xls, .csv 格式</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 下载模板按钮 -->
+          <div v-if="importPreviewData.length === 0 && !importSuccess" class="import-template-row">
+            <NButton text type="primary" @click="downloadImportTemplate">
+              📥 下载导入模板
+            </NButton>
+          </div>
+
+          <!-- 错误提示 -->
+          <NAlert v-if="importError" type="error" :show-icon="true">
+            {{ importError }}
+          </NAlert>
+
+          <!-- 数据预览表格 -->
+          <div v-if="importPreviewData.length > 0 && !importSuccess">
+            <div class="import-preview-header">
+              <span>数据预览</span>
+              <span class="import-preview-count">共 {{ importPreviewData.length }} 条数据</span>
+            </div>
+            <div class="import-preview-table-wrapper">
+              <NDataTable
+                :data="importPreviewData.slice(0, 10)"
+                :columns="Object.keys(importPreviewData[0] || {})
+                  .filter(key => key !== '_rowIndex')
+                  .map(key => ({ title: key, key, ellipsis: { tooltip: true } }))"
+                size="small"
+                :max-height="300"
+                bordered
+              />
+            </div>
+            <div v-if="importPreviewData.length > 10" class="import-preview-more">
+              还有 {{ importPreviewData.length - 10 }} 条数据未显示...
+            </div>
+          </div>
+
+          <!-- 导入成功提示 -->
+          <NAlert v-if="importSuccess" type="success" :show-icon="true">
+            {{ importSuccess.message }}
+          </NAlert>
+
+          <!-- 操作按钮 -->
+          <NSpace justify="end">
+            <NButton v-if="importPreviewData.length > 0 && !importSuccess" @click="importPreviewData = []">
+              重新选择
+            </NButton>
+            <NButton @click="importVisible = false">关闭</NButton>
+            <NButton
+              v-if="importPreviewData.length > 0 && !importSuccess"
+              type="primary"
+              :disabled="importLoading"
+              @click="confirmImport"
+            >
+              确认导入
+            </NButton>
+          </NSpace>
+        </NSpace>
+      </NSpin>
+    </NModal>
   </div>
 </template>
 
@@ -2832,5 +3093,97 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
 .comment-card-dark .comment-card-tag-value {
   color: #c0c0c0;
+}
+
+/* 导入功能样式 */
+.import-upload-area {
+  border: 2px dashed #d9d9d9;
+  border-radius: 8px;
+  padding: 48px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: #fafafa;
+}
+
+.import-upload-area:hover {
+  border-color: #40a9ff;
+  background: #f0f5ff;
+}
+
+.import-upload-area-dark {
+  border-color: #4b5965;
+  background: #1f1f1f;
+}
+
+.import-upload-area-dark:hover {
+  border-color: #4ea4f3;
+  background: #2a2a2a;
+}
+
+.import-upload-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.import-upload-icon {
+  font-size: 48px;
+}
+
+.import-upload-text {
+  font-size: 16px;
+  color: #262626;
+}
+
+.import-upload-area-dark .import-upload-text {
+  color: #e0e0e0;
+}
+
+.import-upload-hint {
+  font-size: 14px;
+  color: #8c8c8c;
+  margin-top: 8px;
+}
+
+.import-upload-area-dark .import-upload-hint {
+  color: #a0a0a0;
+}
+
+.import-template-row {
+  text-align: center;
+  margin-top: -8px;
+}
+
+.import-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.import-preview-header-dark {
+  color: #e0e0e0;
+}
+
+.import-preview-count {
+  font-size: 14px;
+  color: #8c8c8c;
+  font-weight: normal;
+}
+
+.import-preview-table-wrapper {
+  max-height: 300px;
+  overflow: auto;
+}
+
+.import-preview-more {
+  text-align: center;
+  padding: 12px;
+  color: #8c8c8c;
+  font-size: 14px;
 }
 </style>
