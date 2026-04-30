@@ -135,10 +135,56 @@ class Comment extends BaseController
             }
 
             $commentTable = $config['数据表名'];
+            $commentModule = $config['备注模块'] ?? '';
+            
+            log_message('debug', "Comment::list - 批注配置: 模块={$commentModule}, 表名={$commentTable}");
+            
             if (empty($commentTable)) {
                 return $this->response->setJSON([
                     'code' => ApiCode::PARAM_ERROR,
-                    'msg' => '批注表名未配置'
+                    'msg' => '批注表名未配置，请检查 def_comment_config 或 def_query_config.备注模块 配置'
+                ]);
+            }
+
+            // 验证批注表是否存在
+            $checkTableSql = sprintf('show tables like "%s"', $commentTable);
+            $tableExists = $this->common->select($checkTableSql);
+            if ($tableExists === false || empty($tableExists->getResultArray())) {
+                log_message('error', "Comment::list - 批注表不存在: {$commentTable}");
+                return $this->response->setJSON([
+                    'code' => ApiCode::SERVER_ERROR,
+                    'msg' => "批注表 '{$commentTable}' 不存在，请检查数据库配置"
+                ]);
+            }
+
+            // 获取批注表的字段信息
+            $columnsSql = sprintf('show columns from %s', $commentTable);
+            $columnsQuery = $this->common->select($columnsSql);
+            if ($columnsQuery === false) {
+                log_message('error', "Comment::list - 无法获取表结构: {$commentTable}");
+                return $this->response->setJSON([
+                    'code' => ApiCode::SERVER_ERROR,
+                    'msg' => "无法获取批注表 '{$commentTable}' 的结构"
+                ]);
+            }
+            
+            $tableColumns = $columnsQuery->getResultArray();
+            $validFields = array_map(fn($col) => $col['Field'] ?? $col['field'] ?? '', $tableColumns);
+            log_message('debug', "Comment::list - 批注表 {$commentTable} 的字段: " . json_encode($validFields));
+
+            // 验证关键字段是否存在于批注表中
+            $invalidFields = [];
+            foreach ($keyFields as $field => $value) {
+                if (!in_array($field, $validFields, true)) {
+                    $invalidFields[] = $field;
+                }
+            }
+            
+            if (!empty($invalidFields)) {
+                log_message('error', "Comment::list - 关键字段不存在于批注表: " . json_encode($invalidFields));
+                return $this->response->setJSON([
+                    'code' => ApiCode::PARAM_ERROR,
+                    'msg' => "关键字段 " . implode(', ', $invalidFields) . " 不存在于批注表 {$commentTable}"
                 ]);
             }
 
@@ -162,14 +208,38 @@ class Comment extends BaseController
 
             $whereStr = implode(' and ', $whereConditions);
 
-            // 查询批注列表
+            // 查询批注列表（先检查是否有操作时间或创建时间字段用于排序）
+            $orderBy = '';
+            if (in_array('操作时间', $validFields, true)) {
+                $orderBy = ' order by 操作时间 desc';
+            } elseif (in_array('创建时间', $validFields, true)) {
+                $orderBy = ' order by 创建时间 desc';
+            }
+            
             $sql = sprintf(
-                'select * from %s where %s order by id desc',
+                'select * from %s where %s%s',
                 $commentTable,
-                $whereStr
+                $whereStr,
+                $orderBy
             );
 
-            $results = $this->common->select($sql)->getResultArray();
+            log_message('debug', "Comment::list - 执行SQL: {$sql}");
+
+            $query = $this->common->select($sql);
+            if ($query === false) {
+                log_message('error', "Comment::list - SQL执行失败: {$sql}");
+                return $this->response->setJSON([
+                    'code' => ApiCode::SERVER_ERROR,
+                    'msg' => '查询批注列表失败，请检查表名或字段是否正确',
+                    'data' => [
+                        'sql' => $sql,
+                        'table' => $commentTable,
+                        'keyFields' => $keyFields
+                    ]
+                ]);
+            }
+
+            $results = $query->getResultArray();
 
             return $this->response->setJSON([
                 'code' => ApiCode::SUCCESS,
@@ -392,6 +462,7 @@ class Comment extends BaseController
             $keyFieldMap = [];
             $keyFieldsStr = $config['原表字段'] ?? '';
             log_message('debug', "Comment::fields - 原表字段配置: {$keyFieldsStr}");
+            
             if ($keyFieldsStr !== '') {
                 // 格式: "字段名1:列名1;字段名2:列名2" 或 "字段名1;字段名2"
                 $pairs = explode(';', $keyFieldsStr);
@@ -409,6 +480,20 @@ class Comment extends BaseController
                     }
                 }
             }
+            
+            // 如果未配置原表字段，自动从批注表中选择合适的字段作为关键字段
+            if (empty($keyFieldMap)) {
+                $systemFields = ['id', '操作人员', '创建时间', '更新时间'];
+                foreach ($results as $row) {
+                    $fieldName = $row['Field'] ?? $row['field'] ?? '';
+                    if ($fieldName && !in_array($fieldName, $systemFields, true)) {
+                        $keyFieldMap[$fieldName] = $fieldName;
+                        log_message('debug', "Comment::fields - 自动选择关键字段: {$fieldName}");
+                        break; // 只选择第一个非系统字段
+                    }
+                }
+            }
+            
             log_message('debug', "Comment::fields - 解析后的关键字段映射: " . json_encode($keyFieldMap));
 
             // 过滤掉系统字段，但保留关键字段用于显示
@@ -444,12 +529,28 @@ class Comment extends BaseController
             
             log_message('debug', "Comment::fields - 处理后的字段列表: " . json_encode($fields));
 
+            // 构建返回的 keyFields 字符串
+            $returnKeyFields = $config['原表字段'] ?? '';
+            if (empty($returnKeyFields) && !empty($keyFieldMap)) {
+                // 如果原表字段为空但自动选择了关键字段，构建 keyFields 字符串
+                $pairs = [];
+                foreach ($keyFieldMap as $fieldName => $sourceColumn) {
+                    if ($fieldName === $sourceColumn) {
+                        $pairs[] = $fieldName;
+                    } else {
+                        $pairs[] = "{$fieldName}:{$sourceColumn}";
+                    }
+                }
+                $returnKeyFields = implode(';', $pairs);
+                log_message('debug', "Comment::fields - 自动构建的 keyFields: {$returnKeyFields}");
+            }
+            
             return $this->response->setJSON([
                 'code' => ApiCode::SUCCESS,
                 'msg' => 'success',
                 'data' => [
                     'fields' => $fields,
-                    'keyFields' => $config['原表字段'] ?? ''
+                    'keyFields' => $returnKeyFields
                 ]
             ]);
         } catch (\Throwable $e) {

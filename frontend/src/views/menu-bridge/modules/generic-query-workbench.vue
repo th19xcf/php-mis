@@ -50,6 +50,12 @@ function isGuidColumn(field: string, label: string) {
   return field.trim().toUpperCase() === 'GUID' || label.trim().toUpperCase() === 'GUID';
 }
 
+// 消息辅助函数：同时输出到控制台和页面
+function msg(type: 'success' | 'error' | 'warning' | 'info', message: string, data?: unknown) {
+  console.log(`[${type.toUpperCase()}]`, message, data ?? '');
+  window.$message?.[type](message);
+}
+
 const props = defineProps<{
   meta: MenuBridgeMeta;
   nativeOnly?: boolean;
@@ -772,7 +778,7 @@ async function handleRefresh() {
     gridApi.value.refreshCells({ force: true });
   }
 
-  window.$message?.success('已刷新并恢复到初始状态');
+  msg('success', '已刷新并恢复到初始状态');
 }
 
 function handleReset() {
@@ -833,7 +839,7 @@ function handleReset() {
   useLegacyTabHint.value = false;
 
   // 8. 显示提示
-  window.$message?.success('已重置到初始状态');
+  msg('success', '已重置到初始状态');
 }
 
 function handleOpenCondition() {
@@ -929,28 +935,28 @@ function handlePinSelectionChange(values: Array<string | number>) {
 async function handleApplyCondition() {
   conditionVisible.value = false;
   await queryPage();
-  window.$message?.success('已应用筛选条件');
+  msg('success', '已应用筛选条件');
 }
 
 function handleExport() {
-  window.$message?.info('当前仅完成统一查询协议，导出接口待接入后端动作协议');
+  msg('info', '当前仅完成统一查询协议，导出接口待接入后端动作协议');
 }
 
 function handleDataDrill() {
   // 参考旧版 Vgrid_aggrid.php，必须先选择 1 条记录
   const selectedRows = gridApi.value?.getSelectedRows() || [];
   if (selectedRows.length === 0) {
-    window.$message?.warning('请先选择要钻取的记录');
+    msg('warning', '请先选择要钻取的记录');
     return;
   }
   if (selectedRows.length > 1) {
-    window.$message?.warning('只能选择 1 条记录');
+    msg('warning', '只能选择 1 条记录');
     return;
   }
 
   const functionCode = String(props.meta.functionCode || '').trim();
   if (!functionCode) {
-    window.$message?.error('功能编码不能为空');
+    msg('error', '功能编码不能为空');
     return;
   }
 
@@ -962,7 +968,7 @@ function handleDataDrill() {
       loading.value = false;
       console.log('Drill response:', { data, error });
       if (error) {
-        window.$message?.error('获取钻取选项失败');
+        msg('error', '获取钻取选项失败', error);
         return;
       }
 
@@ -1041,9 +1047,9 @@ function handleDataDrill() {
           }
 
           if (!hasValidField) {
-            window.$message?.warning('钻取字段为空，无法钻取');
-            return;
-          }
+              msg('warning', '钻取字段为空，无法钻取', { drillFields: nlArr, selectedRow });
+              return;
+            }
 
           sendObj['钻取字段'] = drillItem.drillFields || '';
           sendObj['钻取条件'] = drillItem.drillCondition || '';
@@ -1138,7 +1144,7 @@ function handleDataDrill() {
                   type: 'primary',
                   onClick: () => {
                     if (!selectedOption.value) {
-                      window.$message?.warning('请选择钻取条件');
+                      msg('warning', '请选择钻取条件');
                       return;
                     }
                     // 关闭弹窗后再执行钻取确认
@@ -1166,50 +1172,66 @@ function handleDataDrill() {
         console.log('No drill options found. Drill module:', drillModule, 'Query module:', queryModule);
 
         if (drillModule && drillModule !== 'empty' && drillModule !== queryModule) {
-          window.$message?.warning(`钻取模块 [${drillModule}] 在 def_drill_config 表中未找到配置`);
+          msg('warning', `钻取模块 [${drillModule}] 在 def_drill_config 表中未找到配置`);
         } else if (queryModule && queryModule !== 'empty') {
-          window.$message?.warning(`查询模块 [${queryModule}] 未配置钻取模块，且 def_drill_config 表中也无对应配置`);
+          msg('warning', `查询模块 [${queryModule}] 未配置钻取模块，且 def_drill_config 表中也无对应配置`);
         } else {
-          window.$message?.warning('当前功能未配置钻取模块，请联系管理员');
+          msg('warning', '当前功能未配置钻取模块，请联系管理员');
         }
       }
     })
-    .catch(() => {
+    .catch((err) => {
       loading.value = false;
-      window.$message?.error('钻取操作失败');
+      msg('error', '钻取操作失败', err);
     });
 }
 
 // 批注相关函数
 // 从 keyFieldsConfig 字符串解析关键字段值（格式：字段名:列名;字段名:列名）
 function parseKeyFieldsFromRow(selectedRow: any, keyFieldsConfig: string): Record<string, string | number> {
+  const keyFields: Record<string, string | number> = {};
+  
+  // 如果未配置关键字段，从 commentFields 中获取关键字段（用于查看批注）
   if (!keyFieldsConfig) {
-    return { id: selectedRow.id || selectedRow.ID || 0 };
+    // 从已加载的 commentFields 中找出关键字段
+    for (const field of commentFields.value) {
+      if (field.isKeyField && field.name) {
+        const value = selectedRow[field.sourceColumn || field.name] || selectedRow[field.name];
+        if (value !== undefined && value !== null) {
+          keyFields[field.name] = value;
+        }
+      }
+    }
+    return keyFields;
   }
 
-  const keyFields: Record<string, string | number> = {};
   const fieldPairs = keyFieldsConfig.split(';');
   for (const pair of fieldPairs) {
-    const [fieldName, colName] = pair.split(':');
-    if (fieldName && colName) {
-      const value = selectedRow[colName.trim()];
-      if (value !== undefined && value !== null) {
-        keyFields[fieldName.trim()] = value;
-      }
+    const trimmedPair = pair.trim();
+    if (!trimmedPair) continue;
+    
+    const [fieldName, colName] = trimmedPair.split(':');
+    const actualFieldName = fieldName.trim();
+    // 如果有映射则使用映射的列名，否则使用字段名本身
+    const actualColName = colName ? colName.trim() : actualFieldName;
+    
+    const value = selectedRow[actualColName];
+    if (value !== undefined && value !== null) {
+      keyFields[actualFieldName] = value;
     }
   }
 
-  return Object.keys(keyFields).length > 0 ? keyFields : { id: selectedRow.id || selectedRow.ID || 0 };
+  return keyFields;
 }
 
 function getSelectedRowKeyFields(keyFieldsConfig?: string): Record<string, string | number> | null {
   const selectedRows = gridApi.value?.getSelectedRows() || [];
   if (selectedRows.length === 0) {
-    window.$message?.warning('请先选择一条记录');
+    msg('warning', '请先选择一条记录');
     return null;
   }
   if (selectedRows.length > 1) {
-    window.$message?.warning('只能选择一条记录');
+    msg('warning', '只能选择一条记录');
     return null;
   }
 
@@ -1253,11 +1275,11 @@ async function handleOpenAddComment() {
   // 先检查是否有选中行
   const selectedRows = gridApi.value?.getSelectedRows() || [];
   if (selectedRows.length === 0) {
-    window.$message?.warning('请先选择一条记录');
+    msg('warning', '请先选择一条记录');
     return;
   }
   if (selectedRows.length > 1) {
-    window.$message?.warning('只能选择一条记录');
+    msg('warning', '只能选择一条记录');
     return;
   }
   const selectedRow = selectedRows[0];
@@ -1326,13 +1348,13 @@ async function handleSubmitComment() {
   console.log('从 commentFormData 构建的关键字段:', keyFields);
 
   if (Object.keys(keyFields).length === 0) {
-    window.$message?.warning('关键字段为空，请重新选择记录');
+    msg('warning', '关键字段为空，请重新选择记录', { commentFormData: commentFormData.value, commentFields: commentFields.value });
     return;
   }
 
   // 验证备注说明必填
   if (!commentRemark.value.trim()) {
-    window.$message?.warning('请填写备注说明');
+    msg('warning', '请填写备注说明');
     return;
   }
 
@@ -1350,24 +1372,27 @@ async function handleSubmitComment() {
     });
 
     if (error) {
-      window.$message?.error('添加批注失败');
+      msg('error', '添加批注失败', { error, keyFields, data: submitData });
       return;
     }
 
-    window.$message?.success('添加批注成功');
+    msg('success', '添加批注成功');
     addCommentVisible.value = false;
-  } catch {
-    window.$message?.error('添加批注失败');
+  } catch (err) {
+    msg('error', '添加批注失败', { error: err, keyFields, data: submitData });
   } finally {
     commentLoading.value = false;
   }
 }
 
 async function handleOpenViewComment() {
+  // 先加载批注字段配置（获取关键字段映射）
+  await loadCommentFields();
+  
+  // 再获取关键字段值
   const keyFields = getSelectedRowKeyFields();
   if (!keyFields) return;
 
-  await loadCommentFields();
   await loadCommentList(keyFields);
   viewCommentVisible.value = true;
 }
@@ -1380,12 +1405,23 @@ async function loadCommentList(keyFields: Record<string, string | number>) {
   try {
     const { data, error } = await fetchCommentList(functionCode, { keyFields });
     if (error) {
-      window.$message?.error('获取批注列表失败');
+      // 显示后端返回的详细错误信息
+      const backendError = (error as any)?.response?.data || error;
+      const errorMsg = backendError?.msg || '获取批注列表失败';
+      const errorData = backendError?.data || {};
+      console.error('[ERROR] 获取批注列表失败:', {
+        message: errorMsg,
+        sql: errorData.sql,
+        table: errorData.table,
+        keyFields: errorData.keyFields || keyFields,
+        fullError: error
+      });
+      window.$message?.error(`${errorMsg}${errorData.sql ? ' (SQL: ' + errorData.sql + ')' : ''}`);
       return;
     }
     commentList.value = data?.records || [];
-  } catch {
-    window.$message?.error('获取批注列表失败');
+  } catch (err) {
+    msg('error', '获取批注列表失败', { error: err, keyFields });
   } finally {
     commentLoading.value = false;
   }
@@ -1403,7 +1439,7 @@ function handleOpenColorMark() {
 
 function handleApplyColorMark() {
   if (!colorMarkField1.value || !colorMarkField2.value) {
-    window.$message?.warning('请选择字段一和字段二');
+    msg('warning', '请选择字段一和字段二');
     return;
   }
 
@@ -1429,7 +1465,7 @@ function handleApplyColorMark() {
   }
 
   colorMarkVisible.value = false;
-  window.$message?.success('颜色标注已应用');
+  msg('success', '颜色标注已应用');
 }
 
 function handleClearColorMark() {
@@ -1438,7 +1474,7 @@ function handleClearColorMark() {
     gridApi.value.refreshCells({ force: true });
   }
   colorMarkVisible.value = false;
-  window.$message?.success('颜色标注已清除');
+  msg('success', '颜色标注已清除');
 }
 
 function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
@@ -1754,9 +1790,9 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                 :style="
                   isDarkMode
                     ? {
-                      borderBottomColor: '#4b5965',
-                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                    }
+                        borderBottomColor: '#4b5965',
+                        borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                      }
                     : {}
                 "
               >
