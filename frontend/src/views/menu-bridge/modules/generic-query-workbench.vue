@@ -926,6 +926,10 @@ async function handleApplyCondition() {
   msg('success', '已应用筛选条件');
 }
 
+function handleImport() {
+  msg('info', '导入功能待实现');
+}
+
 function handleExport() {
   msg('info', '当前仅完成统一查询协议，导出接口待接入后端动作协议');
 }
@@ -1515,6 +1519,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddComment">添加批注</NButton>
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
+            <NButton @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
           </div>
 
