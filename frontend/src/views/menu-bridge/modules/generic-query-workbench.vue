@@ -495,17 +495,51 @@ async function loadPage() {
     loadedParams.value = String(props.meta.params || '');
     isDataLoaded.value = true;
 
-    // 刷新表格
+    // 刷新表格并调整列宽
     setTimeout(() => {
       if (gridApi.value) {
         gridApi.value.refreshCells({ force: true });
+
+        // 列宽自适应（与正常加载保持一致）
+        const api = gridApi.value;
+        const columnState = api.getColumnState();
+        if (columnState && Array.isArray(columnState)) {
+          const allColIds = columnState
+            .map((state: any) => state.colId)
+            .filter((colId: string) => {
+              if (colId === 'ag-Grid-SelectionColumn') return false;
+              const column = api.getColumn(colId);
+              if (column) {
+                const def = column.getColDef();
+                if (isGuidColumn(String(def.field || ''), String(def.headerName || def.field || ''))) {
+                  return false;
+                }
+              }
+              return true;
+            });
+
+          if (allColIds.length > 0) {
+            api.autoSizeColumns(allColIds, false);
+
+            const maxWidth = 300;
+            allColIds.forEach((colId: string) => {
+              const column = api.getColumn(colId);
+              if (column) {
+                const currentWidth = column.getActualWidth();
+                if (currentWidth > maxWidth) {
+                  api.setColumnWidths([{ key: colId, newWidth: maxWidth }]);
+                }
+              }
+            });
+          }
+        }
       }
     }, 100);
 
     // 缓存加载完成后，检查工具栏滚动状态
     setTimeout(() => {
       checkScrollPosition();
-    }, 150);
+    }, 350);
 
     return;
   }
@@ -1244,7 +1278,7 @@ async function handleOpenAddComment() {
 
   // 保存关键字段值用于显示
   commentKeyFieldValues.value = keyFields;
-  
+
   // 同时保存到 window 对象，确保数据不会丢失
   (window as any).__commentKeyFieldValues = keyFields;
   console.log('保存到 window.__commentKeyFieldValues:', keyFields);
@@ -1288,7 +1322,7 @@ async function handleSubmitComment() {
       keyFields[field.name] = commentFormData.value[field.name];
     }
   }
-  
+
   console.log('从 commentFormData 构建的关键字段:', keyFields);
 
   if (Object.keys(keyFields).length === 0) {
@@ -1304,8 +1338,8 @@ async function handleSubmitComment() {
 
   // 构建提交数据：备注模块 + 备注说明
   const submitData: Record<string, string> = {
-    '备注模块': commentModuleName.value,
-    '备注说明': commentRemark.value
+    备注模块: commentModuleName.value,
+    备注说明: commentRemark.value
   };
 
   commentLoading.value = true;
@@ -1712,25 +1746,33 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             </div>
 
             <!-- 关键字段数据 -->
-            <div
-              class="comment-form-body"
-              :style="isDarkMode ? { borderColor: '#4b5965' } : {}"
-            >
+            <div class="comment-form-body" :style="isDarkMode ? { borderColor: '#4b5965' } : {}">
               <div
                 v-for="(field, index) in keyFieldList"
                 :key="field.name"
                 class="comment-form-row"
-                :style="isDarkMode ? { borderBottomColor: '#4b5965', borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965' } : {}"
+                :style="
+                  isDarkMode
+                    ? {
+                      borderBottomColor: '#4b5965',
+                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                    }
+                    : {}
+                "
               >
                 <div
                   class="comment-form-col comment-col-name"
-                  :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+                  :style="
+                    isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}
+                  "
                 >
                   {{ field.comment || field.name }}
                 </div>
                 <div
                   class="comment-form-col comment-col-type"
-                  :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+                  :style="
+                    isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}
+                  "
                 >
                   {{ field.type }}
                 </div>
@@ -1788,25 +1830,14 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                 文本
               </div>
               <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
-                <NInput
-                  v-model:value="commentRemark"
-                  type="textarea"
-                  placeholder="请输入备注说明"
-                  :rows="3"
-                />
+                <NInput v-model:value="commentRemark" type="textarea" placeholder="请输入备注说明" :rows="3" />
               </div>
             </div>
           </div>
 
           <NSpace justify="end">
             <NButton @click="addCommentVisible = false">取消</NButton>
-            <NButton
-              type="primary"
-              :loading="commentLoading"
-              @click="handleSubmitComment"
-            >
-              确定
-            </NButton>
+            <NButton type="primary" :loading="commentLoading" @click="handleSubmitComment">确定</NButton>
           </NSpace>
         </NSpace>
       </NSpin>
