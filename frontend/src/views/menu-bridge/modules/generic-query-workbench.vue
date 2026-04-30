@@ -12,19 +12,7 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import {
-  NButton,
-  NRadio,
-  NRadioGroup,
-  NForm,
-  NFormItem,
-  NSelect,
-  NModal,
-  NInput,
-  NDataTable,
-  NEmpty,
-  NSpin
-} from 'naive-ui';
+import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NEmpty, NSpin } from 'naive-ui';
 
 import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
 import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
@@ -1047,9 +1035,9 @@ function handleDataDrill() {
           }
 
           if (!hasValidField) {
-              msg('warning', '钻取字段为空，无法钻取', { drillFields: nlArr, selectedRow });
-              return;
-            }
+            msg('warning', '钻取字段为空，无法钻取', { drillFields: nlArr, selectedRow });
+            return;
+          }
 
           sendObj['钻取字段'] = drillItem.drillFields || '';
           sendObj['钻取条件'] = drillItem.drillCondition || '';
@@ -1180,7 +1168,7 @@ function handleDataDrill() {
         }
       }
     })
-    .catch((err) => {
+    .catch(err => {
       loading.value = false;
       msg('error', '钻取操作失败', err);
     });
@@ -1190,7 +1178,7 @@ function handleDataDrill() {
 // 从 keyFieldsConfig 字符串解析关键字段值（格式：字段名:列名;字段名:列名）
 function parseKeyFieldsFromRow(selectedRow: any, keyFieldsConfig: string): Record<string, string | number> {
   const keyFields: Record<string, string | number> = {};
-  
+
   // 如果未配置关键字段，从 commentFields 中获取关键字段（用于查看批注）
   if (!keyFieldsConfig) {
     // 从已加载的 commentFields 中找出关键字段
@@ -1209,12 +1197,12 @@ function parseKeyFieldsFromRow(selectedRow: any, keyFieldsConfig: string): Recor
   for (const pair of fieldPairs) {
     const trimmedPair = pair.trim();
     if (!trimmedPair) continue;
-    
+
     const [fieldName, colName] = trimmedPair.split(':');
     const actualFieldName = fieldName.trim();
     // 如果有映射则使用映射的列名，否则使用字段名本身
     const actualColName = colName ? colName.trim() : actualFieldName;
-    
+
     const value = selectedRow[actualColName];
     if (value !== undefined && value !== null) {
       keyFields[actualFieldName] = value;
@@ -1348,7 +1336,10 @@ async function handleSubmitComment() {
   console.log('从 commentFormData 构建的关键字段:', keyFields);
 
   if (Object.keys(keyFields).length === 0) {
-    msg('warning', '关键字段为空，请重新选择记录', { commentFormData: commentFormData.value, commentFields: commentFields.value });
+    msg('warning', '关键字段为空，请重新选择记录', {
+      commentFormData: commentFormData.value,
+      commentFields: commentFields.value
+    });
     return;
   }
 
@@ -1388,7 +1379,7 @@ async function handleSubmitComment() {
 async function handleOpenViewComment() {
   // 先加载批注字段配置（获取关键字段映射）
   await loadCommentFields();
-  
+
   // 再获取关键字段值
   const keyFields = getSelectedRowKeyFields();
   if (!keyFields) return;
