@@ -13,6 +13,7 @@ import {
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
 import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NEmpty, NSpin } from 'naive-ui';
+import * as XLSX from 'xlsx';
 
 import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
 import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
@@ -207,14 +208,6 @@ function checkScrollPosition() {
     // 当内容溢出时，左右箭头一直可见
     showLeftArrow.value = hasOverflow;
     showRightArrow.value = hasOverflow;
-
-    console.log('Toolbar scroll check:', {
-      scrollWidth,
-      clientWidth,
-      hasOverflow,
-      showLeftArrow: showLeftArrow.value,
-      showRightArrow: showRightArrow.value
-    });
   });
 }
 
@@ -931,7 +924,72 @@ function handleImport() {
 }
 
 function handleExport() {
-  msg('info', '当前仅完成统一查询协议，导出接口待接入后端动作协议');
+  if (!gridApi.value) {
+    msg('warning', '表格未初始化，无法导出');
+    return;
+  }
+
+  // 获取当前显示的所有数据（包括分页加载的所有数据）
+  const rowData: any[] = [];
+  gridApi.value.forEachNode(node => {
+    rowData.push(node.data);
+  });
+
+  if (rowData.length === 0) {
+    msg('warning', '当前没有数据可导出');
+    return;
+  }
+
+  // 获取当前显示的列定义
+  const columns = gridApi.value.getColumns() || [];
+  const visibleColumns = columns.filter(col => {
+    const colDef = col.getColDef();
+    // 排除隐藏列和选择列
+    return !colDef.hide && colDef.field && colDef.field !== '';
+  });
+
+  // 构建表头
+  const headers = visibleColumns.map(col => {
+    const colDef = col.getColDef();
+    return colDef.headerName || colDef.field || '';
+  });
+
+  // 构建数据行
+  const exportData = rowData.map(row => {
+    const rowObj: Record<string, any> = {};
+    visibleColumns.forEach(col => {
+      const colDef = col.getColDef();
+      const field = colDef.field;
+      if (field) {
+        const headerName = colDef.headerName || field;
+        rowObj[headerName] = row[field] ?? '';
+      }
+    });
+    return rowObj;
+  });
+
+  // 创建工作簿
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(exportData, { header: headers });
+
+  // 设置列宽
+  const colWidths = headers.map(header => ({
+    wch: Math.max(header.length * 2, 12)
+  }));
+  ws['!cols'] = colWidths;
+
+  // 添加工作表到工作簿
+  XLSX.utils.book_append_sheet(wb, ws, '数据');
+
+  // 生成文件名
+  const functionCode = props.meta?.functionCode || 'export';
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+  const filename = `${functionCode}_${timestamp}.xlsx`;
+
+  // 下载文件
+  XLSX.writeFile(wb, filename);
+
+  msg('success', `成功导出 ${rowData.length} 条数据`);
 }
 
 function handleDataDrill() {
