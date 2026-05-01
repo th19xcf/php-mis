@@ -39,7 +39,7 @@ const activeView = ref<'workbench' | 'legacy'>('workbench');
 const currentFunctionCode = computed(() => String(meta.value.functionCode || '').trim());
 
 const isNativeOnlyFunction = computed(() => {
-  return currentFunctionCode.value !== '111';
+  return true;
 });
 
 watch(
