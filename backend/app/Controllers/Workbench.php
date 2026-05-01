@@ -844,4 +844,73 @@ class Workbench extends BaseController
 
         return $options;
     }
+
+    public function importColumns(string $functionCode = '')
+    {
+        try {
+            $functionCode = trim($functionCode);
+            if ($functionCode === '') {
+                throw new \RuntimeException('功能编码不能为空');
+            }
+
+            // 获取导入模块
+            $sql = sprintf(
+                'select 导入模块 from def_query_config 
+                where 查询模块 in (
+                    select 模块名称 from def_function 
+                    where 有效标识="1" and 功能编码=%s
+                )',
+                $this->quote($functionCode)
+            );
+
+            $query = $this->common->select($sql);
+            if ($query === false) {
+                error_log('查询 def_query_config 失败: ' . $sql);
+                return $this->success(['columns' => []]);
+            }
+
+            $row = $query->getRowArray();
+            $importModule = (string) ($row['导入模块'] ?? '');
+
+            if ($importModule === '') {
+                return $this->success(['columns' => []]);
+            }
+
+            // 获取导入列配置
+            $sql = sprintf(
+                'select 列名, 字段名, 查询名, 顺序, 字段类型, 校验类型, 导入类型
+                from def_import_column 
+                where 导入模块=%s
+                order by 顺序',
+                $this->quote($importModule)
+            );
+
+            $query = $this->common->select($sql);
+            if ($query === false) {
+                error_log('查询 def_import_column 失败: ' . $sql);
+                return $this->success(['columns' => []]);
+            }
+
+            $results = $query->getResultArray();
+            $columns = [];
+            foreach ($results as $row) {
+                $columns[] = [
+                    'columnName' => (string) ($row['列名'] ?? ''),
+                    'fieldName' => (string) ($row['字段名'] ?? ''),
+                    'queryName' => (string) ($row['查询名'] ?? ''),
+                    'columnOrder' => (int) ($row['顺序'] ?? 0),
+                    'columnType' => (string) ($row['字段类型'] ?? ''),
+                    'checkType' => (string) ($row['校验类型'] ?? ''),
+                    'importType' => (string) ($row['导入类型'] ?? '')
+                ];
+            }
+
+            return $this->success(['columns' => $columns]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            error_log('获取导入列配置失败: ' . $e->getMessage());
+            return $this->error(ApiCode::SERVER_ERROR, '获取导入列配置失败: ' . $e->getMessage());
+        }
+    }
 }

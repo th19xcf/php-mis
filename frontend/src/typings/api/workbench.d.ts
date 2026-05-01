@@ -98,5 +98,19 @@ declare namespace Api {
         userAuthCount?: number;
       };
     }
+
+    interface ImportColumn {
+      columnName: string;
+      fieldName: string;
+      queryName: string;
+      columnOrder: number;
+      columnType: string;
+      checkType: string;
+      importType: string;
+    }
+
+    interface ImportColumnsData {
+      columns: ImportColumn[];
+    }
   }
 }

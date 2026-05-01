@@ -28,7 +28,12 @@ import {
 } from 'naive-ui';
 import * as XLSX from 'xlsx';
 
-import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
+import {
+  fetchWorkbenchPage,
+  fetchWorkbenchQuery,
+  fetchWorkbenchDrill,
+  fetchImportColumns
+} from '@/service/api/workbench';
 import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
 import { useThemeStore } from '@/store/modules/theme';
 import { useWorkbenchStore } from '@/store/modules/workbench';
@@ -1070,25 +1075,72 @@ async function confirmImport() {
 }
 
 // 下载导入模板
-function downloadImportTemplate() {
-  // 获取当前表格的列定义作为模板
-  const columns = gridApi.value?.getColumns() || [];
-  const visibleColumns = columns.filter(col => {
-    const colDef = col.getColDef();
-    return !colDef.hide && colDef.field && colDef.field !== '';
-  });
+async function downloadImportTemplate() {
+  const functionCode = props.meta?.functionCode;
+  if (!functionCode) {
+    msg('error', '功能编码不能为空');
+    return;
+  }
 
-  const headers = visibleColumns.map(col => {
-    const colDef = col.getColDef();
-    return colDef.headerName || colDef.field || '';
-  });
+  let importColumns: Api.Workbench.ImportColumn[] = [];
+
+  // 尝试从后端获取导入列配置
+  console.log('开始获取导入列配置，功能编码:', functionCode);
+  let apiError = false;
+  try {
+    const result = await fetchImportColumns(functionCode);
+    console.log('获取导入列配置返回结果:', result);
+    if (result.error) {
+      console.log('获取导入列配置返回错误:', result.error);
+      apiError = true;
+    } else if (result.data?.columns) {
+      importColumns = result.data.columns;
+      console.log('获取导入列配置成功:', importColumns.length, '列');
+    } else {
+      console.log('导入列配置为空，使用表格列作为备选');
+    }
+  } catch (err) {
+    // 忽略错误，使用备选方案
+    console.log('获取导入列配置异常:', err);
+    apiError = true;
+  }
+
+  let headers: string[] = [];
+  const exampleRow: Record<string, string> = {};
+
+  if (importColumns.length > 0) {
+    // 使用 def_import_column 配置的列名
+    headers = importColumns.map(col => col.columnName);
+    importColumns.forEach(col => {
+      // 根据导入类型设置示例值
+      let exampleValue = '示例数据';
+      if (col.importType === '1') {
+        exampleValue = '必填';
+      } else if (col.checkType) {
+        exampleValue = `校验:${col.checkType}`;
+      }
+      exampleRow[col.columnName] = exampleValue;
+    });
+  } else {
+    // 如果没有配置，使用当前表格的列定义作为模板
+    const columns = gridApi.value?.getColumns() || [];
+    const visibleColumns = columns.filter(col => {
+      const colDef = col.getColDef();
+      return !colDef.hide && colDef.field && colDef.field !== '';
+    });
+
+    headers = visibleColumns.map(col => {
+      const colDef = col.getColDef();
+      return colDef.headerName || colDef.field || '';
+    });
+
+    headers.forEach(header => {
+      exampleRow[header] = '示例数据';
+    });
+  }
 
   // 创建示例数据
   const exampleData: Record<string, string>[] = [];
-  const exampleRow: Record<string, string> = {};
-  headers.forEach(header => {
-    exampleRow[header] = '示例数据';
-  });
   exampleData.push(exampleRow);
 
   // 创建工作簿
@@ -1104,10 +1156,13 @@ function downloadImportTemplate() {
   XLSX.utils.book_append_sheet(wb, ws, '导入模板');
 
   // 下载
-  const functionCode = props.meta?.functionCode || 'template';
   XLSX.writeFile(wb, `${functionCode}_导入模板.xlsx`);
 
-  msg('success', '模板下载成功');
+  if (apiError) {
+    msg('warning', '模板已下载（使用表格列作为备选）');
+  } else {
+    msg('success', '模板下载成功');
+  }
 }
 
 function handleExport() {
