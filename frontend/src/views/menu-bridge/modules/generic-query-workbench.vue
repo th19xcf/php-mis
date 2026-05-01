@@ -12,7 +12,20 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NEmpty, NSpin, NAlert, NDataTable } from 'naive-ui';
+import {
+  NButton,
+  NRadio,
+  NRadioGroup,
+  NForm,
+  NFormItem,
+  NSelect,
+  NModal,
+  NInput,
+  NEmpty,
+  NSpin,
+  NAlert,
+  NDataTable
+} from 'naive-ui';
 import * as XLSX from 'xlsx';
 
 import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill } from '@/service/api/workbench';
@@ -1751,7 +1764,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddComment">添加批注</NButton>
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
-            <NButton @click="handleImport">导入</NButton>
+            <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
           </div>
 
@@ -2189,9 +2202,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
           <!-- 下载模板按钮 -->
           <div v-if="importPreviewData.length === 0 && !importSuccess" class="import-template-row">
-            <NButton text type="primary" @click="downloadImportTemplate">
-              📥 下载导入模板
-            </NButton>
+            <NButton text type="primary" @click="downloadImportTemplate">📥 下载导入模板</NButton>
           </div>
 
           <!-- 错误提示 -->
@@ -2208,9 +2219,11 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <div class="import-preview-table-wrapper">
               <NDataTable
                 :data="importPreviewData.slice(0, 10)"
-                :columns="Object.keys(importPreviewData[0] || {})
-                  .filter(key => key !== '_rowIndex')
-                  .map(key => ({ title: key, key, ellipsis: { tooltip: true } }))"
+                :columns="
+                  Object.keys(importPreviewData[0] || {})
+                    .filter(key => key !== '_rowIndex')
+                    .map(key => ({ title: key, key, ellipsis: { tooltip: true } }))
+                "
                 size="small"
                 :max-height="300"
                 bordered
