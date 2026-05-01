@@ -112,5 +112,20 @@ declare namespace Api {
     interface ImportColumnsData {
       columns: ImportColumn[];
     }
+
+    interface ImportError {
+      row: number;
+      errors: string[];
+      data: Record<string, any>;
+    }
+
+    interface ImportResult {
+      success: boolean;
+      message: string;
+      total: number;
+      successCount: number;
+      errorCount: number;
+      errors: ImportError[];
+    }
   }
 }

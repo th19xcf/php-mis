@@ -19,3 +19,20 @@ export function fetchWorkbenchDrill(functionCode: string, data: any) {
     data
   });
 }
+
+export function fetchImportColumns(functionCode: string) {
+  return request<Api.Workbench.ImportColumnsData>({
+    url: `/workbench/import-columns/${encodeURIComponent(functionCode)}`
+  });
+}
+
+export function importData(functionCode: string, data: any[]) {
+  return request<Api.Workbench.ImportResult>({
+    url: `/workbench/import/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data: {
+      data,
+      config: {}
+    }
+  });
+}

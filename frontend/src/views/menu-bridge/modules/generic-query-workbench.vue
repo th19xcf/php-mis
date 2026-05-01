@@ -32,7 +32,8 @@ import {
   fetchWorkbenchPage,
   fetchWorkbenchQuery,
   fetchWorkbenchDrill,
-  fetchImportColumns
+  fetchImportColumns,
+  importData
 } from '@/service/api/workbench';
 import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
 import { useThemeStore } from '@/store/modules/theme';
@@ -207,6 +208,37 @@ const importPreviewData = ref<any[]>([]);
 const importError = ref<string>('');
 const importSuccess = ref<{ count: number; message: string } | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+
+// 计算属性：导入预览表格列定义
+const importPreviewColumns = computed(() => {
+  if (importPreviewData.value.length === 0) return [];
+
+  const keys = Object.keys(importPreviewData.value[0] || {}).filter(key => key !== '_rowIndex');
+
+  return keys.map(key => {
+    // 计算列宽：根据表头长度和数据内容长度
+    const headerLength = key.length;
+    const maxDataLength = importPreviewData.value.slice(0, 10).reduce((max, row) => {
+      const valueLength = String(row[key] ?? '').length;
+      return Math.max(max, valueLength);
+    }, 0);
+
+    // 基础宽度 + 根据内容调整
+    const baseWidth = Math.max(headerLength * 14 + 20, 80);
+    const contentWidth = Math.min(maxDataLength * 8 + 20, 300); // 最大300px
+    const width = Math.max(baseWidth, contentWidth);
+
+    return {
+      title: key,
+      key,
+      width,
+      minWidth: 80,
+      maxWidth: 400,
+      resizable: true,
+      ellipsis: { tooltip: true }
+    };
+  });
+});
 
 // 计算属性：获取关键字段列表（用于模板显示）
 const keyFieldList = computed(() => {
@@ -1044,28 +1076,60 @@ async function confirmImport() {
     return;
   }
 
+  const functionCode = props.meta?.functionCode;
+  if (!functionCode) {
+    msg('error', '功能编码不能为空');
+    return;
+  }
+
   importLoading.value = true;
+  importError.value = '';
 
   try {
-    // TODO: 调用后端导入 API
-    // const functionCode = props.meta?.functionCode;
-    // const { data, error } = await importData(functionCode, importPreviewData.value);
+    // 调用后端导入 API
+    const { data, error } = await importData(functionCode, importPreviewData.value);
 
-    // 模拟导入成功
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    if (error) {
+      console.error('导入请求错误:', error);
+      importError.value = '导入请求失败: ' + (error.message || '请稍后重试');
+      return;
+    }
 
-    importSuccess.value = {
-      count: importPreviewData.value.length,
-      message: `成功导入 ${importPreviewData.value.length} 条数据`
-    };
+    if (!data) {
+      importError.value = '导入结果为空';
+      return;
+    }
 
-    msg('success', importSuccess.value.message);
+    if (data.success) {
+      // 导入成功
+      importSuccess.value = {
+        count: data.successCount,
+        message: data.message
+      };
+      msg('success', data.message);
 
-    // 关闭弹窗并刷新数据
-    setTimeout(() => {
-      importVisible.value = false;
-      loadPage(); // 刷新页面数据
-    }, 1500);
+      // 关闭弹窗并刷新数据
+      setTimeout(() => {
+        importVisible.value = false;
+        loadPage(); // 刷新页面数据
+      }, 1500);
+    } else {
+      // 导入失败（验证错误或插入错误）
+      if (data.errors && data.errors.length > 0) {
+        // 显示具体错误
+        const errorMessages = data.errors.slice(0, 5).map((err: Api.Workbench.ImportError) => {
+          return `第 ${err.row} 行: ${err.errors.join(', ')}`;
+        });
+        importError.value = `${data.message}\n${errorMessages.join('\n')}`;
+
+        // 如果有更多错误，显示提示
+        if (data.errors.length > 5) {
+          importError.value += `\n...还有 ${data.errors.length - 5} 行错误`;
+        }
+      } else {
+        importError.value = data.message;
+      }
+    }
   } catch (error) {
     console.error('导入失败:', error);
     importError.value = '导入失败，请稍后重试';
@@ -2267,21 +2331,18 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
           <!-- 数据预览表格 -->
           <div v-if="importPreviewData.length > 0 && !importSuccess">
-            <div class="import-preview-header">
+            <div class="import-preview-header" :class="{ 'import-preview-header-dark': isDarkMode }">
               <span>数据预览</span>
               <span class="import-preview-count">共 {{ importPreviewData.length }} 条数据</span>
             </div>
             <div class="import-preview-table-wrapper">
               <NDataTable
                 :data="importPreviewData.slice(0, 10)"
-                :columns="
-                  Object.keys(importPreviewData[0] || {})
-                    .filter(key => key !== '_rowIndex')
-                    .map(key => ({ title: key, key, ellipsis: { tooltip: true } }))
-                "
+                :columns="importPreviewColumns"
                 size="small"
-                :max-height="300"
                 bordered
+                :scroll-x="1800"
+                :pagination="false"
               />
             </div>
             <div v-if="importPreviewData.length > 10" class="import-preview-more">

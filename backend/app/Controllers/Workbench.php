@@ -913,4 +913,321 @@ class Workbench extends BaseController
             return $this->error(ApiCode::SERVER_ERROR, '获取导入列配置失败: ' . $e->getMessage());
         }
     }
+
+    public function import(string $functionCode = '')
+    {
+        try {
+            $functionCode = trim($functionCode);
+            if ($functionCode === '') {
+                throw new \RuntimeException('功能编码不能为空');
+            }
+
+            // 获取请求数据
+            $payload = $this->request->getJSON(true) ?? [];
+            $importData = $payload['data'] ?? [];
+            $importConfig = $payload['config'] ?? [];
+
+            if (empty($importData)) {
+                throw new \RuntimeException('导入数据不能为空');
+            }
+
+            // 获取 session 信息
+            $session = \Config\Services::session();
+            $userWorkid = $session->get('user_workid') ?? 'system';
+            $menu1 = $session->get($functionCode.'-menu_1') ?? '';
+            $menu2 = $session->get($functionCode.'-menu_2') ?? '';
+
+            error_log('导入请求: functionCode=' . $functionCode . ', userWorkid=' . $userWorkid . ', menu1=' . $menu1 . ', menu2=' . $menu2);
+            error_log('导入数据条数: ' . count($importData));
+
+            // 获取查询配置
+            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            if (!$queryConfig || $queryConfig['dataTable'] === '') {
+                throw new \RuntimeException('未找到数据表配置');
+            }
+
+            $dataTable = $queryConfig['dataTable'];
+            $importModule = $queryConfig['importModule'];
+
+            error_log('数据表: ' . $dataTable . ', 导入模块: ' . $importModule);
+
+            // 生成临时表名（与旧版保持一致）
+            $tmpTableName = sprintf('tmp_%s_%s_%s_%s', $functionCode, $menu1, $menu2, $userWorkid);
+
+            // 获取导入列配置
+            $importColumns = [];
+            if ($importModule !== '') {
+                $sql = sprintf(
+                    'select 列名, 字段名, 查询名, 顺序, 字段类型, 校验类型, 导入类型
+                    from def_import_column 
+                    where 导入模块=%s
+                    order by 顺序',
+                    $this->quote($importModule)
+                );
+                $query = $this->common->select($sql);
+                if ($query !== false) {
+                    $importColumns = $query->getResultArray();
+                }
+            }
+
+            // 如果没有导入列配置，尝试从数据表结构获取
+            if (empty($importColumns)) {
+                $sql = sprintf('SHOW COLUMNS FROM %s', $dataTable);
+                $query = $this->common->select($sql);
+                if ($query !== false) {
+                    $fields = $query->getResultArray();
+                    foreach ($fields as $field) {
+                        $importColumns[] = [
+                            '列名' => $field['Field'],
+                            '字段名' => $field['Field'],
+                            '导入类型' => ($field['Null'] === 'NO' && $field['Default'] === null) ? '1' : '0'
+                        ];
+                    }
+                }
+            }
+
+            // 构建字段映射
+            $fieldMap = [];
+            foreach ($importColumns as $col) {
+                $fieldMap[$col['列名']] = [
+                    'field' => $col['字段名'],
+                    'required' => ($col['导入类型'] ?? '0') === '1',
+                    'checkType' => $col['校验类型'] ?? ''
+                ];
+            }
+
+            // 验证数据
+            $errors = [];
+            $validData = [];
+            foreach ($importData as $rowIndex => $row) {
+                $rowErrors = [];
+                $validRow = [];
+
+                foreach ($fieldMap as $columnName => $config) {
+                    $value = $row[$columnName] ?? '';
+                    $fieldName = $config['field'];
+
+                    // 必填验证
+                    if ($config['required'] && ($value === '' || $value === null)) {
+                        $rowErrors[] = sprintf('字段 "%s" 不能为空', $columnName);
+                    }
+
+                    $validRow[$fieldName] = $value;
+                }
+
+                if (!empty($rowErrors)) {
+                    $errors[] = [
+                        'row' => $rowIndex + 1,
+                        'errors' => $rowErrors,
+                        'data' => $row
+                    ];
+                } else {
+                    $validData[] = $validRow;
+                }
+            }
+
+            // 如果有验证错误，返回错误信息
+            if (!empty($errors)) {
+                return $this->success([
+                    'success' => false,
+                    'message' => sprintf('验证失败，共 %d 行数据有误', count($errors)),
+                    'total' => count($importData),
+                    'successCount' => 0,
+                    'errorCount' => count($errors),
+                    'errors' => $errors
+                ]);
+            }
+
+            // 创建临时表
+            $this->createTempTable($tmpTableName, $importColumns);
+
+            // 将数据插入临时表
+            $insertResult = $this->insertToTempTable($tmpTableName, $validData);
+            if ($insertResult === false) {
+                $this->dropTempTable($tmpTableName);
+                return $this->success([
+                    'success' => false,
+                    'message' => '导入失败：插入临时表失败',
+                    'total' => count($importData),
+                    'successCount' => 0,
+                    'errorCount' => count($importData),
+                    'errors' => [['error' => '插入临时表失败']]
+                ]);
+            }
+
+            // 使用 Mcommon 的事务方式插入
+            $insertResult = $this->insertDataWithTransaction($dataTable, $validData);
+
+            if ($insertResult['success']) {
+                // 删除临时表
+                $this->dropTempTable($tmpTableName);
+                return $this->success([
+                    'success' => true,
+                    'message' => sprintf('成功导入 %d 条数据', $insertResult['count']),
+                    'total' => count($importData),
+                    'successCount' => $insertResult['count'],
+                    'errorCount' => 0,
+                    'errors' => []
+                ]);
+            } else {
+                // 保留临时表用于调试
+                return $this->success([
+                    'success' => false,
+                    'message' => $insertResult['message'],
+                    'total' => count($importData),
+                    'successCount' => 0,
+                    'errorCount' => $insertResult['count'],
+                    'errors' => $insertResult['errors']
+                ]);
+            }
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            error_log('导入数据失败: ' . $e->getMessage());
+            return $this->error(ApiCode::SERVER_ERROR, '导入数据失败: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 创建临时表
+     */
+    private function createTempTable(string $tableName, array $columns): bool
+    {
+        // 删除已存在的临时表
+        $this->dropTempTable($tableName);
+
+        // 如果没有列定义，使用默认字段
+        if (empty($columns)) {
+            $sql = sprintf('CREATE TABLE %s (id int auto_increment primary key, data varchar(255))', $tableName);
+            $result = $this->common->exec($sql);
+            return $result !== false;
+        }
+
+        // 构建字段定义
+        $fieldDefs = [];
+        foreach ($columns as $col) {
+            $fieldName = $col['字段名'] ?? $col['列名'];
+            $fieldLength = $col['字段长度'] ?? 255;
+            $fieldDefs[] = sprintf('%s varchar(%s) not null default ""', $fieldName, $fieldLength);
+        }
+
+        $sql = sprintf('CREATE TABLE %s (%s)', $tableName, implode(',', $fieldDefs));
+        error_log('创建临时表 SQL: ' . $sql);
+        $result = $this->common->exec($sql);
+
+        return $result !== false;
+    }
+
+    /**
+     * 删除临时表
+     */
+    private function dropTempTable(string $tableName): bool
+    {
+        $sql = sprintf('DROP TABLE IF EXISTS %s', $tableName);
+        $result = $this->common->exec($sql);
+        return $result !== false;
+    }
+
+    /**
+     * 插入数据到临时表
+     */
+    private function insertToTempTable(string $tableName, array $data): bool
+    {
+        if (empty($data)) {
+            return true;
+        }
+
+        // 使用批量插入
+        $fields = array_keys($data[0]);
+        $values = [];
+
+        foreach ($data as $row) {
+            $rowValues = [];
+            foreach ($fields as $field) {
+                $rowValues[] = $this->quote($row[$field] ?? '');
+            }
+            $values[] = '(' . implode(',', $rowValues) . ')';
+        }
+
+        $sql = sprintf(
+            'INSERT INTO %s (%s) VALUES %s',
+            $tableName,
+            implode(', ', $fields),
+            implode(', ', $values)
+        );
+
+        $result = $this->common->exec($sql);
+        return $result !== false;
+    }
+
+    /**
+     * 使用事务方式插入数据
+     */
+    private function insertDataWithTransaction(string $tableName, array $data): array
+    {
+        $successCount = 0;
+        $errors = [];
+
+        try {
+            $db = db_connect('btdc');
+            $db->transStart();
+
+            foreach ($data as $rowIndex => $row) {
+                try {
+                    $db->table($tableName)->insert($row);
+                    $num = $db->affectedRows();
+                    if ($num > 0) {
+                        $successCount++;
+                    } else {
+                        $errors[] = [
+                            'row' => $rowIndex + 1,
+                            'error' => '插入失败，影响行数为0',
+                            'data' => $row
+                        ];
+                    }
+                } catch (\Throwable $e) {
+                    $errors[] = [
+                        'row' => $rowIndex + 1,
+                        'error' => $e->getMessage(),
+                        'data' => $row
+                    ];
+                }
+            }
+
+            $db->transComplete();
+
+            if ($db->transStatus() === false) {
+                return [
+                    'success' => false,
+                    'count' => count($errors),
+                    'message' => sprintf('导入失败，%d 行数据插入出错，已回滚', count($errors)),
+                    'errors' => $errors
+                ];
+            }
+
+            if (empty($errors)) {
+                return [
+                    'success' => true,
+                    'count' => $successCount,
+                    'message' => sprintf('成功导入 %d 条数据', $successCount),
+                    'errors' => []
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'count' => count($errors),
+                    'message' => sprintf('导入失败，%d 行数据插入出错', count($errors)),
+                    'errors' => $errors
+                ];
+            }
+        } catch (\Throwable $e) {
+            error_log('事务插入失败: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'count' => count($data),
+                'message' => '导入失败：' . $e->getMessage(),
+                'errors' => [['error' => $e->getMessage()]]
+            ];
+        }
+    }
 }
