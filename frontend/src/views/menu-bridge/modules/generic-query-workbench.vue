@@ -592,21 +592,8 @@ async function loadPage() {
   }
 
   loading.value = true;
-  const { data, error } = await fetchWorkbenchPage(functionCode);
 
-  if (error) {
-    loading.value = false;
-    return;
-  }
-
-  pageMeta.value = data.meta;
-
-  // 页面元数据加载完成后，检查工具栏滚动状态
-  setTimeout(() => {
-    checkScrollPosition();
-  }, 100);
-
-  // 解析钻取参数
+  // 解析钻取参数（在请求前准备好，以便并行发送请求）
   const drillFilters: QueryFilter[] = [];
   let drillConditionSql = '';
   const drillParamsStr = String(props.meta.params || '').trim();
@@ -654,12 +641,20 @@ async function loadPage() {
     }
   }
 
-  const allRows = await fetchAllRows(functionCode, drillFilters, drillConditionSql);
-  if (!allRows) {
+  // 并行发送页面元数据和数据查询请求
+  const [pageResult, allRows] = await Promise.all([
+    fetchWorkbenchPage(functionCode),
+    fetchAllRows(functionCode, drillFilters, drillConditionSql)
+  ]);
+
+  const { data, error } = pageResult;
+
+  if (error || !allRows) {
     loading.value = false;
     return;
   }
 
+  pageMeta.value = data.meta;
   serverRows.value = allRows;
   total.value = allRows.length;
   page.value = 1;
@@ -667,6 +662,11 @@ async function loadPage() {
   selectedField.value = data.meta.conditions[0]?.fieldKey || '';
   selectedValue.value = '';
   loading.value = false;
+
+  // 页面元数据加载完成后，检查工具栏滚动状态
+  setTimeout(() => {
+    checkScrollPosition();
+  }, 100);
 
   // 保存到 store 缓存
   workbenchStore.setCache(functionCode, {
