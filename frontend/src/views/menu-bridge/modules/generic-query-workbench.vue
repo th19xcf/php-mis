@@ -548,6 +548,7 @@ async function loadPage() {
 
         // 列宽自适应（与正常加载保持一致）
         const api = gridApi.value;
+        if (api.isDestroyed()) return;
         const columnState = api.getColumnState();
         if (columnState && Array.isArray(columnState)) {
           const allColIds = columnState
@@ -678,7 +679,7 @@ async function loadPage() {
   // 数据加载完成后，调整列宽度
   setTimeout(() => {
     const api = gridApi.value;
-    if (!api) return;
+    if (!api || api.isDestroyed()) return;
 
     const columnState = api.getColumnState();
     if (!columnState || !Array.isArray(columnState)) return;
@@ -887,7 +888,7 @@ function handleOpenCondition() {
 }
 
 function handleOpenFieldColumn() {
-  if (gridApi.value) {
+  if (gridApi.value && !gridApi.value.isDestroyed()) {
     const visibleFields = gridApi.value
       .getColumnState()
       .filter(item => item.colId !== 'ag-Grid-SelectionColumn' && item.hide !== true)
@@ -932,7 +933,7 @@ function handleFieldSelectionChange(values: Array<string | number>) {
 }
 
 function handleOpenPinColumn() {
-  if (gridApi.value) {
+  if (gridApi.value && !gridApi.value.isDestroyed()) {
     const pinnedLeft = gridApi.value
       .getColumnState()
       .filter(item => item.pinned === 'left')
