@@ -934,8 +934,16 @@ class Workbench extends BaseController
             // 获取 session 信息
             $session = \Config\Services::session();
             $userWorkid = $session->get('user_workid') ?? 'system';
+            $userLocation = $session->get('user_location') ?? ''; // 获取用户属地
             $menu1 = $session->get($functionCode.'-menu_1') ?? '';
             $menu2 = $session->get($functionCode.'-menu_2') ?? '';
+
+            // 系统变量映射
+            $systemVars = [
+                '$时间戳' => date('Y-m-d H:i:s'),
+                '$工号' => $userWorkid,
+                '$属地' => $userLocation
+            ];
 
             error_log('导入请求: functionCode=' . $functionCode . ', userWorkid=' . $userWorkid . ', menu1=' . $menu1 . ', menu2=' . $menu2);
             error_log('导入数据条数: ' . count($importData));
@@ -958,8 +966,8 @@ class Workbench extends BaseController
             $importColumns = [];
             if ($importModule !== '') {
                 $sql = sprintf(
-                    'select 列名, 字段名, 查询名, 顺序, 字段类型, 校验类型, 导入类型
-                    from def_import_column 
+                    'select 列名, 字段名, 查询名, 顺序, 字段类型, 校验类型, 导入类型, 系统变量
+                    from def_import_column
                     where 导入模块=%s
                     order by 顺序',
                     $this->quote($importModule)
@@ -992,7 +1000,8 @@ class Workbench extends BaseController
                 $fieldMap[$col['列名']] = [
                     'field' => $col['字段名'],
                     'required' => ($col['导入类型'] ?? '0') === '1',
-                    'checkType' => $col['校验类型'] ?? ''
+                    'checkType' => $col['校验类型'] ?? '',
+                    'systemVar' => $col['系统变量'] ?? ''
                 ];
             }
 
@@ -1006,6 +1015,14 @@ class Workbench extends BaseController
                 foreach ($fieldMap as $columnName => $config) {
                     $value = $row[$columnName] ?? '';
                     $fieldName = $config['field'];
+                    $systemVar = $config['systemVar'] ?? '';
+
+                    // 如果值为空且配置了系统变量，使用系统变量值
+                    if (($value === '' || $value === null) && $systemVar !== '') {
+                        if (isset($systemVars[$systemVar])) {
+                            $value = $systemVars[$systemVar];
+                        }
+                    }
 
                     // 必填验证
                     if ($config['required'] && ($value === '' || $value === null)) {
