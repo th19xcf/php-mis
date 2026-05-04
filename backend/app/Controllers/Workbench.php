@@ -996,8 +996,10 @@ class Workbench extends BaseController
 
             // 构建字段映射
             $fieldMap = [];
+            $requiredColumns = []; // 存储匹配标识=1的必填列
             foreach ($importColumns as $col) {
-                $fieldMap[$col['列名']] = [
+                $columnName = $col['列名'] ?? '';
+                $fieldMap[$columnName] = [
                     'field' => $col['字段名'],
                     'fieldType' => $col['字段类型'] ?? '字符',
                     'fieldLength' => $col['字段长度'] ?? 255,
@@ -1008,6 +1010,33 @@ class Workbench extends BaseController
                     'systemVar' => $col['系统变量'] ?? '',
                     'matchFlag' => $col['匹配标识'] ?? '0'
                 ];
+
+                // 收集匹配标识=1的必填列
+                if (($col['匹配标识'] ?? '0') === '1') {
+                    $requiredColumns[] = $columnName;
+                }
+            }
+
+            // 检查导入数据是否包含所有匹配标识=1的字段
+            if (!empty($importData)) {
+                $firstRow = $importData[0];
+                $missingColumns = [];
+                foreach ($requiredColumns as $reqCol) {
+                    if (!array_key_exists($reqCol, $firstRow)) {
+                        $missingColumns[] = $reqCol;
+                    }
+                }
+
+                if (!empty($missingColumns)) {
+                    return $this->success([
+                        'success' => false,
+                        'message' => sprintf('导入失败,缺少必须的字段"%s"', implode('","', $missingColumns)),
+                        'total' => count($importData),
+                        'successCount' => 0,
+                        'errorCount' => count($importData),
+                        'errors' => [['error' => sprintf('缺少必须的字段: %s', implode(', ', $missingColumns))]]
+                    ]);
+                }
             }
 
             // 验证数据
@@ -1089,6 +1118,22 @@ class Workbench extends BaseController
                     'errorCount' => count($importData),
                     'errors' => $checkResult['errors']
                 ]);
+            }
+
+            // 滤重检查（如果配置了滤重字段）
+            if ($importModule !== '') {
+                $duplicateCheckResult = $this->checkDuplicateFields($importModule, $dataTable, $tmpTableName);
+                if ($duplicateCheckResult['hasError']) {
+                    $this->dropTempTable($tmpTableName);
+                    return $this->success([
+                        'success' => false,
+                        'message' => $duplicateCheckResult['message'],
+                        'total' => count($importData),
+                        'successCount' => 0,
+                        'errorCount' => count($importData),
+                        'errors' => $duplicateCheckResult['errors']
+                    ]);
+                }
             }
 
             // 使用 INSERT INTO ... SELECT 从临时表导入正式表，应用查询名转换
@@ -1475,5 +1520,90 @@ class Workbench extends BaseController
             'message' => '校验通过',
             'errors' => []
         ];
+    }
+
+    /**
+     * 检查滤重字段是否有重复记录
+     */
+    private function checkDuplicateFields(string $importModule, string $dataTable, string $tmpTableName): array
+    {
+        try {
+            // 查询 def_import_config 获取滤重字段
+            $sql = sprintf(
+                'select 滤重字段 from def_import_config where 导入模块=%s',
+                $this->quote($importModule)
+            );
+
+            $result = $this->common->select($sql);
+            if ($result === false) {
+                return [
+                    'hasError' => false,
+                    'message' => '',
+                    'errors' => []
+                ];
+            }
+
+            $row = $result->getRowArray();
+            if (!$row || empty($row['滤重字段'])) {
+                return [
+                    'hasError' => false,
+                    'message' => '',
+                    'errors' => []
+                ];
+            }
+
+            $duplicateFields = $row['滤重字段'];
+
+            // 检查临时表和正式表之间是否有重复记录
+            $sql = sprintf(
+                'select %s from %s where concat(%s) in (select concat(%s) from %s)',
+                $duplicateFields,
+                $dataTable,
+                $duplicateFields,
+                $duplicateFields,
+                $tmpTableName
+            );
+
+            $result = $this->common->select($sql);
+            if ($result === false) {
+                return [
+                    'hasError' => false,
+                    'message' => '',
+                    'errors' => []
+                ];
+            }
+
+            $errs = $result->getResultArray();
+            if (count($errs) > 0) {
+                $errArr = [];
+                foreach ($errs as $err) {
+                    $str = '';
+                    foreach ($err as $item) {
+                        if ($str !== '') $str = $str . '^';
+                        $str = $str . $item;
+                    }
+                    $errArr[] = $str;
+                }
+
+                return [
+                    'hasError' => true,
+                    'message' => sprintf('导入失败,滤重列"%s"有重复记录 {"%s"}', $duplicateFields, implode(',', $errArr)),
+                    'errors' => $errs
+                ];
+            }
+
+            return [
+                'hasError' => false,
+                'message' => '',
+                'errors' => []
+            ];
+        } catch (\Throwable $e) {
+            error_log('滤重检查失败: ' . $e->getMessage());
+            return [
+                'hasError' => false,
+                'message' => '',
+                'errors' => []
+            ];
+        }
     }
 }
