@@ -38,7 +38,7 @@ import {
   importData,
   fetchAddFields,
   addRow,
-  fetchPopupData,
+  // fetchPopupData, // 暂时未使用
   fetchPopupLevels,
   fetchPopupLevelData
 } from '@/service/api/workbench';
@@ -1180,8 +1180,8 @@ function handleLoadCascaderChildren(option: any) {
   }
 
   // 使用 fullName 调用 API（因为数据库通过本级全称来维护层级关系）
-    const parentCode = option.fullName || option.value;
-    console.log('[Cascader] Fetching level', nextLevel, 'with parentCode:', parentCode);
+  const parentCode = option.fullName || option.value;
+  console.log('[Cascader] Fetching level', nextLevel, 'with parentCode:', parentCode);
 
   return fetchPopupLevelData(functionCode, objectName, nextLevel, parentCode)
     .then(({ data, error }) => {
@@ -2673,7 +2673,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
               共 {{ popupMaxLevel }} 级：
               <span v-for="(level, index) in popupLevels" :key="level.level">
                 {{ level.name }}
-                <span v-if="index < popupLevels.length - 1"> → </span>
+                <span v-if="index < popupLevels.length - 1">→</span>
               </span>
             </NText>
           </div>
