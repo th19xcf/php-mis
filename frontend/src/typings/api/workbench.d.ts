@@ -127,5 +127,24 @@ declare namespace Api {
       errorCount: number;
       errors: ImportError[];
     }
+
+    interface AddField {
+      columnName: string;
+      fieldName: string;
+      fieldType: string;
+      required: boolean;
+      defaultValue: string;
+      objectName: string;
+      editable: boolean;
+    }
+
+    interface AddFieldsData {
+      fields: AddField[];
+    }
+
+    interface AddResult {
+      success: boolean;
+      message: string;
+    }
   }
 }

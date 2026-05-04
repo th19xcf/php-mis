@@ -36,3 +36,17 @@ export function importData(functionCode: string, data: any[]) {
     }
   });
 }
+
+export function fetchAddFields(functionCode: string) {
+  return request<Api.Workbench.AddFieldsData>({
+    url: `/workbench/add-fields/${encodeURIComponent(functionCode)}`
+  });
+}
+
+export function addRow(functionCode: string, data: Record<string, any>) {
+  return request<Api.Workbench.AddResult>({
+    url: `/workbench/add-row/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data
+  });
+}

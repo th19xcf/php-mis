@@ -21,6 +21,8 @@ import {
   NSelect,
   NModal,
   NInput,
+  NInputNumber,
+  NDatePicker,
   NEmpty,
   NSpin,
   NAlert,
@@ -33,7 +35,9 @@ import {
   fetchWorkbenchQuery,
   fetchWorkbenchDrill,
   fetchImportColumns,
-  importData
+  importData,
+  fetchAddFields,
+  addRow
 } from '@/service/api/workbench';
 import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
 import { useThemeStore } from '@/store/modules/theme';
@@ -208,6 +212,14 @@ const importPreviewData = ref<any[]>([]);
 const importError = ref<string>('');
 const importSuccess = ref<{ count: number; message: string } | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+
+// 新增相关状态
+const addVisible = ref(false);
+const addLoading = ref(false);
+const addFormData = ref<Record<string, any>>({});
+const addFormFields = ref<any[]>([]);
+const addError = ref<string>('');
+const addSuccess = ref<string>('');
 
 // 计算属性：导入预览表格列定义
 const importPreviewColumns = computed(() => {
@@ -986,6 +998,87 @@ function handleImport() {
   importPreviewData.value = [];
   importError.value = '';
   importSuccess.value = null;
+}
+
+// 打开新增弹窗
+async function handleOpenAdd() {
+  addVisible.value = true;
+  addLoading.value = true;
+  addError.value = '';
+  addSuccess.value = '';
+  addFormData.value = {};
+  addFormFields.value = [];
+
+  try {
+    const functionCode = props.meta.functionCode || '';
+    if (!functionCode) {
+      addError.value = '功能编码不能为空';
+      addLoading.value = false;
+      return;
+    }
+    console.log('[新增] functionCode:', functionCode);
+    // 调用 API 获取新增字段配置
+    const { data, error } = await fetchAddFields(functionCode);
+    console.log('[新增] API 返回:', data, error);
+
+    if (error) {
+      addError.value = '获取新增字段配置失败';
+      addLoading.value = false;
+      return;
+    }
+
+    addFormFields.value = data.fields || [];
+    console.log('[新增] 字段数量:', addFormFields.value.length);
+    console.log('[新增] 调试信息:', data.debug);
+
+    // 初始化表单数据
+    addFormFields.value.forEach((field: any) => {
+      addFormData.value[field.fieldName] = field.defaultValue || '';
+    });
+  } catch (e) {
+    console.error('[新增] 获取字段配置失败:', e);
+    addError.value = '获取新增字段配置失败';
+  } finally {
+    addLoading.value = false;
+  }
+}
+
+// 提交新增数据
+async function confirmAdd() {
+  addLoading.value = true;
+  addError.value = '';
+  addSuccess.value = '';
+
+  try {
+    const functionCode = props.meta.functionCode || '';
+    if (!functionCode) {
+      addError.value = '功能编码不能为空';
+      addLoading.value = false;
+      return;
+    }
+    const { data, error } = await addRow(functionCode, addFormData.value);
+
+    if (error) {
+      addError.value = error.message || '新增失败';
+      addLoading.value = false;
+      return;
+    }
+
+    if (data.success) {
+      addSuccess.value = data.message || '新增成功';
+      // 关闭弹窗并刷新数据
+      setTimeout(() => {
+        addVisible.value = false;
+        loadPage();
+      }, 1500);
+    } else {
+      addError.value = data.message || '新增失败';
+    }
+  } catch (e: any) {
+    addError.value = e.message || '新增失败';
+  } finally {
+    addLoading.value = false;
+  }
 }
 
 // 触发文件选择
@@ -1893,6 +1986,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddComment">添加批注</NButton>
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
+            <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAdd">新增</NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
           </div>
@@ -2379,6 +2473,78 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             >
               确认导入
             </NButton>
+          </NSpace>
+        </NSpace>
+      </NSpin>
+    </NModal>
+
+    <!-- 新增弹窗 -->
+    <NModal v-model:show="addVisible" preset="card" title="新增记录" class="w-800px" :mask-closable="false">
+      <NSpin :show="addLoading">
+        <NSpace vertical :size="16">
+          <!-- 错误提示 -->
+          <NAlert v-if="addError" type="error" :show-icon="true">
+            {{ addError }}
+          </NAlert>
+
+          <!-- 成功提示 -->
+          <NAlert v-if="addSuccess" type="success" :show-icon="true">
+            {{ addSuccess }}
+          </NAlert>
+
+          <!-- 新增表单 -->
+          <div v-if="!addSuccess">
+            <div style="margin-bottom: 10px; color: #666;">
+              字段数量: {{ addFormFields.length }}
+            </div>
+            <NForm :model="addFormData" label-placement="left" label-width="120px">
+              <div class="add-form-grid">
+                <NFormItem
+                  v-for="field in addFormFields"
+                  :key="field.fieldName"
+                  :label="field.columnName"
+                  :required="field.required"
+                >
+                <!-- 固定值下拉选择 -->
+                <NSelect
+                  v-if="field.objectName && field.objectName !== ''"
+                  v-model:value="addFormData[field.fieldName]"
+                  :options="field.objectOptions || []"
+                  :placeholder="`请选择${field.columnName}`"
+                  clearable
+                />
+                <!-- 日期选择 -->
+                <NDatePicker
+                  v-else-if="field.fieldType === '日期'"
+                  v-model:formatted-value="addFormData[field.fieldName]"
+                  value-format="yyyy-MM-dd"
+                  type="date"
+                  :placeholder="`请选择${field.columnName}`"
+                  clearable
+                />
+                <!-- 数值输入 -->
+                <NInputNumber
+                  v-else-if="field.fieldType === '数值'"
+                  v-model:value="addFormData[field.fieldName]"
+                  :placeholder="`请输入${field.columnName}`"
+                  clearable
+                />
+                <!-- 默认文本输入 -->
+                <NInput
+                  v-else
+                  v-model:value="addFormData[field.fieldName]"
+                  :placeholder="`请输入${field.columnName}`"
+                  clearable
+                />
+                </NFormItem>
+              </div>
+            </NForm>
+          </div>
+
+          <!-- 操作按钮 -->
+          <NSpace justify="end">
+            <NButton @click="addVisible = false">关闭</NButton>
+            <NButton v-if="!addSuccess" type="primary" :disabled="addLoading" @click="confirmAdd">确认新增</NButton>
           </NSpace>
         </NSpace>
       </NSpin>
@@ -3324,5 +3490,22 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   padding: 12px;
   color: #8c8c8c;
   font-size: 14px;
+}
+
+/* 新增表单样式 */
+.add-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 768px) {
+  .add-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.add-form-grid :deep(.n-form-item) {
+  margin-bottom: 0;
 }
 </style>

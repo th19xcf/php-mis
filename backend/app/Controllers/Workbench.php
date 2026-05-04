@@ -1646,4 +1646,354 @@ class Workbench extends BaseController
             // 后处理失败不影响导入结果，只记录日志
         }
     }
+
+    /**
+     * 获取新增字段配置
+     */
+    public function addFields(string $functionCode = '')
+    {
+        try {
+            // 从 session 获取字段模块
+            $session = \Config\Services::session();
+            $fieldModule = $session->get($functionCode . '-field_module');
+
+            error_log('addFields - functionCode: ' . $functionCode);
+            error_log('addFields - fieldModule from session: ' . ($fieldModule ?? 'null'));
+
+            if (empty($fieldModule)) {
+                // 查询字段模块 - 使用与 buildWorkbenchContext 相同的方式
+                $sql = sprintf(
+                    'select 字段模块 from def_query_config where 查询模块 in (
+                        select 模块名称 from def_function where 有效标识="1" and 功能编码=%s
+                    )',
+                    $this->quote($functionCode)
+                );
+                error_log('addFields - SQL: ' . $sql);
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $row = $result->getRowArray();
+                    $fieldModule = $row['字段模块'] ?? '';
+                    error_log('addFields - fieldModule from db: ' . ($fieldModule ?? 'null'));
+                }
+            }
+
+            if (empty($fieldModule)) {
+                error_log('addFields - fieldModule is empty, returning empty fields');
+                return $this->success(['fields' => []]);
+            }
+
+            // 查询可新增的字段 - 使用 view_function 视图，与旧版 Frame.php 保持一致
+            $sql = sprintf(
+                'select 
+                    列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 可新增, 列顺序
+                from view_function
+                where 功能编码=%s and 列顺序>0 and 可新增="1"
+                group by 列名
+                order by 列顺序',
+                $this->quote($functionCode)
+            );
+
+            $result = $this->common->select($sql);
+            error_log('addFields - query SQL: ' . $sql);
+            if ($result === false) {
+                error_log('addFields - query result is false');
+                return $this->success(['fields' => [], 'debug' => ['sql' => $sql, 'error' => 'query failed']]);
+            }
+
+            $columns = $result->getResultArray();
+            error_log('addFields - columns count: ' . count($columns));
+            error_log('addFields - columns data: ' . json_encode($columns));
+            $fields = [];
+
+            foreach ($columns as $col) {
+                $field = [
+                    'columnName' => $col['列名'],
+                    'fieldName' => $col['字段名'],
+                    'fieldType' => $col['列类型'] ?? '字符',
+                    'required' => ($col['不可为空'] ?? '0') === '1',
+                    'defaultValue' => $col['缺省值'] ?? '',
+                    'objectName' => '',
+                    'editable' => true
+                ];
+
+                // 处理系统变量默认值
+                if ($field['defaultValue'] === '$当日日期') {
+                    $field['defaultValue'] = date('Y-m-d');
+                } elseif ($field['defaultValue'] === '$时间戳') {
+                    $field['defaultValue'] = date('Y-m-d H:i:s');
+                } elseif ($field['defaultValue'] === '$工号') {
+                    $field['defaultValue'] = $session->get('user_workid') ?? '';
+                } elseif ($field['defaultValue'] === '$属地') {
+                    $field['defaultValue'] = $session->get('user_location') ?? '';
+                }
+
+                // 如果赋值类型包含"固定值"，则查询对象选项
+                $赋值类型 = $col['赋值类型'] ?? '';
+                $对象 = $col['对象'] ?? '';
+                if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
+                    $field['objectName'] = $对象;
+                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                }
+
+                $fields[] = $field;
+            }
+
+            return $this->success([
+                'fields' => $fields,
+                'debug' => [
+                    'functionCode' => $functionCode,
+                    'fieldModule' => $fieldModule,
+                    'columnsCount' => count($columns)
+                ]
+            ]);
+        } catch (\Throwable $e) {
+            error_log('获取新增字段配置失败: ' . $e->getMessage());
+            return $this->error('5001', '获取新增字段配置失败');
+        }
+    }
+
+    /**
+     * 新增记录
+     */
+    public function addRow(string $functionCode = '')
+    {
+        try {
+            $request = $this->request->getJSON(true) ?? [];
+
+            // 从 session 获取必要信息
+            $session = \Config\Services::session();
+            $dataTable = $session->get($functionCode . '-data_table');
+            $dataModel = $session->get($functionCode . '-data_model');
+            $beforeInsert = $session->get($functionCode . '-before_insert');
+            $afterInsert = $session->get($functionCode . '-after_insert');
+            $primaryKey = $session->get($functionCode . '-primary_key');
+
+            // 如果 session 中没有，从数据库查询
+            if (empty($dataTable)) {
+                $sql = sprintf(
+                    'select 数据表名, 数据模式, 新增前处理模块, 新增后处理模块, 主键字段
+                    from def_query_config
+                    where 查询模块 in (
+                        select 模块名称 from def_function where 功能编码="%s"
+                    )',
+                    $functionCode
+                );
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $row = $result->getRowArray();
+                    $dataTable = $row['数据表名'] ?? '';
+                    $dataModel = $row['数据模式'] ?? '0';
+                    $beforeInsert = $row['新增前处理模块'] ?? '';
+                    $afterInsert = $row['新增后处理模块'] ?? '';
+                    $primaryKey = $row['主键字段'] ?? '';
+                }
+            }
+
+            if (empty($dataTable)) {
+                return $this->error('5001', '新增失败：未找到数据表配置');
+            }
+
+            // 执行新增前处理
+            if (!empty($beforeInsert)) {
+                $spSql = sprintf('call %s("新增前", "")', $beforeInsert);
+                $this->common->select($spSql);
+            }
+
+            // 根据数据模式执行不同的新增逻辑
+            $num = 0;
+            switch ($dataModel) {
+                case '0':
+                    $num = $this->addRowMode0($dataTable, $request);
+                    break;
+                case '1':
+                    $num = $this->addRowMode1($dataTable, $request, $session->get('user_workid') ?? 'system');
+                    break;
+                case '2':
+                    $num = $this->addRowMode2($dataTable, $request, $session->get('user_workid') ?? 'system');
+                    break;
+                default:
+                    return $this->error('5001', sprintf('新增失败,数据模式[-%s-]错误', $dataModel));
+            }
+
+            // 执行新增后处理
+            if (!empty($afterInsert) && !empty($primaryKey)) {
+                $keyStr = $this->buildWhereFromData($request, $primaryKey);
+                $spSql = sprintf('call %s("新增", "%s")', $afterInsert, $keyStr);
+                $this->common->select($spSql);
+            }
+
+            return $this->success([
+                'success' => true,
+                'message' => sprintf('新增成功,新增 %d 条记录', $num)
+            ]);
+        } catch (\Throwable $e) {
+            error_log('新增记录失败: ' . $e->getMessage());
+            return $this->error('5001', '新增失败：' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 获取对象选项
+     */
+    private function getObjectOptions(string $objectName): array
+    {
+        try {
+            $session = \Config\Services::session();
+            $userLocation = $session->get('user_location') ?? '';
+
+            $sql = sprintf(
+                'select 对象值 from def_object where 对象名称=%s and (属地="" or locate(属地, %s))',
+                $this->quote($objectName),
+                $this->quote($userLocation)
+            );
+
+            $result = $this->common->select($sql);
+            if ($result === false) {
+                return [];
+            }
+
+            $options = [];
+            $rows = $result->getResultArray();
+            foreach ($rows as $row) {
+                $options[] = [
+                    'label' => $row['对象值'],
+                    'value' => $row['对象值']
+                ];
+            }
+
+            return $options;
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * 模式0新增：无额外字段
+     */
+    private function addRowMode0(string $dataTable, array $data): int
+    {
+        $fields = [];
+        $values = [];
+
+        foreach ($data as $key => $value) {
+            $fields[] = sprintf('`%s`', $key);
+            $values[] = sprintf('"%s"', addslashes($value));
+        }
+
+        if (empty($fields)) {
+            return 0;
+        }
+
+        $sql = sprintf(
+            'insert into %s (%s) values (%s)',
+            $dataTable,
+            implode(', ', $fields),
+            implode(', ', $values)
+        );
+
+        $this->common->sql_log('新增[0]', '', sprintf('表名=`%s`', $dataTable));
+        return $this->common->exec($sql);
+    }
+
+    /**
+     * 模式1新增：有额外字段（原记录不变）
+     */
+    private function addRowMode1(string $dataTable, array $data, string $userWorkid): int
+    {
+        $fields = [];
+        $values = [];
+
+        foreach ($data as $key => $value) {
+            $fields[] = sprintf('`%s`', $key);
+            $values[] = sprintf('"%s"', addslashes($value));
+        }
+
+        // 添加额外字段
+        $fields[] = '`操作记录`';
+        $values[] = '"新增"';
+        $fields[] = '`操作来源`';
+        $values[] = '"工作台"';
+        $fields[] = '`操作人员`';
+        $values[] = sprintf('"%s"', $userWorkid);
+        $fields[] = '`操作时间`';
+        $values[] = sprintf('"%s"', date('Y-m-d H:i:s'));
+        $fields[] = '`校验标识`';
+        $values[] = '"0"';
+        $fields[] = '`删除标识`';
+        $values[] = '"0"';
+        $fields[] = '`有效标识`';
+        $values[] = '"1"';
+
+        $sql = sprintf(
+            'insert into %s (%s) values (%s)',
+            $dataTable,
+            implode(', ', $fields),
+            implode(', ', $values)
+        );
+
+        $this->common->sql_log('新增[1]', '', sprintf('表名=`%s`', $dataTable));
+        return $this->common->exec($sql);
+    }
+
+    /**
+     * 模式2新增：有额外字段（流水账模式）
+     */
+    private function addRowMode2(string $dataTable, array $data, string $userWorkid): int
+    {
+        $fields = [];
+        $values = [];
+
+        foreach ($data as $key => $val) {
+            $fields[] = sprintf('`%s`', $key);
+            $values[] = sprintf('"%s"', addslashes($val));
+        }
+
+        // 添加额外字段
+        $fields[] = '`操作记录`';
+        $values[] = '"新增"';
+        $fields[] = '`操作来源`';
+        $values[] = '"工作台"';
+        $fields[] = '`操作人员`';
+        $values[] = sprintf('"%s"', $userWorkid);
+        $fields[] = '`操作时间`';
+        $values[] = sprintf('"%s"', date('Y-m-d H:i:s'));
+        $fields[] = '`校验标识`';
+        $values[] = '"0"';
+        $fields[] = '`删除标识`';
+        $values[] = '"0"';
+        $fields[] = '`有效标识`';
+        $values[] = '"1"';
+        $fields[] = '`记录开始日期`';
+        $values[] = sprintf('"%s"', date('Y-m-d'));
+        $fields[] = '`记录结束日期`';
+        $values[] = '"9999-12-31"';
+
+        $sql = sprintf(
+            'insert into %s (%s) values (%s)',
+            $dataTable,
+            implode(', ', $fields),
+            implode(', ', $values)
+        );
+
+        $this->common->sql_log('新增[2]', '', sprintf('表名=`%s`', $dataTable));
+        return $this->common->exec($sql);
+    }
+
+    /**
+     * 根据数据和主键构建 where 条件
+     */
+    private function buildWhereFromData(array $data, string $primaryKey): string
+    {
+        $keys = explode(';', $primaryKey);
+        $conditions = [];
+
+        foreach ($keys as $key) {
+            $key = trim($key);
+            if (isset($data[$key])) {
+                $conditions[] = sprintf('%s="%s"', $key, addslashes($data[$key]));
+            }
+        }
+
+        return implode(' and ', $conditions);
+    }
 }
