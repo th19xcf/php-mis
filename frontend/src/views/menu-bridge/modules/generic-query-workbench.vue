@@ -1118,8 +1118,17 @@ async function confirmImport() {
       // 导入失败（验证错误或插入错误）
       if (data.errors && data.errors.length > 0) {
         // 显示具体错误
-        const errorMessages = data.errors.slice(0, 5).map((err: Api.Workbench.ImportError) => {
-          return `第 ${err.row} 行: ${err.errors.join(', ')}`;
+        const errorMessages = data.errors.slice(0, 5).map((err: any) => {
+          // 处理两种错误格式：
+          // 1. 行级错误：{row: 1, errors: ['错误1', '错误2']}
+          // 2. 校验错误：{字段值: 'xxx'} 或 {字段名: 'xxx', 字段值: 'yyy'}
+          if (err.row !== undefined && err.errors !== undefined) {
+            return `第 ${err.row} 行: ${err.errors.join(', ')}`;
+          } else if (err.字段值 !== undefined) {
+            return `字段值: ${err.字段值}`;
+          } else {
+            return JSON.stringify(err);
+          }
         });
         importError.value = `${data.message}\n${errorMessages.join('\n')}`;
 

@@ -966,7 +966,7 @@ class Workbench extends BaseController
             $importColumns = [];
             if ($importModule !== '') {
                 $sql = sprintf(
-                    'select 列名, 字段名, 查询名, 顺序, 字段类型, 校验类型, 导入类型, 系统变量
+                    'select 列名, 字段名, 查询名, 顺序, 字段类型, 字段长度, 校验信息, 校验类型, 对象, 导入类型, 系统变量, 匹配标识
                     from def_import_column
                     where 导入模块=%s
                     order by 顺序',
@@ -999,9 +999,14 @@ class Workbench extends BaseController
             foreach ($importColumns as $col) {
                 $fieldMap[$col['列名']] = [
                     'field' => $col['字段名'],
+                    'fieldType' => $col['字段类型'] ?? '字符',
+                    'fieldLength' => $col['字段长度'] ?? 255,
                     'required' => ($col['导入类型'] ?? '0') === '1',
                     'checkType' => $col['校验类型'] ?? '',
-                    'systemVar' => $col['系统变量'] ?? ''
+                    'checkInfo' => $col['校验信息'] ?? '',
+                    'object' => $col['对象'] ?? '',
+                    'systemVar' => $col['系统变量'] ?? '',
+                    'matchFlag' => $col['匹配标识'] ?? '0'
                 ];
             }
 
@@ -1069,6 +1074,20 @@ class Workbench extends BaseController
                     'successCount' => 0,
                     'errorCount' => count($importData),
                     'errors' => [['error' => '插入临时表失败']]
+                ]);
+            }
+
+            // 数据校验（固定值、条件、日期格式）
+            $checkResult = $this->validateImportData($tmpTableName, $importColumns, $userLocation);
+            if ($checkResult['hasError']) {
+                $this->dropTempTable($tmpTableName);
+                return $this->success([
+                    'success' => false,
+                    'message' => $checkResult['message'],
+                    'total' => count($importData),
+                    'successCount' => 0,
+                    'errorCount' => count($importData),
+                    'errors' => $checkResult['errors']
                 ]);
             }
 
@@ -1328,5 +1347,133 @@ class Workbench extends BaseController
                 'errors' => [['error' => $e->getMessage()]]
             ];
         }
+    }
+
+    /**
+     * 校验导入数据（固定值、条件、日期格式）
+     */
+    private function validateImportData(string $tmpTableName, array $importColumns, string $userLocation): array
+    {
+        $errors = [];
+        $userLocationAuthz = $userLocation ?: '';
+
+        foreach ($importColumns as $col) {
+            $columnName = $col['列名'] ?? '';
+            $fieldName = $col['字段名'] ?? '';
+            $checkType = $col['校验类型'] ?? '';
+            $checkInfo = $col['校验信息'] ?? '';
+            $object = $col['对象'] ?? '';
+
+            if ($checkType === '' || $fieldName === '') {
+                continue;
+            }
+
+            // 固定值校验
+            if (strpos($checkType, '固定值') !== false && $object !== '') {
+                $sql = sprintf('
+                    select
+                        t1.字段名 as 字段名,
+                        t1.字段值 as 字段值,
+                        ifnull(t2.对象值,"") as 对象值
+                    from
+                    (
+                        select "%s" as 字段名, %s as 字段值
+                        from %s
+                        group by 字段值
+                    ) as t1
+                    left join
+                    (
+                        select 对象名称,对象值
+                        from def_object
+                        where 对象名称="%s"
+                            and (属地="" or locate(属地,"%s"))
+                    ) as t2 on t1.字段值=t2.对象值
+                    where t2.对象值 is null and t1.字段值 != ""
+                ',
+                    $fieldName, $fieldName, $tmpTableName,
+                    $object, $userLocationAuthz);
+
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $errs = $result->getResultArray();
+                    if (count($errs) != 0) {
+                        $errArr = [];
+                        foreach ($errs as $err) {
+                            $errArr[] = $err['字段值'];
+                        }
+                        return [
+                            'hasError' => true,
+                            'message' => sprintf('导入失败,列"%s"有不符合固定值的记录 {"%s"}', $columnName, implode(',', $errArr)),
+                            'errors' => $errs
+                        ];
+                    }
+                }
+            }
+
+            // 条件校验
+            if (strpos($checkType, '条件') !== false && $checkInfo !== '') {
+                $sql = sprintf('
+                    select "%s" as 字段名, %s as 字段值 from %s where %s
+                ',
+                    $columnName, $fieldName, $tmpTableName, $checkInfo);
+
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $errs = $result->getResultArray();
+                    if (count($errs) != 0) {
+                        $errArr = [];
+                        foreach ($errs as $err) {
+                            $errArr[] = $err['字段值'];
+                        }
+                        return [
+                            'hasError' => true,
+                            'message' => sprintf('导入失败,列"%s"有不符合条件的记录 {"%s"}', $columnName, implode(',', $errArr)),
+                            'errors' => $errs
+                        ];
+                    }
+                }
+            }
+
+            // 日期格式校验
+            if (strpos($checkType, '日期') !== false) {
+                $sql = sprintf('
+                    select "%s" as 字段名, %s as 字段值 from %s
+                ',
+                    $columnName, $fieldName, $tmpTableName);
+
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $dates = $result->getResult();
+                    foreach ($dates as $date) {
+                        // 只判断非空值
+                        if ($date->字段值 == '') continue;
+                        // 匹配日期格式,YYYY-mm-dd
+                        $parts = [];
+                        if (preg_match("/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/", $date->字段值, $parts)) {
+                            // 检测是否为日期
+                            if (checkdate($parts[2], $parts[3], $parts[1]) == false) {
+                                return [
+                                    'hasError' => true,
+                                    'message' => sprintf('导入失败,列"%s"有不符合的记录{"%s"},必须为YYYY-mm-dd (如2023-01-02) 格式', $columnName, $date->字段值),
+                                    'errors' => [['字段值' => $date->字段值]]
+                                ];
+                            }
+                        } else {
+                            return [
+                                'hasError' => true,
+                                'message' => sprintf('导入失败,列"%s"有不符合的记录{"%s"},必须为YYYY-mm-dd (如2023-01-02) 格式', $columnName, $date->字段值),
+                                'errors' => [['字段值' => $date->字段值]]
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return [
+            'hasError' => false,
+            'message' => '校验通过',
+            'errors' => []
+        ];
     }
 }
