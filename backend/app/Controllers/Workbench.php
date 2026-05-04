@@ -1140,6 +1140,11 @@ class Workbench extends BaseController
             $insertResult = $this->importFromTempTable($dataTable, $tmpTableName, $importColumns);
 
             if ($insertResult['success']) {
+                // 执行后处理模块（如果配置了）
+                if ($importModule !== '') {
+                    $this->executeAfterProcess($importModule);
+                }
+
                 // 删除临时表
                 $this->dropTempTable($tmpTableName);
                 return $this->success([
@@ -1604,6 +1609,41 @@ class Workbench extends BaseController
                 'message' => '',
                 'errors' => []
             ];
+        }
+    }
+
+    /**
+     * 执行后处理模块
+     */
+    private function executeAfterProcess(string $importModule): void
+    {
+        try {
+            // 查询 def_import_config 获取后处理模块
+            $sql = sprintf(
+                'select 后处理模块 from def_import_config where 导入模块=%s',
+                $this->quote($importModule)
+            );
+
+            $result = $this->common->select($sql);
+            if ($result === false) {
+                return;
+            }
+
+            $row = $result->getRowArray();
+            if (!$row || empty($row['后处理模块'])) {
+                return;
+            }
+
+            $afterProcess = $row['后处理模块'];
+
+            // 执行后处理存储过程
+            $spSql = sprintf('call %s', $afterProcess);
+            $this->common->select($spSql);
+
+            error_log('执行后处理模块: ' . $afterProcess);
+        } catch (\Throwable $e) {
+            error_log('执行后处理模块失败: ' . $e->getMessage());
+            // 后处理失败不影响导入结果，只记录日志
         }
     }
 }
