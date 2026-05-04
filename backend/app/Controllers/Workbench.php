@@ -1055,8 +1055,8 @@ class Workbench extends BaseController
                 ]);
             }
 
-            // 使用 Mcommon 的事务方式插入
-            $insertResult = $this->insertDataWithTransaction($dataTable, $validData);
+            // 使用 INSERT INTO ... SELECT 从临时表导入正式表，应用查询名转换
+            $insertResult = $this->importFromTempTable($dataTable, $tmpTableName, $importColumns);
 
             if ($insertResult['success']) {
                 // 删除临时表
@@ -1225,6 +1225,88 @@ class Workbench extends BaseController
             return [
                 'success' => false,
                 'count' => count($data),
+                'message' => '导入失败：' . $e->getMessage(),
+                'errors' => [['error' => $e->getMessage()]]
+            ];
+        }
+    }
+
+    /**
+     * 从临时表导入数据到正式表，应用查询名中的转换
+     */
+    private function importFromTempTable(string $targetTable, string $tempTable, array $importColumns): array
+    {
+        try {
+            $db = db_connect('btdc');
+            $db->transStart();
+
+            // 构建 INSERT INTO ... SELECT 语句
+            $fieldNames = [];
+            $selectParts = [];
+
+            foreach ($importColumns as $col) {
+                $fieldName = $col['字段名'] ?? $col['列名'] ?? '';
+                $queryName = $col['查询名'] ?? '';
+
+                if ($fieldName === '') {
+                    continue;
+                }
+
+                $fieldNames[] = sprintf('`%s`', $fieldName);
+
+                // 如果有查询名且与字段名不同，使用查询名作为转换
+                if ($queryName !== '' && $queryName !== $fieldName) {
+                    $selectParts[] = sprintf('%s as `%s`', $queryName, $fieldName);
+                } else {
+                    $selectParts[] = sprintf('`%s`', $fieldName);
+                }
+            }
+
+            if (empty($fieldNames)) {
+                return [
+                    'success' => false,
+                    'count' => 0,
+                    'message' => '没有可导入的字段',
+                    'errors' => []
+                ];
+            }
+
+            // 执行 INSERT INTO ... SELECT
+            $sql = sprintf(
+                'INSERT INTO %s (%s) SELECT %s FROM %s',
+                $targetTable,
+                implode(', ', $fieldNames),
+                implode(', ', $selectParts),
+                $tempTable
+            );
+
+            error_log('导入SQL: ' . $sql);
+
+            $result = $db->query($sql);
+            $affectedRows = $db->affectedRows();
+
+            $db->transComplete();
+
+            if ($result === false) {
+                return [
+                    'success' => false,
+                    'count' => 0,
+                    'message' => '导入失败：执行导入SQL失败',
+                    'errors' => []
+                ];
+            }
+
+            return [
+                'success' => true,
+                'count' => $affectedRows,
+                'message' => sprintf('成功导入 %d 条数据', $affectedRows),
+                'errors' => []
+            ];
+        } catch (\Throwable $e) {
+            error_log('从临时表导入失败: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'count' => 0,
                 'message' => '导入失败：' . $e->getMessage(),
                 'errors' => [['error' => $e->getMessage()]]
             ];
