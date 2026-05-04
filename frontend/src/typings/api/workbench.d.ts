@@ -136,15 +136,34 @@ declare namespace Api {
       defaultValue: string;
       objectName: string;
       editable: boolean;
+      inputType?: 'text' | 'popup' | 'select';
+      objectOptions?: Array<{ label: string; value: string }>;
     }
 
     interface AddFieldsData {
       fields: AddField[];
+      debug?: {
+        functionCode?: string;
+        fieldModule?: string;
+        columnsCount?: number;
+      };
     }
 
     interface AddResult {
       success: boolean;
       message: string;
+    }
+
+    interface PopupGridItem {
+      表项: string;
+      级别: number;
+      取值: string;
+    }
+
+    interface PopupData {
+      popupGrid: PopupGridItem[];
+      popupObj: Record<string, any>;
+      maxLevel: number;
     }
   }
 }

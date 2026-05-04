@@ -9,8 +9,9 @@ class Workbench extends BaseController
 {
     private Mcommon $common;
 
-    public function __construct()
+    public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
+        parent::initController($request, $response, $logger);
         $this->common = new Mcommon();
     }
 
@@ -1683,8 +1684,9 @@ class Workbench extends BaseController
             }
 
             // 查询可新增的字段 - 使用 view_function 视图，与旧版 Frame.php 保持一致
+            // view_function 视图使用 "列顺序" 字段（不是"顺序"）
             $sql = sprintf(
-                'select 
+                'select
                     列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 可新增, 列顺序
                 from view_function
                 where 功能编码=%s and 列顺序>0 and 可新增="1"
@@ -1727,12 +1729,22 @@ class Workbench extends BaseController
                     $field['defaultValue'] = $session->get('user_location') ?? '';
                 }
 
-                // 如果赋值类型包含"固定值"，则查询对象选项
+                // 处理赋值类型
                 $赋值类型 = $col['赋值类型'] ?? '';
                 $对象 = $col['对象'] ?? '';
+                
+                // 如果赋值类型包含"固定值"，则查询对象选项
                 if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
                     $field['objectName'] = $对象;
                     $field['objectOptions'] = $this->getObjectOptions($对象);
+                }
+                
+                // 如果赋值类型是"弹窗"，则标记为弹窗类型
+                if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
+                    $field['inputType'] = 'popup';
+                    $field['objectName'] = $对象;
+                } else {
+                    $field['inputType'] = 'text';
                 }
 
                 $fields[] = $field;
@@ -1995,5 +2007,101 @@ class Workbench extends BaseController
         }
 
         return implode(' and ', $conditions);
+    }
+
+    /**
+     * 获取弹窗数据
+     */
+    public function popupData(string $functionCode = '')
+    {
+        try {
+            // 从查询参数获取对象名称
+            $request = service('request');
+            $objectName = $request->getGet('objectName');
+            if ($objectName === null) {
+                $objectName = '';
+            }
+
+            // 调试：记录接收到的参数
+            error_log('popupData - functionCode: ' . $functionCode);
+            error_log('popupData - objectName from query: ' . $objectName);
+
+            // 查询弹窗配置
+            // 注意：前端传递的是"对象"字段的值（如"预算部门^全称"），不是"对象名称"
+            $sql = sprintf(
+                'select 对象, 对象名称, 对象表名
+                from view_function
+                where 赋值类型="弹窗" and 功能编码=%s and 对象=%s
+                group by 对象',
+                $this->quote($functionCode),
+                $this->quote($objectName)
+            );
+            error_log('popupData - SQL: ' . $sql);
+
+            $result = $this->common->select($sql);
+            if ($result === false) {
+                return $this->error('5001', '未找到弹窗配置');
+            }
+
+            $row = $result->getRowArray();
+            if (!$row) {
+                return $this->error('5001', '未找到弹窗配置');
+            }
+
+            // 查询弹窗数据
+            $objSql = sprintf(
+                'select 对象名称, 本级编码, 本级名称, 本级全称, 本级级别名称, 本级级别,
+                    上级编码, 上级名称, 上级全称, 上级级别名称, 最大级别, 本级初始值
+                from %s
+                order by 对象名称, 本级级别, 本级全称',
+                $row['对象表名']
+            );
+
+            $objResult = $this->common->select($objSql);
+            if ($objResult === false) {
+                return $this->error('5001', '查询弹窗数据失败');
+            }
+
+            $objRows = $objResult->getResultArray();
+
+            // 构建弹窗数据结构
+            $popupGrid = [];
+            $popupObj = [];
+
+            foreach ($objRows as $objRow) {
+                $levelName = $objRow['本级级别名称'];
+                $parentName = $objRow['上级名称'];
+
+                if (!isset($popupObj[$levelName])) {
+                    $popupObj[$levelName] = [];
+                    $popupObj[$levelName]['本级级别'] = $objRow['本级级别'];
+                    $popupObj[$levelName]['本级初始值'] = $objRow['本级初始值'];
+                    $popupObj[$levelName]['上级级别名称'] = $objRow['上级级别名称'];
+
+                    // 前端 popup_grid 数据
+                    $popupGrid[] = [
+                        '表项' => $levelName,
+                        '级别' => $objRow['本级级别'],
+                        '取值' => $objRow['本级初始值']
+                    ];
+                }
+
+                if (!isset($popupObj[$levelName][$parentName])) {
+                    $popupObj[$levelName][$parentName] = [];
+                }
+                $popupObj[$levelName][$parentName][] = $objRow['本级名称'];
+            }
+
+            return $this->success([
+                'popupGrid' => $popupGrid,
+                'popupObj' => $popupObj,
+                'maxLevel' => $objRows[0]['最大级别'] ?? 1
+            ]);
+        } catch (\Throwable $e) {
+            error_log('获取弹窗数据失败: ' . $e->getMessage());
+            error_log('获取弹窗数据失败 - 文件: ' . $e->getFile() . ':' . $e->getLine());
+            error_log('获取弹窗数据失败 - 堆栈: ' . $e->getTraceAsString());
+            return $this->error('5001', '获取弹窗数据失败: ' . $e->getMessage());
+        }
     }
 }

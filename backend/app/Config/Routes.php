@@ -43,6 +43,7 @@ $routes->group('workbench', static function ($routes) {
 	$routes->post('import/(:segment)', 'Workbench::import/$1');
 	$routes->get('add-fields/(:segment)', 'Workbench::addFields/$1');
 	$routes->post('add-row/(:segment)', 'Workbench::addRow/$1');
+	$routes->get('popup-data/(:segment)', 'Workbench::popupData/$1');
 });
 
 $routes->group('comment', static function ($routes) {

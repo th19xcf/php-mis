@@ -37,7 +37,8 @@ import {
   fetchImportColumns,
   importData,
   fetchAddFields,
-  addRow
+  addRow,
+  fetchPopupData
 } from '@/service/api/workbench';
 import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
 import { useThemeStore } from '@/store/modules/theme';
@@ -220,6 +221,14 @@ const addFormData = ref<Record<string, any>>({});
 const addFormFields = ref<any[]>([]);
 const addError = ref<string>('');
 const addSuccess = ref<string>('');
+
+// 弹窗选择相关状态
+const popupVisible = ref(false);
+const popupLoading = ref(false);
+const popupField = ref<any>(null);
+const popupData = ref<Api.Workbench.PopupData | null>(null);
+const popupSelectedValues = ref<string[]>([]);
+const popupCurrentLevel = ref(1);
 
 // 计算属性：导入预览表格列定义
 const importPreviewColumns = computed(() => {
@@ -1079,6 +1088,97 @@ async function confirmAdd() {
   } finally {
     addLoading.value = false;
   }
+}
+
+// 打开弹窗选择
+async function handleOpenPopup(field: any) {
+  popupField.value = field;
+  popupVisible.value = true;
+  popupLoading.value = true;
+  popupSelectedValues.value = [];
+  popupCurrentLevel.value = 1;
+  popupData.value = null;
+
+  try {
+    const functionCode = props.meta.functionCode || '';
+    if (!functionCode || !field.objectName) {
+      popupLoading.value = false;
+      return;
+    }
+
+    const { data, error } = await fetchPopupData(functionCode, field.objectName);
+    if (error) {
+      window.$message?.error(error.message || '获取弹窗数据失败');
+      popupLoading.value = false;
+      return;
+    }
+
+    popupData.value = data;
+    // 初始化选择值数组
+    if (data.popupGrid) {
+      popupSelectedValues.value = Array.from({ length: data.popupGrid.length }, () => '');
+    }
+  } catch (e: any) {
+    window.$message?.error(e.message || '获取弹窗数据失败');
+  } finally {
+    popupLoading.value = false;
+  }
+}
+
+// 获取当前级别的选项
+function getPopupOptions(levelIndex: number): Array<{ label: string; value: string }> {
+  if (!popupData.value?.popupObj) return [];
+
+  const gridItem = popupData.value.popupGrid[levelIndex];
+  if (!gridItem) return [];
+
+  const levelName = gridItem.表项;
+  const levelData = popupData.value.popupObj[levelName];
+  if (!levelData) return [];
+
+  // 第一级直接返回所有选项
+  if (levelIndex === 0) {
+    const options: string[] = [];
+    Object.keys(levelData).forEach(key => {
+      if (key !== '本级级别' && key !== '本级初始值' && key !== '上级级别名称' && Array.isArray(levelData[key])) {
+        options.push(...levelData[key]);
+      }
+    });
+    return [...new Set(options)].map(v => ({ label: v, value: v }));
+  }
+
+  // 其他级别根据上级选择过滤
+  const parentValue = popupSelectedValues.value[levelIndex - 1];
+  if (!parentValue) return [];
+
+  const options = levelData[parentValue] || [];
+  return options.map((v: string) => ({ label: v, value: v }));
+}
+
+// 处理弹窗选择变化
+function handlePopupChange(levelIndex: number) {
+  // 清空下级选择
+  for (let i = levelIndex + 1; i < popupSelectedValues.value.length; i++) {
+    popupSelectedValues.value[i] = '';
+  }
+}
+
+// 确认弹窗选择
+function confirmPopupSelection() {
+  if (!popupField.value || !popupData.value) return;
+
+  // 获取最后一个有值的选项
+  let finalSelectedValue = '';
+  for (let i = popupSelectedValues.value.length - 1; i >= 0; i--) {
+    if (popupSelectedValues.value[i]) {
+      finalSelectedValue = popupSelectedValues.value[i];
+      break;
+    }
+  }
+
+  // 更新表单数据
+  addFormData.value[popupField.value.fieldName] = finalSelectedValue;
+  popupVisible.value = false;
 }
 
 // 触发文件选择
@@ -2478,6 +2578,39 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       </NSpin>
     </NModal>
 
+    <!-- 弹窗选择对话框 -->
+    <NModal
+      v-model:show="popupVisible"
+      preset="card"
+      :title="popupField?.columnName || '选择'"
+      class="w-600px"
+      :mask-closable="false"
+    >
+      <NSpin :show="popupLoading">
+        <NSpace vertical :size="16">
+          <!-- 多级选择 -->
+          <div v-if="popupData?.popupGrid?.length" class="popup-levels">
+            <NFormItem v-for="(gridItem, index) in popupData.popupGrid" :key="index" :label="gridItem.表项">
+              <NSelect
+                v-model:value="popupSelectedValues[index]"
+                :options="getPopupOptions(index)"
+                :placeholder="`请选择${gridItem.表项}`"
+                clearable
+                @update:value="handlePopupChange(index)"
+              />
+            </NFormItem>
+          </div>
+          <NEmpty v-else description="暂无数据" />
+
+          <!-- 操作按钮 -->
+          <NSpace justify="end">
+            <NButton @click="popupVisible = false">取消</NButton>
+            <NButton type="primary" @click="confirmPopupSelection">确认</NButton>
+          </NSpace>
+        </NSpace>
+      </NSpin>
+    </NModal>
+
     <!-- 新增弹窗 -->
     <NModal v-model:show="addVisible" preset="card" title="新增记录" class="w-800px" :mask-closable="false">
       <NSpin :show="addLoading">
@@ -2494,9 +2627,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
           <!-- 新增表单 -->
           <div v-if="!addSuccess">
-            <div style="margin-bottom: 10px; color: #666;">
-              字段数量: {{ addFormFields.length }}
-            </div>
+            <div style="margin-bottom: 10px; color: #666">字段数量: {{ addFormFields.length }}</div>
             <NForm :model="addFormData" label-placement="left" label-width="120px">
               <div class="add-form-grid">
                 <NFormItem
@@ -2505,37 +2636,55 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                   :label="field.columnName"
                   :required="field.required"
                 >
-                <!-- 固定值下拉选择 -->
-                <NSelect
-                  v-if="field.objectName && field.objectName !== ''"
-                  v-model:value="addFormData[field.fieldName]"
-                  :options="field.objectOptions || []"
-                  :placeholder="`请选择${field.columnName}`"
-                  clearable
-                />
-                <!-- 日期选择 -->
-                <NDatePicker
-                  v-else-if="field.fieldType === '日期'"
-                  v-model:formatted-value="addFormData[field.fieldName]"
-                  value-format="yyyy-MM-dd"
-                  type="date"
-                  :placeholder="`请选择${field.columnName}`"
-                  clearable
-                />
-                <!-- 数值输入 -->
-                <NInputNumber
-                  v-else-if="field.fieldType === '数值'"
-                  v-model:value="addFormData[field.fieldName]"
-                  :placeholder="`请输入${field.columnName}`"
-                  clearable
-                />
-                <!-- 默认文本输入 -->
-                <NInput
-                  v-else
-                  v-model:value="addFormData[field.fieldName]"
-                  :placeholder="`请输入${field.columnName}`"
-                  clearable
-                />
+                  <!-- 弹窗选择 -->
+                  <div v-if="field.inputType === 'popup'" class="popup-select-wrapper">
+                    <NInput
+                      v-model:value="addFormData[field.fieldName]"
+                      :placeholder="`请选择${field.columnName}`"
+                      readonly
+                      class="popup-input"
+                    >
+                      <template #suffix>
+                        <NButton text type="primary" @click="handleOpenPopup(field)">
+                          <template #icon>
+                            <span class="iconify" data-icon="mdi:magnify"></span>
+                          </template>
+                          选择
+                        </NButton>
+                      </template>
+                    </NInput>
+                  </div>
+                  <!-- 固定值下拉选择 -->
+                  <NSelect
+                    v-else-if="field.objectName && field.objectName !== '' && field.inputType !== 'popup'"
+                    v-model:value="addFormData[field.fieldName]"
+                    :options="field.objectOptions || []"
+                    :placeholder="`请选择${field.columnName}`"
+                    clearable
+                  />
+                  <!-- 日期选择 -->
+                  <NDatePicker
+                    v-else-if="field.fieldType === '日期'"
+                    v-model:formatted-value="addFormData[field.fieldName]"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    :placeholder="`请选择${field.columnName}`"
+                    clearable
+                  />
+                  <!-- 数值输入 -->
+                  <NInputNumber
+                    v-else-if="field.fieldType === '数值'"
+                    v-model:value="addFormData[field.fieldName]"
+                    :placeholder="`请输入${field.columnName}`"
+                    clearable
+                  />
+                  <!-- 默认文本输入 -->
+                  <NInput
+                    v-else
+                    v-model:value="addFormData[field.fieldName]"
+                    :placeholder="`请输入${field.columnName}`"
+                    clearable
+                  />
                 </NFormItem>
               </div>
             </NForm>
@@ -3506,6 +3655,31 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 }
 
 .add-form-grid :deep(.n-form-item) {
+  margin-bottom: 0;
+}
+
+/* 弹窗选择样式 */
+.popup-select-wrapper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.popup-input {
+  flex: 1;
+}
+
+.popup-input :deep(.n-input__suffix) {
+  padding-right: 4px;
+}
+
+.popup-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.popup-levels :deep(.n-form-item) {
   margin-bottom: 0;
 }
 </style>

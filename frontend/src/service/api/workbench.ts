@@ -50,3 +50,10 @@ export function addRow(functionCode: string, data: Record<string, any>) {
     data
   });
 }
+
+export function fetchPopupData(functionCode: string, objectName: string) {
+  return request<Api.Workbench.PopupData>({
+    url: `/workbench/popup-data/${encodeURIComponent(functionCode)}`,
+    params: { objectName }
+  });
+}
