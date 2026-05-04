@@ -165,5 +165,29 @@ declare namespace Api {
       popupObj: Record<string, any>;
       maxLevel: number;
     }
+
+    // 懒加载级联选择类型
+    interface PopupLevel {
+      name: string;
+      level: number;
+      initialValue: string;
+    }
+
+    interface PopupLevelsData {
+      levels: PopupLevel[];
+      maxLevel: number;
+    }
+
+    interface PopupLevelItem {
+      code: string;
+      name: string;
+      fullName: string;
+      hasChildren: boolean;
+    }
+
+    interface PopupLevelData {
+      items: PopupLevelItem[];
+      level: number;
+    }
   }
 }

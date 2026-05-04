@@ -2104,4 +2104,151 @@ class Workbench extends BaseController
             return $this->error('5001', '获取弹窗数据失败: ' . $e->getMessage());
         }
     }
+
+    /**
+     * 获取弹窗级联级别配置
+     * @param string $functionCode 功能编码
+     * @return \CodeIgniter\HTTP\Response
+     */
+    public function popupLevels(string $functionCode = '')
+    {
+        try {
+            $request = service('request');
+            $objectName = $request->getGet('objectName');
+            if ($objectName === null) {
+                $objectName = '';
+            }
+
+            // 查询弹窗配置
+            $sql = sprintf(
+                'select 对象, 对象名称, 对象表名
+                from view_function
+                where 赋值类型="弹窗" and 功能编码=%s and 对象=%s
+                group by 对象',
+                $this->quote($functionCode),
+                $this->quote($objectName)
+            );
+
+            $result = $this->common->select($sql);
+            if ($result === false || !($row = $result->getRowArray())) {
+                return $this->error('5001', '未找到弹窗配置');
+            }
+
+            // 查询级别配置
+            $levelSql = sprintf(
+                'select distinct 本级级别, 本级级别名称, 本级初始值, 最大级别
+                from %s
+                order by 本级级别',
+                $row['对象表名']
+            );
+
+            $levelResult = $this->common->select($levelSql);
+            if ($levelResult === false) {
+                return $this->error('5001', '查询级别配置失败');
+            }
+
+            $levels = [];
+            $maxLevel = 1;
+            foreach ($levelResult->getResultArray() as $levelRow) {
+                $levels[] = [
+                    'name' => $levelRow['本级级别名称'],
+                    'level' => (int)$levelRow['本级级别'],
+                    'initialValue' => $levelRow['本级初始值']
+                ];
+                $maxLevel = (int)$levelRow['最大级别'];
+            }
+
+            return $this->success([
+                'levels' => $levels,
+                'maxLevel' => $maxLevel
+            ]);
+        } catch (\Throwable $e) {
+            error_log('获取弹窗级别配置失败: ' . $e->getMessage());
+            return $this->error('5001', '获取弹窗级别配置失败: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 获取弹窗指定级别的数据（懒加载）
+     * @param string $functionCode 功能编码
+     * @return \CodeIgniter\HTTP\Response
+     */
+    public function popupLevelData(string $functionCode = '')
+    {
+        try {
+            $request = service('request');
+            $objectName = $request->getGet('objectName');
+            $level = (int)($request->getGet('level') ?? 1);
+            $parentCode = $request->getGet('parentCode') ?? '';
+
+            if ($objectName === null) {
+                $objectName = '';
+            }
+
+            // 查询弹窗配置
+            $sql = sprintf(
+                'select 对象, 对象名称, 对象表名
+                from view_function
+                where 赋值类型="弹窗" and 功能编码=%s and 对象=%s
+                group by 对象',
+                $this->quote($functionCode),
+                $this->quote($objectName)
+            );
+
+            $result = $this->common->select($sql);
+            if ($result === false || !($row = $result->getRowArray())) {
+                return $this->error('5001', '未找到弹窗配置');
+            }
+
+            // 查询指定级别的数据
+            if ($level === 1) {
+                // 第一级：查询所有顶级节点
+                $dataSql = sprintf(
+                    'select 本级编码, 本级名称, 本级全称,
+                        (select count(*) from %1$s as sub where sub.本级级别 = %2$d + 1 and sub.本级全称 like concat(main.本级全称, \'>>%%\')) as has_children
+                    from %1$s as main
+                    where main.本级级别 = %2$d
+                    order by main.本级编码',
+                    $row['对象表名'],
+                    $level
+                );
+            } else {
+                // 其他级别：根据父级名称查询（通过本级全称匹配）
+                // 查询本级全称以"父级全称>>"开头的记录
+                $dataSql = sprintf(
+                    'select 本级编码, 本级名称, 本级全称,
+                        (select count(*) from %1$s as sub where sub.本级级别 = %2$d + 1 and sub.本级全称 like concat(main.本级全称, \'>>%%\')) as has_children
+                    from %1$s as main
+                    where main.本级级别 = %2$d and main.本级全称 like %3$s
+                    order by main.本级编码',
+                    $row['对象表名'],
+                    $level,
+                    $this->quote($parentCode . '>>%')
+                );
+            }
+
+            $dataResult = $this->common->select($dataSql);
+            if ($dataResult === false) {
+                return $this->error('5001', '查询级别数据失败');
+            }
+
+            $items = [];
+            foreach ($dataResult->getResultArray() as $dataRow) {
+                $items[] = [
+                    'code' => $dataRow['本级编码'],
+                    'name' => $dataRow['本级名称'],
+                    'fullName' => $dataRow['本级全称'],
+                    'hasChildren' => (int)$dataRow['has_children'] > 0
+                ];
+            }
+
+            return $this->success([
+                'items' => $items,
+                'level' => $level
+            ]);
+        } catch (\Throwable $e) {
+            error_log('获取弹窗级别数据失败: ' . $e->getMessage());
+            return $this->error('5001', '获取弹窗级别数据失败: ' . $e->getMessage());
+        }
+    }
 }

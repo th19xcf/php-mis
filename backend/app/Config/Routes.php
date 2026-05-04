@@ -44,6 +44,8 @@ $routes->group('workbench', static function ($routes) {
 	$routes->get('add-fields/(:segment)', 'Workbench::addFields/$1');
 	$routes->post('add-row/(:segment)', 'Workbench::addRow/$1');
 	$routes->get('popup-data/(:segment)', 'Workbench::popupData/$1');
+	$routes->get('popup-levels/(:segment)', 'Workbench::popupLevels/$1');
+	$routes->get('popup-level-data/(:segment)', 'Workbench::popupLevelData/$1');
 });
 
 $routes->group('comment', static function ($routes) {

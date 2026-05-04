@@ -57,3 +57,18 @@ export function fetchPopupData(functionCode: string, objectName: string) {
     params: { objectName }
   });
 }
+
+// 懒加载级联选择 API
+export function fetchPopupLevels(functionCode: string, objectName: string) {
+  return request<Api.Workbench.PopupLevelsData>({
+    url: `/workbench/popup-levels/${encodeURIComponent(functionCode)}`,
+    params: { objectName }
+  });
+}
+
+export function fetchPopupLevelData(functionCode: string, objectName: string, level: number, parentCode: string = '') {
+  return request<Api.Workbench.PopupLevelData>({
+    url: `/workbench/popup-level-data/${encodeURIComponent(functionCode)}`,
+    params: { objectName, level, parentCode }
+  });
+}

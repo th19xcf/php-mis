@@ -38,7 +38,9 @@ import {
   importData,
   fetchAddFields,
   addRow,
-  fetchPopupData
+  fetchPopupData,
+  fetchPopupLevels,
+  fetchPopupLevelData
 } from '@/service/api/workbench';
 import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
 import { useThemeStore } from '@/store/modules/theme';
@@ -222,13 +224,14 @@ const addFormFields = ref<any[]>([]);
 const addError = ref<string>('');
 const addSuccess = ref<string>('');
 
-// 弹窗选择相关状态
+// 弹窗选择相关状态（懒加载级联选择）
 const popupVisible = ref(false);
 const popupLoading = ref(false);
 const popupField = ref<any>(null);
-const popupData = ref<Api.Workbench.PopupData | null>(null);
-const popupSelectedValues = ref<string[]>([]);
-const popupCurrentLevel = ref(1);
+const popupLevels = ref<Api.Workbench.PopupLevel[]>([]);
+const popupMaxLevel = ref(1);
+const popupCascaderOptions = ref<any[]>([]);
+const popupSelectedValue = ref<string | null>(null);
 
 // 计算属性：导入预览表格列定义
 const importPreviewColumns = computed(() => {
@@ -1090,14 +1093,15 @@ async function confirmAdd() {
   }
 }
 
-// 打开弹窗选择
+// 打开弹窗选择（懒加载级联选择）
 async function handleOpenPopup(field: any) {
   popupField.value = field;
   popupVisible.value = true;
   popupLoading.value = true;
-  popupSelectedValues.value = [];
-  popupCurrentLevel.value = 1;
-  popupData.value = null;
+  popupSelectedValue.value = null;
+  popupCascaderOptions.value = [];
+  popupLevels.value = [];
+  popupMaxLevel.value = 1;
 
   try {
     const functionCode = props.meta.functionCode || '';
@@ -1106,18 +1110,46 @@ async function handleOpenPopup(field: any) {
       return;
     }
 
-    const { data, error } = await fetchPopupData(functionCode, field.objectName);
-    if (error) {
-      window.$message?.error(error.message || '获取弹窗数据失败');
+    // 获取级别配置
+    const { data: levelsData, error: levelsError } = await fetchPopupLevels(functionCode, field.objectName);
+    if (levelsError) {
+      window.$message?.error(levelsError.message || '获取弹窗级别配置失败');
       popupLoading.value = false;
       return;
     }
 
-    popupData.value = data;
-    // 初始化选择值数组
-    if (data.popupGrid) {
-      popupSelectedValues.value = Array.from({ length: data.popupGrid.length }, () => '');
+    popupLevels.value = levelsData.levels;
+    popupMaxLevel.value = levelsData.maxLevel;
+    console.log('[Cascader] Max level:', popupMaxLevel.value, 'Levels:', popupLevels.value);
+
+    // 加载第一级数据
+    console.log('[Cascader] Loading level 1 data for objectName:', field.objectName);
+    const { data: levelData, error: levelError } = await fetchPopupLevelData(functionCode, field.objectName, 1, '');
+    console.log('[Cascader] Level 1 response:', { levelData, levelError });
+
+    if (levelError) {
+      window.$message?.error(levelError.message || '获取弹窗数据失败');
+      popupLoading.value = false;
+      return;
     }
+
+    // 构建级联选项
+    // 当 code 为空字符串时，使用 name 作为 value（因为数据库中顶级节点的编码可能为空）
+    popupCascaderOptions.value = levelData.items.map(item => {
+      const option: any = {
+        label: item.name,
+        value: item.code || item.name, // 如果 code 为空，使用 name 作为 value
+        code: item.code, // 保留原始 code 用于 API 调用
+        fullName: item.fullName,
+        level: 1,
+        // 显式设置 isLeaf：有子节点时为 false，没有时为 true
+        isLeaf: !item.hasChildren
+      };
+      return option;
+    });
+
+    console.log('[Cascader] Level 1 options:', popupCascaderOptions.value);
+    console.log('[Cascader] First option isLeaf:', popupCascaderOptions.value[0]?.isLeaf);
   } catch (e: any) {
     window.$message?.error(e.message || '获取弹窗数据失败');
   } finally {
@@ -1125,60 +1157,93 @@ async function handleOpenPopup(field: any) {
   }
 }
 
-// 获取当前级别的选项
-function getPopupOptions(levelIndex: number): Array<{ label: string; value: string }> {
-  if (!popupData.value?.popupObj) return [];
+// 懒加载级联子节点
+function handleLoadCascaderChildren(option: any) {
+  console.log('[Cascader] handleLoadCascaderChildren called:', option);
 
-  const gridItem = popupData.value.popupGrid[levelIndex];
-  if (!gridItem) return [];
+  const functionCode = props.meta.functionCode || '';
+  const objectName = popupField.value?.objectName;
 
-  const levelName = gridItem.表项;
-  const levelData = popupData.value.popupObj[levelName];
-  if (!levelData) return [];
+  console.log('[Cascader] functionCode:', functionCode, 'objectName:', objectName);
 
-  // 第一级直接返回所有选项
-  if (levelIndex === 0) {
-    const options: string[] = [];
-    Object.keys(levelData).forEach(key => {
-      if (key !== '本级级别' && key !== '本级初始值' && key !== '上级级别名称' && Array.isArray(levelData[key])) {
-        options.push(...levelData[key]);
-      }
-    });
-    return [...new Set(options)].map(v => ({ label: v, value: v }));
+  if (!functionCode || !objectName) {
+    console.log('[Cascader] Missing functionCode or objectName, returning');
+    return Promise.resolve();
   }
 
-  // 其他级别根据上级选择过滤
-  const parentValue = popupSelectedValues.value[levelIndex - 1];
-  if (!parentValue) return [];
+  const nextLevel = option.level + 1;
+  console.log('[Cascader] nextLevel:', nextLevel, 'maxLevel:', popupMaxLevel.value);
 
-  const options = levelData[parentValue] || [];
-  return options.map((v: string) => ({ label: v, value: v }));
+  if (nextLevel > popupMaxLevel.value) {
+    option.isLeaf = true;
+    return Promise.resolve();
+  }
+
+  // 使用 fullName 调用 API（因为数据库通过本级全称来维护层级关系）
+    const parentCode = option.fullName || option.value;
+    console.log('[Cascader] Fetching level', nextLevel, 'with parentCode:', parentCode);
+
+  return fetchPopupLevelData(functionCode, objectName, nextLevel, parentCode)
+    .then(({ data, error }) => {
+      console.log('[Cascader] API response:', { data, error });
+
+      if (error) {
+        window.$message?.error(error.message || '加载子节点失败');
+        return;
+      }
+
+      option.children = data.items.map((item: any) => {
+        const isLastLevel = nextLevel >= popupMaxLevel.value;
+        return {
+          label: item.name,
+          value: item.code || item.name, // 如果 code 为空，使用 name 作为 value
+          code: item.code, // 保留原始 code 用于 API 调用
+          fullName: item.fullName,
+          level: nextLevel,
+          // 显式设置 isLeaf：没有子节点或是最后一级时为 true
+          isLeaf: !item.hasChildren || isLastLevel
+        };
+      });
+
+      console.log('[Cascader] Set children:', option.children);
+    })
+    .catch((e: any) => {
+      console.error('[Cascader] Error:', e);
+      window.$message?.error(e.message || '加载子节点失败');
+    });
 }
 
-// 处理弹窗选择变化
-function handlePopupChange(levelIndex: number) {
-  // 清空下级选择
-  for (let i = levelIndex + 1; i < popupSelectedValues.value.length; i++) {
-    popupSelectedValues.value[i] = '';
-  }
+// 级联选择值变化处理
+function handleCascaderValueChange(value: string | null, option: any) {
+  console.log('[Cascader] Value changed:', value, 'Option:', option);
 }
 
 // 确认弹窗选择
 function confirmPopupSelection() {
-  if (!popupField.value || !popupData.value) return;
+  if (!popupField.value || !popupSelectedValue.value) return;
 
-  // 获取最后一个有值的选项
-  let finalSelectedValue = '';
-  for (let i = popupSelectedValues.value.length - 1; i >= 0; i--) {
-    if (popupSelectedValues.value[i]) {
-      finalSelectedValue = popupSelectedValues.value[i];
-      break;
-    }
+  // 获取选中的完整路径
+  const selectedOption = findCascaderOption(popupCascaderOptions.value, popupSelectedValue.value);
+  if (selectedOption) {
+    // 使用 fullName 或 name 作为最终值
+    addFormData.value[popupField.value.fieldName] = selectedOption.fullName || selectedOption.label;
   }
 
-  // 更新表单数据
-  addFormData.value[popupField.value.fieldName] = finalSelectedValue;
   popupVisible.value = false;
+}
+
+// 在级联选项中查找指定值的选项
+function findCascaderOption(options: any[], value: string): any | null {
+  for (const option of options) {
+    if (option.value === value) {
+      return option;
+    }
+    if (option.children) {
+      const found = findCascaderOption(option.children, value);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 // 触发文件选择
@@ -2578,7 +2643,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       </NSpin>
     </NModal>
 
-    <!-- 弹窗选择对话框 -->
+    <!-- 弹窗选择对话框（懒加载级联选择） -->
     <NModal
       v-model:show="popupVisible"
       preset="card"
@@ -2588,24 +2653,36 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     >
       <NSpin :show="popupLoading">
         <NSpace vertical :size="16">
-          <!-- 多级选择 -->
-          <div v-if="popupData?.popupGrid?.length" class="popup-levels">
-            <NFormItem v-for="(gridItem, index) in popupData.popupGrid" :key="index" :label="gridItem.表项">
-              <NSelect
-                v-model:value="popupSelectedValues[index]"
-                :options="getPopupOptions(index)"
-                :placeholder="`请选择${gridItem.表项}`"
-                clearable
-                @update:value="handlePopupChange(index)"
-              />
-            </NFormItem>
+          <!-- 级联选择 -->
+          <NFormItem label="选择路径">
+            <NCascader
+              v-model:value="popupSelectedValue"
+              :options="popupCascaderOptions"
+              :on-load="handleLoadCascaderChildren"
+              remote
+              expand-trigger="click"
+              placeholder="请选择"
+              clearable
+              @update:value="handleCascaderValueChange"
+            />
+          </NFormItem>
+
+          <!-- 级别提示 -->
+          <div v-if="popupLevels.length" class="popup-levels-hint">
+            <NText depth="3">
+              共 {{ popupMaxLevel }} 级：
+              <span v-for="(level, index) in popupLevels" :key="level.level">
+                {{ level.name }}
+                <span v-if="index < popupLevels.length - 1"> → </span>
+              </span>
+            </NText>
           </div>
           <NEmpty v-else description="暂无数据" />
 
           <!-- 操作按钮 -->
           <NSpace justify="end">
             <NButton @click="popupVisible = false">取消</NButton>
-            <NButton type="primary" @click="confirmPopupSelection">确认</NButton>
+            <NButton type="primary" :disabled="!popupSelectedValue" @click="confirmPopupSelection">确认</NButton>
           </NSpace>
         </NSpace>
       </NSpin>
@@ -3681,5 +3758,11 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
 .popup-levels :deep(.n-form-item) {
   margin-bottom: 0;
+}
+
+/* 懒加载级联选择样式 */
+.popup-levels-hint {
+  padding: 8px 0;
+  font-size: 12px;
 }
 </style>
