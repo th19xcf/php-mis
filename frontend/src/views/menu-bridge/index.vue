@@ -7,6 +7,10 @@ import { useTabStore } from '@/store/modules/tab';
 import { getServiceBaseURL } from '@/utils/service';
 import GenericQueryWorkbench from './modules/generic-query-workbench.vue';
 
+defineOptions({
+  name: 'MenuBridge'
+});
+
 const route = useRoute();
 const themeStore = useThemeStore();
 const tabStore = useTabStore();
@@ -140,8 +144,12 @@ function handleIframeLoad() {
       </NDescriptions>
 
       <div class="bridge-content-region">
-        <!-- 原生 Vue 组件渲染 -->
-        <component :is="currentNativeComponent" v-if="isNativeFunction" />
+        <!-- 原生 Vue 组件渲染 - 使用 keep-alive 缓存 -->
+        <template v-if="isNativeFunction">
+          <KeepAlive>
+            <component :is="currentNativeComponent" />
+          </KeepAlive>
+        </template>
 
         <!-- 通用查询工作台 -->
         <GenericQueryWorkbench

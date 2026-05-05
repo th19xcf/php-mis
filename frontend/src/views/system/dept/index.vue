@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted, h } from 'vue';
+import { ref, onMounted, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
-import { fetchDeptTree, fetchDeptDetail, fetchAddDept, fetchUpdateDept, fetchDeleteDept } from '@/service/api';
+import { fetchAddDept, fetchUpdateDept, fetchDeleteDept } from '@/service/api';
+import { useDeptStore } from '@/store/modules/dept';
 
 const dialog = useDialog();
 const message = useMessage();
+const deptStore = useDeptStore();
 
 // 状态
-const loading = ref(false);
-const treeData = ref<TreeOption[]>([]);
-const selectedGuid = ref<string>('');
-const deptDetail = ref<Api.Dept.DeptDetail | null>(null);
+const treeData = computed(() => deptStore.treeData);
+const selectedGuid = computed(() => deptStore.selectedGuid);
+const deptDetail = computed(() => deptStore.deptDetail);
 
 // 左侧宽度（像素）
 const leftWidth = ref(320);
@@ -81,34 +82,13 @@ const regionOptions = [
 
 // 加载部门树
 async function loadDeptTree() {
-  loading.value = true;
-  const { data, error } = await fetchDeptTree();
-  loading.value = false;
-
-  if (!error && data) {
-    treeData.value = convertToTreeOptions(data);
-  }
-}
-
-// 转换树数据
-function convertToTreeOptions(nodes: Api.Dept.DeptTreeNode[]): TreeOption[] {
-  return nodes.map(node => ({
-    key: node.guid,
-    label: `${node.deptName} (${node.deptCode})`,
-    data: node,
-    children: node.children && node.children.length > 0 ? convertToTreeOptions(node.children) : undefined
-  }));
+  await deptStore.refreshTree();
 }
 
 // 选择节点
 async function handleSelect(keys: string[]) {
   if (keys.length === 0) return;
-
-  selectedGuid.value = keys[0];
-  const { data } = await fetchDeptDetail(keys[0]);
-  if (data) {
-    deptDetail.value = data;
-  }
+  await deptStore.loadDeptDetail(keys[0]);
 }
 
 // 打开新增弹窗
@@ -154,7 +134,7 @@ async function handleAdd() {
   }
 
   submitting.value = true;
-  const { data, error } = await fetchAddDept({
+  const { error } = await fetchAddDept({
     parentCode: addForm.value.parentCode,
     deptName: addForm.value.deptName,
     leader: addForm.value.leader,
@@ -167,11 +147,7 @@ async function handleAdd() {
     message.success('新增部门成功');
     showAddModal.value = false;
     await loadDeptTree();
-    // 选中新添加的部门（通过编码查找）
-    if (data?.deptCode) {
-      // 重新加载后选中
-      deptDetail.value = null;
-    }
+    deptStore.clearSelection();
   }
 }
 
@@ -196,10 +172,8 @@ async function handleEdit() {
     message.success('修改部门信息成功');
     showEditModal.value = false;
     await loadDeptTree();
-    // 刷新详情
     if (selectedGuid.value) {
-      const { data } = await fetchDeptDetail(selectedGuid.value);
-      if (data) deptDetail.value = data;
+      await deptStore.loadDeptDetail(selectedGuid.value);
     }
   }
 }
@@ -225,8 +199,7 @@ function handleDelete() {
       const { error } = await fetchDeleteDept(deptDetail.value!.GUID);
       if (!error) {
         message.success('删除部门成功');
-        deptDetail.value = null;
-        selectedGuid.value = '';
+        deptStore.clearSelection();
         await loadDeptTree();
       }
     }
@@ -248,7 +221,7 @@ function renderPrefix({ option }: { option: TreeOption }) {
 }
 
 onMounted(() => {
-  loadDeptTree();
+  deptStore.loadTreeData();
 });
 </script>
 
@@ -273,7 +246,9 @@ onMounted(() => {
           block-line
           block-node
           :selected-keys="selectedGuid ? [selectedGuid] : []"
+          :expanded-keys="deptStore.expandedKeys"
           @update:selected-keys="handleSelect"
+          @update:expanded-keys="deptStore.setExpandedKeys"
         />
       </div>
     </div>
