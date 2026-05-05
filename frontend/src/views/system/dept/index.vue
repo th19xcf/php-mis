@@ -230,7 +230,7 @@ onMounted(() => {
     <!-- 左侧树形结构 -->
     <div class="dept-panel dept-panel-left" :style="{ width: leftWidth + 'px' }">
       <div class="panel-header">
-        <span class="text-lg font-600">部门结构</span>
+        <span class="text-lg font-600">部门架构</span>
         <NButton size="small" @click="loadDeptTree">
           <template #icon>
             <icon-mdi-refresh />
