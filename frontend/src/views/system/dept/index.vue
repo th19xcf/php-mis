@@ -253,30 +253,30 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-full flex">
+  <div class="dept-container">
     <!-- 左侧树形结构 -->
-    <NCard :bordered="false" class="flex-shrink-0 card-wrapper" :style="{ width: leftWidth + 'px' }">
-      <template #header>
-        <div class="flex items-center justify-between">
-          <span class="text-lg font-600">部门结构</span>
-          <NButton size="small" @click="loadDeptTree">
-            <template #icon>
-              <icon-mdi-refresh />
-            </template>
-            刷新
-          </NButton>
-        </div>
-      </template>
-      <NTree
-        :data="treeData"
-        :render-prefix="renderPrefix"
-        selectable
-        block-line
-        block-node
-        :selected-keys="selectedGuid ? [selectedGuid] : []"
-        @update:selected-keys="handleSelect"
-      />
-    </NCard>
+    <div class="dept-panel dept-panel-left" :style="{ width: leftWidth + 'px' }">
+      <div class="panel-header">
+        <span class="text-lg font-600">部门结构</span>
+        <NButton size="small" @click="loadDeptTree">
+          <template #icon>
+            <icon-mdi-refresh />
+          </template>
+          刷新
+        </NButton>
+      </div>
+      <div class="panel-content">
+        <NTree
+          :data="treeData"
+          :render-prefix="renderPrefix"
+          selectable
+          block-line
+          block-node
+          :selected-keys="selectedGuid ? [selectedGuid] : []"
+          @update:selected-keys="handleSelect"
+        />
+      </div>
+    </div>
 
     <!-- 拖动条 -->
     <div class="resize-splitter" :class="{ 'is-resizing': isResizing }" @mousedown="startResize">
@@ -284,73 +284,72 @@ onMounted(() => {
     </div>
 
     <!-- 右侧详情 -->
-    <NCard :bordered="false" class="flex-1 card-wrapper">
-      <template #header>
-        <div class="flex items-center justify-between">
-          <span class="text-lg font-600">部门信息</span>
-          <NSpace>
-            <NButton type="primary" size="small" @click="openAddModal">
-              <template #icon>
-                <icon-mdi-plus />
-              </template>
-              新增下级
-            </NButton>
-            <NButton type="info" size="small" @click="openEditModal">
-              <template #icon>
-                <icon-mdi-pencil />
-              </template>
-              编辑
-            </NButton>
-            <NButton type="error" size="small" @click="handleDelete">
-              <template #icon>
-                <icon-mdi-delete />
-              </template>
-              删除
-            </NButton>
-          </NSpace>
-        </div>
-      </template>
-
-      <div v-if="deptDetail" class="space-y-4">
-        <NDescriptions bordered :column="2" size="small">
-          <NDescriptionsItem label="部门编码">
-            {{ deptDetail.部门编码 }}
-          </NDescriptionsItem>
-          <NDescriptionsItem label="部门名称">
-            {{ deptDetail.部门名称 }}
-          </NDescriptionsItem>
-          <NDescriptionsItem label="部门全称" :span="2">
-            {{ deptDetail.部门全称 }}
-          </NDescriptionsItem>
-          <NDescriptionsItem label="部门级别">{{ deptDetail.部门级别 }}级</NDescriptionsItem>
-          <NDescriptionsItem label="负责人">
-            {{ deptDetail.负责人 || '-' }}
-          </NDescriptionsItem>
-          <NDescriptionsItem label="上级部门编码">
-            {{ deptDetail.上级部门编码 || '-' }}
-          </NDescriptionsItem>
-          <NDescriptionsItem label="有无下级">
-            <NTag :type="deptDetail.有无下级部门 === '有' ? 'success' : 'default'" size="small">
-              {{ deptDetail.有无下级部门 }}
-            </NTag>
-          </NDescriptionsItem>
-          <NDescriptionsItem label="属地">
-            {{ deptDetail.属地 || '-' }}
-          </NDescriptionsItem>
-          <NDescriptionsItem label="预算表部门全称" :span="2">
-            {{ deptDetail.预算表部门全称 || '-' }}
-          </NDescriptionsItem>
-          <NDescriptionsItem label="记录开始日期">
-            {{ deptDetail.记录开始日期 || '-' }}
-          </NDescriptionsItem>
-          <NDescriptionsItem label="记录结束日期">
-            {{ deptDetail.记录结束日期 || '-' }}
-          </NDescriptionsItem>
-        </NDescriptions>
+    <div class="dept-panel dept-panel-right">
+      <div class="panel-header">
+        <span class="text-lg font-600">部门信息</span>
+        <NSpace>
+          <NButton type="primary" size="small" @click="openAddModal">
+            <template #icon>
+              <icon-mdi-plus />
+            </template>
+            新增下级
+          </NButton>
+          <NButton type="info" size="small" @click="openEditModal">
+            <template #icon>
+              <icon-mdi-pencil />
+            </template>
+            编辑
+          </NButton>
+          <NButton type="error" size="small" @click="handleDelete">
+            <template #icon>
+              <icon-mdi-delete />
+            </template>
+            删除
+          </NButton>
+        </NSpace>
       </div>
+      <div class="panel-content">
+        <div v-if="deptDetail" class="space-y-4">
+          <NDescriptions bordered :column="2" size="small">
+            <NDescriptionsItem label="部门编码">
+              {{ deptDetail.部门编码 }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="部门名称">
+              {{ deptDetail.部门名称 }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="部门全称" :span="2">
+              {{ deptDetail.部门全称 }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="部门级别">{{ deptDetail.部门级别 }}级</NDescriptionsItem>
+            <NDescriptionsItem label="负责人">
+              {{ deptDetail.负责人 || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="上级部门编码">
+              {{ deptDetail.上级部门编码 || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="有无下级">
+              <NTag :type="deptDetail.有无下级部门 === '有' ? 'success' : 'default'" size="small">
+                {{ deptDetail.有无下级部门 }}
+              </NTag>
+            </NDescriptionsItem>
+            <NDescriptionsItem label="属地">
+              {{ deptDetail.属地 || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="预算表部门全称" :span="2">
+              {{ deptDetail.预算表部门全称 || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="记录开始日期">
+              {{ deptDetail.记录开始日期 || '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="记录结束日期">
+              {{ deptDetail.记录结束日期 || '-' }}
+            </NDescriptionsItem>
+          </NDescriptions>
+        </div>
 
-      <NEmpty v-else description="请选择左侧部门查看详情" class="py-20" />
-    </NCard>
+        <NEmpty v-else description="请选择左侧部门查看详情" class="py-20" />
+      </div>
+    </div>
 
     <!-- 新增弹窗 -->
     <NModal v-model:show="showAddModal" title="新增下级部门" preset="card" class="w-120" :mask-closable="false">
@@ -415,6 +414,56 @@ onMounted(() => {
   padding: 4px 0;
 }
 
+/* 容器 - 使用绝对定位确保高度 */
+.dept-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 面板容器 */
+.dept-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e8e8e8;
+  overflow: hidden;
+}
+
+.dept-panel-left {
+  flex-shrink: 0;
+}
+
+.dept-panel-right {
+  flex: 1;
+}
+
+/* 面板头部 */
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
+  background: #fafafa;
+}
+
+/* 面板内容区域 - 可滚动 */
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  min-height: 0;
+}
+
 .resize-splitter {
   width: 8px;
   cursor: col-resize;
@@ -446,21 +495,35 @@ onMounted(() => {
   background-color: #1890ff;
 }
 
-/* 深色模式适配 */
-:global(.dark) .resize-splitter:hover {
+/* 深色模式适配 - 使用 html.dark 选择器 */
+html.dark .dept-panel {
+  background: rgb(24, 24, 28);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+html.dark .panel-header {
+  background: rgb(36, 36, 40);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+html.dark .panel-content {
+  background: rgb(24, 24, 28);
+}
+
+html.dark .resize-splitter:hover {
   background-color: rgba(255, 255, 255, 0.06);
 }
 
-:global(.dark) .resize-splitter.is-resizing {
+html.dark .resize-splitter.is-resizing {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
-:global(.dark) .resize-line {
+html.dark .resize-line {
   background-color: #555;
 }
 
-:global(.dark) .resize-splitter:hover .resize-line,
-:global(.dark) .resize-splitter.is-resizing .resize-line {
+html.dark .resize-splitter:hover .resize-line,
+html.dark .resize-splitter.is-resizing .resize-line {
   background-color: #40a9ff;
 }
 </style>

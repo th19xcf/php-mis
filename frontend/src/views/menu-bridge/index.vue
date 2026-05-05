@@ -141,10 +141,7 @@ function handleIframeLoad() {
 
       <div class="bridge-content-region">
         <!-- 原生 Vue 组件渲染 -->
-        <component
-          :is="currentNativeComponent"
-          v-if="isNativeFunction"
-        />
+        <component :is="currentNativeComponent" v-if="isNativeFunction" />
 
         <!-- 通用查询工作台 -->
         <GenericQueryWorkbench
@@ -207,6 +204,7 @@ function handleIframeLoad() {
 }
 
 .bridge-content-region {
+  position: relative;
   height: 100%;
   min-height: 0;
   overflow: hidden;
