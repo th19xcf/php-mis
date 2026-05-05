@@ -84,6 +84,9 @@ phpunit
 # Temporary test files
 public/test-*.php
 
+# Compiled frontend assets
+public/assets/
+
 #-------------------------
 # Composer
 #-------------------------
