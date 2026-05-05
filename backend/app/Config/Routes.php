@@ -53,3 +53,12 @@ $routes->group('comment', static function ($routes) {
 	$routes->post('list/(:segment)', 'Comment::list/$1');
 	$routes->post('add/(:segment)', 'Comment::add/$1');
 });
+
+$routes->group('dept', static function ($routes) {
+	$routes->get('tree', 'DeptApi::tree');
+	$routes->get('detail/(:segment)', 'DeptApi::detail/$1');
+	$routes->post('add', 'DeptApi::add');
+	$routes->post('update', 'DeptApi::update');
+	$routes->post('delete', 'DeptApi::delete');
+	$routes->get('options', 'DeptApi::options');
+});

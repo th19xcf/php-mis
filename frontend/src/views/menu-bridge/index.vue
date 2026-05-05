@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch, defineAsyncComponent } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { useThemeStore } from '@/store/modules/theme';
@@ -35,8 +35,26 @@ const meta = computed(() => {
   };
 });
 const iframeLoaded = ref(false);
-const activeView = ref<'workbench' | 'legacy'>('workbench');
+const activeView = ref<'workbench' | 'legacy' | 'native'>('workbench');
 const currentFunctionCode = computed(() => String(meta.value.functionCode || '').trim());
+
+// 原生 Vue 组件映射表 - 功能编码 -> 组件路径
+const nativeComponentMap: Record<string, any> = {
+  // 1010 部门管理
+  '1010': defineAsyncComponent(() => import('@/views/system/dept/index.vue'))
+};
+
+// 判断当前功能是否使用原生 Vue 组件
+const isNativeFunction = computed(() => {
+  const funcCode = currentFunctionCode.value;
+  return funcCode && nativeComponentMap[funcCode];
+});
+
+// 获取当前功能的原生组件
+const currentNativeComponent = computed(() => {
+  const funcCode = currentFunctionCode.value;
+  return nativeComponentMap[funcCode] || null;
+});
 
 const isNativeOnlyFunction = computed(() => {
   return true;
@@ -107,7 +125,7 @@ function handleIframeLoad() {
 <template>
   <div class="menu-bridge-page" :class="{ 'system-dark': isDarkMode }">
     <NCard :bordered="false" :content-style="{ padding: '6px 8px' }" class="bridge-card rounded-16px shadow-sm">
-      <NAlert v-if="!legacyUrl" type="warning" class="mb-16px">
+      <NAlert v-if="!legacyUrl && !isNativeFunction" type="warning" class="mb-16px">
         当前菜单缺少 module 或 functionCode 配置，无法生成功能页地址。请补齐 def_function 中的 功能模块、功能编码、参数
         配置。
       </NAlert>
@@ -122,13 +140,21 @@ function handleIframeLoad() {
       </NDescriptions>
 
       <div class="bridge-content-region">
+        <!-- 原生 Vue 组件渲染 -->
+        <component
+          :is="currentNativeComponent"
+          v-if="isNativeFunction"
+        />
+
+        <!-- 通用查询工作台 -->
         <GenericQueryWorkbench
-          v-if="activeView === 'workbench'"
+          v-else-if="activeView === 'workbench'"
           :meta="meta"
           :native-only="isNativeOnlyFunction"
           :dynamic-like="false"
         />
 
+        <!-- iframe 旧版页面 -->
         <div v-else-if="legacyUrl && !isNativeOnlyFunction" class="iframe-shell">
           <div v-if="!iframeLoaded" class="iframe-loading">
             <NSpin size="large" />

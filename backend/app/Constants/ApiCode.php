@@ -23,6 +23,8 @@ final class ApiCode
 
     // System errors
     public const PARAM_ERROR = '2001';
+    public const NOT_FOUND = '2002';
+    public const BUSINESS_ERROR = '2003';
     public const SERVER_ERROR = '5000';
 
     /** @var string[] */

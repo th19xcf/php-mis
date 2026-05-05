@@ -234,6 +234,7 @@ const local: App.I18n.Schema = {
     'menu-bridge': 'Dynamic Menu',
     'permission-demo': 'Permission Demo',
     system: 'System',
+    system_dept: 'Department Management',
     system_user: 'User Management',
     system_role: 'Role Management'
   },

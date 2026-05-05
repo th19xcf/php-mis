@@ -113,6 +113,15 @@ export const generatedRoutes: GeneratedRoute[] = [
     },
     children: [
       {
+        name: 'system_dept',
+        path: '/system/dept',
+        component: 'view.system_dept',
+        meta: {
+          title: 'system_dept',
+          i18nKey: 'route.system_dept'
+        }
+      },
+      {
         name: 'system_role',
         path: '/system/role',
         component: 'view.system_role',

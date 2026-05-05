@@ -230,6 +230,7 @@ const local: App.I18n.Schema = {
     'menu-bridge': '动态菜单',
     'permission-demo': '权限演示',
     system: '系统管理',
+    system_dept: '部门管理',
     system_user: '用户管理',
     system_role: '角色管理'
   },
@@ -283,8 +284,7 @@ const local: App.I18n.Schema = {
       }
     },
     home: {
-      branchDesc:
-        '新版本已发布，欢迎使用！',
+      branchDesc: '新版本已发布，欢迎使用！',
       greeting: '早安，{userName}, 今天又是充满活力的一天!',
       weatherDesc: '今日多云转晴，20℃ - 25℃!',
       projectCount: '项目数',

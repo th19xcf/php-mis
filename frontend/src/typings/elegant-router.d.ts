@@ -27,6 +27,7 @@ declare module "@elegant-router/types" {
     "menu-bridge": "/menu-bridge";
     "permission-demo": "/permission-demo";
     "system": "/system";
+    "system_dept": "/system/dept";
     "system_role": "/system/role";
     "system_user": "/system/user";
   };
@@ -95,6 +96,7 @@ declare module "@elegant-router/types" {
     | "home"
     | "menu-bridge"
     | "permission-demo"
+    | "system_dept"
     | "system_role"
     | "system_user"
   >;

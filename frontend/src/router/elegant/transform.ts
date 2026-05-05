@@ -173,6 +173,7 @@ const routeMap: RouteMap = {
   "menu-bridge": "/menu-bridge",
   "permission-demo": "/permission-demo",
   "system": "/system",
+  "system_dept": "/system/dept",
   "system_role": "/system/role",
   "system_user": "/system/user"
 };
