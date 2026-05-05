@@ -62,3 +62,42 @@ $routes->group('dept', static function ($routes) {
 	$routes->post('delete', 'DeptApi::delete');
 	$routes->get('options', 'DeptApi::options');
 });
+
+$routes->group('store', static function ($routes) {
+	$routes->get('tree', 'StoreApi::tree');
+	$routes->get('detail/(:segment)', 'StoreApi::detail/$1');
+	$routes->post('add', 'StoreApi::add');
+	$routes->post('update', 'StoreApi::update');
+	$routes->post('delete', 'StoreApi::delete');
+	$routes->post('transfer', 'StoreApi::transfer');
+	$routes->get('options', 'StoreApi::options');
+});
+
+$routes->group('interview', static function ($routes) {
+	$routes->get('tree', 'InterviewApi::tree');
+	$routes->get('detail/(:segment)', 'InterviewApi::detail/$1');
+	$routes->post('add', 'InterviewApi::add');
+	$routes->post('update', 'InterviewApi::update');
+	$routes->post('delete', 'InterviewApi::delete');
+	$routes->post('transfer', 'InterviewApi::transfer');
+	$routes->get('options', 'InterviewApi::options');
+});
+
+$routes->group('train', static function ($routes) {
+	$routes->get('tree', 'TrainApi::tree');
+	$routes->get('detail/(:segment)', 'TrainApi::detail/$1');
+	$routes->post('update', 'TrainApi::update');
+	$routes->post('batchUpdate', 'TrainApi::batchUpdate');
+	$routes->post('delete', 'TrainApi::delete');
+	$routes->post('transfer', 'TrainApi::transfer');
+	$routes->get('options', 'TrainApi::options');
+});
+
+$routes->group('employee', static function ($routes) {
+	$routes->get('tree', 'EmployeeApi::tree');
+	$routes->get('detail/(:segment)', 'EmployeeApi::detail/$1');
+	$routes->post('update', 'EmployeeApi::update');
+	$routes->post('batchUpdate', 'EmployeeApi::batchUpdate');
+	$routes->post('delete', 'EmployeeApi::delete');
+	$routes->get('options', 'EmployeeApi::options');
+});

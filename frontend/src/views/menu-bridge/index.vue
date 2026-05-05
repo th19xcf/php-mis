@@ -45,7 +45,15 @@ const currentFunctionCode = computed(() => String(meta.value.functionCode || '')
 // 原生 Vue 组件映射表 - 功能编码 -> 组件路径
 const nativeComponentMap: Record<string, any> = {
   // 1010 部门管理
-  '1010': defineAsyncComponent(() => import('@/views/system/dept/index.vue'))
+  '1010': defineAsyncComponent(() => import('@/views/system/dept/index.vue')),
+  // 2015 邀约人员维护
+  '2015': defineAsyncComponent(() => import('@/views/personnel/store/index.vue')),
+  // 2025 面试人员维护
+  '2025': defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
+  // 2035 培训人员维护
+  '2035': defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
+  // 2045 在职人员维护
+  '2045': defineAsyncComponent(() => import('@/views/personnel/employee/index.vue'))
 };
 
 // 判断当前功能是否使用原生 Vue 组件

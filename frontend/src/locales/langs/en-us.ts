@@ -236,7 +236,12 @@ const local: App.I18n.Schema = {
     system: 'System',
     system_dept: 'Department Management',
     system_user: 'User Management',
-    system_role: 'Role Management'
+    system_role: 'Role Management',
+    personnel: 'Personnel',
+    personnel_store: 'Store Personnel',
+    personnel_interview: 'Interview Personnel',
+    personnel_train: 'Training Personnel',
+    personnel_employee: 'Employee Management'
   },
   page: {
     login: {

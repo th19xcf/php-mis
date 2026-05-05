@@ -26,6 +26,11 @@ declare module "@elegant-router/types" {
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
     "menu-bridge": "/menu-bridge";
     "permission-demo": "/permission-demo";
+    "personnel": "/personnel";
+    "personnel_employee": "/personnel/employee";
+    "personnel_interview": "/personnel/interview";
+    "personnel_store": "/personnel/store";
+    "personnel_train": "/personnel/train";
     "system": "/system";
     "system_dept": "/system/dept";
     "system_role": "/system/role";
@@ -70,6 +75,7 @@ declare module "@elegant-router/types" {
     | "login"
     | "menu-bridge"
     | "permission-demo"
+    | "personnel"
     | "system"
   >;
 
@@ -96,6 +102,10 @@ declare module "@elegant-router/types" {
     | "home"
     | "menu-bridge"
     | "permission-demo"
+    | "personnel_employee"
+    | "personnel_interview"
+    | "personnel_store"
+    | "personnel_train"
     | "system_dept"
     | "system_role"
     | "system_user"

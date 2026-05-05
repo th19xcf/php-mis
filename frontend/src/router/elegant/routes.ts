@@ -104,6 +104,53 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'personnel',
+    path: '/personnel',
+    component: 'layout.base',
+    meta: {
+      title: 'personnel',
+      i18nKey: 'route.personnel'
+    },
+    children: [
+      {
+        name: 'personnel_employee',
+        path: '/personnel/employee',
+        component: 'view.personnel_employee',
+        meta: {
+          title: 'personnel_employee',
+          i18nKey: 'route.personnel_employee'
+        }
+      },
+      {
+        name: 'personnel_interview',
+        path: '/personnel/interview',
+        component: 'view.personnel_interview',
+        meta: {
+          title: 'personnel_interview',
+          i18nKey: 'route.personnel_interview'
+        }
+      },
+      {
+        name: 'personnel_store',
+        path: '/personnel/store',
+        component: 'view.personnel_store',
+        meta: {
+          title: 'personnel_store',
+          i18nKey: 'route.personnel_store'
+        }
+      },
+      {
+        name: 'personnel_train',
+        path: '/personnel/train',
+        component: 'view.personnel_train',
+        meta: {
+          title: 'personnel_train',
+          i18nKey: 'route.personnel_train'
+        }
+      }
+    ]
+  },
+  {
     name: 'system',
     path: '/system',
     component: 'layout.base',
