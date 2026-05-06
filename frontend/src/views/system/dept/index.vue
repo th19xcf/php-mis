@@ -99,8 +99,8 @@ function openAddModal() {
   }
 
   addForm.value = {
-    parentCode: deptDetail.value.部门编码,
-    parentName: deptDetail.value.部门名称,
+    parentCode: deptDetail.value.部门编码 || '',
+    parentName: deptDetail.value.部门名称 || '',
     deptName: '',
     leader: '',
     region: '',
@@ -118,7 +118,7 @@ function openEditModal() {
 
   editForm.value = {
     guid: deptDetail.value.GUID,
-    deptName: deptDetail.value.部门名称,
+    deptName: deptDetail.value.部门名称 || '',
     leader: deptDetail.value.负责人 || '',
     region: deptDetail.value.属地 || '',
     budgetFullName: deptDetail.value.预算表部门全称 || ''
