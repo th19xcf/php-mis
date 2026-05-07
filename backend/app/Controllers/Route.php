@@ -249,19 +249,34 @@ class Route extends BaseController
                 // 生成路由名称（用于前端导航）
                 // 使用功能编码作为唯一路由名称
                 $routeName = $row->功能编码;
-                $routePath = $row->功能编码;
-
-                // 生成菜单项
-                $menuItem = [
-                    'name' => $routeName,
-                    'path' => '/' . $routePath,
-                    'component' => 'view.common',
-                    'meta' => [
-                        'title' => $row->二级菜单,
-                        'icon' => 'mdi:menu',
-                        'routePath' => $routePath
-                    ]
-                ];
+                
+                // 如果功能模块为空，表示使用原生 Vue 组件（如合同管理）
+                // 否则使用通用查询工作台
+                if ($row->功能模块 === '' || $row->功能模块 === null) {
+                    $menuItem = [
+                        'name' => $routeName,
+                        'path' => '/menu-bridge',
+                        'component' => 'view.menu-bridge',
+                        'meta' => [
+                            'title' => $row->二级菜单,
+                            'icon' => 'mdi:menu',
+                            'functionCode' => $row->功能编码
+                        ]
+                    ];
+                } else {
+                    $routePath = $row->功能编码;
+                    $menuItem = [
+                        'name' => $routeName,
+                        'path' => '/' . $routePath,
+                        'component' => 'view.common',
+                        'meta' => [
+                            'title' => $row->二级菜单,
+                            'icon' => 'mdi:menu',
+                            'routePath' => $routePath,
+                            'functionCode' => $row->功能编码
+                        ]
+                    ];
+                }
 
                 // 存储一级菜单信息
                 if (!isset($menuMap[$row->一级菜单])) {

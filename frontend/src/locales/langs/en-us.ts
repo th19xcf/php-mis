@@ -241,7 +241,8 @@ const local: App.I18n.Schema = {
     personnel_store: 'Store Personnel',
     personnel_interview: 'Interview Personnel',
     personnel_train: 'Training Personnel',
-    personnel_employee: 'Employee Management'
+    personnel_employee: 'Employee Management',
+    contract: 'Contract Management'
   },
   page: {
     login: {

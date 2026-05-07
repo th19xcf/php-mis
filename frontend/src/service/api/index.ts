@@ -5,3 +5,4 @@ export * from './dept';
 export * from './store';
 export * from './interview';
 export * from './personnel';
+export * from './contract';

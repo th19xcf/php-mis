@@ -53,7 +53,9 @@ const nativeComponentMap: Record<string, any> = {
   // 2035 培训人员维护
   '2035': defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
   // 2045 在职人员维护
-  '2045': defineAsyncComponent(() => import('@/views/personnel/employee/index.vue'))
+  '2045': defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
+  // contract 合同管理
+  contract: defineAsyncComponent(() => import('@/views/contract/index.vue'))
 };
 
 // 判断当前功能是否使用原生 Vue 组件
