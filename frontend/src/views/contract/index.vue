@@ -197,8 +197,10 @@ async function handleRefresh() {
 }
 
 function openCreateModal() {
+  console.log('[Contract] openCreateModal called, formMode:', formMode.value, 'showFormModal:', showFormModal.value);
   formMode.value = 'create';
   showFormModal.value = true;
+  console.log('[Contract] after setting, showFormModal:', showFormModal.value);
 }
 
 function openEditModal() {

@@ -27,9 +27,9 @@ const formData = ref({
   乙方联系人: '',
   乙方电话: '',
   合同金额: undefined as number | undefined,
-  签订日期: '',
-  开始日期: '',
-  结束日期: '',
+  签订日期: null as string | null,
+  开始日期: null as string | null,
+  结束日期: null as string | null,
   付款方式: '',
   备注: ''
 });
@@ -77,9 +77,9 @@ watch(
           乙方联系人: '',
           乙方电话: '',
           合同金额: undefined,
-          签订日期: '',
-          开始日期: '',
-          结束日期: '',
+          签订日期: null,
+          开始日期: null,
+          结束日期: null,
           付款方式: '',
           备注: ''
         };
