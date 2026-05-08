@@ -165,11 +165,35 @@ function handleReset() {
   };
   contractStore.resetSearchParams();
   contractStore.setPage(1);
+
+  if (gridApi.value) {
+    gridApi.value.setFilterModel(null);
+    gridApi.value.applyColumnState({
+      state: columnDefs.map(col => ({
+        colId: String(col.field),
+        sort: null,
+        pinned: null
+      })),
+      defaultState: { sort: null, pinned: null }
+    });
+  }
+
   contractStore.loadContractList();
+  message.success('已重置到初始状态');
 }
 
 async function handleRefresh() {
+  if (gridApi.value) {
+    gridApi.value.deselectAll();
+  }
+  contractStore.clearCurrentContract();
   await contractStore.loadContractList();
+
+  if (gridApi.value) {
+    gridApi.value.refreshCells({ force: true });
+  }
+
+  message.success('已刷新');
 }
 
 function openCreateModal() {

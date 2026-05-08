@@ -79,7 +79,7 @@ export const useContractStore = defineStore('contract-store', () => {
       console.log('[ContractStore] fetchContractDetail raw result:', result);
 
       // Extract actual data from response - result may be wrapped {data: {...}, error: null}
-      const data = (result as any)?.data || result as any;
+      const data = (result as any)?.data || (result as any);
       console.log('[ContractStore] extracted data:', data);
 
       if (data) {
@@ -220,7 +220,7 @@ export const useContractStore = defineStore('contract-store', () => {
     console.log('[ContractStore] fetchContractStats raw result:', result);
 
     // Extract actual data from response
-    const data = (result as any)?.data || result as any;
+    const data = (result as any)?.data || (result as any);
     console.log('[ContractStore] loadContractStats extracted data:', data);
 
     if (data) {
