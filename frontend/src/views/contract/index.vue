@@ -131,9 +131,22 @@ function onRowClicked(event: { data: Api.Contract.ContractListItem }) {
 
 function onSelectionChanged() {
   const selected = gridApi.value?.getSelectedRows();
+  console.log('[Contract] Selection changed, selected:', selected);
+  console.log('[Contract] contractStore:', contractStore);
+  console.log('[Contract] contractStore.loadContractDetail:', contractStore.loadContractDetail);
   if (selected && selected.length > 0) {
-    contractStore.loadContractDetail(selected[0].GUID);
-    contractStore.loadContractFlow(selected[0].GUID);
+    const guid = selected[0].GUID;
+    console.log('[Contract] Loading detail for GUID:', guid);
+    console.log('[Contract] About to call loadContractDetail');
+    try {
+      contractStore.loadContractDetail(guid).then(() => {
+        console.log('[Contract] loadContractDetail completed, currentContract:', contractStore.currentContract);
+      });
+      console.log('[Contract] After calling loadContractDetail');
+    } catch (err) {
+      console.error('[Contract] Error calling loadContractDetail:', err);
+    }
+    contractStore.loadContractFlow(guid);
   }
 }
 
@@ -357,11 +370,13 @@ async function _handlePageSizeChange(pageSize: number) {
 }
 
 onMounted(async () => {
+  console.log('[Contract] onMounted called');
   await Promise.all([
     contractStore.loadContractList(),
     contractStore.loadContractOptions(),
     contractStore.loadContractStats()
   ]);
+  console.log('[Contract] onMounted completed, stats:', contractStore.stats);
 });
 
 watch(
@@ -408,7 +423,7 @@ watch(
           :animate-rows="true"
           :pagination="true"
           :pagination-page-size="pagination.pageSize"
-          :pagination-page-size-selector="[20, 50, 100, 500]"
+          :pagination-page-size-selector="[500, 1000, 2000]"
           :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: true }"
           :selection-column-def="{
             width: 37,

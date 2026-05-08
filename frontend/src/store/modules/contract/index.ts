@@ -23,7 +23,7 @@ export const useContractStore = defineStore('contract-store', () => {
   const loading = ref(false);
   const pagination = ref({
     page: 1,
-    pageSize: 20,
+    pageSize: 500,
     total: 0
   });
   const searchParams = ref({
@@ -71,13 +71,25 @@ export const useContractStore = defineStore('contract-store', () => {
   }
 
   async function loadContractDetail(guid: number) {
+    console.log('[ContractStore] loadContractDetail START, guid:', guid);
     loading.value = true;
     try {
-      const data = (await fetchContractDetail(guid)) as unknown as Api.Contract.ContractDetail;
+      console.log('[ContractStore] loadContractDetail called with guid:', guid);
+      const result = await fetchContractDetail(guid);
+      console.log('[ContractStore] fetchContractDetail raw result:', result);
+
+      // Extract actual data from response - result may be wrapped {data: {...}, error: null}
+      const data = (result as any)?.data || result as any;
+      console.log('[ContractStore] extracted data:', data);
+
       if (data) {
-        currentContract.value = data;
+        currentContract.value = data as Api.Contract.ContractDetail;
+        console.log('[ContractStore] currentContract.value set:', currentContract.value);
       }
       return data;
+    } catch (error) {
+      console.error('[ContractStore] loadContractDetail error:', error);
+      throw error;
     } finally {
       loading.value = false;
     }
@@ -203,9 +215,17 @@ export const useContractStore = defineStore('contract-store', () => {
   }
 
   async function loadContractStats() {
-    const data = (await fetchContractStats()) as unknown as Api.Contract.ContractStats;
+    console.log('[ContractStore] loadContractStats called');
+    const result = await fetchContractStats();
+    console.log('[ContractStore] fetchContractStats raw result:', result);
+
+    // Extract actual data from response
+    const data = (result as any)?.data || result as any;
+    console.log('[ContractStore] loadContractStats extracted data:', data);
+
     if (data) {
-      stats.value = data;
+      stats.value = data as Api.Contract.ContractStats;
+      console.log('[ContractStore] stats.value set:', stats.value);
     }
   }
 
