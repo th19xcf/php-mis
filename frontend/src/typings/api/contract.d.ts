@@ -56,9 +56,9 @@ declare namespace Api {
       乙方联系人?: string;
       乙方电话?: string;
       合同金额?: number;
-      签订日期?: string;
-      开始日期?: string;
-      结束日期?: string;
+      签订日期?: string | null;
+      开始日期?: string | null;
+      结束日期?: string | null;
       付款方式?: string;
       备注?: string;
     }
