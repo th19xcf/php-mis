@@ -855,6 +855,10 @@ class ContractApi extends BaseController
         }
 
         if (empty($guid)) {
+            $guid = $this->request->getGet('guid') ?? '';
+        }
+
+        if (empty($guid)) {
             return $this->response->setJSON([
                 'code' => ApiCode::PARAM_ERROR,
                 'msg' => '合同GUID不能为空',

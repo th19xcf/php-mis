@@ -86,6 +86,18 @@ const searchForm = ref({
 const gridApi = ref<GridApi | null>(null);
 
 const columnDefs = [
+  {
+    field: 'rowIndex',
+    headerName: '序号',
+    width: 60,
+    minWidth: 60,
+    maxWidth: 60,
+    resizable: false,
+    sortable: false,
+    filter: false,
+    cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+    valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
+  },
   { field: '合同编号', headerName: '合同编号', width: 150, minWidth: 120, filter: 'agTextColumnFilter' },
   { field: '合同名称', headerName: '合同名称', width: 200, minWidth: 150, filter: 'agTextColumnFilter' },
   { field: '甲方名称', headerName: '甲方', width: 150, minWidth: 120, filter: 'agTextColumnFilter' },
@@ -397,6 +409,15 @@ watch(
           :pagination="true"
           :pagination-page-size="pagination.pageSize"
           :pagination-page-size-selector="[20, 50, 100, 500]"
+          :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: true }"
+          :selection-column-def="{
+            width: 37,
+            minWidth: 37,
+            resizable: false,
+            headerClass: 'selection-header-left',
+            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
+            headerStyle: { display: 'flex', alignItems: 'center', justifyContent: 'center' }
+          }"
           @grid-ready="onGridReady"
           @row-clicked="onRowClicked"
           @selection-changed="onSelectionChanged"
@@ -704,8 +725,238 @@ html.dark .panel-content {
 }
 
 .system-dark :deep(.contract-grid .ag-header-cell),
-.system-dark :deep(.contract-grid .ag-cell) {
+:deep(.contract-grid .ag-cell) {
   border-right: 1px dotted #4b5965 !important;
+}
+
+/* Checkbox styles - matching generic-query-workbench */
+:deep(.contract-grid .ag-selection-checkbox),
+:deep(.contract-grid .ag-checkbox-input-wrapper) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.contract-grid .ag-selection-checkbox),
+:deep(.contract-grid .ag-header-select-all) {
+  width: 100%;
+  height: 100%;
+}
+
+:deep(.contract-grid .ag-header-select-all) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 0;
+}
+
+:deep(.contract-grid .selection-header-left .ag-header-cell-comp-wrapper) {
+  width: 100%;
+  justify-content: center !important;
+  padding-left: 0 !important;
+}
+
+:deep(.contract-grid .selection-header-left .ag-header-select-all) {
+  margin: 0 auto;
+  width: auto !important;
+}
+
+:deep(.contract-grid .selection-header-left .ag-header-select-all .ag-selection-checkbox) {
+  justify-content: center !important;
+  width: auto !important;
+  padding-left: 0 !important;
+}
+
+:deep(.contract-grid .selection-header-left .ag-header-cell-label) {
+  width: 100% !important;
+  justify-content: center !important;
+  padding-left: 0 !important;
+  gap: 0 !important;
+}
+
+:deep(.contract-grid .selection-header-left .ag-header-cell-label .ag-checkbox-input-wrapper) {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Final override: target AG Grid selection column directly. */
+:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn']) {
+  position: relative;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-comp-wrapper) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-label) {
+  justify-content: center !important;
+  padding-left: 0 !important;
+}
+
+:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-select-all) {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: 16px !important;
+  height: 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
+:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn']) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
+:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Force checkbox wrapper to center */
+:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper .ag-selection-checkbox) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* Header checkbox centering */
+:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+:deep(
+  .contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-comp-wrapper .ag-header-select-all
+) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Checkbox appearance - matching generic-query-workbench */
+:deep(.contract-grid .ag-checkbox-input-wrapper) {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border: 1px solid #95a6b8;
+  border-radius: 2px;
+  background-color: #ffffff;
+  line-height: 16px;
+}
+
+:deep(.contract-grid .ag-checkbox-input-wrapper::before) {
+  display: none !important;
+}
+
+:deep(.contract-grid .ag-checkbox-input-wrapper::after) {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  border: 0;
+  transform: translate(-50%, -50%);
+}
+
+:deep(.contract-grid .ag-checkbox-input-wrapper.ag-checked) {
+  border-color: #2a90e8;
+  background-color: #2a90e8;
+}
+
+:deep(.contract-grid .ag-checkbox-input-wrapper.ag-checked::after) {
+  content: '✓';
+  width: auto;
+  height: auto;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  transform: translate(-50%, -56%);
+}
+
+:deep(.contract-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
+  border-color: #2a90e8;
+  background-color: #2a90e8;
+}
+
+:deep(.contract-grid .ag-checkbox-input-wrapper.ag-indeterminate::after) {
+  content: '';
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 2px;
+  border: 0;
+  background: #ffffff;
+  transform: translate(-50%, -50%);
+}
+
+:deep(.contract-grid .ag-cell .ag-checkbox-input-wrapper.ag-indeterminate::after) {
+  content: '✓';
+  width: auto;
+  height: auto;
+  border: 0;
+  background: transparent;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  transform: translate(-50%, -56%);
+}
+
+:deep(.contract-grid .ag-cell-value),
+:deep(.contract-grid .ag-header-cell-text) {
+  display: inline-flex;
+  align-items: center;
 }
 
 .system-dark :deep(.contract-grid .ag-row),
@@ -719,6 +970,18 @@ html.dark .panel-content {
 
 .system-dark :deep(.contract-grid .ag-row-hover.ag-row-selected::before) {
   background-color: #406281 !important;
+}
+
+/* Dark mode checkbox styles */
+.system-dark :deep(.contract-grid .ag-checkbox-input-wrapper) {
+  border-color: #6f859b;
+  background-color: rgb(var(--container-bg-color));
+}
+
+.system-dark :deep(.contract-grid .ag-checkbox-input-wrapper.ag-checked),
+.system-dark :deep(.contract-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
+  border-color: #4ea4f3;
+  background-color: #2f7fc5;
 }
 
 .system-dark :deep(.contract-grid .ag-body-horizontal-scroll),

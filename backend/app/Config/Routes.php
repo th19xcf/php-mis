@@ -115,5 +115,6 @@ $routes->group('contract', static function ($routes) {
 	$routes->post('archive', 'ContractApi::archive');
 	$routes->get('options', 'ContractApi::options');
 	$routes->get('stats', 'ContractApi::stats');
+	$routes->get('flow', 'ContractApi::flow');
 	$routes->get('flow/(:segment)', 'ContractApi::flow/$1');
 });
