@@ -2010,6 +2010,139 @@ class Workbench extends BaseController
     }
 
     /**
+     * 删除记录
+     */
+    public function deleteRow(string $functionCode = '')
+    {
+        try {
+            $functionCode = trim($functionCode);
+            if ($functionCode === '') {
+                throw new \RuntimeException('功能编码不能为空');
+            }
+
+            // 获取请求数据
+            $payload = $this->request->getJSON(true) ?? [];
+            $keyValues = $payload['keys'] ?? [];
+
+            if (empty($keyValues)) {
+                return $this->error('5001', '删除失败：未指定要删除的记录');
+            }
+
+            // 获取 session 信息
+            $session = \Config\Services::session();
+            $userWorkid = $session->get('user_workid') ?? 'system';
+
+            // 获取查询配置
+            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            if (!$queryConfig || $queryConfig['dataTable'] === '') {
+                return $this->error('5001', '删除失败：未找到数据表配置');
+            }
+
+            $dataTable = $queryConfig['dataTable'];
+            $dataModel = $queryConfig['dataModel'];
+
+            // 获取主键字段
+            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            if (empty($primaryKey)) {
+                return $this->error('5001', '删除失败：未找到主键字段');
+            }
+
+            error_log('deleteRow - functionCode: ' . $functionCode);
+            error_log('deleteRow - dataTable: ' . $dataTable);
+            error_log('deleteRow - dataModel: ' . $dataModel);
+            error_log('deleteRow - primaryKey: ' . $primaryKey);
+            error_log('deleteRow - keyValues: ' . json_encode($keyValues));
+
+            // 构建 where 条件
+            $keyStr = implode(',', array_map(fn($v) => sprintf("'%s'", addslashes($v)), $keyValues));
+            $where = sprintf('%s in (%s)', $primaryKey, $keyStr);
+
+            // 根据数据模式执行不同的删除逻辑
+            $num = 0;
+            switch ($dataModel) {
+                case '0':
+                    // 模式0：直接删除
+                    $sqlDelete = sprintf('DELETE FROM %s WHERE %s', $dataTable, $where);
+                    $this->common->sql_log('删除[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`,值=`%s`', $dataTable, $primaryKey, $keyStr));
+                    $num = $this->common->exec($sqlDelete);
+                    break;
+
+                case '1':
+                case '2':
+                    // 模式1/2：标记删除（更新删除标识和有效标识）
+                    $sqlUpdate = sprintf(
+                        'UPDATE %s SET 操作记录="删除",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
+                        $dataTable,
+                        $userWorkid,
+                        date('Y-m-d H:i:s'),
+                        date('Y-m-d H:i:s'),
+                        $where
+                    );
+                    $this->common->sql_log('删除[1]', $functionCode, sprintf('表名=`%s`,主键=`%s`,值=`%s`', $dataTable, $primaryKey, $keyStr));
+                    $num = $this->common->exec($sqlUpdate);
+                    break;
+
+                default:
+                    return $this->error('5001', sprintf('删除失败,数据模式[-%s-]错误', $dataModel));
+            }
+
+            return $this->success([
+                'success' => true,
+                'message' => sprintf('删除成功,删除了 %d 条记录', $num),
+                'deletedCount' => $num
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            error_log('删除记录失败: ' . $e->getMessage());
+            return $this->error('5001', '删除失败：' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 获取主键字段
+     */
+    private function getPrimaryKey(string $functionCode, array $queryConfig): string
+    {
+        // 优先从 session 获取
+        $session = \Config\Services::session();
+        $primaryKey = $session->get($functionCode . '-primary_key');
+
+        if (!empty($primaryKey)) {
+            return $primaryKey;
+        }
+
+        // 如果 session 中没有，从查询配置中获取
+        // def_query_config 表中主键字段可能为空，需要从数据表结构推断
+        $dataTable = $queryConfig['dataTable'] ?? '';
+        if (empty($dataTable)) {
+            return '';
+        }
+
+        // 尝试从 def_function 或 def_query_config 中获取主键配置
+        $sql = sprintf(
+            'SELECT t1.主键字段 FROM def_query_config t1
+            INNER JOIN def_function t2 ON t2.模块名称 = t1.查询模块
+            WHERE t2.功能编码 = %s',
+            $this->quote($functionCode)
+        );
+
+        $result = $this->common->select($sql);
+        if ($result !== false && ($row = $result->getRowArray()) && !empty($row['主键字段'])) {
+            return $row['主键字段'];
+        }
+
+        // 如果还是没有配置，尝试从数据表结构获取（假设主键是 GUID 或 ID）
+        $sql = sprintf('SHOW INDEX FROM %s WHERE Key_name = "PRIMARY"', $dataTable);
+        $result = $this->common->select($sql);
+        if ($result !== false && ($row = $result->getRowArray())) {
+            return $row['Column_name'] ?? '';
+        }
+
+        return '';
+    }
+
+    /**
      * 获取弹窗数据
      */
     public function popupData(string $functionCode = '')

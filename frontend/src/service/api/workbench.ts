@@ -51,6 +51,14 @@ export function addRow(functionCode: string, data: Record<string, any>) {
   });
 }
 
+export function deleteRow(functionCode: string, keys: (string | number)[]) {
+  return request<Api.Workbench.DeleteResult>({
+    url: `/workbench/delete-row/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data: { keys }
+  });
+}
+
 export function fetchPopupData(functionCode: string, objectName: string) {
   return request<Api.Workbench.PopupData>({
     url: `/workbench/popup-data/${encodeURIComponent(functionCode)}`,

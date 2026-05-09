@@ -154,6 +154,12 @@ declare namespace Api {
       message: string;
     }
 
+    interface DeleteResult {
+      success: boolean;
+      message: string;
+      deletedCount: number;
+    }
+
     interface PopupGridItem {
       表项: string;
       级别: number;

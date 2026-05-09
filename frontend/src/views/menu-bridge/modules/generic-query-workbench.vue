@@ -38,6 +38,7 @@ import {
   importData,
   fetchAddFields,
   addRow,
+  deleteRow,
   // fetchPopupData, // 暂时未使用
   fetchPopupLevels,
   fetchPopupLevelData
@@ -1095,6 +1096,74 @@ async function confirmAdd() {
     addError.value = e.message || '新增失败';
   } finally {
     addLoading.value = false;
+  }
+}
+
+// 删除相关状态
+const deleteLoading = ref(false);
+
+// 执行删除操作
+async function handleDelete() {
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    msg('warning', '请先选择要删除的记录');
+    return;
+  }
+
+  const functionCode = String(props.meta.functionCode || '').trim();
+  if (!functionCode) {
+    msg('error', '功能编码不能为空');
+    return;
+  }
+
+  // 尝试找到主键列
+  let primaryKey = 'GUID';
+  const columns = gridApi.value?.getColumns() || [];
+  for (const col of columns) {
+    const colDef = col.getColDef();
+    const field = String(colDef.field || '');
+    // 查找 GUID 列或名称包含 _id 的列
+    if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
+      primaryKey = field;
+      break;
+    }
+  }
+
+  // 获取选中的主键值
+  const keyValues: (string | number)[] = selectedRows
+    .map(row => row[primaryKey])
+    .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
+
+  if (keyValues.length === 0) {
+    msg('error', '无法获取记录主键值，请联系管理员');
+    return;
+  }
+
+  // 确认删除
+  if (!confirm(`确定要删除选中的 ${keyValues.length} 条记录吗？此操作不可恢复。`)) {
+    return;
+  }
+
+  deleteLoading.value = true;
+  try {
+    const { data, error } = await deleteRow(functionCode, keyValues);
+
+    if (error) {
+      msg('error', error.message || '删除失败');
+      return;
+    }
+
+    if (data.success) {
+      msg('success', data.message || `成功删除 ${data.deletedCount} 条记录`);
+      // 刷新数据
+      loadPage();
+    } else {
+      msg('error', data.message || '删除失败');
+    }
+  } catch (e: any) {
+    msg('error', e.message || '删除失败');
+  } finally {
+    deleteLoading.value = false;
   }
 }
 
@@ -2157,6 +2226,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
             <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAdd">新增</NButton>
+            <NButton v-if="pageMeta?.toolbar.delete" :disabled="deleteLoading" @click="handleDelete">删除</NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
           </div>
