@@ -107,6 +107,7 @@ class Workbench extends BaseController
                 'comment' => $functionAuth['commentAuth'],
                 'add' => $functionAuth['addAuth'],
                 'edit' => $functionAuth['modifyAuth'],
+                'batchEdit' => $functionAuth['modifyAuth'],
                 'delete' => $functionAuth['deleteAuth'],
                 'import' => $functionAuth['importAuth'] && $queryConfig['importModule'] !== '',
                 'export' => $functionAuth['exportAuth'],

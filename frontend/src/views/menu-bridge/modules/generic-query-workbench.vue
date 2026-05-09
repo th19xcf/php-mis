@@ -1246,7 +1246,9 @@ async function handleOpenUpdate() {
         editorType: f.editorType,
         editorParams: f.editorParams,
         required: f.required,
-        readonly: f.readonly
+        readonly: f.readonly,
+        objectName: f.objectName,
+        objectOptions: f.objectOptions
       }));
       // 设置当前数据到表单
       if (data.currentData) {
@@ -1401,7 +1403,9 @@ async function handleOpenBatchUpdate() {
         editorType: f.editorType,
         editorParams: f.editorParams,
         required: f.required,
-        readonly: f.readonly
+        readonly: f.readonly,
+        objectName: f.objectName,
+        objectOptions: f.objectOptions
       }));
       // 批量修改不需要预填当前数据，保持为空
     } else {
@@ -1480,6 +1484,11 @@ async function confirmBatchUpdate() {
   } finally {
     batchUpdateLoading.value = false;
   }
+}
+
+// 获取字段选项
+function getFieldOptions(field: any): Array<{ label: string; value: string }> {
+  return field.objectOptions || [];
 }
 
 // 打开弹窗选择（懒加载级联选择）
@@ -1614,8 +1623,13 @@ function confirmPopupSelection() {
   // 获取选中的完整路径
   const selectedOption = findCascaderOption(popupCascaderOptions.value, popupSelectedValue.value);
   if (selectedOption) {
-    // 使用 fullName 或 name 作为最终值
-    addFormData.value[popupField.value.fieldName] = selectedOption.fullName || selectedOption.label;
+    const selectedLabel = selectedOption.fullName || selectedOption.label;
+    // 更新新增表单
+    addFormData.value[popupField.value.fieldName] = selectedLabel;
+    // 更新修改表单
+    updateFormData.value[popupField.value.fieldName] = selectedLabel;
+    // 更新批量修改表单
+    batchUpdateFormData.value[popupField.value.fieldName] = selectedLabel;
   }
 
   popupVisible.value = false;
@@ -2541,8 +2555,12 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
             <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAdd">新增</NButton>
-            <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="handleOpenUpdate">单条修改</NButton>
-            <NButton v-if="pageMeta?.toolbar.batchEdit" :disabled="batchUpdateLoading" @click="handleOpenBatchUpdate">多条修改</NButton>
+            <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="handleOpenUpdate">
+              单条修改
+            </NButton>
+            <NButton v-if="pageMeta?.toolbar.batchEdit" :disabled="batchUpdateLoading" @click="handleOpenBatchUpdate">
+              多条修改
+            </NButton>
             <NButton v-if="pageMeta?.toolbar.delete" :disabled="deleteLoading" @click="handleDelete">删除</NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
@@ -3232,15 +3250,17 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                     clearable
                   />
                   <!-- 弹窗选择 -->
-                  <div v-else-if="field.editorType === '弹窗选择'" class="flex items-center gap-8">
+                  <div v-else-if="field.editorType === '弹窗选择'" class="popup-select-wrapper">
                     <NInput
                       :value="updateFormData[field.fieldName] || ''"
                       :placeholder="`请选择${field.columnName}`"
-                      :readonly="true"
-                    />
-                    <NButton size="small" :disabled="field.readonly" @click="handleOpenPopupForUpdate(field)">
-                      选择
-                    </NButton>
+                      readonly
+                      class="popup-input"
+                    >
+                      <template #suffix>
+                        <NButton text type="primary" @click="handleOpenPopup(field)">选择</NButton>
+                      </template>
+                    </NInput>
                   </div>
                   <!-- 默认文本输入 -->
                   <NInput
@@ -3254,14 +3274,14 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
               </div>
             </NForm>
           </div>
-          <div v-else-if="!updateError && !updateLoading" class="text-center text-gray-400 py-8">
-            暂无可修改的字段
-          </div>
+          <div v-else-if="!updateError && !updateLoading" class="text-center text-gray-400 py-8">暂无可修改的字段</div>
 
           <!-- 操作按钮 -->
           <NSpace justify="end">
             <NButton @click="updateVisible = false">关闭</NButton>
-            <NButton v-if="!updateSuccess" type="primary" :disabled="updateLoading" @click="confirmUpdate">确认修改</NButton>
+            <NButton v-if="!updateSuccess" type="primary" :disabled="updateLoading" @click="confirmUpdate">
+              确认修改
+            </NButton>
           </NSpace>
         </NSpace>
       </NSpin>
@@ -3282,9 +3302,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           </NAlert>
 
           <!-- 提示信息 -->
-          <NAlert type="info" :show-icon="true">
-            请输入要修改的字段值，这些值将应用到所有选中的记录
-          </NAlert>
+          <NAlert type="info" :show-icon="true">请输入要修改的字段值，这些值将应用到所有选中的记录</NAlert>
 
           <!-- 表单 -->
           <div v-if="batchUpdateFormFields.length > 0" class="form-container">
@@ -3354,7 +3372,14 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           <!-- 操作按钮 -->
           <NSpace justify="end">
             <NButton @click="batchUpdateVisible = false">关闭</NButton>
-            <NButton v-if="!batchUpdateSuccess" type="primary" :disabled="batchUpdateLoading" @click="confirmBatchUpdate">确认批量修改</NButton>
+            <NButton
+              v-if="!batchUpdateSuccess"
+              type="primary"
+              :disabled="batchUpdateLoading"
+              @click="confirmBatchUpdate"
+            >
+              确认批量修改
+            </NButton>
           </NSpace>
         </NSpace>
       </NSpin>

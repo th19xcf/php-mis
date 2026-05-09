@@ -178,6 +178,12 @@ async function handleEdit() {
   }
 }
 
+// 打开预算表部门全称弹窗选择
+function handleOpenBudgetFullNamePopup() {
+  // TODO: 实现部门全称选择弹窗
+  message.info('部门全称选择功能待实现');
+}
+
 // 删除部门
 function handleDelete() {
   if (!deptDetail.value) {
@@ -371,7 +377,18 @@ onMounted(() => {
           <NSelect v-model:value="editForm.region" :options="regionOptions" placeholder="请选择属地" clearable />
         </NFormItem>
         <NFormItem label="预算表全称">
-          <NInput v-model:value="editForm.budgetFullName" placeholder="请输入预算表部门全称" />
+          <div class="popup-select-wrapper">
+            <NInput
+              v-model:value="editForm.budgetFullName"
+              placeholder="请选择预算表部门全称"
+              readonly
+              class="popup-input"
+            >
+              <template #suffix>
+                <NButton text type="primary" @click="handleOpenBudgetFullNamePopup">选择</NButton>
+              </template>
+            </NInput>
+          </div>
         </NFormItem>
       </NForm>
       <template #footer>
@@ -500,5 +517,20 @@ html.dark .resize-line {
 html.dark .resize-splitter:hover .resize-line,
 html.dark .resize-splitter.is-resizing .resize-line {
   background-color: #40a9ff;
+}
+
+/* 弹窗选择样式 */
+.popup-select-wrapper {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.popup-input {
+  flex: 1;
+}
+
+.popup-input :deep(.n-input__suffix) {
+  padding-right: 4px;
 }
 </style>
