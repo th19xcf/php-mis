@@ -709,6 +709,14 @@ html.dark .panel-content {
   background-image: none !important;
 }
 
+:deep(.contract-grid .ag-cell-focus),
+:deep(.contract-grid .ag-cell-range-selected) {
+  border-right: 1px solid #2196f3 !important;
+  border-left: 1px solid #2196f3 !important;
+  border-top: 1px solid #2196f3 !important;
+  border-bottom: 1px solid #2196f3 !important;
+}
+
 /* Dark mode grid styles - matching generic-query-workbench */
 .system-dark :deep(.contract-grid .ag-root-wrapper),
 .system-dark :deep(.contract-grid .ag-root),
@@ -740,6 +748,15 @@ html.dark .panel-content {
 
 .system-dark :deep(.contract-grid .ag-row-hover::before) {
   background-color: rgba(122, 167, 214, 0.18) !important;
+}
+
+/* 深色主题选中单元格的边框样式 */
+.system-dark :deep(.contract-grid .ag-cell-focus),
+.system-dark :deep(.contract-grid .ag-cell-range-selected) {
+  border-right: 2px solid #64b5f6 !important;
+  border-left: 2px solid #64b5f6 !important;
+  border-top: 2px solid #64b5f6 !important;
+  border-bottom: 2px solid #64b5f6 !important;
 }
 
 .system-dark :deep(.contract-grid .ag-cell),
