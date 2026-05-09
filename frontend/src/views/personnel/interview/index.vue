@@ -39,7 +39,7 @@ const addForm = ref({
   面试日期: new Date().toISOString().split('T')[0],
   面试结果: '',
   面试人: '',
-  预约培训日期: '',
+  预约培训日期: null,
   住宿: '',
   备注说明: ''
 });
@@ -50,10 +50,10 @@ const editForm = ref({
   手机号码: '',
   属地: '',
   招聘渠道: '',
-  面试日期: '',
+  面试日期: '' as string | null,
   面试结果: '',
   面试人: '',
-  预约培训日期: '',
+  预约培训日期: '' as string | null,
   住宿: '',
   备注说明: ''
 });
@@ -153,7 +153,7 @@ function openAddModal() {
     面试日期: new Date().toISOString().split('T')[0],
     面试结果: '',
     面试人: '',
-    预约培训日期: '',
+    预约培训日期: null,
     住宿: '',
     备注说明: ''
   };
@@ -172,10 +172,10 @@ function openEditModal() {
     手机号码: interviewDetail.value.手机号码,
     属地: interviewDetail.value.属地,
     招聘渠道: interviewDetail.value.招聘渠道,
-    面试日期: interviewDetail.value.面试日期,
+    面试日期: interviewDetail.value.面试日期 || null,
     面试结果: interviewDetail.value.面试结果,
     面试人: interviewDetail.value.面试人,
-    预约培训日期: interviewDetail.value.预约培训日期,
+    预约培训日期: interviewDetail.value.预约培训日期 || null,
     住宿: interviewDetail.value.住宿,
     备注说明: interviewDetail.value.备注说明
   };

@@ -1045,7 +1045,12 @@ async function handleOpenAdd() {
 
     // 初始化表单数据
     addFormFields.value.forEach((field: any) => {
-      addFormData.value[field.fieldName] = field.defaultValue || '';
+      // 日期字段的空值应设为 null 而非空字符串，避免 NDatePicker 格式化错误
+      if (field.fieldType === '日期') {
+        addFormData.value[field.fieldName] = field.defaultValue || null;
+      } else {
+        addFormData.value[field.fieldName] = field.defaultValue || '';
+      }
     });
   } catch (e) {
     console.error('[新增] 获取字段配置失败:', e);
