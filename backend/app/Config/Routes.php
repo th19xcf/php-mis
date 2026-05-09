@@ -45,6 +45,7 @@ $routes->group('workbench', static function ($routes) {
 	$routes->post('add-row/(:segment)', 'Workbench::addRow/$1');
 	$routes->post('update-fields/(:segment)', 'Workbench::updateFields/$1');
 	$routes->post('update-row/(:segment)', 'Workbench::updateRow/$1');
+	$routes->post('batch-update-row/(:segment)', 'Workbench::batchUpdateRow/$1');
 	$routes->post('delete-row/(:segment)', 'Workbench::deleteRow/$1');
 	$routes->get('popup-data/(:segment)', 'Workbench::popupData/$1');
 	$routes->get('popup-levels/(:segment)', 'Workbench::popupLevels/$1');

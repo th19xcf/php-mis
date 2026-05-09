@@ -40,6 +40,7 @@ import {
   addRow,
   fetchUpdateFields,
   updateRow,
+  batchUpdateRow,
   deleteRow,
   // fetchPopupData, // 暂时未使用
   fetchPopupLevels,
@@ -1329,6 +1330,158 @@ async function confirmUpdate() {
   }
 }
 
+// 批量修改相关状态
+const batchUpdateVisible = ref(false);
+const batchUpdateLoading = ref(false);
+const batchUpdateError = ref('');
+const batchUpdateSuccess = ref('');
+const batchUpdateFormData = ref<Record<string, any>>({});
+const batchUpdateFormFields = ref<any[]>([]);
+
+// 打开批量修改弹窗
+async function handleOpenBatchUpdate() {
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    msg('warning', '请先选择要修改的记录');
+    return;
+  }
+
+  const functionCode = String(props.meta.functionCode || '').trim();
+  if (!functionCode) {
+    msg('error', '功能编码不能为空');
+    return;
+  }
+
+  // 尝试找到主键列
+  let primaryKey = 'GUID';
+  const columns = gridApi.value?.getColumns() || [];
+  for (const col of columns) {
+    const colDef = col.getColDef();
+    const field = String(colDef.field || '');
+    if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
+      primaryKey = field;
+      break;
+    }
+  }
+
+  // 获取选中的主键值
+  const keyValues: (string | number)[] = selectedRows
+    .map(row => row[primaryKey])
+    .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
+
+  if (keyValues.length === 0) {
+    msg('error', '无法获取记录主键值，请联系管理员');
+    return;
+  }
+
+  batchUpdateVisible.value = true;
+  batchUpdateLoading.value = true;
+  batchUpdateError.value = '';
+  batchUpdateSuccess.value = '';
+  batchUpdateFormData.value = {};
+  batchUpdateFormFields.value = [];
+
+  try {
+    console.log('[批量修改] functionCode:', functionCode, 'keyValues:', keyValues);
+    // 调用 API 获取修改字段配置
+    const { data, error } = await fetchUpdateFields(functionCode, keyValues);
+    console.log('[批量修改] API 返回:', data, error);
+
+    if (error) {
+      batchUpdateError.value = error.message || '获取修改信息失败';
+      batchUpdateLoading.value = false;
+      return;
+    }
+
+    if (data && data.fields) {
+      batchUpdateFormFields.value = data.fields.map((f: any) => ({
+        fieldName: f.fieldName,
+        columnName: f.columnName,
+        fieldType: f.fieldType,
+        editorType: f.editorType,
+        editorParams: f.editorParams,
+        required: f.required,
+        readonly: f.readonly
+      }));
+      // 批量修改不需要预填当前数据，保持为空
+    } else {
+      batchUpdateError.value = '未获取到字段配置';
+    }
+  } catch (e: any) {
+    batchUpdateError.value = e.message || '获取修改信息失败';
+  } finally {
+    batchUpdateLoading.value = false;
+  }
+}
+
+// 提交批量修改数据
+async function confirmBatchUpdate() {
+  batchUpdateLoading.value = true;
+  batchUpdateError.value = '';
+  batchUpdateSuccess.value = '';
+
+  try {
+    const functionCode = String(props.meta.functionCode || '').trim();
+    if (!functionCode) {
+      batchUpdateError.value = '功能编码不能为空';
+      batchUpdateLoading.value = false;
+      return;
+    }
+
+    // 获取主键值
+    const selectedRows = gridApi.value?.getSelectedRows() || [];
+    if (selectedRows.length === 0) {
+      batchUpdateError.value = '未选择要修改的记录';
+      batchUpdateLoading.value = false;
+      return;
+    }
+
+    let primaryKey = 'GUID';
+    const columns = gridApi.value?.getColumns() || [];
+    for (const col of columns) {
+      const colDef = col.getColDef();
+      const field = String(colDef.field || '');
+      if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
+        primaryKey = field;
+        break;
+      }
+    }
+
+    const keyValues = selectedRows
+      .map(row => row[primaryKey])
+      .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
+
+    if (keyValues.length === 0) {
+      batchUpdateError.value = '无法获取记录主键值';
+      batchUpdateLoading.value = false;
+      return;
+    }
+
+    const { data, error } = await batchUpdateRow(functionCode, keyValues, batchUpdateFormData.value);
+
+    if (error) {
+      batchUpdateError.value = error.message || '批量修改失败';
+      batchUpdateLoading.value = false;
+      return;
+    }
+
+    if (data.success) {
+      batchUpdateSuccess.value = data.message || '批量修改成功';
+      // 关闭弹窗并刷新数据
+      setTimeout(() => {
+        batchUpdateVisible.value = false;
+        loadPage();
+      }, 1500);
+    } else {
+      batchUpdateError.value = data.message || '批量修改失败';
+    }
+  } catch (e: any) {
+    batchUpdateError.value = e.message || '批量修改失败';
+  } finally {
+    batchUpdateLoading.value = false;
+  }
+}
+
 // 打开弹窗选择（懒加载级联选择）
 async function handleOpenPopup(field: any) {
   popupField.value = field;
@@ -2389,6 +2542,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
             <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAdd">新增</NButton>
             <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="handleOpenUpdate">单条修改</NButton>
+            <NButton v-if="pageMeta?.toolbar.batchEdit" :disabled="batchUpdateLoading" @click="handleOpenBatchUpdate">多条修改</NButton>
             <NButton v-if="pageMeta?.toolbar.delete" :disabled="deleteLoading" @click="handleDelete">删除</NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
@@ -3108,6 +3262,99 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           <NSpace justify="end">
             <NButton @click="updateVisible = false">关闭</NButton>
             <NButton v-if="!updateSuccess" type="primary" :disabled="updateLoading" @click="confirmUpdate">确认修改</NButton>
+          </NSpace>
+        </NSpace>
+      </NSpin>
+    </NModal>
+
+    <!-- 批量修改弹窗 -->
+    <NModal v-model:show="batchUpdateVisible" preset="card" title="批量修改记录" class="w-800px" :mask-closable="false">
+      <NSpin :show="batchUpdateLoading">
+        <NSpace vertical :size="16">
+          <!-- 错误提示 -->
+          <NAlert v-if="batchUpdateError" type="error" :show-icon="true">
+            {{ batchUpdateError }}
+          </NAlert>
+
+          <!-- 成功提示 -->
+          <NAlert v-if="batchUpdateSuccess" type="success" :show-icon="true">
+            {{ batchUpdateSuccess }}
+          </NAlert>
+
+          <!-- 提示信息 -->
+          <NAlert type="info" :show-icon="true">
+            请输入要修改的字段值，这些值将应用到所有选中的记录
+          </NAlert>
+
+          <!-- 表单 -->
+          <div v-if="batchUpdateFormFields.length > 0" class="form-container">
+            <NForm label-placement="left" label-width="auto" :model="batchUpdateFormData">
+              <div class="form-grid">
+                <NFormItem
+                  v-for="field in batchUpdateFormFields"
+                  :key="field.fieldName"
+                  :label="field.columnName"
+                  :path="field.fieldName"
+                  :required="field.required"
+                >
+                  <!-- 下拉选择 -->
+                  <NSelect
+                    v-if="field.editorType === '下拉框' || field.fieldType === '选项'"
+                    v-model:value="batchUpdateFormData[field.fieldName]"
+                    :options="getFieldOptions(field)"
+                    :placeholder="`请选择${field.columnName}`"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                  <!-- 日期时间选择 -->
+                  <NDatePicker
+                    v-else-if="field.editorType === '日期时间' || field.fieldType === '日期时间'"
+                    v-model:formatted-value="batchUpdateFormData[field.fieldName]"
+                    value-format="yyyy-MM-dd HH:mm:ss"
+                    type="datetime"
+                    :placeholder="`请选择${field.columnName}`"
+                    :show-time="true"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                  <!-- 日期选择 -->
+                  <NDatePicker
+                    v-else-if="field.fieldType === '日期'"
+                    v-model:formatted-value="batchUpdateFormData[field.fieldName]"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    :placeholder="`请选择${field.columnName}`"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                  <!-- 数值输入 -->
+                  <NInputNumber
+                    v-else-if="field.fieldType === '数值'"
+                    v-model:value="batchUpdateFormData[field.fieldName]"
+                    :placeholder="`请输入${field.columnName}`"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                  <!-- 默认文本输入 -->
+                  <NInput
+                    v-else
+                    v-model:value="batchUpdateFormData[field.fieldName]"
+                    :placeholder="`请输入${field.columnName}`"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                </NFormItem>
+              </div>
+            </NForm>
+          </div>
+          <div v-else-if="!batchUpdateError && !batchUpdateLoading" class="text-center text-gray-400 py-8">
+            暂无可修改的字段
+          </div>
+
+          <!-- 操作按钮 -->
+          <NSpace justify="end">
+            <NButton @click="batchUpdateVisible = false">关闭</NButton>
+            <NButton v-if="!batchUpdateSuccess" type="primary" :disabled="batchUpdateLoading" @click="confirmBatchUpdate">确认批量修改</NButton>
           </NSpace>
         </NSpace>
       </NSpin>
