@@ -59,6 +59,22 @@ export function deleteRow(functionCode: string, keys: (string | number)[]) {
   });
 }
 
+export function fetchUpdateFields(functionCode: string, keys: (string | number)[]) {
+  return request<Api.Workbench.UpdateFieldsResult>({
+    url: `/workbench/update-fields/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data: { keys }
+  });
+}
+
+export function updateRow(functionCode: string, keys: (string | number)[], data: Record<string, any>) {
+  return request<Api.Workbench.UpdateResult>({
+    url: `/workbench/update-row/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data: { keys, data }
+  });
+}
+
 export function fetchPopupData(functionCode: string, objectName: string) {
   return request<Api.Workbench.PopupData>({
     url: `/workbench/popup-data/${encodeURIComponent(functionCode)}`,

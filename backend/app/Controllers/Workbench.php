@@ -1845,6 +1845,261 @@ class Workbench extends BaseController
     }
 
     /**
+     * 获取修改字段配置
+     */
+    public function updateFields(string $functionCode = '')
+    {
+        try {
+            $functionCode = trim($functionCode);
+            if ($functionCode === '') {
+                return $this->error('5001', '功能编码不能为空');
+            }
+
+            // 获取请求数据
+            $payload = $this->request->getJSON(true) ?? [];
+            $keyValues = $payload['keys'] ?? [];
+
+            if (empty($keyValues)) {
+                return $this->error('5001', '未指定要修改的记录');
+            }
+
+            // 获取 session 中的字段模块
+            $session = \Config\Services::session();
+            $fieldModule = $session->get($functionCode . '-field_module');
+
+            // 如果 session 中没有，从数据库查询
+            if (empty($fieldModule)) {
+                $sql = sprintf(
+                    'select 字段模块 from def_query_config where 查询模块 in (
+                        select 模块名称 from def_function where 有效标识="1" and 功能编码=%s
+                    )',
+                    $this->quote($functionCode)
+                );
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $row = $result->getRowArray();
+                    $fieldModule = $row['字段模块'] ?? '';
+                }
+            }
+
+            if (empty($fieldModule)) {
+                return $this->success(['fields' => []]);
+            }
+
+            // 获取字段配置
+            $sql = sprintf(
+                'SELECT 字段名称, 字段描述, 字段类型, 编辑控件, 编辑控件参数, 必填标识, 只读标识, 属地标识
+                FROM def_field
+                WHERE 字段模块 = %s AND 有效标识 = "1"
+                ORDER BY 字段顺序',
+                $this->quote($fieldModule)
+            );
+            $result = $this->common->select($sql);
+            $fields = $result ? $result->getResultArray() : [];
+
+            // 获取主键字段
+            $primaryKey = $session->get($functionCode . '-primary_key');
+            if (empty($primaryKey)) {
+                $sql = sprintf(
+                    'SELECT 主键字段 FROM def_query_config
+                    WHERE 查询模块 IN (
+                        SELECT 模块名称 FROM def_function WHERE 功能编码 = %s
+                    )',
+                    $this->quote($functionCode)
+                );
+                $result = $this->common->select($sql);
+                if ($result !== false && ($row = $result->getRowArray())) {
+                    $primaryKey = $row['主键字段'] ?? '';
+                }
+            }
+
+            // 获取当前记录数据
+            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            $dataTable = $queryConfig['dataTable'] ?? '';
+            $currentData = [];
+
+            if (!empty($dataTable) && !empty($primaryKey)) {
+                $keyStr = implode(',', array_map(fn($v) => sprintf("'%s'", addslashes($v)), $keyValues));
+                $sql = sprintf(
+                    'SELECT * FROM %s WHERE %s IN (%s) LIMIT 1',
+                    $dataTable,
+                    $primaryKey,
+                    $keyStr
+                );
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $currentData = $result->getRowArray() ?: [];
+                }
+            }
+
+            return $this->success([
+                'fields' => $fields,
+                'currentData' => $currentData
+            ]);
+        } catch (\Throwable $e) {
+            error_log('获取修改字段配置失败: ' . $e->getMessage());
+            return $this->error('5001', '获取修改字段配置失败');
+        }
+    }
+
+    /**
+     * 修改记录
+     */
+    public function updateRow(string $functionCode = '')
+    {
+        try {
+            $functionCode = trim($functionCode);
+            if ($functionCode === '') {
+                throw new \RuntimeException('功能编码不能为空');
+            }
+
+            // 获取请求数据
+            $payload = $this->request->getJSON(true) ?? [];
+            $keyValues = $payload['keys'] ?? [];
+            $formData = $payload['data'] ?? [];
+
+            if (empty($keyValues)) {
+                return $this->error('5001', '修改失败：未指定要修改的记录');
+            }
+
+            // 获取 session 信息
+            $session = \Config\Services::session();
+            $userWorkid = $session->get('user_workid') ?? 'system';
+
+            // 获取查询配置
+            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            if (!$queryConfig || $queryConfig['dataTable'] === '') {
+                return $this->error('5001', '修改失败：未找到数据表配置');
+            }
+
+            $dataTable = $queryConfig['dataTable'];
+            $dataModel = $queryConfig['dataModel'];
+
+            // 获取主键字段
+            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            if (empty($primaryKey)) {
+                return $this->error('5001', '修改失败：未找到主键字段');
+            }
+
+            error_log('updateRow - functionCode: ' . $functionCode);
+            error_log('updateRow - dataTable: ' . $dataTable);
+            error_log('updateRow - dataModel: ' . $dataModel);
+            error_log('updateRow - primaryKey: ' . $primaryKey);
+            error_log('updateRow - keyValues: ' . json_encode($keyValues));
+
+            // 构建 where 条件
+            $keyStr = implode(',', array_map(fn($v) => sprintf("'%s'", addslashes($v)), $keyValues));
+            $where = sprintf('%s in (%s)', $primaryKey, $keyStr);
+
+            // 构建更新字段
+            $updates = [];
+            foreach ($formData as $key => $value) {
+                if ($key !== $primaryKey) {
+                    $updates[] = sprintf('`%s` = "%s"', $key, addslashes($value));
+                }
+            }
+
+            if (empty($updates)) {
+                return $this->error('5001', '修改失败：没有要更新的字段');
+            }
+
+            // 根据数据模式执行不同的更新逻辑
+            $num = 0;
+            switch ($dataModel) {
+                case '0':
+                    // 模式0：直接更新
+                    $sqlUpdate = sprintf(
+                        'UPDATE %s SET %s WHERE %s',
+                        $dataTable,
+                        implode(', ', $updates),
+                        $where
+                    );
+                    $this->common->sql_log('修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`,值=`%s`', $dataTable, $primaryKey, $keyStr));
+                    $num = $this->common->exec($sqlUpdate);
+                    break;
+
+                case '1':
+                case '2':
+                    // 模式1/2：标记修改（添加新记录，原记录标记删除）
+                    // 先获取原始记录
+                    $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where);
+                    $result = $this->common->select($sqlSelect);
+                    if ($result === false) {
+                        return $this->error('5001', '修改失败：无法获取原始记录');
+                    }
+                    $originalRow = $result->getRowArray();
+                    if (empty($originalRow)) {
+                        return $this->error('5001', '修改失败：原始记录不存在');
+                    }
+
+                    // 更新原始记录为无效
+                    $sqlUpdateOld = sprintf(
+                        'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
+                        $dataTable,
+                        $userWorkid,
+                        date('Y-m-d H:i:s'),
+                        date('Y-m-d H:i:s'),
+                        $where
+                    );
+                    $this->common->sql_log('修改[1-旧]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
+                    $this->common->exec($sqlUpdateOld);
+
+                    // 插入新记录
+                    $fields = [];
+                    $values = [];
+                    foreach ($originalRow as $key => $val) {
+                        if (isset($formData[$key])) {
+                            $fields[] = sprintf('`%s`', $key);
+                            $values[] = sprintf('"%s"', addslashes($formData[$key]));
+                        } else {
+                            $fields[] = sprintf('`%s`', $key);
+                            $values[] = sprintf('"%s"', addslashes($val));
+                        }
+                    }
+                    // 更新操作字段
+                    $fields[] = '`操作记录`';
+                    $values[] = '"新增"';
+                    $fields[] = '`操作来源`';
+                    $values[] = '"工作台"';
+                    $fields[] = '`操作人员`';
+                    $values[] = sprintf('"%s"', $userWorkid);
+                    $fields[] = '`操作时间`';
+                    $values[] = sprintf('"%s"', date('Y-m-d H:i:s'));
+                    $fields[] = '`结束操作时间`';
+                    $values[] = '"9999-12-31"';
+                    $fields[] = '`删除标识`';
+                    $values[] = '"0"';
+                    $fields[] = '`有效标识`';
+                    $values[] = '"1"';
+
+                    $sqlInsert = sprintf(
+                        'INSERT INTO %s (%s) VALUES (%s)',
+                        $dataTable,
+                        implode(', ', $fields),
+                        implode(', ', $values)
+                    );
+                    $this->common->sql_log('修改[1-新]', $functionCode, sprintf('表名=`%s`', $dataTable));
+                    $num = $this->common->exec($sqlInsert);
+                    break;
+
+                default:
+                    return $this->error('5001', sprintf('修改失败,数据模式[-%s-]错误', $dataModel));
+            }
+
+            return $this->success([
+                'success' => true,
+                'message' => sprintf('修改成功,修改了 %d 条记录', $num),
+                'updatedCount' => $num
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            error_log('修改记录失败: ' . $e->getMessage());
+            return $this->error('5001', '修改失败：' . $e->getMessage());
+        }
+    }
+
+    /**
      * 获取对象选项
      */
     private function getObjectOptions(string $objectName): array

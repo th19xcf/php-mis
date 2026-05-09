@@ -38,6 +38,8 @@ import {
   importData,
   fetchAddFields,
   addRow,
+  fetchUpdateFields,
+  updateRow,
   deleteRow,
   // fetchPopupData, // 暂时未使用
   fetchPopupLevels,
@@ -1167,6 +1169,166 @@ async function handleDelete() {
   }
 }
 
+// 修改相关状态
+const updateVisible = ref(false);
+const updateLoading = ref(false);
+const updateError = ref('');
+const updateSuccess = ref('');
+const updateFormData = ref<Record<string, any>>({});
+const updateFormFields = ref<any[]>([]);
+
+// 打开修改弹窗
+async function handleOpenUpdate() {
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    msg('warning', '请先选择要修改的记录');
+    return;
+  }
+
+  const functionCode = String(props.meta.functionCode || '').trim();
+  if (!functionCode) {
+    msg('error', '功能编码不能为空');
+    return;
+  }
+
+  // 尝试找到主键列
+  let primaryKey = 'GUID';
+  const columns = gridApi.value?.getColumns() || [];
+  for (const col of columns) {
+    const colDef = col.getColDef();
+    const field = String(colDef.field || '');
+    if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
+      primaryKey = field;
+      break;
+    }
+  }
+
+  // 获取选中的主键值
+  const keyValues: (string | number)[] = selectedRows
+    .map(row => row[primaryKey])
+    .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
+
+  if (keyValues.length === 0) {
+    msg('error', '无法获取记录主键值，请联系管理员');
+    return;
+  }
+
+  if (keyValues.length > 1) {
+    msg('warning', '修改操作只能选择一条记录');
+    return;
+  }
+
+  updateVisible.value = true;
+  updateLoading.value = true;
+  updateError.value = '';
+  updateSuccess.value = '';
+  updateFormData.value = {};
+  updateFormFields.value = [];
+
+  try {
+    console.log('[修改] functionCode:', functionCode, 'keyValues:', keyValues);
+    // 调用 API 获取修改字段配置
+    const { data, error } = await fetchUpdateFields(functionCode, keyValues);
+    console.log('[修改] API 返回:', data, error);
+
+    if (error) {
+      updateError.value = error.message || '获取修改信息失败';
+      updateLoading.value = false;
+      return;
+    }
+
+    if (data && data.fields) {
+      updateFormFields.value = data.fields.map((f: any) => ({
+        fieldName: f.fieldName,
+        columnName: f.columnName,
+        fieldType: f.fieldType,
+        editorType: f.editorType,
+        editorParams: f.editorParams,
+        required: f.required,
+        readonly: f.readonly
+      }));
+      // 设置当前数据到表单
+      if (data.currentData) {
+        updateFormData.value = { ...data.currentData };
+      }
+    } else {
+      updateError.value = '未获取到字段配置';
+    }
+  } catch (e: any) {
+    updateError.value = e.message || '获取修改信息失败';
+  } finally {
+    updateLoading.value = false;
+  }
+}
+
+// 提交修改数据
+async function confirmUpdate() {
+  updateLoading.value = true;
+  updateError.value = '';
+  updateSuccess.value = '';
+
+  try {
+    const functionCode = String(props.meta.functionCode || '').trim();
+    if (!functionCode) {
+      updateError.value = '功能编码不能为空';
+      updateLoading.value = false;
+      return;
+    }
+
+    // 获取主键值
+    const selectedRows = gridApi.value?.getSelectedRows() || [];
+    if (selectedRows.length === 0) {
+      updateError.value = '未选择要修改的记录';
+      updateLoading.value = false;
+      return;
+    }
+
+    let primaryKey = 'GUID';
+    const columns = gridApi.value?.getColumns() || [];
+    for (const col of columns) {
+      const colDef = col.getColDef();
+      const field = String(colDef.field || '');
+      if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
+        primaryKey = field;
+        break;
+      }
+    }
+
+    const keyValues = selectedRows
+      .map(row => row[primaryKey])
+      .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
+
+    if (keyValues.length === 0) {
+      updateError.value = '无法获取记录主键值';
+      updateLoading.value = false;
+      return;
+    }
+
+    const { data, error } = await updateRow(functionCode, keyValues, updateFormData.value);
+
+    if (error) {
+      updateError.value = error.message || '修改失败';
+      updateLoading.value = false;
+      return;
+    }
+
+    if (data.success) {
+      updateSuccess.value = data.message || '修改成功';
+      // 关闭弹窗并刷新数据
+      setTimeout(() => {
+        updateVisible.value = false;
+        loadPage();
+      }, 1500);
+    } else {
+      updateError.value = data.message || '修改失败';
+    }
+  } catch (e: any) {
+    updateError.value = e.message || '修改失败';
+  } finally {
+    updateLoading.value = false;
+  }
+}
+
 // 打开弹窗选择（懒加载级联选择）
 async function handleOpenPopup(field: any) {
   popupField.value = field;
@@ -2226,6 +2388,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
             <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAdd">新增</NButton>
+            <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="handleOpenUpdate">单条修改</NButton>
             <NButton v-if="pageMeta?.toolbar.delete" :disabled="deleteLoading" @click="handleDelete">删除</NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
@@ -2846,6 +3009,105 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           <NSpace justify="end">
             <NButton @click="addVisible = false">关闭</NButton>
             <NButton v-if="!addSuccess" type="primary" :disabled="addLoading" @click="confirmAdd">确认新增</NButton>
+          </NSpace>
+        </NSpace>
+      </NSpin>
+    </NModal>
+
+    <!-- 修改弹窗 -->
+    <NModal v-model:show="updateVisible" preset="card" title="修改记录" class="w-800px" :mask-closable="false">
+      <NSpin :show="updateLoading">
+        <NSpace vertical :size="16">
+          <!-- 错误提示 -->
+          <NAlert v-if="updateError" type="error" :show-icon="true">
+            {{ updateError }}
+          </NAlert>
+
+          <!-- 成功提示 -->
+          <NAlert v-if="updateSuccess" type="success" :show-icon="true">
+            {{ updateSuccess }}
+          </NAlert>
+
+          <!-- 表单 -->
+          <div v-if="updateFormFields.length > 0" class="form-container">
+            <NForm label-placement="left" label-width="auto" :model="updateFormData">
+              <div class="form-grid">
+                <NFormItem
+                  v-for="field in updateFormFields"
+                  :key="field.fieldName"
+                  :label="field.columnName"
+                  :path="field.fieldName"
+                  :required="field.required"
+                >
+                  <!-- 下拉选择 -->
+                  <NSelect
+                    v-if="field.editorType === '下拉框' || field.fieldType === '选项'"
+                    v-model:value="updateFormData[field.fieldName]"
+                    :options="getFieldOptions(field)"
+                    :placeholder="`请选择${field.columnName}`"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                  <!-- 日期时间选择 -->
+                  <NDatePicker
+                    v-else-if="field.editorType === '日期时间' || field.fieldType === '日期时间'"
+                    v-model:formatted-value="updateFormData[field.fieldName]"
+                    value-format="yyyy-MM-dd HH:mm:ss"
+                    type="datetime"
+                    :placeholder="`请选择${field.columnName}`"
+                    :show-time="true"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                  <!-- 日期选择 -->
+                  <NDatePicker
+                    v-else-if="field.fieldType === '日期'"
+                    v-model:formatted-value="updateFormData[field.fieldName]"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    :placeholder="`请选择${field.columnName}`"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                  <!-- 数值输入 -->
+                  <NInputNumber
+                    v-else-if="field.fieldType === '数值'"
+                    v-model:value="updateFormData[field.fieldName]"
+                    :placeholder="`请输入${field.columnName}`"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                  <!-- 弹窗选择 -->
+                  <div v-else-if="field.editorType === '弹窗选择'" class="flex items-center gap-8">
+                    <NInput
+                      :value="updateFormData[field.fieldName] || ''"
+                      :placeholder="`请选择${field.columnName}`"
+                      :readonly="true"
+                    />
+                    <NButton size="small" :disabled="field.readonly" @click="handleOpenPopupForUpdate(field)">
+                      选择
+                    </NButton>
+                  </div>
+                  <!-- 默认文本输入 -->
+                  <NInput
+                    v-else
+                    v-model:value="updateFormData[field.fieldName]"
+                    :placeholder="`请输入${field.columnName}`"
+                    :readonly="field.readonly"
+                    clearable
+                  />
+                </NFormItem>
+              </div>
+            </NForm>
+          </div>
+          <div v-else-if="!updateError && !updateLoading" class="text-center text-gray-400 py-8">
+            暂无可修改的字段
+          </div>
+
+          <!-- 操作按钮 -->
+          <NSpace justify="end">
+            <NButton @click="updateVisible = false">关闭</NButton>
+            <NButton v-if="!updateSuccess" type="primary" :disabled="updateLoading" @click="confirmUpdate">确认修改</NButton>
           </NSpace>
         </NSpace>
       </NSpin>

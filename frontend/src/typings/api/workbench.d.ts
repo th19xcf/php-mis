@@ -160,6 +160,17 @@ declare namespace Api {
       deletedCount: number;
     }
 
+    interface UpdateFieldsResult {
+      fields: any[];
+      currentData: Record<string, any>;
+    }
+
+    interface UpdateResult {
+      success: boolean;
+      message: string;
+      updatedCount: number;
+    }
+
     interface PopupGridItem {
       表项: string;
       级别: number;
