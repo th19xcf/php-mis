@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, h, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { computed, ref, h, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -121,6 +121,9 @@ const selectedOperator = ref<ConditionOperator>('contains');
 const selectedValue = ref('');
 const useLegacyTabHint = ref(false);
 const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
+
+// 防止筛选恢复期间 filterChanged 覆盖筛选
+const isRestoringFilter = ref(false);
 
 // 缓存数据，避免重复请求
 const isDataLoaded = ref(false);
@@ -546,8 +549,26 @@ const filteredRows = computed(() => {
 
 const workbenchStore = useWorkbenchStore();
 
+onActivated(() => {
+  if (gridApi.value && !gridApi.value.isDestroyed()) {
+    const functionCode = String(props.meta.functionCode || '').trim();
+    const params = String(props.meta.params || '').trim();
+    const cachedFilterModel = workbenchStore.getFilterModel(functionCode, params);
+    if (cachedFilterModel && Object.keys(cachedFilterModel).length > 0) {
+      isRestoringFilter.value = true;
+      nextTick(() => {
+        if (gridApi.value && !gridApi.value.isDestroyed()) {
+          gridApi.value.setFilterModel(cachedFilterModel);
+        }
+        isRestoringFilter.value = false;
+      });
+    }
+  }
+});
+
 async function loadPage() {
   const functionCode = String(props.meta.functionCode || '').trim();
+  const params = String(props.meta.params || '').trim();
   if (!functionCode) {
     pageMeta.value = null;
     serverRows.value = [];
@@ -556,7 +577,7 @@ async function loadPage() {
   }
 
   // 检查 store 缓存
-  const cached = workbenchStore.getCache(functionCode);
+  const cached = workbenchStore.getCache(functionCode, params);
   if (cached && cached.isDataLoaded) {
     console.log('Using cached data for:', functionCode);
     pageMeta.value = cached.pageMeta;
@@ -697,7 +718,7 @@ async function loadPage() {
   }, 100);
 
   // 保存到 store 缓存
-  workbenchStore.setCache(functionCode, {
+  workbenchStore.setCache(functionCode, params, {
     pageMeta: data.meta,
     serverRows: allRows,
     total: allRows.length,
@@ -793,10 +814,11 @@ async function queryPage() {
 
 async function handleRefresh() {
   const functionCode = String(props.meta.functionCode || '').trim();
+  const params = String(props.meta.params || '').trim();
 
   // 清除 store 缓存，强制重新加载
   if (functionCode) {
-    workbenchStore.clearCache(functionCode);
+    workbenchStore.clearCache(functionCode, params);
   }
 
   // 重置所有查询条件到初始状态
@@ -2510,6 +2532,31 @@ function handleClearColorMark() {
 function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   gridApi.value = event.api;
   visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
+
+  const functionCode = String(props.meta.functionCode || '').trim();
+  const params = String(props.meta.params || '').trim();
+  const cachedFilterModel = workbenchStore.getFilterModel(functionCode, params);
+  if (cachedFilterModel) {
+    setTimeout(() => {
+      if (gridApi.value && !gridApi.value.isDestroyed()) {
+        gridApi.value.setFilterModel(cachedFilterModel);
+      }
+    }, 100);
+  }
+
+  gridApi.value.addEventListener('filterChanged', () => {
+    if (isRestoringFilter.value) {
+      return;
+    }
+    const currentFunctionCode = String(props.meta.functionCode || '').trim();
+    const currentParams = String(props.meta.params || '').trim();
+    if (currentFunctionCode && gridApi.value) {
+      const currentFilterModel = gridApi.value.getFilterModel();
+      if (currentFilterModel && Object.keys(currentFilterModel).length > 0) {
+        workbenchStore.setFilterModel(currentFunctionCode, currentParams, currentFilterModel);
+      }
+    }
+  });
 
   console.log('Grid ready, API initialized:', !!gridApi.value);
 }
