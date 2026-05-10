@@ -7,6 +7,7 @@ export interface WorkbenchCacheItem {
   total: number;
   isDataLoaded: boolean;
   filterModel: any;
+  columnState: any;
   timestamp: number;
 }
 
@@ -34,6 +35,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       total: data.total ?? existing?.total ?? 0,
       isDataLoaded: data.isDataLoaded ?? existing?.isDataLoaded ?? false,
       filterModel: data.filterModel ?? existing?.filterModel ?? null,
+      columnState: data.columnState ?? existing?.columnState ?? null,
       timestamp: Date.now()
     });
   }
@@ -73,6 +75,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
         total: 0,
         isDataLoaded: false,
         filterModel,
+        columnState: null,
         timestamp: Date.now()
       });
     }
@@ -87,6 +90,41 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     }
   }
 
+  function getColumnState(functionCode: string, params: string): any {
+    return cache.value.get(getCacheKey(functionCode, params))?.columnState ?? null;
+  }
+
+  function setColumnState(functionCode: string, params: string, columnState: any) {
+    if (!columnState) {
+      return;
+    }
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.columnState = columnState;
+      existing.timestamp = Date.now();
+    } else {
+      cache.value.set(key, {
+        pageMeta: null,
+        serverRows: [],
+        total: 0,
+        isDataLoaded: false,
+        filterModel: null,
+        columnState,
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  function clearColumnState(functionCode: string, params: string) {
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.columnState = null;
+      existing.timestamp = Date.now();
+    }
+  }
+
   return {
     cache,
     getCache,
@@ -96,6 +134,9 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     hasCache,
     getFilterModel,
     setFilterModel,
-    clearFilterModel
+    clearFilterModel,
+    getColumnState,
+    setColumnState,
+    clearColumnState
   };
 });

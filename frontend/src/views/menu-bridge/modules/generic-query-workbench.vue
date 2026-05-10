@@ -124,6 +124,8 @@ const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
 
 // 防止筛选恢复期间 filterChanged 覆盖筛选
 const isRestoringFilter = ref(false);
+// 防止排序恢复期间 sortChanged 覆盖排序
+const isRestoringColumnState = ref(false);
 
 // 缓存数据，避免重复请求
 const isDataLoaded = ref(false);
@@ -553,6 +555,7 @@ onActivated(() => {
   if (gridApi.value && !gridApi.value.isDestroyed()) {
     const functionCode = String(props.meta.functionCode || '').trim();
     const params = String(props.meta.params || '').trim();
+
     const cachedFilterModel = workbenchStore.getFilterModel(functionCode, params);
     if (cachedFilterModel && Object.keys(cachedFilterModel).length > 0) {
       isRestoringFilter.value = true;
@@ -561,6 +564,17 @@ onActivated(() => {
           gridApi.value.setFilterModel(cachedFilterModel);
         }
         isRestoringFilter.value = false;
+      });
+    }
+
+    const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
+    if (cachedColumnState && cachedColumnState.some((col: any) => col.sort)) {
+      isRestoringColumnState.value = true;
+      nextTick(() => {
+        if (gridApi.value && !gridApi.value.isDestroyed()) {
+          gridApi.value.applyColumnState({ state: cachedColumnState, applyOrder: true });
+        }
+        isRestoringColumnState.value = false;
       });
     }
   }
@@ -921,11 +935,12 @@ function handleReset() {
     gridApi.value.setFilterModel(null);
   }
 
-  // 同时清除 store 中的筛选缓存
+  // 同时清除 store 中的筛选和排序缓存
   const resetFunctionCode = String(props.meta.functionCode || '').trim();
   const resetParams = String(props.meta.params || '').trim();
   if (resetFunctionCode) {
     workbenchStore.clearFilterModel(resetFunctionCode, resetParams);
+    workbenchStore.clearColumnState(resetFunctionCode, resetParams);
   }
 
   // 7. 刷新表格以清除颜色标注样式
@@ -2565,6 +2580,20 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     }
   });
 
+  gridApi.value.addEventListener('sortChanged', () => {
+    if (isRestoringColumnState.value) {
+      return;
+    }
+    const currentFunctionCode = String(props.meta.functionCode || '').trim();
+    const currentParams = String(props.meta.params || '').trim();
+    if (currentFunctionCode && gridApi.value) {
+      const columnState = gridApi.value.getColumnState();
+      if (columnState && columnState.some((col: any) => col.sort)) {
+        workbenchStore.setColumnState(currentFunctionCode, currentParams, columnState);
+      }
+    }
+  });
+
   console.log('Grid ready, API initialized:', !!gridApi.value);
 }
 </script>
@@ -2883,9 +2912,9 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                 :style="
                   isDarkMode
                     ? {
-                      borderBottomColor: '#4b5965',
-                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                    }
+                        borderBottomColor: '#4b5965',
+                        borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                      }
                     : {}
                 "
               >
