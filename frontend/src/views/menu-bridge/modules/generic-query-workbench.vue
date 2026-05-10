@@ -1131,9 +1131,13 @@ async function confirmAdd() {
 
     if (data.success) {
       addSuccess.value = data.message || '新增成功';
-      // 关闭弹窗并刷新数据
+      // 关闭弹窗并刷新数据（强制从服务器重新加载）
       setTimeout(() => {
         addVisible.value = false;
+        const currentFunctionCode = String(props.meta.functionCode || '').trim();
+        const currentParams = String(props.meta.params || '').trim();
+        workbenchStore.clearCache(currentFunctionCode, currentParams);
+        isDataLoaded.value = false;
         loadPage();
       }, 1500);
     } else {
@@ -1202,7 +1206,11 @@ async function handleDelete() {
 
     if (data.success) {
       msg('success', data.message || `成功删除 ${data.deletedCount} 条记录`);
-      // 刷新数据
+      // 刷新数据（强制从服务器重新加载）
+      const currentFunctionCode = String(props.meta.functionCode || '').trim();
+      const currentParams = String(props.meta.params || '').trim();
+      workbenchStore.clearCache(currentFunctionCode, currentParams);
+      isDataLoaded.value = false;
       loadPage();
     } else {
       msg('error', data.message || '删除失败');
@@ -1361,9 +1369,13 @@ async function confirmUpdate() {
 
     if (data.success) {
       updateSuccess.value = data.message || '修改成功';
-      // 关闭弹窗并刷新数据
+      // 关闭弹窗并刷新数据（强制从服务器重新加载）
       setTimeout(() => {
         updateVisible.value = false;
+        const currentFunctionCode = String(props.meta.functionCode || '').trim();
+        const currentParams = String(props.meta.params || '').trim();
+        workbenchStore.clearCache(currentFunctionCode, currentParams);
+        isDataLoaded.value = false;
         loadPage();
       }, 1500);
     } else {
@@ -1515,9 +1527,13 @@ async function confirmBatchUpdate() {
 
     if (data.success) {
       batchUpdateSuccess.value = data.message || '批量修改成功';
-      // 关闭弹窗并刷新数据
+      // 关闭弹窗并刷新数据（强制从服务器重新加载）
       setTimeout(() => {
         batchUpdateVisible.value = false;
+        const currentFunctionCode = String(props.meta.functionCode || '').trim();
+        const currentParams = String(props.meta.params || '').trim();
+        workbenchStore.clearCache(currentFunctionCode, currentParams);
+        isDataLoaded.value = false;
         loadPage();
       }, 1500);
     } else {
@@ -2912,9 +2928,9 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                 :style="
                   isDarkMode
                     ? {
-                        borderBottomColor: '#4b5965',
-                        borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                      }
+                      borderBottomColor: '#4b5965',
+                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                    }
                     : {}
                 "
               >
