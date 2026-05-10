@@ -921,6 +921,13 @@ function handleReset() {
     gridApi.value.setFilterModel(null);
   }
 
+  // 同时清除 store 中的筛选缓存
+  const resetFunctionCode = String(props.meta.functionCode || '').trim();
+  const resetParams = String(props.meta.params || '').trim();
+  if (resetFunctionCode) {
+    workbenchStore.clearFilterModel(resetFunctionCode, resetParams);
+  }
+
   // 7. 刷新表格以清除颜色标注样式
   if (gridApi.value) {
     gridApi.value.redrawRows();
@@ -2876,9 +2883,9 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                 :style="
                   isDarkMode
                     ? {
-                        borderBottomColor: '#4b5965',
-                        borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                      }
+                      borderBottomColor: '#4b5965',
+                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                    }
                     : {}
                 "
               >

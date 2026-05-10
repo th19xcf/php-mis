@@ -78,6 +78,15 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     }
   }
 
+  function clearFilterModel(functionCode: string, params: string) {
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.filterModel = null;
+      existing.timestamp = Date.now();
+    }
+  }
+
   return {
     cache,
     getCache,
@@ -86,6 +95,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     clearAllCache,
     hasCache,
     getFilterModel,
-    setFilterModel
+    setFilterModel,
+    clearFilterModel
   };
 });
