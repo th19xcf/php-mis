@@ -2928,9 +2928,9 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                 :style="
                   isDarkMode
                     ? {
-                      borderBottomColor: '#4b5965',
-                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                    }
+                        borderBottomColor: '#4b5965',
+                        borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                      }
                     : {}
                 "
               >
@@ -3794,8 +3794,16 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 /* Final override: target AG Grid selection column directly. */
 :deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn']) {
   position: relative;
-  padding-left: 7px !important;
-  padding-right: 7px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+:deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-comp-wrapper) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
 :deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-label) {
@@ -3804,11 +3812,15 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 }
 
 :deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-select-all) {
-  position: static !important;
-  width: auto !important;
-  height: auto !important;
-  margin: 0 auto !important;
-  padding: 0 !important;
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  width: 16px !important;
+  height: 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 :deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
@@ -3818,8 +3830,40 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 }
 
 :deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn']) {
-  padding-left: 7px !important;
-  padding-right: 7px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
+:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Force checkbox wrapper to center */
+:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper .ag-selection-checkbox) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 
 :deep(.query-grid .ag-cell-value),
