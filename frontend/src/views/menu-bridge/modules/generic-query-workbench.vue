@@ -568,7 +568,7 @@ onActivated(() => {
     }
 
     const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
-    if (cachedColumnState && cachedColumnState.some((col: any) => col.sort)) {
+    if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
       isRestoringColumnState.value = true;
       nextTick(() => {
         if (gridApi.value && !gridApi.value.isDestroyed()) {
@@ -604,43 +604,49 @@ async function loadPage() {
     loadedParams.value = String(props.meta.params || '');
     isDataLoaded.value = true;
 
-    // 刷新表格并调整列宽
+    // 刷新表格并恢复列状态（包括宽度）
     setTimeout(() => {
       if (gridApi.value) {
         gridApi.value.refreshCells({ force: true });
 
-        // 列宽自适应（与正常加载保持一致）
-        const api = gridApi.value;
-        if (api.isDestroyed()) return;
-        const columnState = api.getColumnState();
-        if (columnState && Array.isArray(columnState)) {
-          const allColIds = columnState
-            .map((state: any) => state.colId)
-            .filter((colId: string) => {
-              if (colId === 'ag-Grid-SelectionColumn') return false;
-              const column = api.getColumn(colId);
-              if (column) {
-                const def = column.getColDef();
-                if (isGuidColumn(String(def.field || ''), String(def.headerName || def.field || ''))) {
-                  return false;
+        // 优先恢复缓存的列状态（包括宽度）
+        const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
+        if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
+          gridApi.value.applyColumnState({ state: cachedColumnState, applyOrder: true });
+        } else {
+          // 如果没有缓存的列状态，执行列宽自适应
+          const api = gridApi.value;
+          if (api.isDestroyed()) return;
+          const columnState = api.getColumnState();
+          if (columnState && Array.isArray(columnState)) {
+            const allColIds = columnState
+              .map((state: any) => state.colId)
+              .filter((colId: string) => {
+                if (colId === 'ag-Grid-SelectionColumn') return false;
+                const column = api.getColumn(colId);
+                if (column) {
+                  const def = column.getColDef();
+                  if (isGuidColumn(String(def.field || ''), String(def.headerName || def.field || ''))) {
+                    return false;
+                  }
                 }
-              }
-              return true;
-            });
+                return true;
+              });
 
-          if (allColIds.length > 0) {
-            api.autoSizeColumns(allColIds, false);
+            if (allColIds.length > 0) {
+              api.autoSizeColumns(allColIds, false);
 
-            const maxWidth = 300;
-            allColIds.forEach((colId: string) => {
-              const column = api.getColumn(colId);
-              if (column) {
-                const currentWidth = column.getActualWidth();
-                if (currentWidth > maxWidth) {
-                  api.setColumnWidths([{ key: colId, newWidth: maxWidth }]);
+              const maxWidth = 300;
+              allColIds.forEach((colId: string) => {
+                const column = api.getColumn(colId);
+                if (column) {
+                  const currentWidth = column.getActualWidth();
+                  if (currentWidth > maxWidth) {
+                    api.setColumnWidths([{ key: colId, newWidth: maxWidth }]);
+                  }
                 }
-              }
-            });
+              });
+            }
           }
         }
       }
@@ -2604,7 +2610,21 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     const currentParams = String(props.meta.params || '').trim();
     if (currentFunctionCode && gridApi.value) {
       const columnState = gridApi.value.getColumnState();
-      if (columnState && columnState.some((col: any) => col.sort)) {
+      if (columnState && Array.isArray(columnState) && columnState.length > 0) {
+        workbenchStore.setColumnState(currentFunctionCode, currentParams, columnState);
+      }
+    }
+  });
+
+  gridApi.value.addEventListener('columnResized', () => {
+    if (isRestoringColumnState.value) {
+      return;
+    }
+    const currentFunctionCode = String(props.meta.functionCode || '').trim();
+    const currentParams = String(props.meta.params || '').trim();
+    if (currentFunctionCode && gridApi.value) {
+      const columnState = gridApi.value.getColumnState();
+      if (columnState && Array.isArray(columnState) && columnState.length > 0) {
         workbenchStore.setColumnState(currentFunctionCode, currentParams, columnState);
       }
     }
