@@ -8,6 +8,7 @@ declare namespace Api {
       import: boolean;
       export: boolean;
       tableEdit: boolean;
+      batchEdit: boolean;
       debugSql: boolean;
       upkeep: boolean;
     }
