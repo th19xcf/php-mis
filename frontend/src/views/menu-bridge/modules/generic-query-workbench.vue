@@ -585,11 +585,32 @@ onActivated(() => {
 
     // 恢复列状态（包括宽度、排序、固定列、显示/隐藏）
     const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
-    console.log('[onActivated] Restoring column state for:', functionCode, cachedColumnState);
+    console.log('[onActivated] Restoring column state for:', functionCode, 'state count:', cachedColumnState?.length);
     if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
+      // 打印所有列的 hide 状态
+      console.log('[onActivated] Column hide states:', cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
       // 检查是否有排序信息
       const sortedColumns = cachedColumnState.filter((col: any) => col.sort);
       console.log('[onActivated] Sorted columns in cache:', sortedColumns);
+
+      // 根据缓存的列状态更新 pageMeta 中的 hidden 属性
+      // 这样 gridColumns 计算属性会使用正确的 hide 值
+      if (pageMeta.value?.columns) {
+        console.log('[onActivated] pageMeta columns fields:', pageMeta.value.columns.map(c => c.field));
+        console.log('[onActivated] cachedColumnState colIds:', cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
+        
+        // 创建新的 columns 数组以触发响应式更新
+        pageMeta.value.columns = pageMeta.value.columns.map(column => {
+          const colState = cachedColumnState.find((c: any) => c.colId === column.field);
+          if (colState && colState.hide !== undefined) {
+            console.log(`[onActivated] Updating column ${column.field}: hidden = ${colState.hide}`);
+            return { ...column, hidden: colState.hide };
+          }
+          return column;
+        });
+        console.log('[onActivated] Updated pageMeta columns hidden state');
+      }
+
       isRestoringColumnState.value = true;
       nextTick(() => {
         if (gridApi.value && !gridApi.value.isDestroyed()) {
@@ -682,6 +703,13 @@ onDeactivated(() => {
   if (gridApi.value && !gridApi.value.isDestroyed()) {
     const selectedRows = gridApi.value.getSelectedRows();
     workbenchStore.setSelectedRows(functionCode, params, selectedRows);
+
+    // 保存列状态（包括 hide、width、sort、pinned 等）
+    const columnState = gridApi.value.getColumnState();
+    if (columnState && Array.isArray(columnState) && columnState.length > 0) {
+      console.log('[onDeactivated] Saving column state for:', functionCode, columnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
+      workbenchStore.setColumnState(functionCode, params, columnState);
+    }
 
     // 保存字段选择状态（显示的列）
     const allColumns = gridApi.value.getColumns();
@@ -2830,11 +2858,20 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   });
 
   // 监听列显示/隐藏变化
-  (gridApi.value as any).addEventListener('columnVisibleChanged', () => {
+  gridApi.value.addEventListener('columnVisible', (event: any) => {
     if (isRestoringColumnState.value) {
       return;
     }
+    console.log('[columnVisible] Event triggered for:', capturedFunctionCode, 'column:', event.column?.getColDef()?.field, 'visible:', event.visible);
     if (capturedFunctionCode && gridApi.value) {
+      // 保存列状态（包括 hide 属性）
+      const columnState = gridApi.value.getColumnState();
+      if (columnState && Array.isArray(columnState) && columnState.length > 0) {
+        console.log('[columnVisible] Saving column state for:', capturedFunctionCode, columnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
+        workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
+      }
+
+      // 保存可见列列表
       const allColumns = gridApi.value.getColumns();
       if (allColumns) {
         const visibleCols = allColumns
@@ -2845,6 +2882,22 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           .map(col => col.getColDef().field as string)
           .filter((field): field is string => field !== undefined);
         workbenchStore.setVisibleColumns(capturedFunctionCode, capturedParams, visibleCols);
+      }
+    }
+  });
+
+  // 监听拖拽停止事件（用户拖动列隐藏后触发）
+  gridApi.value.addEventListener('dragStopped', () => {
+    if (isRestoringColumnState.value) {
+      return;
+    }
+    console.log('[dragStopped] Event triggered for:', capturedFunctionCode);
+    if (capturedFunctionCode && gridApi.value) {
+      // 保存列状态（包括 hide 属性）
+      const columnState = gridApi.value.getColumnState();
+      if (columnState && Array.isArray(columnState) && columnState.length > 0) {
+        console.log('[dragStopped] Saving column state for:', capturedFunctionCode, columnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
+        workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
       }
     }
   });
