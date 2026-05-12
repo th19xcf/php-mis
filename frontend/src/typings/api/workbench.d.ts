@@ -4,11 +4,11 @@ declare namespace Api {
       comment: boolean;
       add: boolean;
       edit: boolean;
+      batchEdit: boolean;
       delete: boolean;
       import: boolean;
       export: boolean;
       tableEdit: boolean;
-      batchEdit: boolean;
       debugSql: boolean;
       upkeep: boolean;
     }
