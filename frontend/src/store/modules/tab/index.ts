@@ -60,14 +60,13 @@ export const useTabStore = defineStore(SetupStoreId.Tab, () => {
    * @param currentRoute Current route
    */
   function initTabStore(currentRoute: App.Global.TabRoute) {
-    const storageTabs = localStg.get('globalTabs');
-    // 只恢复首页 tab
-    if (themeStore.tab.cache && storageTabs) {
-      const extractedTabs = extractTabsByAllRoutes(router, storageTabs);
-      tabs.value = updateTabsByI18nKey(extractedTabs).filter(tab => tab.id === homeTab.value?.id);
-    } else {
-      tabs.value = [getDefaultHomeTab(router, routeStore.routeHome)];
-    }
+    // 强制清除所有标签页，只保留首页（不从 localStg 恢复，避免刷新时出现竖线）
+    const homeTabValue = getDefaultHomeTab(router, routeStore.routeHome);
+    tabs.value = [homeTabValue];
+    
+    // 设置 activeTabId 为首页
+    setActiveTabId(homeTabValue.id);
+    
     // 只在首页时添加 tab
     if (currentRoute.fullPath === homeTab.value?.fullPath) {
       addTab(currentRoute);

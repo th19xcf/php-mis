@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, h, onMounted, onUnmounted, onActivated, watch, nextTick } from 'vue';
+import { computed, ref, h, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -126,6 +126,12 @@ const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
 const isRestoringFilter = ref(false);
 // 防止排序恢复期间 sortChanged 覆盖排序
 const isRestoringColumnState = ref(false);
+// 防止行选择恢复期间触发保存
+const isRestoringSelection = ref(false);
+// 防止分页恢复期间触发保存
+const isRestoringPage = ref(false);
+// 防止初始加载期间的 columnResized 事件保存状态
+const isInitialLoading = ref(false);
 
 // 缓存数据，避免重复请求
 const isDataLoaded = ref(false);
@@ -139,20 +145,17 @@ function checkAndLoadData() {
   const currentFunctionCode = String(props.meta.functionCode || '');
   const currentParams = String(props.meta.params || '');
 
+  // 如果 functionCode 为空，不加载数据
+  if (!currentFunctionCode) {
+    return;
+  }
+
   // 只有当数据未加载，或者 functionCode/params 发生变化时才加载
   if (!isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
-    console.log('Loading page', {
-      currentFunctionCode,
-      currentParams,
-      loadedFunctionCode: loadedFunctionCode.value,
-      loadedParams: loadedParams.value
-    });
     loadedFunctionCode.value = currentFunctionCode;
     loadedParams.value = currentParams;
     loadPage();
     isDataLoaded.value = true;
-  } else {
-    console.log('Using cached data');
   }
 }
 
@@ -556,6 +559,19 @@ onActivated(() => {
     const functionCode = String(props.meta.functionCode || '').trim();
     const params = String(props.meta.params || '').trim();
 
+    // 恢复 UI 状态
+    const cachedUIState = workbenchStore.getUIState(functionCode, params);
+    if (cachedUIState) {
+      conditionVisible.value = cachedUIState.conditionVisible;
+      fieldColumnVisible.value = cachedUIState.fieldColumnVisible;
+      pinColumnVisible.value = cachedUIState.pinColumnVisible;
+      quickKeyword.value = cachedUIState.quickKeyword;
+      selectedField.value = cachedUIState.selectedField;
+      selectedOperator.value = cachedUIState.selectedOperator as ConditionOperator;
+      selectedValue.value = cachedUIState.selectedValue;
+    }
+
+    // 恢复筛选条件
     const cachedFilterModel = workbenchStore.getFilterModel(functionCode, params);
     if (cachedFilterModel && Object.keys(cachedFilterModel).length > 0) {
       isRestoringFilter.value = true;
@@ -567,15 +583,127 @@ onActivated(() => {
       });
     }
 
+    // 恢复列状态（包括宽度、排序、固定列、显示/隐藏）
     const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
+    console.log('[onActivated] Restoring column state for:', functionCode, cachedColumnState);
     if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
+      // 检查是否有排序信息
+      const sortedColumns = cachedColumnState.filter((col: any) => col.sort);
+      console.log('[onActivated] Sorted columns in cache:', sortedColumns);
       isRestoringColumnState.value = true;
       nextTick(() => {
         if (gridApi.value && !gridApi.value.isDestroyed()) {
+          console.log('[onActivated] Applying column state:', cachedColumnState);
           gridApi.value.applyColumnState({ state: cachedColumnState, applyOrder: true });
+          // 应用后检查表格状态
+          const afterApply = gridApi.value.getColumnState();
+          const afterSorted = afterApply.filter((col: any) => col.sort);
+          console.log('[onActivated] Sorted columns after apply:', afterSorted);
+
+          // 恢复字段选择状态
+          const cachedVisibleColumns = workbenchStore.getVisibleColumns(functionCode, params);
+          if (cachedVisibleColumns.length > 0) {
+            visibleFieldColumns.value = cachedVisibleColumns;
+          }
+
+          // 恢复固定列状态
+          const cachedPinColumns = workbenchStore.getPinColumns(functionCode, params);
+          if (cachedPinColumns.length > 0) {
+            pinTargetFields.value = cachedPinColumns;
+          }
         }
-        isRestoringColumnState.value = false;
+        // 延迟重置标志，确保 ag-grid 完成所有状态应用和事件触发
+        setTimeout(() => {
+          isRestoringColumnState.value = false;
+          console.log('[onActivated] Column state restore completed for:', functionCode);
+        }, 500);
       });
+    }
+
+    // 恢复分页状态
+    const cachedPage = workbenchStore.getPage(functionCode, params);
+    const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
+    if (cachedPage > 1 || cachedPageSize !== PAGE_SIZE_OPTIONS[0]) {
+      isRestoringPage.value = true;
+      page.value = cachedPage;
+      pageSize.value = cachedPageSize;
+      nextTick(() => {
+        isRestoringPage.value = false;
+      });
+    }
+
+    // 恢复行选择状态
+    const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
+    if (cachedSelectedRows.length > 0 && gridApi.value) {
+      isRestoringSelection.value = true;
+      nextTick(() => {
+        if (gridApi.value && !gridApi.value.isDestroyed()) {
+          // 根据行数据标识恢复选择状态
+          gridApi.value.forEachNode((node) => {
+            const rowData = node.data;
+            if (!rowData) return;
+            const isSelected = cachedSelectedRows.some((cachedRow: any) => {
+              // 使用 GUID 或 id 字段进行匹配
+              return (rowData.GUID && cachedRow.GUID === rowData.GUID) ||
+                     (rowData.id && cachedRow.id === rowData.id);
+            });
+            node.setSelected(isSelected);
+          });
+        }
+        isRestoringSelection.value = false;
+      });
+    }
+  }
+});
+
+// 组件失活时保存所有状态
+onDeactivated(() => {
+  const functionCode = String(props.meta.functionCode || '').trim();
+  const params = String(props.meta.params || '').trim();
+
+  if (!functionCode) return;
+
+  // 保存 UI 状态
+  workbenchStore.setUIState(functionCode, params, {
+    conditionVisible: conditionVisible.value,
+    fieldColumnVisible: fieldColumnVisible.value,
+    pinColumnVisible: pinColumnVisible.value,
+    quickKeyword: quickKeyword.value,
+    selectedField: selectedField.value,
+    selectedOperator: selectedOperator.value,
+    selectedValue: selectedValue.value
+  });
+
+  // 保存分页状态
+  workbenchStore.setPage(functionCode, params, page.value);
+  workbenchStore.setPageSize(functionCode, params, pageSize.value);
+
+  // 保存行选择状态
+  if (gridApi.value && !gridApi.value.isDestroyed()) {
+    const selectedRows = gridApi.value.getSelectedRows();
+    workbenchStore.setSelectedRows(functionCode, params, selectedRows);
+
+    // 保存字段选择状态（显示的列）
+    const allColumns = gridApi.value.getColumns();
+    if (allColumns) {
+      const visibleCols = allColumns
+        .filter(col => {
+          const colDef = col.getColDef();
+          return !colDef.hide && colDef.field;
+        })
+        .map(col => col.getColDef().field as string)
+        .filter((field): field is string => field !== undefined);
+      workbenchStore.setVisibleColumns(functionCode, params, visibleCols);
+
+      // 保存固定列状态
+      const pinnedCols = allColumns
+        .filter(col => {
+          const colDef = col.getColDef();
+          return colDef.pinned && colDef.field;
+        })
+        .map(col => col.getColDef().field as string)
+        .filter((field): field is string => field !== undefined);
+      workbenchStore.setPinColumns(functionCode, params, pinnedCols);
     }
   }
 });
@@ -589,6 +717,9 @@ async function loadPage() {
     total.value = 0;
     return;
   }
+
+  // 设置初始加载标志，防止 columnResized 事件保存状态
+  isInitialLoading.value = true;
 
   // 检查 store 缓存
   const cached = workbenchStore.getCache(functionCode, params);
@@ -604,53 +735,102 @@ async function loadPage() {
     loadedParams.value = String(props.meta.params || '');
     isDataLoaded.value = true;
 
-    // 刷新表格并恢复列状态（包括宽度）
+    // 恢复 UI 状态
+    const cachedUIState = workbenchStore.getUIState(functionCode, params);
+    if (cachedUIState) {
+      conditionVisible.value = cachedUIState.conditionVisible;
+      fieldColumnVisible.value = cachedUIState.fieldColumnVisible;
+      pinColumnVisible.value = cachedUIState.pinColumnVisible;
+      quickKeyword.value = cachedUIState.quickKeyword;
+      selectedField.value = cachedUIState.selectedField;
+      selectedOperator.value = cachedUIState.selectedOperator as ConditionOperator;
+      selectedValue.value = cachedUIState.selectedValue;
+    }
+
+    // 恢复分页状态
+    const cachedPage = workbenchStore.getPage(functionCode, params);
+    const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
+    if (cachedPage > 1 || cachedPageSize !== PAGE_SIZE_OPTIONS[0]) {
+      isRestoringPage.value = true;
+      page.value = cachedPage;
+      pageSize.value = cachedPageSize;
+    }
+
+    // 刷新表格（列状态由 onActivated 恢复，避免重复恢复）
     setTimeout(() => {
       if (gridApi.value) {
         gridApi.value.refreshCells({ force: true });
 
-        // 优先恢复缓存的列状态（包括宽度）
+        // 只有在没有缓存列状态时才执行列宽自适应
         const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
-        if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
-          gridApi.value.applyColumnState({ state: cachedColumnState, applyOrder: true });
-        } else {
+        console.log('[loadPage] Checking column state for autoSize:', functionCode, cachedColumnState);
+        if (!cachedColumnState || !Array.isArray(cachedColumnState) || cachedColumnState.length === 0) {
           // 如果没有缓存的列状态，执行列宽自适应
           const api = gridApi.value;
-          if (api.isDestroyed()) return;
-          const columnState = api.getColumnState();
-          if (columnState && Array.isArray(columnState)) {
-            const allColIds = columnState
-              .map((state: any) => state.colId)
-              .filter((colId: string) => {
-                if (colId === 'ag-Grid-SelectionColumn') return false;
-                const column = api.getColumn(colId);
-                if (column) {
-                  const def = column.getColDef();
-                  if (isGuidColumn(String(def.field || ''), String(def.headerName || def.field || ''))) {
-                    return false;
+          if (api && !api.isDestroyed()) {
+            const columnState = api.getColumnState();
+            console.log('[loadPage] Auto-sizing columns for:', functionCode, columnState);
+            if (columnState && Array.isArray(columnState)) {
+              const allColIds = columnState
+                .map((state: any) => state.colId)
+                .filter((colId: string) => {
+                  if (colId === 'ag-Grid-SelectionColumn') return false;
+                  const column = api.getColumn(colId);
+                  if (column) {
+                    const def = column.getColDef();
+                    if (isGuidColumn(String(def.field || ''), String(def.headerName || def.field || ''))) {
+                      return false;
+                    }
                   }
-                }
-                return true;
-              });
+                  return true;
+                });
 
-            if (allColIds.length > 0) {
-              api.autoSizeColumns(allColIds, false);
+              console.log('[loadPage] Auto-sizing column IDs:', allColIds);
+              if (allColIds.length > 0) {
+                api.autoSizeColumns(allColIds, false);
 
-              const maxWidth = 300;
-              allColIds.forEach((colId: string) => {
-                const column = api.getColumn(colId);
-                if (column) {
-                  const currentWidth = column.getActualWidth();
-                  if (currentWidth > maxWidth) {
-                    api.setColumnWidths([{ key: colId, newWidth: maxWidth }]);
+                const maxWidth = 300;
+                allColIds.forEach((colId: string) => {
+                  const column = api.getColumn(colId);
+                  if (column) {
+                    const currentWidth = column.getActualWidth();
+                    if (currentWidth > maxWidth) {
+                      api.setColumnWidths([{ key: colId, newWidth: maxWidth }]);
+                    }
                   }
-                }
-              });
+                });
+                console.log('[loadPage] Auto-size completed for:', functionCode);
+              }
             }
           }
+        } else {
+          console.log('[loadPage] Using cached column state, skipping autoSize for:', functionCode);
         }
+        // 重置初始加载标志
+        isInitialLoading.value = false;
+        console.log('[loadPage] Initial loading completed for:', functionCode);
       }
     }, 100);
+
+    // 缓存加载完成后，恢复行选择状态
+    setTimeout(() => {
+      const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
+      if (cachedSelectedRows.length > 0 && gridApi.value && !gridApi.value.isDestroyed()) {
+        isRestoringSelection.value = true;
+        gridApi.value.forEachNode((node) => {
+          const rowData = node.data;
+          if (!rowData) return;
+          const isSelected = cachedSelectedRows.some((cachedRow: any) => {
+            return (rowData.GUID && cachedRow.GUID === rowData.GUID) ||
+                   (rowData.id && cachedRow.id === rowData.id);
+          });
+          node.setSelected(isSelected);
+        });
+        isRestoringSelection.value = false;
+      }
+      // 重置分页恢复标志
+      isRestoringPage.value = false;
+    }, 200);
 
     // 缓存加载完成后，检查工具栏滚动状态
     setTimeout(() => {
@@ -783,6 +963,9 @@ async function loadPage() {
         }
       });
     }
+    // 重置初始加载标志
+    isInitialLoading.value = false;
+    console.log('[loadPage] Initial loading completed for:', functionCode);
   }, 300);
 }
 
@@ -2588,16 +2771,18 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     }, 100);
   }
 
+  // 使用闭包捕获当前的 functionCode 和 params，避免 Tab 切换后使用错误的值
+  const capturedFunctionCode = String(props.meta.functionCode || '').trim();
+  const capturedParams = String(props.meta.params || '').trim();
+
   gridApi.value.addEventListener('filterChanged', () => {
     if (isRestoringFilter.value) {
       return;
     }
-    const currentFunctionCode = String(props.meta.functionCode || '').trim();
-    const currentParams = String(props.meta.params || '').trim();
-    if (currentFunctionCode && gridApi.value) {
+    if (capturedFunctionCode && gridApi.value) {
       const currentFilterModel = gridApi.value.getFilterModel();
       if (currentFilterModel && Object.keys(currentFilterModel).length > 0) {
-        workbenchStore.setFilterModel(currentFunctionCode, currentParams, currentFilterModel);
+        workbenchStore.setFilterModel(capturedFunctionCode, capturedParams, currentFilterModel);
       }
     }
   });
@@ -2606,31 +2791,107 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     if (isRestoringColumnState.value) {
       return;
     }
-    const currentFunctionCode = String(props.meta.functionCode || '').trim();
-    const currentParams = String(props.meta.params || '').trim();
-    if (currentFunctionCode && gridApi.value) {
+    if (capturedFunctionCode && gridApi.value) {
       const columnState = gridApi.value.getColumnState();
+      console.log('[sortChanged] Saving column state for:', capturedFunctionCode, columnState);
       if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-        workbenchStore.setColumnState(currentFunctionCode, currentParams, columnState);
+        workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
       }
     }
   });
 
   gridApi.value.addEventListener('columnResized', () => {
     if (isRestoringColumnState.value) {
+      console.log('[columnResized] Skipping save, isRestoringColumnState is true');
       return;
     }
-    const currentFunctionCode = String(props.meta.functionCode || '').trim();
-    const currentParams = String(props.meta.params || '').trim();
-    if (currentFunctionCode && gridApi.value) {
+    if (isInitialLoading.value) {
+      console.log('[columnResized] Skipping save, isInitialLoading is true');
+      return;
+    }
+    if (capturedFunctionCode && gridApi.value) {
       const columnState = gridApi.value.getColumnState();
+      // 检查当前是否有排序信息
+      const currentSortedCols = columnState.filter((col: any) => col.sort);
+      // 获取缓存中的排序信息
+      const cachedColumnState = workbenchStore.getColumnState(capturedFunctionCode, capturedParams);
+      const cachedSortedCols = cachedColumnState?.filter((col: any) => col.sort) || [];
+      console.log('[columnResized] Current sorted:', currentSortedCols.length, 'Cached sorted:', cachedSortedCols.length, 'for:', capturedFunctionCode);
+      // 如果当前没有排序但缓存中有排序，不要覆盖缓存
+      if (currentSortedCols.length === 0 && cachedSortedCols.length > 0) {
+        console.log('[columnResized] Skipping save to preserve sort state for:', capturedFunctionCode);
+        return;
+      }
+      console.log('[columnResized] Saving column state for:', capturedFunctionCode, columnState);
       if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-        workbenchStore.setColumnState(currentFunctionCode, currentParams, columnState);
+        workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
       }
     }
   });
 
-  console.log('Grid ready, API initialized:', !!gridApi.value);
+  // 监听列显示/隐藏变化
+  (gridApi.value as any).addEventListener('columnVisibleChanged', () => {
+    if (isRestoringColumnState.value) {
+      return;
+    }
+    if (capturedFunctionCode && gridApi.value) {
+      const allColumns = gridApi.value.getColumns();
+      if (allColumns) {
+        const visibleCols = allColumns
+          .filter(col => {
+            const colDef = col.getColDef();
+            return !colDef.hide && colDef.field;
+          })
+          .map(col => col.getColDef().field as string)
+          .filter((field): field is string => field !== undefined);
+        workbenchStore.setVisibleColumns(capturedFunctionCode, capturedParams, visibleCols);
+      }
+    }
+  });
+
+  // 监听固定列变化
+  (gridApi.value as any).addEventListener('columnPinnedChanged', () => {
+    if (isRestoringColumnState.value) {
+      return;
+    }
+    if (capturedFunctionCode && gridApi.value) {
+      const allColumns = gridApi.value.getColumns();
+      if (allColumns) {
+        const pinnedCols = allColumns
+          .filter(col => {
+            const colDef = col.getColDef();
+            return colDef.pinned && colDef.field;
+          })
+          .map(col => col.getColDef().field as string)
+          .filter((field): field is string => field !== undefined);
+        workbenchStore.setPinColumns(capturedFunctionCode, capturedParams, pinnedCols);
+      }
+    }
+  });
+
+  // 监听行选择变化
+  gridApi.value.addEventListener('selectionChanged', () => {
+    if (isRestoringSelection.value) {
+      return;
+    }
+    if (capturedFunctionCode && gridApi.value) {
+      const selectedRows = gridApi.value.getSelectedRows();
+      workbenchStore.setSelectedRows(capturedFunctionCode, capturedParams, selectedRows);
+    }
+  });
+
+  // 监听分页变化
+  gridApi.value.addEventListener('paginationChanged', (event: any) => {
+    if (isRestoringPage.value) {
+      return;
+    }
+    if (capturedFunctionCode && gridApi.value) {
+      const currentPage = gridApi.value.paginationGetCurrentPage() + 1; // ag-grid 页码从0开始
+      const currentPageSize = gridApi.value.paginationGetPageSize();
+      workbenchStore.setPage(capturedFunctionCode, capturedParams, currentPage);
+      workbenchStore.setPageSize(capturedFunctionCode, capturedParams, currentPageSize);
+    }
+  });
 }
 </script>
 

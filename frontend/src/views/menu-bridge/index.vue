@@ -42,6 +42,32 @@ const iframeLoaded = ref(false);
 const activeView = ref<'workbench' | 'legacy' | 'native'>('workbench');
 const currentFunctionCode = computed(() => String(meta.value.functionCode || '').trim());
 
+// 检查当前路由是否是激活的标签页（防止刷新时旧路由的数据加载）
+const isCurrentRouteActive = computed(() => {
+  // 如果 tabs 还没有初始化（长度为0），认为不是激活状态
+  if (tabStore.tabs.length === 0) {
+    return false;
+  }
+  
+  // 获取当前激活的标签页
+  const currentTab = tabStore.tabs.find(tab => tab.id === tabStore.activeTabId);
+  if (!currentTab) {
+    return false;
+  }
+  
+  // 如果当前标签页是首页，检查当前路由是否也是首页
+  if (currentTab.id === tabStore.homeTab?.id) {
+    return route.fullPath === currentTab.fullPath;
+  }
+  
+  // 如果当前标签页不是首页，检查当前路由的 functionCode 是否匹配
+  // 从标签页的 fullPath 中解析 functionCode
+  const currentFunctionCode = String(route.query.functionCode || '');
+  const tabUrl = new URL(currentTab.fullPath, window.location.origin);
+  const tabFunctionCode = String(tabUrl.searchParams.get('functionCode') || '');
+  return currentFunctionCode === tabFunctionCode;
+});
+
 // 原生 Vue 组件映射表 - 功能编码 -> 组件路径
 const nativeComponentMap: Record<string, any> = {
   // 1010 部门管理
@@ -161,13 +187,20 @@ function handleIframeLoad() {
           </KeepAlive>
         </template>
 
-        <!-- 通用查询工作台 -->
-        <GenericQueryWorkbench
-          v-else-if="activeView === 'workbench'"
-          :meta="meta"
-          :native-only="isNativeOnlyFunction"
-          :dynamic-like="false"
-        />
+        <!-- 通用查询工作台 - 使用 KeepAlive 缓存组件，避免数据互相干扰 -->
+        <KeepAlive v-else-if="activeView === 'workbench' && meta.functionCode && isCurrentRouteActive">
+          <GenericQueryWorkbench
+            :key="meta.functionCode"
+            :meta="meta"
+            :native-only="isNativeOnlyFunction"
+            :dynamic-like="false"
+          />
+        </KeepAlive>
+
+        <!-- 当路由不匹配时显示空内容（防止显示旧内容） -->
+        <div v-else-if="activeView === 'workbench' && meta.functionCode && !isCurrentRouteActive" class="empty-content">
+          <!-- 空内容，等待路由匹配 -->
+        </div>
 
         <!-- iframe 旧版页面 -->
         <div v-else-if="legacyUrl && !isNativeOnlyFunction" class="iframe-shell">

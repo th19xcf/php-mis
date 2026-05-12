@@ -28,6 +28,9 @@ const isPCFlag = isPC();
 
 const TAB_DATA_ID = 'data-tab-id';
 const MIDDLE_MOUSE_BUTTON = 1;
+
+// 标志：是否在初始化跳转中，用于防止跳转时自动添加 tab
+const isInitNavigating = ref(false);
 const RIGHT_MOUSE_BUTTON = 2;
 
 type TabNamedNodeMap = NamedNodeMap & {
@@ -163,7 +166,10 @@ function init() {
   tabStore.initTabStore(route);
   // 如果当前路由不是首页，强制跳转到首页
   if (route.fullPath !== tabStore.homeTab?.fullPath) {
-    routerInstance.replace(tabStore.homeTab?.fullPath || '/');
+    isInitNavigating.value = true;
+    routerInstance.replace(tabStore.homeTab?.fullPath || '/').finally(() => {
+      isInitNavigating.value = false;
+    });
   }
 }
 
@@ -175,6 +181,10 @@ function removeFocus() {
 watch(
   () => route.fullPath,
   () => {
+    // 如果是初始化跳转，不添加 tab
+    if (isInitNavigating.value) {
+      return;
+    }
     tabStore.addTab(route);
   }
 );
