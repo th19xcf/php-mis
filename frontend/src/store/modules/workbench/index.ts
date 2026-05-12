@@ -8,6 +8,22 @@ export interface WorkbenchCacheItem {
   isDataLoaded: boolean;
   filterModel: any;
   columnState: any;
+  // 新增状态字段
+  page: number;
+  pageSize: number;
+  selectedRows: any[];
+  visibleColumns: string[];
+  pinColumns: string[];
+  // UI 状态
+  uiState: {
+    conditionVisible: boolean;
+    fieldColumnVisible: boolean;
+    pinColumnVisible: boolean;
+    quickKeyword: string;
+    selectedField: string;
+    selectedOperator: string;
+    selectedValue: string;
+  };
   timestamp: number;
 }
 
@@ -36,6 +52,21 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       isDataLoaded: data.isDataLoaded ?? existing?.isDataLoaded ?? false,
       filterModel: data.filterModel ?? existing?.filterModel ?? null,
       columnState: data.columnState ?? existing?.columnState ?? null,
+      // 新增字段
+      page: data.page ?? existing?.page ?? 1,
+      pageSize: data.pageSize ?? existing?.pageSize ?? 500,
+      selectedRows: data.selectedRows ?? existing?.selectedRows ?? [],
+      visibleColumns: data.visibleColumns ?? existing?.visibleColumns ?? [],
+      pinColumns: data.pinColumns ?? existing?.pinColumns ?? [],
+      uiState: data.uiState ?? existing?.uiState ?? {
+        conditionVisible: false,
+        fieldColumnVisible: false,
+        pinColumnVisible: false,
+        quickKeyword: '',
+        selectedField: '',
+        selectedOperator: 'contains',
+        selectedValue: ''
+      },
       timestamp: Date.now()
     });
   }
@@ -76,6 +107,20 @@ export const useWorkbenchStore = defineStore('workbench', () => {
         isDataLoaded: false,
         filterModel,
         columnState: null,
+        page: 1,
+        pageSize: 500,
+        selectedRows: [],
+        visibleColumns: [],
+        pinColumns: [],
+        uiState: {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: ''
+        },
         timestamp: Date.now()
       });
     }
@@ -111,6 +156,20 @@ export const useWorkbenchStore = defineStore('workbench', () => {
         isDataLoaded: false,
         filterModel: null,
         columnState,
+        page: 1,
+        pageSize: 500,
+        selectedRows: [],
+        visibleColumns: [],
+        pinColumns: [],
+        uiState: {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: ''
+        },
         timestamp: Date.now()
       });
     }
@@ -122,6 +181,234 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     if (existing) {
       existing.columnState = null;
       existing.timestamp = Date.now();
+    }
+  }
+
+  // 分页状态
+  function getPage(functionCode: string, params: string): number {
+    return cache.value.get(getCacheKey(functionCode, params))?.page ?? 1;
+  }
+
+  function setPage(functionCode: string, params: string, page: number) {
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.page = page;
+      existing.timestamp = Date.now();
+    } else {
+      cache.value.set(key, {
+        pageMeta: null,
+        serverRows: [],
+        total: 0,
+        isDataLoaded: false,
+        filterModel: null,
+        columnState: null,
+        page,
+        pageSize: 500,
+        selectedRows: [],
+        visibleColumns: [],
+        pinColumns: [],
+        uiState: {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: ''
+        },
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  function getPageSize(functionCode: string, params: string): number {
+    return cache.value.get(getCacheKey(functionCode, params))?.pageSize ?? 500;
+  }
+
+  function setPageSize(functionCode: string, params: string, pageSize: number) {
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.pageSize = pageSize;
+      existing.timestamp = Date.now();
+    } else {
+      cache.value.set(key, {
+        pageMeta: null,
+        serverRows: [],
+        total: 0,
+        isDataLoaded: false,
+        filterModel: null,
+        columnState: null,
+        page: 1,
+        pageSize,
+        selectedRows: [],
+        visibleColumns: [],
+        pinColumns: [],
+        uiState: {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: ''
+        },
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  // 行选择状态
+  function getSelectedRows(functionCode: string, params: string): any[] {
+    return cache.value.get(getCacheKey(functionCode, params))?.selectedRows ?? [];
+  }
+
+  function setSelectedRows(functionCode: string, params: string, selectedRows: any[]) {
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.selectedRows = selectedRows;
+      existing.timestamp = Date.now();
+    } else {
+      cache.value.set(key, {
+        pageMeta: null,
+        serverRows: [],
+        total: 0,
+        isDataLoaded: false,
+        filterModel: null,
+        columnState: null,
+        page: 1,
+        pageSize: 500,
+        selectedRows,
+        visibleColumns: [],
+        pinColumns: [],
+        uiState: {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: ''
+        },
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  // 字段选择状态
+  function getVisibleColumns(functionCode: string, params: string): string[] {
+    return cache.value.get(getCacheKey(functionCode, params))?.visibleColumns ?? [];
+  }
+
+  function setVisibleColumns(functionCode: string, params: string, visibleColumns: string[]) {
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.visibleColumns = visibleColumns;
+      existing.timestamp = Date.now();
+    } else {
+      cache.value.set(key, {
+        pageMeta: null,
+        serverRows: [],
+        total: 0,
+        isDataLoaded: false,
+        filterModel: null,
+        columnState: null,
+        page: 1,
+        pageSize: 500,
+        selectedRows: [],
+        visibleColumns,
+        pinColumns: [],
+        uiState: {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: ''
+        },
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  // 固定列状态
+  function getPinColumns(functionCode: string, params: string): string[] {
+    return cache.value.get(getCacheKey(functionCode, params))?.pinColumns ?? [];
+  }
+
+  function setPinColumns(functionCode: string, params: string, pinColumns: string[]) {
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.pinColumns = pinColumns;
+      existing.timestamp = Date.now();
+    } else {
+      cache.value.set(key, {
+        pageMeta: null,
+        serverRows: [],
+        total: 0,
+        isDataLoaded: false,
+        filterModel: null,
+        columnState: null,
+        page: 1,
+        pageSize: 500,
+        selectedRows: [],
+        visibleColumns: [],
+        pinColumns,
+        uiState: {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: ''
+        },
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  // UI 状态
+  function getUIState(functionCode: string, params: string): WorkbenchCacheItem['uiState'] | null {
+    return cache.value.get(getCacheKey(functionCode, params))?.uiState ?? null;
+  }
+
+  function setUIState(functionCode: string, params: string, uiState: Partial<WorkbenchCacheItem['uiState']>) {
+    const key = getCacheKey(functionCode, params);
+    const existing = cache.value.get(key);
+    if (existing) {
+      existing.uiState = { ...existing.uiState, ...uiState };
+      existing.timestamp = Date.now();
+    } else {
+      cache.value.set(key, {
+        pageMeta: null,
+        serverRows: [],
+        total: 0,
+        isDataLoaded: false,
+        filterModel: null,
+        columnState: null,
+        page: 1,
+        pageSize: 500,
+        selectedRows: [],
+        visibleColumns: [],
+        pinColumns: [],
+        uiState: {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: '',
+          ...uiState
+        },
+        timestamp: Date.now()
+      });
     }
   }
 
@@ -137,6 +424,18 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     clearFilterModel,
     getColumnState,
     setColumnState,
-    clearColumnState
+    clearColumnState,
+    getPage,
+    setPage,
+    getPageSize,
+    setPageSize,
+    getSelectedRows,
+    setSelectedRows,
+    getVisibleColumns,
+    setVisibleColumns,
+    getPinColumns,
+    setPinColumns,
+    getUIState,
+    setUIState
   };
 });
