@@ -3,14 +3,14 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
+use App\Libraries\JwtTokenService;
 use App\Models\AuthModel;
 use App\Models\Mcommon;
-use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
 
 class Auth extends BaseController
 {
     private AuthModel $authModel;
+    private JwtTokenService $jwtTokenService;
 
     /**
      * 初始化认证控制器并装载认证模型。
@@ -18,6 +18,7 @@ class Auth extends BaseController
     public function __construct()
     {
         $this->authModel = new AuthModel();
+        $this->jwtTokenService = new JwtTokenService();
     }
 
     /**
@@ -86,7 +87,7 @@ class Auth extends BaseController
      */
     public function getUserInfo()
     {
-        $token = $this->getBearerToken();
+        $token = $this->jwtTokenService->extractBearerToken($this->request->getHeaderLine('Authorization'));
 
         if (!$token) {
             return $this->response->setJSON([
@@ -96,7 +97,7 @@ class Auth extends BaseController
         }
 
         try {
-            $decoded = JWT::decode($token, new Key($this->getJwtSecret(), 'HS256'));
+            $decoded = $this->jwtTokenService->decode($token);
 
             if (!empty($decoded->isDebug)) {
                 return $this->response->setJSON([
@@ -179,7 +180,7 @@ class Auth extends BaseController
         }
 
         try {
-            $decoded = JWT::decode($refreshToken, new Key($this->getJwtSecret(), 'HS256'));
+            $decoded = $this->jwtTokenService->decode($refreshToken);
 
             $tokenWorkId = isset($decoded->workId) ? trim((string) $decoded->workId) : '';
             $tokenRegion = isset($decoded->region) ? trim((string) $decoded->region) : '';
@@ -251,7 +252,7 @@ class Auth extends BaseController
             $payload['debugButtons'] = $user['debug_buttons'] ?? [];
         }
 
-        return JWT::encode($payload, $this->getJwtSecret(), 'HS256');
+        return $this->jwtTokenService->encode($payload);
     }
 
     /**
@@ -487,25 +488,4 @@ class Auth extends BaseController
         ]);
     }
 
-    /**
-     * 从 Authorization 头中提取 Bearer Token。
-     */
-    private function getBearerToken(): ?string
-    {
-        $header = $this->request->getHeaderLine('Authorization');
-
-        if ($header === '' || strpos($header, 'Bearer ') !== 0) {
-            return null;
-        }
-
-        return substr($header, 7);
-    }
-
-    /**
-     * 获取 JWT 签名密钥（优先环境变量）。
-     */
-    private function getJwtSecret(): string
-    {
-        return (string) env('JWT_SECRET', 'mis-jwt-secret-key-dev-only-change-in-production');
-    }
 }

@@ -3,16 +3,19 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
+use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 
 class Workbench extends BaseController
 {
     private Mcommon $common;
+    private SessionUserContext $userContext;
 
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
         $this->common = new Mcommon();
+        $this->userContext = new SessionUserContext();
     }
 
     public function page(string $functionCode = '')
@@ -64,14 +67,10 @@ class Workbench extends BaseController
             throw new \RuntimeException('功能编码不能为空');
         }
 
-        $session = \Config\Services::session();
-        $companyId = trim((string) $session->get('company_id'));
-        $userWorkId = trim((string) $session->get('user_workid'));
-        $userPassword = (string) $session->get('user_pswd');
-
-        if ($companyId === '' || $userWorkId === '') {
-            throw new \RuntimeException('登录态已失效，请重新登录');
-        }
+        $user = $this->userContext->requireLogin();
+        $companyId = $user['companyId'];
+        $userWorkId = $user['workId'];
+        $userPassword = $user['password'];
 
         $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $userPassword);
         $functionAuth = $this->loadFunctionAuthorization($functionCode, $userAuth);

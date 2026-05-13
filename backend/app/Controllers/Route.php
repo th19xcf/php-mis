@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Libraries\SessionUserContext;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
 use Psr\Log\LoggerInterface;
@@ -9,9 +10,12 @@ use App\Models\Mcommon;
 
 class Route extends BaseController
 {
+    private SessionUserContext $userContext;
+
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
+        $this->userContext = new SessionUserContext();
     }
 
     //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
@@ -38,20 +42,21 @@ class Route extends BaseController
         }
 
         // 从session中取出数据
-        $session = \Config\Services::session();
-        $company_id = $session->get('company_id');
-        $user_workid = $session->get('user_workid');
-        $user_pswd = $session->get('user_pswd');
-
-        log_message('error', 'Session data - company_id: ' . ($company_id ?: 'empty') . ', user_workid: ' . ($user_workid ?: 'empty'));
-
-        if (empty($company_id) || empty($user_workid)) {
+        try {
+            $user = $this->userContext->requireLogin();
+        } catch (\RuntimeException $e) {
             return $this->response->setJSON([
                 'code' => '4011',
                 'msg' => 'Session expired, please login again',
                 'data' => null
             ]);
         }
+
+        $company_id = $user['companyId'];
+        $user_workid = $user['workId'];
+        $user_pswd = $user['password'];
+
+        log_message('error', 'Session data - company_id: ' . ($company_id ?: 'empty') . ', user_workid: ' . ($user_workid ?: 'empty'));
 
         try {
             $model = new Mcommon();

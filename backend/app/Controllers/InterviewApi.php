@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
+use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
@@ -11,18 +12,19 @@ use Psr\Log\LoggerInterface;
 class InterviewApi extends BaseController
 {
     protected $model;
+    private SessionUserContext $userContext;
 
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
         $this->model = new Mcommon();
+        $this->userContext = new SessionUserContext();
     }
 
     public function tree()
     {
-        $session = \Config\Services::session();
         $menuId = $this->request->getGet('menu_id');
-        $locationAuthzCond = $session->get($menuId . '-location_authz_cond');
+        $locationAuthzCond = $this->userContext->getSessionValue($menuId . '-location_authz_cond');
         
         if (empty($locationAuthzCond)) {
             $locationAuthzCond = '1=1';
@@ -109,8 +111,7 @@ class InterviewApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $fields = [];
         $values = [];
@@ -164,8 +165,7 @@ class InterviewApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guid = $data['guid'];
         $updateFields = [];
@@ -224,8 +224,7 @@ class InterviewApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
 
@@ -278,8 +277,7 @@ class InterviewApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
 
@@ -343,8 +341,7 @@ class InterviewApi extends BaseController
 
     public function options()
     {
-        $session = \Config\Services::session();
-        $locationAuthz = $session->get('user_location_authz') ?: '';
+        $locationAuthz = $this->userContext->getSessionUser()['locationAuthz'] ?: '';
 
         $regionSql = sprintf('
             select distinct 对象值 as value, 对象值 as label

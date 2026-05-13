@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
+use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
@@ -11,11 +12,13 @@ use Psr\Log\LoggerInterface;
 class DeptApi extends BaseController
 {
     protected $model;
+    private SessionUserContext $userContext;
 
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
         $this->model = new Mcommon();
+        $this->userContext = new SessionUserContext();
     }
 
     /**
@@ -23,8 +26,7 @@ class DeptApi extends BaseController
      */
     public function tree()
     {
-        $session = \Config\Services::session();
-        $deptAuthz = $session->get('dept_authz') ?: '';
+        $deptAuthz = $this->userContext->getSessionUser()['deptAuthz'] ?: '';
 
         $sql = sprintf('
             SELECT GUID, 部门编码, 部门名称, 部门级别, 上级部门编码, 负责人, 有无下级部门, 属地
@@ -115,8 +117,7 @@ class DeptApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         // 查询上级部门信息
         $parentSql = sprintf('
@@ -218,8 +219,7 @@ class DeptApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guid = $data['guid'];
         $effectiveDate = $data['effectiveDate'] ?? date('Y-m-d');
@@ -333,8 +333,7 @@ class DeptApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $deleteSql = sprintf('
             UPDATE def_dept

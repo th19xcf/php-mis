@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
+use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
@@ -11,11 +12,13 @@ use Psr\Log\LoggerInterface;
 class ContractApi extends BaseController
 {
     protected $model;
+    private SessionUserContext $userContext;
 
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
         $this->model = new Mcommon();
+        $this->userContext = new SessionUserContext();
     }
 
     /**
@@ -122,9 +125,9 @@ class ContractApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
-        $userName = $session->get('user_name') ?? $userWorkid;
+        $sessionUser = $this->userContext->getSessionUser();
+        $userWorkid = $sessionUser['workId'] ?: 'system';
+        $userName = $sessionUser['userName'] ?: $userWorkid;
 
         $合同编号 = $this->generateContractNo();
 
@@ -207,8 +210,7 @@ class ContractApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guid = $data['GUID'];
 
@@ -356,8 +358,7 @@ class ContractApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $deleteSql = sprintf('
             UPDATE def_contract_master
@@ -428,9 +429,9 @@ class ContractApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
-        $userName = $session->get('user_name') ?? $userWorkid;
+        $sessionUser = $this->userContext->getSessionUser();
+        $userWorkid = $sessionUser['workId'] ?: 'system';
+        $userName = $sessionUser['userName'] ?: $userWorkid;
 
         $updateSql = sprintf('
             UPDATE def_contract_master
@@ -513,9 +514,9 @@ class ContractApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
-        $userName = $session->get('user_name') ?? $userWorkid;
+        $sessionUser = $this->userContext->getSessionUser();
+        $userWorkid = $sessionUser['workId'] ?: 'system';
+        $userName = $sessionUser['userName'] ?: $userWorkid;
 
         $updateSql = sprintf('
             UPDATE def_contract_master
@@ -598,9 +599,9 @@ class ContractApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
-        $userName = $session->get('user_name') ?? $userWorkid;
+        $sessionUser = $this->userContext->getSessionUser();
+        $userWorkid = $sessionUser['workId'] ?: 'system';
+        $userName = $sessionUser['userName'] ?: $userWorkid;
 
         $updateSql = sprintf('
             UPDATE def_contract_master
@@ -675,9 +676,9 @@ class ContractApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
-        $userName = $session->get('user_name') ?? $userWorkid;
+        $sessionUser = $this->userContext->getSessionUser();
+        $userWorkid = $sessionUser['workId'] ?: 'system';
+        $userName = $sessionUser['userName'] ?: $userWorkid;
 
         $updateSql = sprintf('
             UPDATE def_contract_master
@@ -764,8 +765,7 @@ class ContractApi extends BaseController
             ]);
         }
 
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
+        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $updateSql = sprintf('
             UPDATE def_contract_master
@@ -800,8 +800,7 @@ class ContractApi extends BaseController
      */
     public function options()
     {
-        $session = \Config\Services::session();
-        $companyId = $session->get('company_id');
+        $companyId = $this->userContext->getSessionUser()['companyId'];
 
         $合同类型Sql = sprintf('
             SELECT DISTINCT 类型名称 as value, 类型名称 as label
@@ -887,8 +886,7 @@ class ContractApi extends BaseController
      */
     public function stats()
     {
-        $session = \Config\Services::session();
-        $companyId = $session->get('company_id');
+        $companyId = $this->userContext->getSessionUser()['companyId'];
 
         $where = sprintf('删除标识 = "0" AND 有效标识 = "1"');
 

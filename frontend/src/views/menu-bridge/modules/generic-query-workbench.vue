@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, h, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue';
+import { computed, ref, h, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -33,22 +33,18 @@ import * as XLSX from 'xlsx';
 import {
   fetchWorkbenchPage,
   fetchWorkbenchQuery,
-  fetchWorkbenchDrill,
-  fetchImportColumns,
-  importData,
-  fetchAddFields,
-  addRow,
-  fetchUpdateFields,
-  updateRow,
-  batchUpdateRow,
-  deleteRow,
-  // fetchPopupData, // 暂时未使用
-  fetchPopupLevels,
-  fetchPopupLevelData
+  fetchWorkbenchDrill
 } from '@/service/api/workbench';
-import { fetchCommentFields, fetchCommentList, addComment } from '@/service/api/comment';
+import { useColorMark } from '@/hooks/business/use-color-mark';
+import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
+import { useWorkbenchDelete } from '@/hooks/business/use-workbench-delete';
+import { useWorkbenchEditForms } from '@/hooks/business/use-workbench-edit-forms';
+import { useWorkbenchImport } from '@/hooks/business/use-workbench-import';
+import { useWorkbenchPopupCascader } from '@/hooks/business/use-workbench-popup-cascader';
+import { useToolbarScroll } from '@/hooks/business/use-toolbar-scroll';
+import { useWorkbenchComment } from '@/hooks/business/use-workbench-comment';
+import { useWorkbenchGridState } from '@/hooks/business/use-workbench-grid-state';
 import { useThemeStore } from '@/store/modules/theme';
-import { useWorkbenchStore } from '@/store/modules/workbench';
 
 const router = useRouter();
 
@@ -113,10 +109,6 @@ const pageSize = ref<number>(PAGE_SIZE_OPTIONS[0]);
 
 const quickKeyword = ref('');
 const conditionVisible = ref(false);
-const fieldColumnVisible = ref(false);
-const visibleFieldColumns = ref<string[]>([]);
-const pinColumnVisible = ref(false);
-const pinTargetFields = ref<string[]>([]);
 const selectedField = ref('');
 const selectedOperator = ref<ConditionOperator>('contains');
 const selectedValue = ref('');
@@ -193,106 +185,55 @@ watch(
 );
 
 // 颜色标注相关
-const colorMarkVisible = ref(false);
-const colorMarkField1 = ref('');
-const colorMarkOperator = ref('大于');
-const colorMarkField2 = ref('');
-const colorMarkColor = ref('白底红字');
-const colorMarkConfig = ref<{
-  field1: string;
-  operator: string;
-  field2: string;
-  style: Record<string, string>;
-} | null>(null);
 
 // 批注相关
-const addCommentVisible = ref(false);
-const viewCommentVisible = ref(false);
-const commentFields = ref<Api.Comment.FieldInfo[]>([]);
-const commentKeyFields = ref<string>('');
-const commentList = ref<Api.Comment.CommentRecord[]>([]);
-const commentFormData = ref<Record<string, string>>({});
-const commentLoading = ref(false);
-// 存储从主表带过来的关键字段值（使用全局变量确保数据不丢失）
-const commentKeyFieldValues = ref<Record<string, string | number>>({});
-// 备注模块名称
-const commentModuleName = ref<string>('');
-// 备注说明内容
-const commentRemark = ref<string>('');
 
-// 导入相关状态
-const importVisible = ref(false);
-const importLoading = ref(false);
-const importFile = ref<File | null>(null);
-const importPreviewData = ref<any[]>([]);
-const importError = ref<string>('');
-const importSuccess = ref<{ count: number; message: string } | null>(null);
-const fileInputRef = ref<HTMLInputElement | null>(null);
-
-// 新增相关状态
-const addVisible = ref(false);
-const addLoading = ref(false);
-const addFormData = ref<Record<string, any>>({});
-const addFormFields = ref<any[]>([]);
-const addError = ref<string>('');
-const addSuccess = ref<string>('');
-
-// 弹窗选择相关状态（懒加载级联选择）
-const popupVisible = ref(false);
-const popupLoading = ref(false);
-const popupField = ref<any>(null);
-const popupLevels = ref<Api.Workbench.PopupLevel[]>([]);
-const popupMaxLevel = ref(1);
-const popupCascaderOptions = ref<any[]>([]);
-const popupSelectedValue = ref<string | null>(null);
-
-// 计算属性：导入预览表格列定义
-const importPreviewColumns = computed(() => {
-  if (importPreviewData.value.length === 0) return [];
-
-  const keys = Object.keys(importPreviewData.value[0] || {}).filter(key => key !== '_rowIndex');
-
-  return keys.map(key => {
-    // 计算列宽：根据表头长度和数据内容长度
-    const headerLength = key.length;
-    const maxDataLength = importPreviewData.value.slice(0, 10).reduce((max, row) => {
-      const valueLength = String(row[key] ?? '').length;
-      return Math.max(max, valueLength);
-    }, 0);
-
-    // 基础宽度 + 根据内容调整
-    const baseWidth = Math.max(headerLength * 14 + 20, 80);
-    const contentWidth = Math.min(maxDataLength * 8 + 20, 300); // 最大300px
-    const width = Math.max(baseWidth, contentWidth);
-
-    return {
-      title: key,
-      key,
-      width,
-      minWidth: 80,
-      maxWidth: 400,
-      resizable: true,
-      ellipsis: { tooltip: true }
-    };
-  });
+const {
+  importVisible,
+  importLoading,
+  importPreviewData,
+  importError,
+  importSuccess,
+  fileInputRef,
+  importPreviewColumns,
+  handleImport,
+  triggerFileInput,
+  handleFileSelect,
+  handleDrop,
+  confirmImport,
+  downloadImportTemplate,
+  resetImportPreview
+} = useWorkbenchImport({
+  gridApi,
+  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  reloadPage: () => loadPage(),
+  notify: (type, message) => msg(type, message)
 });
 
-// 计算属性：获取关键字段列表（用于模板显示）
-const keyFieldList = computed(() => {
-  return commentFields.value.filter(f => f.isKeyField);
-});
-
-// 计算属性：关键字段值的数量
-const keyFieldCount = computed(() => {
-  return Object.keys(commentKeyFieldValues.value).length;
+const {
+  addCommentVisible,
+  viewCommentVisible,
+  commentFields,
+  commentList,
+  commentFormData,
+  commentLoading,
+  commentModuleName,
+  commentRemark,
+  keyFieldList,
+  keyFieldCount,
+  handleOpenAddComment,
+  handleOpenViewComment,
+  handleSubmitComment
+} = useWorkbenchComment({
+  gridApi,
+  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getCommentModuleName: () => pageMeta.value?.commentModule || String(props.meta.functionCode || '').trim(),
+  notify: (type, message, data) => msg(type, message, data)
 });
 
 // 工具栏滚动相关
-const toolbarScrollRef = ref<HTMLDivElement | null>(null);
+const { toolbarScrollRef, showLeftArrow, showRightArrow, checkScrollPosition, scrollToolbar } = useToolbarScroll();
 const gridShellRef = ref<HTMLDivElement | null>(null);
-const showLeftArrow = ref(false);
-const showRightArrow = ref(false);
-let resizeObserver: ResizeObserver | null = null;
 
 function isGridShellVisible() {
   if (!gridShellRef.value) return false;
@@ -316,62 +257,6 @@ function hasSuspiciousNarrowColumnState(columnState: any[]) {
 
   return narrowCount / dataColumns.length >= 0.7;
 }
-
-// 检查滚动位置，控制箭头显示
-function checkScrollPosition() {
-  nextTick(() => {
-    if (!toolbarScrollRef.value) return;
-    const { scrollWidth, clientWidth } = toolbarScrollRef.value;
-    // 只有当内容真正溢出时才显示箭头
-    const hasOverflow = scrollWidth > clientWidth + 5; // 增加阈值，避免微小差异
-
-    // 当内容溢出时，左右箭头一直可见
-    showLeftArrow.value = hasOverflow;
-    showRightArrow.value = hasOverflow;
-  });
-}
-
-// 滚动工具栏
-function scrollToolbar(direction: 'left' | 'right') {
-  if (!toolbarScrollRef.value) return;
-  const scrollAmount = 150; // 每次滚动距离
-  const targetScrollLeft =
-    direction === 'left'
-      ? toolbarScrollRef.value.scrollLeft - scrollAmount
-      : toolbarScrollRef.value.scrollLeft + scrollAmount;
-
-  toolbarScrollRef.value.scrollTo({
-    left: targetScrollLeft,
-    behavior: 'smooth'
-  });
-}
-
-// 初始化时检查滚动状态
-onMounted(() => {
-  // 初始检查，延迟确保 DOM 渲染完成
-  setTimeout(() => {
-    checkScrollPosition();
-  }, 100);
-
-  // 监听窗口大小变化
-  window.addEventListener('resize', checkScrollPosition);
-
-  // 使用 ResizeObserver 监听容器尺寸变化
-  if (toolbarScrollRef.value && typeof ResizeObserver !== 'undefined') {
-    resizeObserver = new ResizeObserver(() => {
-      checkScrollPosition();
-    });
-    resizeObserver.observe(toolbarScrollRef.value);
-  }
-});
-
-onUnmounted(() => {
-  window.removeEventListener('resize', checkScrollPosition);
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
-  }
-});
 
 function normalizePageSize(size?: number) {
   return PAGE_SIZE_OPTIONS.includes(size as (typeof PAGE_SIZE_OPTIONS)[number]) ? size! : PAGE_SIZE_OPTIONS[0];
@@ -409,6 +294,33 @@ function parseStyleString(styleStr: string): Record<string, string> {
   }
   return Object.keys(styleObj).length > 0 ? styleObj : defaultStyle;
 }
+
+// 可颜色标注的列
+const colorMarkEnabledColumns = computed(() => {
+  return (pageMeta.value?.columns || [])
+    .filter(column => column.colorMarkEnabled)
+    .map(column => ({ label: column.title || column.field, value: column.field }));
+});
+
+// 是否有可颜色标注的列
+const hasColorMarkEnabledColumns = computed(() => colorMarkEnabledColumns.value.length > 0);
+
+const {
+  colorMarkVisible,
+  colorMarkField1,
+  colorMarkOperator,
+  colorMarkField2,
+  colorMarkColor,
+  colorMarkConfig,
+  resetColorMarkState,
+  handleOpenColorMark,
+  handleApplyColorMark,
+  handleClearColorMark
+} = useColorMark({
+  colorMarkEnabledColumns,
+  gridApi,
+  notify: (type, message) => msg(type, message)
+});
 
 const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
   return (pageMeta.value?.columns || []).map(column => {
@@ -500,16 +412,6 @@ const filterableFields = computed(() => {
   return (pageMeta.value?.conditions || []).filter(item => item.filterable).map(item => item.fieldKey);
 });
 
-// 可颜色标注的列
-const colorMarkEnabledColumns = computed(() => {
-  return (pageMeta.value?.columns || [])
-    .filter(column => column.colorMarkEnabled)
-    .map(column => ({ label: column.title || column.field, value: column.field }));
-});
-
-// 是否有可颜色标注的列
-const hasColorMarkEnabledColumns = computed(() => colorMarkEnabledColumns.value.length > 0);
-
 const pinColumnOptions = computed(() => {
   const columns = gridApi.value?.getColumns() ?? [];
 
@@ -577,250 +479,91 @@ const filteredRows = computed(() => {
   return rows;
 });
 
-const rawWorkbenchStore = useWorkbenchStore();
+const {
+  fieldColumnVisible,
+  visibleFieldColumns,
+  pinColumnVisible,
+  pinTargetFields,
+  handleOpenFieldColumn,
+  handleSelectAllFieldColumns,
+  handleClearFieldColumns,
+  handleFieldSelectionChange,
+  handleOpenPinColumn,
+  handleClearPinColumns,
+  handlePinSelectionChange
+} = useWorkbenchColumnSettings({
+  gridApi,
+  fieldColumnOptions,
+  pinColumnOptions
+});
 
 function getCacheScopeKey() {
   return String(props.cacheScopeKey || '').trim();
 }
 
-const workbenchStore = {
-  getCache: (functionCode: string, params: string) => rawWorkbenchStore.getCache(functionCode, params, getCacheScopeKey()),
-  setCache: (functionCode: string, params: string, data: Partial<any>) =>
-    rawWorkbenchStore.setCache(functionCode, params, data, getCacheScopeKey()),
-  clearCache: (functionCode: string, params: string) => rawWorkbenchStore.clearCache(functionCode, params, getCacheScopeKey()),
-  getFilterModel: (functionCode: string, params: string) =>
-    rawWorkbenchStore.getFilterModel(functionCode, params, getCacheScopeKey()),
-  setFilterModel: (functionCode: string, params: string, filterModel: any) =>
-    rawWorkbenchStore.setFilterModel(functionCode, params, filterModel, getCacheScopeKey()),
-  clearFilterModel: (functionCode: string, params: string) =>
-    rawWorkbenchStore.clearFilterModel(functionCode, params, getCacheScopeKey()),
-  getColumnState: (functionCode: string, params: string) =>
-    rawWorkbenchStore.getColumnState(functionCode, params, getCacheScopeKey()),
-  setColumnState: (functionCode: string, params: string, columnState: any) =>
-    rawWorkbenchStore.setColumnState(functionCode, params, columnState, getCacheScopeKey()),
-  clearColumnState: (functionCode: string, params: string) =>
-    rawWorkbenchStore.clearColumnState(functionCode, params, getCacheScopeKey()),
-  getPage: (functionCode: string, params: string) => rawWorkbenchStore.getPage(functionCode, params, getCacheScopeKey()),
-  setPage: (functionCode: string, params: string, currentPage: number) =>
-    rawWorkbenchStore.setPage(functionCode, params, currentPage, getCacheScopeKey()),
-  getPageSize: (functionCode: string, params: string) =>
-    rawWorkbenchStore.getPageSize(functionCode, params, getCacheScopeKey()),
-  setPageSize: (functionCode: string, params: string, currentPageSize: number) =>
-    rawWorkbenchStore.setPageSize(functionCode, params, currentPageSize, getCacheScopeKey()),
-  getSelectedRows: (functionCode: string, params: string) =>
-    rawWorkbenchStore.getSelectedRows(functionCode, params, getCacheScopeKey()),
-  setSelectedRows: (functionCode: string, params: string, selectedRows: any[]) =>
-    rawWorkbenchStore.setSelectedRows(functionCode, params, selectedRows, getCacheScopeKey()),
-  getVisibleColumns: (functionCode: string, params: string) =>
-    rawWorkbenchStore.getVisibleColumns(functionCode, params, getCacheScopeKey()),
-  setVisibleColumns: (functionCode: string, params: string, visibleColumns: string[]) =>
-    rawWorkbenchStore.setVisibleColumns(functionCode, params, visibleColumns, getCacheScopeKey()),
-  getPinColumns: (functionCode: string, params: string) =>
-    rawWorkbenchStore.getPinColumns(functionCode, params, getCacheScopeKey()),
-  setPinColumns: (functionCode: string, params: string, pinColumns: string[]) =>
-    rawWorkbenchStore.setPinColumns(functionCode, params, pinColumns, getCacheScopeKey()),
-  getUIState: (functionCode: string, params: string) =>
-    rawWorkbenchStore.getUIState(functionCode, params, getCacheScopeKey()),
-  setUIState: (functionCode: string, params: string, uiState: any) =>
-    rawWorkbenchStore.setUIState(functionCode, params, uiState, getCacheScopeKey())
-};
-
-onActivated(() => {
-  if (gridApi.value && !gridApi.value.isDestroyed()) {
-    const functionCode = String(props.meta.functionCode || '').trim();
-    const params = String(props.meta.params || '').trim();
-
-    // 恢复 UI 状态
-    const cachedUIState = workbenchStore.getUIState(functionCode, params);
-    if (cachedUIState) {
-      conditionVisible.value = cachedUIState.conditionVisible;
-      fieldColumnVisible.value = cachedUIState.fieldColumnVisible;
-      pinColumnVisible.value = cachedUIState.pinColumnVisible;
-      quickKeyword.value = cachedUIState.quickKeyword;
-      selectedField.value = cachedUIState.selectedField;
-      selectedOperator.value = cachedUIState.selectedOperator as ConditionOperator;
-      selectedValue.value = cachedUIState.selectedValue;
-    }
-
-    // 恢复筛选条件
-    const cachedFilterModel = workbenchStore.getFilterModel(functionCode, params);
-    if (cachedFilterModel && Object.keys(cachedFilterModel).length > 0) {
-      isRestoringFilter.value = true;
-      nextTick(() => {
-        if (gridApi.value && !gridApi.value.isDestroyed()) {
-          gridApi.value.setFilterModel(cachedFilterModel);
-        }
-        isRestoringFilter.value = false;
-      });
-    }
-
-    // 恢复列状态（包括宽度、排序、固定列、显示/隐藏）
-    const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
-    console.log('[onActivated] Restoring column state for:', functionCode, 'state count:', cachedColumnState?.length);
-    if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
-      // 打印所有列的 hide 状态
-      console.log(
-        '[onActivated] Column hide states:',
-        cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-      );
-      // 检查是否有排序信息
-      const sortedColumns = cachedColumnState.filter((col: any) => col.sort);
-      console.log('[onActivated] Sorted columns in cache:', sortedColumns);
-
-      // 根据缓存的列状态更新 pageMeta 中的 hidden 属性
-      // 这样 gridColumns 计算属性会使用正确的 hide 值
-      if (pageMeta.value?.columns) {
-        console.log(
-          '[onActivated] pageMeta columns fields:',
-          pageMeta.value.columns.map(c => c.field)
-        );
-        console.log(
-          '[onActivated] cachedColumnState colIds:',
-          cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-        );
-
-        // 创建新的 columns 数组以触发响应式更新
-        pageMeta.value.columns = pageMeta.value.columns.map(column => {
-          const colState = cachedColumnState.find((c: any) => c.colId === column.field);
-          if (colState && colState.hide !== undefined) {
-            console.log(`[onActivated] Updating column ${column.field}: hidden = ${colState.hide}`);
-            return { ...column, hidden: colState.hide };
-          }
-          return column;
-        });
-        console.log('[onActivated] Updated pageMeta columns hidden state');
-      }
-
-      isRestoringColumnState.value = true;
-      nextTick(() => {
-        if (gridApi.value && !gridApi.value.isDestroyed()) {
-          console.log('[onActivated] Applying column state:', cachedColumnState);
-          gridApi.value.applyColumnState({ state: cachedColumnState, applyOrder: true });
-          // 应用后检查表格状态
-          const afterApply = gridApi.value.getColumnState();
-          const afterSorted = afterApply.filter((col: any) => col.sort);
-          console.log('[onActivated] Sorted columns after apply:', afterSorted);
-
-          // 恢复字段选择状态
-          const cachedVisibleColumns = workbenchStore.getVisibleColumns(functionCode, params);
-          if (cachedVisibleColumns.length > 0) {
-            visibleFieldColumns.value = cachedVisibleColumns;
-          }
-
-          // 恢复固定列状态
-          const cachedPinColumns = workbenchStore.getPinColumns(functionCode, params);
-          if (cachedPinColumns.length > 0) {
-            pinTargetFields.value = cachedPinColumns;
-          }
-        }
-        // 延迟重置标志，确保 ag-grid 完成所有状态应用和事件触发
-        setTimeout(() => {
-          isRestoringColumnState.value = false;
-          console.log('[onActivated] Column state restore completed for:', functionCode);
-        }, 500);
-      });
-    }
-
-    // 恢复分页状态
-    const cachedPage = workbenchStore.getPage(functionCode, params);
-    const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
-    if (cachedPage > 1 || cachedPageSize !== PAGE_SIZE_OPTIONS[0]) {
-      isRestoringPage.value = true;
-      page.value = cachedPage;
-      pageSize.value = cachedPageSize;
-      nextTick(() => {
-        isRestoringPage.value = false;
-      });
-    }
-
-    // 恢复行选择状态
-    const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
-    if (cachedSelectedRows.length > 0 && gridApi.value) {
-      isRestoringSelection.value = true;
-      nextTick(() => {
-        if (gridApi.value && !gridApi.value.isDestroyed()) {
-          // 根据行数据标识恢复选择状态
-          gridApi.value.forEachNode(node => {
-            const rowData = node.data;
-            if (!rowData) return;
-            const isSelected = cachedSelectedRows.some((cachedRow: any) => {
-              // 使用 GUID 或 id 字段进行匹配
-              return (rowData.GUID && cachedRow.GUID === rowData.GUID) || (rowData.id && cachedRow.id === rowData.id);
-            });
-            node.setSelected(isSelected);
-          });
-        }
-        isRestoringSelection.value = false;
-      });
-    }
-  }
+const { workbenchStore, registerGridPersistenceListeners } = useWorkbenchGridState({
+  getMeta: () => props.meta,
+  getCacheScopeKey,
+  gridApi,
+  pageMeta,
+  page,
+  pageSize,
+  defaultPageSize: PAGE_SIZE_OPTIONS[0],
+  conditionVisible,
+  fieldColumnVisible,
+  pinColumnVisible,
+  quickKeyword,
+  selectedField,
+  selectedOperator,
+  selectedValue,
+  visibleFieldColumns,
+  pinTargetFields,
+  isRestoringFilter,
+  isRestoringColumnState,
+  isRestoringSelection,
+  isRestoringPage,
+  isInitialLoading,
+  isGridShellVisible,
+  hasSuspiciousNarrowColumnState
 });
 
-// 组件失活时保存所有状态
-onDeactivated(() => {
-  const functionCode = String(props.meta.functionCode || '').trim();
-  const params = String(props.meta.params || '').trim();
-
-  if (!functionCode) return;
-
-  // 保存 UI 状态
-  workbenchStore.setUIState(functionCode, params, {
-    conditionVisible: conditionVisible.value,
-    fieldColumnVisible: fieldColumnVisible.value,
-    pinColumnVisible: pinColumnVisible.value,
-    quickKeyword: quickKeyword.value,
-    selectedField: selectedField.value,
-    selectedOperator: selectedOperator.value,
-    selectedValue: selectedValue.value
-  });
-
-  // 保存分页状态
-  workbenchStore.setPage(functionCode, params, page.value);
-  workbenchStore.setPageSize(functionCode, params, pageSize.value);
-
-  // 保存行选择状态
-  if (gridApi.value && !gridApi.value.isDestroyed()) {
-    const selectedRows = gridApi.value.getSelectedRows();
-    workbenchStore.setSelectedRows(functionCode, params, selectedRows);
-
-    // 保存列状态（包括 hide、width、sort、pinned 等）
-    const columnState = gridApi.value.getColumnState();
-    if (!isGridShellVisible()) {
-      console.log('[onDeactivated] Skip saving column state, grid shell is hidden for:', functionCode);
-    } else if (hasSuspiciousNarrowColumnState(columnState)) {
-      console.log('[onDeactivated] Skip suspicious narrow column state for:', functionCode);
-    } else if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-      console.log(
-        '[onDeactivated] Saving column state for:',
-        functionCode,
-        columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-      );
-      workbenchStore.setColumnState(functionCode, params, columnState);
-    }
-
-    // 保存字段选择状态（显示的列）
-    const allColumns = gridApi.value.getColumns();
-    if (allColumns) {
-      const visibleCols = allColumns
-        .filter(col => {
-          const colDef = col.getColDef();
-          return !colDef.hide && colDef.field;
-        })
-        .map(col => col.getColDef().field as string)
-        .filter((field): field is string => field !== undefined);
-      workbenchStore.setVisibleColumns(functionCode, params, visibleCols);
-
-      // 保存固定列状态
-      const pinnedCols = allColumns
-        .filter(col => {
-          const colDef = col.getColDef();
-          return colDef.pinned && colDef.field;
-        })
-        .map(col => col.getColDef().field as string)
-        .filter((field): field is string => field !== undefined);
-      workbenchStore.setPinColumns(functionCode, params, pinnedCols);
-    }
-  }
+const {
+  addVisible,
+  addLoading,
+  addFormData,
+  addFormFields,
+  addError,
+  addSuccess,
+  updateVisible,
+  updateLoading,
+  updateError,
+  updateSuccess,
+  updateFormData,
+  updateFormFields,
+  batchUpdateVisible,
+  batchUpdateLoading,
+  batchUpdateError,
+  batchUpdateSuccess,
+  batchUpdateFormData,
+  batchUpdateFormFields,
+  handleOpenAdd,
+  confirmAdd,
+  handleOpenUpdate,
+  confirmUpdate,
+  handleOpenBatchUpdate,
+  confirmBatchUpdate,
+  setEditFieldValue
+} = useWorkbenchEditForms({
+  gridApi,
+  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  refreshAfterMutation: () => {
+    const currentFunctionCode = String(props.meta.functionCode || '').trim();
+    const currentParams = String(props.meta.params || '').trim();
+    workbenchStore.clearCache(currentFunctionCode, currentParams);
+    isDataLoaded.value = false;
+    loadPage();
+  },
+  notify: (type, message) => msg(type, message)
 });
 
 async function loadPage() {
@@ -1145,11 +888,7 @@ async function handleRefresh() {
   selectedValue.value = '';
 
   // 重置颜色标注
-  colorMarkConfig.value = null;
-  colorMarkField1.value = colorMarkEnabledColumns.value[0]?.value || '';
-  colorMarkField2.value = colorMarkEnabledColumns.value[0]?.value || '';
-  colorMarkOperator.value = '大于';
-  colorMarkColor.value = '白底红字';
+  resetColorMarkState();
 
   // 重置字段选择（显示所有字段）
   visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
@@ -1208,11 +947,7 @@ function handleReset() {
   selectedValue.value = '';
 
   // 2. 清除颜色标注
-  colorMarkConfig.value = null;
-  colorMarkField1.value = colorMarkEnabledColumns.value[0]?.value || '';
-  colorMarkField2.value = colorMarkEnabledColumns.value[0]?.value || '';
-  colorMarkOperator.value = '大于';
-  colorMarkColor.value = '白底红字';
+  resetColorMarkState();
 
   // 3. 显示所有字段（取消隐藏）
   visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
@@ -1273,1005 +1008,49 @@ function handleOpenCondition() {
   conditionVisible.value = true;
 }
 
-function handleOpenFieldColumn() {
-  if (gridApi.value && !gridApi.value.isDestroyed()) {
-    const visibleFields = gridApi.value
-      .getColumnState()
-      .filter(item => item.colId !== 'ag-Grid-SelectionColumn' && item.hide !== true)
-      .map(item => String(item.colId));
-
-    visibleFieldColumns.value = visibleFields;
-  } else if (visibleFieldColumns.value.length === 0) {
-    visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
-  }
-
-  fieldColumnVisible.value = true;
-}
-
-function handleSelectAllFieldColumns() {
-  handleFieldSelectionChange(fieldColumnOptions.value.map(item => String(item.value)));
-}
-
-function handleClearFieldColumns() {
-  handleFieldSelectionChange([]);
-}
-
-function handleFieldSelectionChange(values: Array<string | number>) {
-  const normalizedValues = values.map(value => String(value));
-  visibleFieldColumns.value = normalizedValues;
-
-  if (!gridApi.value) {
-    return;
-  }
-
-  const allColumnFields = fieldColumnOptions.value.map(item => String(item.value));
-  const selectedSet = new Set(normalizedValues);
-  const toShow = allColumnFields.filter(field => selectedSet.has(field));
-  const toHide = allColumnFields.filter(field => !selectedSet.has(field));
-
-  if (toShow.length > 0) {
-    gridApi.value.setColumnsVisible(toShow, true);
-  }
-
-  if (toHide.length > 0) {
-    gridApi.value.setColumnsVisible(toHide, false);
-  }
-}
-
-function handleOpenPinColumn() {
-  if (gridApi.value && !gridApi.value.isDestroyed()) {
-    const pinnedLeft = gridApi.value
-      .getColumnState()
-      .filter(item => item.pinned === 'left')
-      .map(item => String(item.colId));
-
-    pinTargetFields.value = pinnedLeft;
-  } else if (pinTargetFields.value.length === 0) {
-    pinTargetFields.value = [];
-  }
-
-  pinColumnVisible.value = true;
-}
-
-function handleClearPinColumns() {
-  handlePinSelectionChange([]);
-}
-
-function handlePinSelectionChange(values: Array<string | number>) {
-  const normalizedValues = values.map(value => String(value));
-  pinTargetFields.value = normalizedValues;
-
-  if (!gridApi.value) {
-    return;
-  }
-
-  const allColumnFields = pinColumnOptions.value.map(item => String(item.value));
-  const selectedSet = new Set(normalizedValues);
-  const toPin = allColumnFields.filter(field => selectedSet.has(field));
-  const toUnpin = allColumnFields.filter(field => !selectedSet.has(field));
-
-  if (toPin.length > 0) {
-    gridApi.value.setColumnsPinned(toPin, 'left');
-  }
-
-  if (toUnpin.length > 0) {
-    gridApi.value.setColumnsPinned(toUnpin, null);
-  }
-}
-
 async function handleApplyCondition() {
   conditionVisible.value = false;
   await queryPage();
   msg('success', '已应用筛选条件');
 }
 
-// 打开导入弹窗
-function handleImport() {
-  importVisible.value = true;
-  importFile.value = null;
-  importPreviewData.value = [];
-  importError.value = '';
-  importSuccess.value = null;
-}
+const { deleteLoading, handleDelete } = useWorkbenchDelete({
+  gridApi,
+  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  refreshAfterMutation: () => {
+    const currentFunctionCode = String(props.meta.functionCode || '').trim();
+    const currentParams = String(props.meta.params || '').trim();
+    workbenchStore.clearCache(currentFunctionCode, currentParams);
+    isDataLoaded.value = false;
+    loadPage();
+  },
+  notify: (type, message) => msg(type, message)
+});
 
-// 打开新增弹窗
-async function handleOpenAdd() {
-  addVisible.value = true;
-  addLoading.value = true;
-  addError.value = '';
-  addSuccess.value = '';
-  addFormData.value = {};
-  addFormFields.value = [];
-
-  try {
-    const functionCode = props.meta.functionCode || '';
-    if (!functionCode) {
-      addError.value = '功能编码不能为空';
-      addLoading.value = false;
-      return;
-    }
-    console.log('[新增] functionCode:', functionCode);
-    // 调用 API 获取新增字段配置
-    const { data, error } = await fetchAddFields(functionCode);
-    console.log('[新增] API 返回:', data, error);
-
-    if (error) {
-      addError.value = '获取新增字段配置失败';
-      addLoading.value = false;
-      return;
-    }
-
-    addFormFields.value = data.fields || [];
-    console.log('[新增] 字段数量:', addFormFields.value.length);
-    console.log('[新增] 调试信息:', data.debug);
-
-    // 初始化表单数据
-    addFormFields.value.forEach((field: any) => {
-      // 日期字段的空值应设为 null 而非空字符串，避免 NDatePicker 格式化错误
-      if (field.fieldType === '日期') {
-        addFormData.value[field.fieldName] = field.defaultValue || null;
-      } else {
-        addFormData.value[field.fieldName] = field.defaultValue || '';
-      }
-    });
-  } catch (e) {
-    console.error('[新增] 获取字段配置失败:', e);
-    addError.value = '获取新增字段配置失败';
-  } finally {
-    addLoading.value = false;
+const {
+  popupVisible,
+  popupLoading,
+  popupField,
+  popupLevels,
+  popupMaxLevel,
+  popupCascaderOptions,
+  popupSelectedValue,
+  handleOpenPopup,
+  handleLoadCascaderChildren,
+  handleCascaderValueChange,
+  confirmPopupSelection
+} = useWorkbenchPopupCascader({
+  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  onConfirmSelection: (fieldName, value) => {
+    setEditFieldValue(fieldName, value);
+  },
+  notifyError: message => {
+    window.$message?.error(message);
   }
-}
-
-// 提交新增数据
-async function confirmAdd() {
-  addLoading.value = true;
-  addError.value = '';
-  addSuccess.value = '';
-
-  try {
-    const functionCode = props.meta.functionCode || '';
-    if (!functionCode) {
-      addError.value = '功能编码不能为空';
-      addLoading.value = false;
-      return;
-    }
-    const { data, error } = await addRow(functionCode, addFormData.value);
-
-    if (error) {
-      addError.value = error.message || '新增失败';
-      addLoading.value = false;
-      return;
-    }
-
-    if (data.success) {
-      addSuccess.value = data.message || '新增成功';
-      // 关闭弹窗并刷新数据（强制从服务器重新加载）
-      setTimeout(() => {
-        addVisible.value = false;
-        const currentFunctionCode = String(props.meta.functionCode || '').trim();
-        const currentParams = String(props.meta.params || '').trim();
-        workbenchStore.clearCache(currentFunctionCode, currentParams);
-        isDataLoaded.value = false;
-        loadPage();
-      }, 1500);
-    } else {
-      addError.value = data.message || '新增失败';
-    }
-  } catch (e: any) {
-    addError.value = e.message || '新增失败';
-  } finally {
-    addLoading.value = false;
-  }
-}
-
-// 删除相关状态
-const deleteLoading = ref(false);
-
-// 执行删除操作
-async function handleDelete() {
-  const selectedRows = gridApi.value?.getSelectedRows() || [];
-  if (selectedRows.length === 0) {
-    msg('warning', '请先选择要删除的记录');
-    return;
-  }
-
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) {
-    msg('error', '功能编码不能为空');
-    return;
-  }
-
-  // 尝试找到主键列
-  let primaryKey = 'GUID';
-  const columns = gridApi.value?.getColumns() || [];
-  for (const col of columns) {
-    const colDef = col.getColDef();
-    const field = String(colDef.field || '');
-    // 查找 GUID 列或名称包含 _id 的列
-    if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
-      primaryKey = field;
-      break;
-    }
-  }
-
-  // 获取选中的主键值
-  const keyValues: (string | number)[] = selectedRows
-    .map(row => row[primaryKey])
-    .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
-
-  if (keyValues.length === 0) {
-    msg('error', '无法获取记录主键值，请联系管理员');
-    return;
-  }
-
-  // 确认删除
-  if (!confirm(`确定要删除选中的 ${keyValues.length} 条记录吗？此操作不可恢复。`)) {
-    return;
-  }
-
-  deleteLoading.value = true;
-  try {
-    const { data, error } = await deleteRow(functionCode, keyValues);
-
-    if (error) {
-      msg('error', error.message || '删除失败');
-      return;
-    }
-
-    if (data.success) {
-      msg('success', data.message || `成功删除 ${data.deletedCount} 条记录`);
-      // 刷新数据（强制从服务器重新加载）
-      const currentFunctionCode = String(props.meta.functionCode || '').trim();
-      const currentParams = String(props.meta.params || '').trim();
-      workbenchStore.clearCache(currentFunctionCode, currentParams);
-      isDataLoaded.value = false;
-      loadPage();
-    } else {
-      msg('error', data.message || '删除失败');
-    }
-  } catch (e: any) {
-    msg('error', e.message || '删除失败');
-  } finally {
-    deleteLoading.value = false;
-  }
-}
-
-// 修改相关状态
-const updateVisible = ref(false);
-const updateLoading = ref(false);
-const updateError = ref('');
-const updateSuccess = ref('');
-const updateFormData = ref<Record<string, any>>({});
-const updateFormFields = ref<any[]>([]);
-
-// 打开修改弹窗
-async function handleOpenUpdate() {
-  const selectedRows = gridApi.value?.getSelectedRows() || [];
-  if (selectedRows.length === 0) {
-    msg('warning', '请先选择要修改的记录');
-    return;
-  }
-
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) {
-    msg('error', '功能编码不能为空');
-    return;
-  }
-
-  // 尝试找到主键列
-  let primaryKey = 'GUID';
-  const columns = gridApi.value?.getColumns() || [];
-  for (const col of columns) {
-    const colDef = col.getColDef();
-    const field = String(colDef.field || '');
-    if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
-      primaryKey = field;
-      break;
-    }
-  }
-
-  // 获取选中的主键值
-  const keyValues: (string | number)[] = selectedRows
-    .map(row => row[primaryKey])
-    .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
-
-  if (keyValues.length === 0) {
-    msg('error', '无法获取记录主键值，请联系管理员');
-    return;
-  }
-
-  if (keyValues.length > 1) {
-    msg('warning', '修改操作只能选择一条记录');
-    return;
-  }
-
-  updateVisible.value = true;
-  updateLoading.value = true;
-  updateError.value = '';
-  updateSuccess.value = '';
-  updateFormData.value = {};
-  updateFormFields.value = [];
-
-  try {
-    console.log('[修改] functionCode:', functionCode, 'keyValues:', keyValues);
-    // 调用 API 获取修改字段配置
-    const { data, error } = await fetchUpdateFields(functionCode, keyValues);
-    console.log('[修改] API 返回:', data, error);
-
-    if (error) {
-      updateError.value = error.message || '获取修改信息失败';
-      updateLoading.value = false;
-      return;
-    }
-
-    if (data && data.fields) {
-      updateFormFields.value = data.fields.map((f: any) => ({
-        fieldName: f.fieldName,
-        columnName: f.columnName,
-        fieldType: f.fieldType,
-        editorType: f.editorType,
-        editorParams: f.editorParams,
-        required: f.required,
-        readonly: f.readonly,
-        objectName: f.objectName,
-        objectOptions: f.objectOptions
-      }));
-      // 设置当前数据到表单
-      if (data.currentData) {
-        updateFormData.value = { ...data.currentData };
-      }
-    } else {
-      updateError.value = '未获取到字段配置';
-    }
-  } catch (e: any) {
-    updateError.value = e.message || '获取修改信息失败';
-  } finally {
-    updateLoading.value = false;
-  }
-}
-
-// 提交修改数据
-async function confirmUpdate() {
-  updateLoading.value = true;
-  updateError.value = '';
-  updateSuccess.value = '';
-
-  try {
-    const functionCode = String(props.meta.functionCode || '').trim();
-    if (!functionCode) {
-      updateError.value = '功能编码不能为空';
-      updateLoading.value = false;
-      return;
-    }
-
-    // 获取主键值
-    const selectedRows = gridApi.value?.getSelectedRows() || [];
-    if (selectedRows.length === 0) {
-      updateError.value = '未选择要修改的记录';
-      updateLoading.value = false;
-      return;
-    }
-
-    let primaryKey = 'GUID';
-    const columns = gridApi.value?.getColumns() || [];
-    for (const col of columns) {
-      const colDef = col.getColDef();
-      const field = String(colDef.field || '');
-      if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
-        primaryKey = field;
-        break;
-      }
-    }
-
-    const keyValues = selectedRows
-      .map(row => row[primaryKey])
-      .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
-
-    if (keyValues.length === 0) {
-      updateError.value = '无法获取记录主键值';
-      updateLoading.value = false;
-      return;
-    }
-
-    const { data, error } = await updateRow(functionCode, keyValues, updateFormData.value);
-
-    if (error) {
-      updateError.value = error.message || '修改失败';
-      updateLoading.value = false;
-      return;
-    }
-
-    if (data.success) {
-      updateSuccess.value = data.message || '修改成功';
-      // 关闭弹窗并刷新数据（强制从服务器重新加载）
-      setTimeout(() => {
-        updateVisible.value = false;
-        const currentFunctionCode = String(props.meta.functionCode || '').trim();
-        const currentParams = String(props.meta.params || '').trim();
-        workbenchStore.clearCache(currentFunctionCode, currentParams);
-        isDataLoaded.value = false;
-        loadPage();
-      }, 1500);
-    } else {
-      updateError.value = data.message || '修改失败';
-    }
-  } catch (e: any) {
-    updateError.value = e.message || '修改失败';
-  } finally {
-    updateLoading.value = false;
-  }
-}
-
-// 批量修改相关状态
-const batchUpdateVisible = ref(false);
-const batchUpdateLoading = ref(false);
-const batchUpdateError = ref('');
-const batchUpdateSuccess = ref('');
-const batchUpdateFormData = ref<Record<string, any>>({});
-const batchUpdateFormFields = ref<any[]>([]);
-
-// 打开批量修改弹窗
-async function handleOpenBatchUpdate() {
-  const selectedRows = gridApi.value?.getSelectedRows() || [];
-  if (selectedRows.length === 0) {
-    msg('warning', '请先选择要修改的记录');
-    return;
-  }
-
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) {
-    msg('error', '功能编码不能为空');
-    return;
-  }
-
-  // 尝试找到主键列
-  let primaryKey = 'GUID';
-  const columns = gridApi.value?.getColumns() || [];
-  for (const col of columns) {
-    const colDef = col.getColDef();
-    const field = String(colDef.field || '');
-    if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
-      primaryKey = field;
-      break;
-    }
-  }
-
-  // 获取选中的主键值
-  const keyValues: (string | number)[] = selectedRows
-    .map(row => row[primaryKey])
-    .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
-
-  if (keyValues.length === 0) {
-    msg('error', '无法获取记录主键值，请联系管理员');
-    return;
-  }
-
-  batchUpdateVisible.value = true;
-  batchUpdateLoading.value = true;
-  batchUpdateError.value = '';
-  batchUpdateSuccess.value = '';
-  batchUpdateFormData.value = {};
-  batchUpdateFormFields.value = [];
-
-  try {
-    console.log('[批量修改] functionCode:', functionCode, 'keyValues:', keyValues);
-    // 调用 API 获取修改字段配置
-    const { data, error } = await fetchUpdateFields(functionCode, keyValues);
-    console.log('[批量修改] API 返回:', data, error);
-
-    if (error) {
-      batchUpdateError.value = error.message || '获取修改信息失败';
-      batchUpdateLoading.value = false;
-      return;
-    }
-
-    if (data && data.fields) {
-      batchUpdateFormFields.value = data.fields.map((f: any) => ({
-        fieldName: f.fieldName,
-        columnName: f.columnName,
-        fieldType: f.fieldType,
-        editorType: f.editorType,
-        editorParams: f.editorParams,
-        required: f.required,
-        readonly: f.readonly,
-        objectName: f.objectName,
-        objectOptions: f.objectOptions
-      }));
-      // 批量修改不需要预填当前数据，保持为空
-    } else {
-      batchUpdateError.value = '未获取到字段配置';
-    }
-  } catch (e: any) {
-    batchUpdateError.value = e.message || '获取修改信息失败';
-  } finally {
-    batchUpdateLoading.value = false;
-  }
-}
-
-// 提交批量修改数据
-async function confirmBatchUpdate() {
-  batchUpdateLoading.value = true;
-  batchUpdateError.value = '';
-  batchUpdateSuccess.value = '';
-
-  try {
-    const functionCode = String(props.meta.functionCode || '').trim();
-    if (!functionCode) {
-      batchUpdateError.value = '功能编码不能为空';
-      batchUpdateLoading.value = false;
-      return;
-    }
-
-    // 获取主键值
-    const selectedRows = gridApi.value?.getSelectedRows() || [];
-    if (selectedRows.length === 0) {
-      batchUpdateError.value = '未选择要修改的记录';
-      batchUpdateLoading.value = false;
-      return;
-    }
-
-    let primaryKey = 'GUID';
-    const columns = gridApi.value?.getColumns() || [];
-    for (const col of columns) {
-      const colDef = col.getColDef();
-      const field = String(colDef.field || '');
-      if (field.toUpperCase() === 'GUID' || field.toLowerCase().endsWith('_id')) {
-        primaryKey = field;
-        break;
-      }
-    }
-
-    const keyValues = selectedRows
-      .map(row => row[primaryKey])
-      .filter((val): val is string | number => val !== undefined && val !== null && val !== '');
-
-    if (keyValues.length === 0) {
-      batchUpdateError.value = '无法获取记录主键值';
-      batchUpdateLoading.value = false;
-      return;
-    }
-
-    const { data, error } = await batchUpdateRow(functionCode, keyValues, batchUpdateFormData.value);
-
-    if (error) {
-      batchUpdateError.value = error.message || '批量修改失败';
-      batchUpdateLoading.value = false;
-      return;
-    }
-
-    if (data.success) {
-      batchUpdateSuccess.value = data.message || '批量修改成功';
-      // 关闭弹窗并刷新数据（强制从服务器重新加载）
-      setTimeout(() => {
-        batchUpdateVisible.value = false;
-        const currentFunctionCode = String(props.meta.functionCode || '').trim();
-        const currentParams = String(props.meta.params || '').trim();
-        workbenchStore.clearCache(currentFunctionCode, currentParams);
-        isDataLoaded.value = false;
-        loadPage();
-      }, 1500);
-    } else {
-      batchUpdateError.value = data.message || '批量修改失败';
-    }
-  } catch (e: any) {
-    batchUpdateError.value = e.message || '批量修改失败';
-  } finally {
-    batchUpdateLoading.value = false;
-  }
-}
-
+});
 // 获取字段选项
 function getFieldOptions(field: any): Array<{ label: string; value: string }> {
   return field.objectOptions || [];
-}
-
-// 打开弹窗选择（懒加载级联选择）
-async function handleOpenPopup(field: any) {
-  popupField.value = field;
-  popupVisible.value = true;
-  popupLoading.value = true;
-  popupSelectedValue.value = null;
-  popupCascaderOptions.value = [];
-  popupLevels.value = [];
-  popupMaxLevel.value = 1;
-
-  try {
-    const functionCode = props.meta.functionCode || '';
-    if (!functionCode || !field.objectName) {
-      popupLoading.value = false;
-      return;
-    }
-
-    // 获取级别配置
-    const { data: levelsData, error: levelsError } = await fetchPopupLevels(functionCode, field.objectName);
-    if (levelsError) {
-      window.$message?.error(levelsError.message || '获取弹窗级别配置失败');
-      popupLoading.value = false;
-      return;
-    }
-
-    popupLevels.value = levelsData.levels;
-    popupMaxLevel.value = levelsData.maxLevel;
-    console.log('[Cascader] Max level:', popupMaxLevel.value, 'Levels:', popupLevels.value);
-
-    // 加载第一级数据
-    console.log('[Cascader] Loading level 1 data for objectName:', field.objectName);
-    const { data: levelData, error: levelError } = await fetchPopupLevelData(functionCode, field.objectName, 1, '');
-    console.log('[Cascader] Level 1 response:', { levelData, levelError });
-
-    if (levelError) {
-      window.$message?.error(levelError.message || '获取弹窗数据失败');
-      popupLoading.value = false;
-      return;
-    }
-
-    // 构建级联选项
-    // 当 code 为空字符串时，使用 name 作为 value（因为数据库中顶级节点的编码可能为空）
-    popupCascaderOptions.value = levelData.items.map(item => {
-      const option: any = {
-        label: item.name,
-        value: item.code || item.name, // 如果 code 为空，使用 name 作为 value
-        code: item.code, // 保留原始 code 用于 API 调用
-        fullName: item.fullName,
-        level: 1,
-        // 显式设置 isLeaf：有子节点时为 false，没有时为 true
-        isLeaf: !item.hasChildren
-      };
-      return option;
-    });
-
-    console.log('[Cascader] Level 1 options:', popupCascaderOptions.value);
-    console.log('[Cascader] First option isLeaf:', popupCascaderOptions.value[0]?.isLeaf);
-  } catch (e: any) {
-    window.$message?.error(e.message || '获取弹窗数据失败');
-  } finally {
-    popupLoading.value = false;
-  }
-}
-
-// 懒加载级联子节点
-function handleLoadCascaderChildren(option: any) {
-  console.log('[Cascader] handleLoadCascaderChildren called:', option);
-
-  const functionCode = props.meta.functionCode || '';
-  const objectName = popupField.value?.objectName;
-
-  console.log('[Cascader] functionCode:', functionCode, 'objectName:', objectName);
-
-  if (!functionCode || !objectName) {
-    console.log('[Cascader] Missing functionCode or objectName, returning');
-    return Promise.resolve();
-  }
-
-  const nextLevel = option.level + 1;
-  console.log('[Cascader] nextLevel:', nextLevel, 'maxLevel:', popupMaxLevel.value);
-
-  if (nextLevel > popupMaxLevel.value) {
-    option.isLeaf = true;
-    return Promise.resolve();
-  }
-
-  // 使用 fullName 调用 API（因为数据库通过本级全称来维护层级关系）
-  const parentCode = option.fullName || option.value;
-  console.log('[Cascader] Fetching level', nextLevel, 'with parentCode:', parentCode);
-
-  return fetchPopupLevelData(functionCode, objectName, nextLevel, parentCode)
-    .then(({ data, error }) => {
-      console.log('[Cascader] API response:', { data, error });
-
-      if (error) {
-        window.$message?.error(error.message || '加载子节点失败');
-        return;
-      }
-
-      option.children = data.items.map((item: any) => {
-        const isLastLevel = nextLevel >= popupMaxLevel.value;
-        return {
-          label: item.name,
-          value: item.code || item.name, // 如果 code 为空，使用 name 作为 value
-          code: item.code, // 保留原始 code 用于 API 调用
-          fullName: item.fullName,
-          level: nextLevel,
-          // 显式设置 isLeaf：没有子节点或是最后一级时为 true
-          isLeaf: !item.hasChildren || isLastLevel
-        };
-      });
-
-      console.log('[Cascader] Set children:', option.children);
-    })
-    .catch((e: any) => {
-      console.error('[Cascader] Error:', e);
-      window.$message?.error(e.message || '加载子节点失败');
-    });
-}
-
-// 级联选择值变化处理
-function handleCascaderValueChange(value: string | null, option: any) {
-  console.log('[Cascader] Value changed:', value, 'Option:', option);
-}
-
-// 确认弹窗选择
-function confirmPopupSelection() {
-  if (!popupField.value || !popupSelectedValue.value) return;
-
-  // 获取选中的完整路径
-  const selectedOption = findCascaderOption(popupCascaderOptions.value, popupSelectedValue.value);
-  if (selectedOption) {
-    const selectedLabel = selectedOption.fullName || selectedOption.label;
-    // 更新新增表单
-    addFormData.value[popupField.value.fieldName] = selectedLabel;
-    // 更新修改表单
-    updateFormData.value[popupField.value.fieldName] = selectedLabel;
-    // 更新批量修改表单
-    batchUpdateFormData.value[popupField.value.fieldName] = selectedLabel;
-  }
-
-  popupVisible.value = false;
-}
-
-// 在级联选项中查找指定值的选项
-function findCascaderOption(options: any[], value: string): any | null {
-  for (const option of options) {
-    if (option.value === value) {
-      return option;
-    }
-    if (option.children) {
-      const found = findCascaderOption(option.children, value);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-// 触发文件选择
-function triggerFileInput() {
-  fileInputRef.value?.click();
-}
-
-// 处理文件选择
-function handleFileSelect(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (file) {
-    processImportFile(file);
-  }
-  // 清空 input 以便下次选择同一文件
-  input.value = '';
-}
-
-// 处理拖拽上传
-function handleDrop(event: DragEvent) {
-  event.preventDefault();
-  const file = event.dataTransfer?.files[0];
-  if (file) {
-    processImportFile(file);
-  }
-}
-
-// 解析导入文件
-async function processImportFile(file: File) {
-  // 验证文件类型
-  const validTypes = ['.xlsx', '.xls', '.csv'];
-  const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-  if (!validTypes.includes(fileExt)) {
-    importError.value = '请上传 Excel 文件 (.xlsx, .xls) 或 CSV 文件 (.csv)';
-    return;
-  }
-
-  importLoading.value = true;
-  importError.value = '';
-  importFile.value = file;
-
-  try {
-    const data = await file.arrayBuffer();
-    const workbook = XLSX.read(data, { type: 'array' });
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as any[][];
-
-    if (jsonData.length < 2) {
-      importError.value = '文件数据不足，至少需要包含表头和一行数据';
-      importPreviewData.value = [];
-      return;
-    }
-
-    // 解析表头和数据
-    const headers = jsonData[0] as string[];
-    const rows = jsonData.slice(1).filter(row => row.some(cell => cell !== undefined && cell !== ''));
-
-    if (rows.length === 0) {
-      importError.value = '未找到有效数据行';
-      importPreviewData.value = [];
-      return;
-    }
-
-    // 转换为对象数组
-    importPreviewData.value = rows.map((row, index) => {
-      const obj: Record<string, any> = { _rowIndex: index + 2 };
-      headers.forEach((header, colIndex) => {
-        if (header) {
-          obj[header] = row[colIndex] ?? '';
-        }
-      });
-      return obj;
-    });
-
-    msg('success', `成功解析 ${rows.length} 条数据`);
-  } catch (error) {
-    console.error('导入文件解析失败:', error);
-    importError.value = '文件解析失败，请检查文件格式是否正确';
-    importPreviewData.value = [];
-  } finally {
-    importLoading.value = false;
-  }
-}
-
-// 确认导入
-async function confirmImport() {
-  if (importPreviewData.value.length === 0) {
-    msg('warning', '没有可导入的数据');
-    return;
-  }
-
-  const functionCode = props.meta?.functionCode;
-  if (!functionCode) {
-    msg('error', '功能编码不能为空');
-    return;
-  }
-
-  importLoading.value = true;
-  importError.value = '';
-
-  try {
-    // 调用后端导入 API
-    const { data, error } = await importData(functionCode, importPreviewData.value);
-
-    if (error) {
-      console.error('导入请求错误:', error);
-      importError.value = '导入请求失败: ' + (error.message || '请稍后重试');
-      return;
-    }
-
-    if (!data) {
-      importError.value = '导入结果为空';
-      return;
-    }
-
-    if (data.success) {
-      // 导入成功
-      importSuccess.value = {
-        count: data.successCount,
-        message: data.message
-      };
-      msg('success', data.message);
-
-      // 关闭弹窗并刷新数据
-      setTimeout(() => {
-        importVisible.value = false;
-        loadPage(); // 刷新页面数据
-      }, 1500);
-    } else {
-      // 导入失败（验证错误或插入错误）
-      if (data.errors && data.errors.length > 0) {
-        // 显示具体错误
-        const errorMessages = data.errors.slice(0, 5).map((err: any) => {
-          // 处理两种错误格式：
-          // 1. 行级错误：{row: 1, errors: ['错误1', '错误2']}
-          // 2. 校验错误：{字段值: 'xxx'} 或 {字段名: 'xxx', 字段值: 'yyy'}
-          if (err.row !== undefined && err.errors !== undefined) {
-            return `第 ${err.row} 行: ${err.errors.join(', ')}`;
-          } else if (err.字段值 !== undefined) {
-            return `字段值: ${err.字段值}`;
-          } else {
-            return JSON.stringify(err);
-          }
-        });
-        importError.value = `${data.message}\n${errorMessages.join('\n')}`;
-
-        // 如果有更多错误，显示提示
-        if (data.errors.length > 5) {
-          importError.value += `\n...还有 ${data.errors.length - 5} 行错误`;
-        }
-      } else {
-        importError.value = data.message;
-      }
-    }
-  } catch (error) {
-    console.error('导入失败:', error);
-    importError.value = '导入失败，请稍后重试';
-  } finally {
-    importLoading.value = false;
-  }
-}
-
-// 下载导入模板
-async function downloadImportTemplate() {
-  const functionCode = props.meta?.functionCode;
-  if (!functionCode) {
-    msg('error', '功能编码不能为空');
-    return;
-  }
-
-  let importColumns: Api.Workbench.ImportColumn[] = [];
-
-  // 尝试从后端获取导入列配置
-  console.log('开始获取导入列配置，功能编码:', functionCode);
-  let apiError = false;
-  try {
-    const result = await fetchImportColumns(functionCode);
-    console.log('获取导入列配置返回结果:', result);
-    if (result.error) {
-      console.log('获取导入列配置返回错误:', result.error);
-      apiError = true;
-    } else if (result.data?.columns) {
-      importColumns = result.data.columns;
-      console.log('获取导入列配置成功:', importColumns.length, '列');
-    } else {
-      console.log('导入列配置为空，使用表格列作为备选');
-    }
-  } catch (err) {
-    // 忽略错误，使用备选方案
-    console.log('获取导入列配置异常:', err);
-    apiError = true;
-  }
-
-  let headers: string[] = [];
-  const exampleRow: Record<string, string> = {};
-
-  if (importColumns.length > 0) {
-    // 使用 def_import_column 配置的列名
-    headers = importColumns.map(col => col.columnName);
-    importColumns.forEach(col => {
-      // 根据导入类型设置示例值
-      let exampleValue = '示例数据';
-      if (col.importType === '1') {
-        exampleValue = '必填';
-      } else if (col.checkType) {
-        exampleValue = `校验:${col.checkType}`;
-      }
-      exampleRow[col.columnName] = exampleValue;
-    });
-  } else {
-    // 如果没有配置，使用当前表格的列定义作为模板
-    const columns = gridApi.value?.getColumns() || [];
-    const visibleColumns = columns.filter(col => {
-      const colDef = col.getColDef();
-      return !colDef.hide && colDef.field && colDef.field !== '';
-    });
-
-    headers = visibleColumns.map(col => {
-      const colDef = col.getColDef();
-      return colDef.headerName || colDef.field || '';
-    });
-
-    headers.forEach(header => {
-      exampleRow[header] = '示例数据';
-    });
-  }
-
-  // 创建示例数据
-  const exampleData: Record<string, string>[] = [];
-  exampleData.push(exampleRow);
-
-  // 创建工作簿
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(exampleData, { header: headers });
-
-  // 设置列宽
-  const colWidths = headers.map(header => ({
-    wch: Math.max(header.length * 2, 15)
-  }));
-  ws['!cols'] = colWidths;
-
-  XLSX.utils.book_append_sheet(wb, ws, '导入模板');
-
-  // 下载
-  XLSX.writeFile(wb, `${functionCode}_导入模板.xlsx`);
-
-  if (apiError) {
-    msg('warning', '模板已下载（使用表格列作为备选）');
-  } else {
-    msg('success', '模板下载成功');
-  }
 }
 
 function handleExport() {
@@ -2587,300 +1366,6 @@ function handleDataDrill() {
     });
 }
 
-// 批注相关函数
-// 从 keyFieldsConfig 字符串解析关键字段值（格式：字段名:列名;字段名:列名）
-function parseKeyFieldsFromRow(selectedRow: any, keyFieldsConfig: string): Record<string, string | number> {
-  const keyFields: Record<string, string | number> = {};
-
-  // 如果未配置关键字段，从 commentFields 中获取关键字段（用于查看批注）
-  if (!keyFieldsConfig) {
-    // 从已加载的 commentFields 中找出关键字段
-    for (const field of commentFields.value) {
-      if (field.isKeyField && field.name) {
-        const value = selectedRow[field.sourceColumn || field.name] || selectedRow[field.name];
-        if (value !== undefined && value !== null) {
-          keyFields[field.name] = value;
-        }
-      }
-    }
-    return keyFields;
-  }
-
-  const fieldPairs = keyFieldsConfig.split(';');
-  for (const pair of fieldPairs) {
-    const trimmedPair = pair.trim();
-    if (!trimmedPair) continue;
-
-    const [fieldName, colName] = trimmedPair.split(':');
-    const actualFieldName = fieldName.trim();
-    // 如果有映射则使用映射的列名，否则使用字段名本身
-    const actualColName = colName ? colName.trim() : actualFieldName;
-
-    const value = selectedRow[actualColName];
-    if (value !== undefined && value !== null) {
-      keyFields[actualFieldName] = value;
-    }
-  }
-
-  return keyFields;
-}
-
-function getSelectedRowKeyFields(keyFieldsConfig?: string): Record<string, string | number> | null {
-  const selectedRows = gridApi.value?.getSelectedRows() || [];
-  if (selectedRows.length === 0) {
-    msg('warning', '请先选择一条记录');
-    return null;
-  }
-  if (selectedRows.length > 1) {
-    msg('warning', '只能选择一条记录');
-    return null;
-  }
-
-  const selectedRow = selectedRows[0];
-  const config = keyFieldsConfig || commentKeyFields.value;
-  return parseKeyFieldsFromRow(selectedRow, config);
-}
-
-async function loadCommentFields() {
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) return;
-
-  try {
-    const { data, error } = await fetchCommentFields(functionCode);
-    console.log('批注字段接口返回:', { data, error });
-    if (data) {
-      commentFields.value = data.fields || [];
-      commentKeyFields.value = data.keyFields || '';
-      console.log('批注字段加载完成:', commentFields.value);
-      console.log('关键字段配置:', commentKeyFields.value);
-      // 打印每个字段的详细信息
-      commentFields.value.forEach((field, index) => {
-        console.log(`字段 ${index}:`, {
-          name: field.name,
-          comment: field.comment,
-          type: field.type,
-          isKeyField: field.isKeyField,
-          sourceColumn: field.sourceColumn
-        });
-      });
-    }
-    if (error) {
-      console.error('批注字段接口错误:', error);
-    }
-  } catch (error) {
-    console.error('加载批注字段失败:', error);
-  }
-}
-
-async function handleOpenAddComment() {
-  // 先检查是否有选中行
-  const selectedRows = gridApi.value?.getSelectedRows() || [];
-  if (selectedRows.length === 0) {
-    msg('warning', '请先选择一条记录');
-    return;
-  }
-  if (selectedRows.length > 1) {
-    msg('warning', '只能选择一条记录');
-    return;
-  }
-  const selectedRow = selectedRows[0];
-
-  // 先加载字段配置（获取 keyFields 配置）
-  await loadCommentFields();
-
-  // 调试：检查 commentKeyFields 的值
-  console.log('loadCommentFields 后 commentKeyFields.value:', commentKeyFields.value);
-
-  // 现在有了 keyFields 配置，可以正确解析关键字段值
-  const keyFields = getSelectedRowKeyFields();
-  if (!keyFields) return;
-
-  console.log('获取到的关键字段值:', keyFields);
-  console.log('keyFields 中的键:', Object.keys(keyFields));
-  console.log('选中行数据:', selectedRow);
-
-  // 保存关键字段值用于显示
-  commentKeyFieldValues.value = keyFields;
-
-  // 同时保存到 window 对象，确保数据不会丢失
-  (window as any).__commentKeyFieldValues = keyFields;
-  console.log('保存到 window.__commentKeyFieldValues:', keyFields);
-
-  // 设置备注模块名称（优先使用备注模块配置，其次使用功能编码）
-  const functionCode = String(props.meta.functionCode || '').trim();
-  commentModuleName.value = pageMeta.value?.commentModule || functionCode;
-
-  // 重置备注说明
-  commentRemark.value = '';
-
-  // 初始化表单数据 - 只包含关键字段
-  commentFormData.value = {};
-  for (const field of commentFields.value) {
-    if (field.isKeyField) {
-      // 关键字段：优先使用从keyFields获取的值，其次使用sourceColumn从选中行获取
-      const keyValue = keyFields[field.name];
-      if (keyValue !== undefined) {
-        commentFormData.value[field.name] = String(keyValue);
-      } else if (field.sourceColumn) {
-        commentFormData.value[field.name] = String(selectedRow[field.sourceColumn] || '');
-      } else {
-        commentFormData.value[field.name] = '';
-      }
-      console.log(`关键字段 ${field.name} 赋值:`, commentFormData.value[field.name]);
-    }
-  }
-
-  console.log('最终表单数据:', commentFormData.value);
-  addCommentVisible.value = true;
-}
-
-async function handleSubmitComment() {
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) return;
-
-  // 从 commentFormData 构建关键字段（因为 commentFormData 包含正确的关键字段值）
-  const keyFields: Record<string, string | number> = {};
-  for (const field of commentFields.value) {
-    if (field.isKeyField && commentFormData.value[field.name]) {
-      keyFields[field.name] = commentFormData.value[field.name];
-    }
-  }
-
-  console.log('从 commentFormData 构建的关键字段:', keyFields);
-
-  if (Object.keys(keyFields).length === 0) {
-    msg('warning', '关键字段为空，请重新选择记录', {
-      commentFormData: commentFormData.value,
-      commentFields: commentFields.value
-    });
-    return;
-  }
-
-  // 验证备注说明必填
-  if (!commentRemark.value.trim()) {
-    msg('warning', '请填写备注说明');
-    return;
-  }
-
-  // 构建提交数据：备注模块 + 备注说明
-  const submitData: Record<string, string> = {
-    备注模块: commentModuleName.value,
-    备注说明: commentRemark.value
-  };
-
-  commentLoading.value = true;
-  try {
-    const { error } = await addComment(functionCode, {
-      keyFields,
-      data: submitData
-    });
-
-    if (error) {
-      msg('error', '添加批注失败', { error, keyFields, data: submitData });
-      return;
-    }
-
-    msg('success', '添加批注成功');
-    addCommentVisible.value = false;
-  } catch (err) {
-    msg('error', '添加批注失败', { error: err, keyFields, data: submitData });
-  } finally {
-    commentLoading.value = false;
-  }
-}
-
-async function handleOpenViewComment() {
-  // 先加载批注字段配置（获取关键字段映射）
-  await loadCommentFields();
-
-  // 再获取关键字段值
-  const keyFields = getSelectedRowKeyFields();
-  if (!keyFields) return;
-
-  await loadCommentList(keyFields);
-  viewCommentVisible.value = true;
-}
-
-async function loadCommentList(keyFields: Record<string, string | number>) {
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) return;
-
-  commentLoading.value = true;
-  try {
-    const { data, error } = await fetchCommentList(functionCode, { keyFields });
-    if (error) {
-      // 显示后端返回的详细错误信息
-      const backendError = (error as any)?.response?.data || error;
-      const errorMsg = backendError?.msg || '获取批注列表失败';
-      const errorData = backendError?.data || {};
-      console.error('[ERROR] 获取批注列表失败:', {
-        message: errorMsg,
-        sql: errorData.sql,
-        table: errorData.table,
-        keyFields: errorData.keyFields || keyFields,
-        fullError: error
-      });
-      window.$message?.error(`${errorMsg}${errorData.sql ? ' (SQL: ' + errorData.sql + ')' : ''}`);
-      return;
-    }
-    commentList.value = data?.records || [];
-  } catch (err) {
-    msg('error', '获取批注列表失败', { error: err, keyFields });
-  } finally {
-    commentLoading.value = false;
-  }
-}
-
-// 颜色标注相关函数
-function handleOpenColorMark() {
-  // 初始化默认值
-  if (colorMarkEnabledColumns.value.length > 0) {
-    colorMarkField1.value = colorMarkEnabledColumns.value[0]?.value || '';
-    colorMarkField2.value = colorMarkEnabledColumns.value[0]?.value || '';
-  }
-  colorMarkVisible.value = true;
-}
-
-function handleApplyColorMark() {
-  if (!colorMarkField1.value || !colorMarkField2.value) {
-    msg('warning', '请选择字段一和字段二');
-    return;
-  }
-
-  // 根据选择的颜色设置样式
-  let style: Record<string, string> = { color: 'red', fontWeight: 'bold' };
-  if (colorMarkColor.value === '白底蓝字') {
-    style = { color: 'blue', fontWeight: 'bold' };
-  } else if (colorMarkColor.value === '黄底红色') {
-    style = { backgroundColor: 'yellow', color: 'red', fontWeight: 'bold' };
-  }
-
-  // 保存颜色标注配置
-  colorMarkConfig.value = {
-    field1: colorMarkField1.value,
-    operator: colorMarkOperator.value,
-    field2: colorMarkField2.value,
-    style
-  };
-
-  // 刷新表格以应用样式
-  if (gridApi.value) {
-    gridApi.value.refreshCells({ force: true });
-  }
-
-  colorMarkVisible.value = false;
-  msg('success', '颜色标注已应用');
-}
-
-function handleClearColorMark() {
-  colorMarkConfig.value = null;
-  if (gridApi.value) {
-    gridApi.value.refreshCells({ force: true });
-  }
-  colorMarkVisible.value = false;
-  msg('success', '颜色标注已清除');
-}
-
 function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   gridApi.value = event.api;
   visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
@@ -2896,190 +1381,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     }, 100);
   }
 
-  // 使用闭包捕获当前的 functionCode 和 params，避免 Tab 切换后使用错误的值
-  const capturedFunctionCode = String(props.meta.functionCode || '').trim();
-  const capturedParams = String(props.meta.params || '').trim();
-
-  gridApi.value.addEventListener('filterChanged', () => {
-    if (isRestoringFilter.value) {
-      return;
-    }
-    if (capturedFunctionCode && gridApi.value) {
-      const currentFilterModel = gridApi.value.getFilterModel();
-      if (currentFilterModel && Object.keys(currentFilterModel).length > 0) {
-        workbenchStore.setFilterModel(capturedFunctionCode, capturedParams, currentFilterModel);
-      }
-    }
-  });
-
-  gridApi.value.addEventListener('sortChanged', () => {
-    if (isRestoringColumnState.value) {
-      return;
-    }
-    if (capturedFunctionCode && gridApi.value) {
-      const columnState = gridApi.value.getColumnState();
-      console.log('[sortChanged] Saving column state for:', capturedFunctionCode, columnState);
-      if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-        workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
-      }
-    }
-  });
-
-  gridApi.value.addEventListener('columnResized', (colEvent: any) => {
-    if (isRestoringColumnState.value) {
-      console.log('[columnResized] Skipping save, isRestoringColumnState is true');
-      return;
-    }
-    if (isInitialLoading.value) {
-      console.log('[columnResized] Skipping save, isInitialLoading is true');
-      return;
-    }
-    if (colEvent?.finished === false) {
-      return;
-    }
-    const resizeSource = String(colEvent?.source || '');
-    if (resizeSource === 'gridSizeChanged' || resizeSource === 'sizeColumnsToFit' || resizeSource === 'api') {
-      console.log('[columnResized] Skipping non-user resize source:', resizeSource);
-      return;
-    }
-    if (!isGridShellVisible()) {
-      console.log('[columnResized] Skipping save, grid shell is hidden');
-      return;
-    }
-    if (capturedFunctionCode && gridApi.value) {
-      const columnState = gridApi.value.getColumnState();
-      if (hasSuspiciousNarrowColumnState(columnState)) {
-        console.log('[columnResized] Skipping suspicious narrow column state for:', capturedFunctionCode);
-        return;
-      }
-      // 检查当前是否有排序信息
-      const currentSortedCols = columnState.filter((col: any) => col.sort);
-      // 获取缓存中的排序信息
-      const cachedColumnState = workbenchStore.getColumnState(capturedFunctionCode, capturedParams);
-      const cachedSortedCols = cachedColumnState?.filter((col: any) => col.sort) || [];
-      console.log(
-        '[columnResized] Current sorted:',
-        currentSortedCols.length,
-        'Cached sorted:',
-        cachedSortedCols.length,
-        'for:',
-        capturedFunctionCode
-      );
-      // 如果当前没有排序但缓存中有排序，不要覆盖缓存
-      if (currentSortedCols.length === 0 && cachedSortedCols.length > 0) {
-        console.log('[columnResized] Skipping save to preserve sort state for:', capturedFunctionCode);
-        return;
-      }
-      console.log('[columnResized] Saving column state for:', capturedFunctionCode, columnState);
-      if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-        workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
-      }
-    }
-  });
-
-  // 监听列显示/隐藏变化
-  gridApi.value.addEventListener('columnVisible', (colEvent: any) => {
-    if (isRestoringColumnState.value) {
-      return;
-    }
-    console.log(
-      '[columnVisible] Event triggered for:',
-      capturedFunctionCode,
-      'column:',
-      colEvent.column?.getColDef()?.field,
-      'visible:',
-      colEvent.visible
-    );
-    if (capturedFunctionCode && gridApi.value) {
-      // 保存列状态（包括 hide 属性）
-      const columnState = gridApi.value.getColumnState();
-      if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-        console.log(
-          '[columnVisible] Saving column state for:',
-          capturedFunctionCode,
-          columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-        );
-        workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
-      }
-
-      // 保存可见列列表
-      const allColumns = gridApi.value.getColumns();
-      if (allColumns) {
-        const visibleCols = allColumns
-          .filter(col => {
-            const colDef = col.getColDef();
-            return !colDef.hide && colDef.field;
-          })
-          .map(col => col.getColDef().field as string)
-          .filter((field): field is string => field !== undefined);
-        workbenchStore.setVisibleColumns(capturedFunctionCode, capturedParams, visibleCols);
-      }
-    }
-  });
-
-  // 监听拖拽停止事件（用户拖动列隐藏后触发）
-  gridApi.value.addEventListener('dragStopped', () => {
-    if (isRestoringColumnState.value) {
-      return;
-    }
-    console.log('[dragStopped] Event triggered for:', capturedFunctionCode);
-    if (capturedFunctionCode && gridApi.value) {
-      // 保存列状态（包括 hide 属性）
-      const columnState = gridApi.value.getColumnState();
-      if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-        console.log(
-          '[dragStopped] Saving column state for:',
-          capturedFunctionCode,
-          columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-        );
-        workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
-      }
-    }
-  });
-
-  // 监听固定列变化
-  (gridApi.value as any).addEventListener('columnPinnedChanged', () => {
-    if (isRestoringColumnState.value) {
-      return;
-    }
-    if (capturedFunctionCode && gridApi.value) {
-      const allColumns = gridApi.value.getColumns();
-      if (allColumns) {
-        const pinnedCols = allColumns
-          .filter(col => {
-            const colDef = col.getColDef();
-            return colDef.pinned && colDef.field;
-          })
-          .map(col => col.getColDef().field as string)
-          .filter((field): field is string => field !== undefined);
-        workbenchStore.setPinColumns(capturedFunctionCode, capturedParams, pinnedCols);
-      }
-    }
-  });
-
-  // 监听行选择变化
-  gridApi.value.addEventListener('selectionChanged', () => {
-    if (isRestoringSelection.value) {
-      return;
-    }
-    if (capturedFunctionCode && gridApi.value) {
-      const selectedRows = gridApi.value.getSelectedRows();
-      workbenchStore.setSelectedRows(capturedFunctionCode, capturedParams, selectedRows);
-    }
-  });
-
-  // 监听分页变化
-  gridApi.value.addEventListener('paginationChanged', (_pageEvent: any) => {
-    if (isRestoringPage.value) {
-      return;
-    }
-    if (capturedFunctionCode && gridApi.value) {
-      const currentPage = gridApi.value.paginationGetCurrentPage() + 1; // ag-grid 页码从0开始
-      const currentPageSize = gridApi.value.paginationGetPageSize();
-      workbenchStore.setPage(capturedFunctionCode, capturedParams, currentPage);
-      workbenchStore.setPageSize(capturedFunctionCode, capturedParams, currentPageSize);
-    }
-  });
+  registerGridPersistenceListeners();
 }
 </script>
 
@@ -3397,9 +1699,9 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                 :style="
                   isDarkMode
                     ? {
-                        borderBottomColor: '#4b5965',
-                        borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                      }
+                      borderBottomColor: '#4b5965',
+                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                    }
                     : {}
                 "
               >
@@ -3604,7 +1906,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
           <!-- 操作按钮 -->
           <NSpace justify="end">
-            <NButton v-if="importPreviewData.length > 0 && !importSuccess" @click="importPreviewData = []">
+            <NButton v-if="importPreviewData.length > 0 && !importSuccess" @click="resetImportPreview">
               重新选择
             </NButton>
             <NButton @click="importVisible = false">关闭</NButton>

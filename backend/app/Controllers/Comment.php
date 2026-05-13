@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
+use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 
 /**
@@ -12,10 +13,12 @@ use App\Models\Mcommon;
 class Comment extends BaseController
 {
     private Mcommon $common;
+    private SessionUserContext $userContext;
 
     public function __construct()
     {
         $this->common = new Mcommon();
+        $this->userContext = new SessionUserContext();
     }
 
     /**
@@ -72,8 +75,7 @@ class Comment extends BaseController
      */
     private function checkCommentAuth(string $functionCode): bool
     {
-        $session = \Config\Services::session();
-        $userRole = trim((string) $session->get('user_role'));
+        $userRole = $this->userContext->getSessionUser()['role'];
 
         // 如果没有用户角色，返回无权限
         if (empty($userRole)) {
@@ -329,8 +331,7 @@ class Comment extends BaseController
             log_message('debug', "Comment::add - 表 {$commentTable} 的有效字段: " . json_encode($validFields));
 
             // 获取当前用户信息
-            $session = \Config\Services::session();
-            $userWorkId = trim((string) $session->get('user_workid'));
+            $userWorkId = $this->userContext->requireLogin()['workId'];
 
             // 构建插入字段和值
             $fields = [];
