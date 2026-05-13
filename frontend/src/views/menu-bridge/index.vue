@@ -48,24 +48,24 @@ const isCurrentRouteActive = computed(() => {
   if (tabStore.tabs.length === 0) {
     return false;
   }
-  
+
   // 获取当前激活的标签页
   const currentTab = tabStore.tabs.find(tab => tab.id === tabStore.activeTabId);
   if (!currentTab) {
     return false;
   }
-  
+
   // 如果当前标签页是首页，检查当前路由是否也是首页
   if (currentTab.id === tabStore.homeTab?.id) {
     return route.fullPath === currentTab.fullPath;
   }
-  
+
   // 如果当前标签页不是首页，检查当前路由的 functionCode 是否匹配
   // 从标签页的 fullPath 中解析 functionCode
-  const currentFunctionCode = String(route.query.functionCode || '');
+  const routeFunctionCode = String(route.query.functionCode || '');
   const tabUrl = new URL(currentTab.fullPath, window.location.origin);
   const tabFunctionCode = String(tabUrl.searchParams.get('functionCode') || '');
-  return currentFunctionCode === tabFunctionCode;
+  return routeFunctionCode === tabFunctionCode;
 });
 
 // 原生 Vue 组件映射表 - 功能编码 -> 组件路径

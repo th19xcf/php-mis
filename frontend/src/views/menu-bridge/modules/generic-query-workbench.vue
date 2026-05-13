@@ -588,7 +588,10 @@ onActivated(() => {
     console.log('[onActivated] Restoring column state for:', functionCode, 'state count:', cachedColumnState?.length);
     if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
       // 打印所有列的 hide 状态
-      console.log('[onActivated] Column hide states:', cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
+      console.log(
+        '[onActivated] Column hide states:',
+        cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
+      );
       // 检查是否有排序信息
       const sortedColumns = cachedColumnState.filter((col: any) => col.sort);
       console.log('[onActivated] Sorted columns in cache:', sortedColumns);
@@ -596,9 +599,15 @@ onActivated(() => {
       // 根据缓存的列状态更新 pageMeta 中的 hidden 属性
       // 这样 gridColumns 计算属性会使用正确的 hide 值
       if (pageMeta.value?.columns) {
-        console.log('[onActivated] pageMeta columns fields:', pageMeta.value.columns.map(c => c.field));
-        console.log('[onActivated] cachedColumnState colIds:', cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
-        
+        console.log(
+          '[onActivated] pageMeta columns fields:',
+          pageMeta.value.columns.map(c => c.field)
+        );
+        console.log(
+          '[onActivated] cachedColumnState colIds:',
+          cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
+        );
+
         // 创建新的 columns 数组以触发响应式更新
         pageMeta.value.columns = pageMeta.value.columns.map(column => {
           const colState = cachedColumnState.find((c: any) => c.colId === column.field);
@@ -660,13 +669,12 @@ onActivated(() => {
       nextTick(() => {
         if (gridApi.value && !gridApi.value.isDestroyed()) {
           // 根据行数据标识恢复选择状态
-          gridApi.value.forEachNode((node) => {
+          gridApi.value.forEachNode(node => {
             const rowData = node.data;
             if (!rowData) return;
             const isSelected = cachedSelectedRows.some((cachedRow: any) => {
               // 使用 GUID 或 id 字段进行匹配
-              return (rowData.GUID && cachedRow.GUID === rowData.GUID) ||
-                     (rowData.id && cachedRow.id === rowData.id);
+              return (rowData.GUID && cachedRow.GUID === rowData.GUID) || (rowData.id && cachedRow.id === rowData.id);
             });
             node.setSelected(isSelected);
           });
@@ -707,7 +715,11 @@ onDeactivated(() => {
     // 保存列状态（包括 hide、width、sort、pinned 等）
     const columnState = gridApi.value.getColumnState();
     if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-      console.log('[onDeactivated] Saving column state for:', functionCode, columnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
+      console.log(
+        '[onDeactivated] Saving column state for:',
+        functionCode,
+        columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
+      );
       workbenchStore.setColumnState(functionCode, params, columnState);
     }
 
@@ -845,12 +857,11 @@ async function loadPage() {
       const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
       if (cachedSelectedRows.length > 0 && gridApi.value && !gridApi.value.isDestroyed()) {
         isRestoringSelection.value = true;
-        gridApi.value.forEachNode((node) => {
+        gridApi.value.forEachNode(node => {
           const rowData = node.data;
           if (!rowData) return;
           const isSelected = cachedSelectedRows.some((cachedRow: any) => {
-            return (rowData.GUID && cachedRow.GUID === rowData.GUID) ||
-                   (rowData.id && cachedRow.id === rowData.id);
+            return (rowData.GUID && cachedRow.GUID === rowData.GUID) || (rowData.id && cachedRow.id === rowData.id);
           });
           node.setSelected(isSelected);
         });
@@ -2855,7 +2866,14 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       // 获取缓存中的排序信息
       const cachedColumnState = workbenchStore.getColumnState(capturedFunctionCode, capturedParams);
       const cachedSortedCols = cachedColumnState?.filter((col: any) => col.sort) || [];
-      console.log('[columnResized] Current sorted:', currentSortedCols.length, 'Cached sorted:', cachedSortedCols.length, 'for:', capturedFunctionCode);
+      console.log(
+        '[columnResized] Current sorted:',
+        currentSortedCols.length,
+        'Cached sorted:',
+        cachedSortedCols.length,
+        'for:',
+        capturedFunctionCode
+      );
       // 如果当前没有排序但缓存中有排序，不要覆盖缓存
       if (currentSortedCols.length === 0 && cachedSortedCols.length > 0) {
         console.log('[columnResized] Skipping save to preserve sort state for:', capturedFunctionCode);
@@ -2869,16 +2887,27 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   });
 
   // 监听列显示/隐藏变化
-  gridApi.value.addEventListener('columnVisible', (event: any) => {
+  gridApi.value.addEventListener('columnVisible', (colEvent: any) => {
     if (isRestoringColumnState.value) {
       return;
     }
-    console.log('[columnVisible] Event triggered for:', capturedFunctionCode, 'column:', event.column?.getColDef()?.field, 'visible:', event.visible);
+    console.log(
+      '[columnVisible] Event triggered for:',
+      capturedFunctionCode,
+      'column:',
+      colEvent.column?.getColDef()?.field,
+      'visible:',
+      colEvent.visible
+    );
     if (capturedFunctionCode && gridApi.value) {
       // 保存列状态（包括 hide 属性）
       const columnState = gridApi.value.getColumnState();
       if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-        console.log('[columnVisible] Saving column state for:', capturedFunctionCode, columnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
+        console.log(
+          '[columnVisible] Saving column state for:',
+          capturedFunctionCode,
+          columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
+        );
         workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
       }
 
@@ -2907,7 +2936,11 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       // 保存列状态（包括 hide 属性）
       const columnState = gridApi.value.getColumnState();
       if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-        console.log('[dragStopped] Saving column state for:', capturedFunctionCode, columnState.map((c: any) => ({ colId: c.colId, hide: c.hide })));
+        console.log(
+          '[dragStopped] Saving column state for:',
+          capturedFunctionCode,
+          columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
+        );
         workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
       }
     }
@@ -2945,7 +2978,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   });
 
   // 监听分页变化
-  gridApi.value.addEventListener('paginationChanged', (event: any) => {
+  gridApi.value.addEventListener('paginationChanged', (_pageEvent: any) => {
     if (isRestoringPage.value) {
       return;
     }
