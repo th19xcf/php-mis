@@ -28,22 +28,22 @@ export interface WorkbenchCacheItem {
 }
 
 export const useWorkbenchStore = defineStore('workbench', () => {
-  // 缓存每个功能编码+参数组合的数据
-  // 使用 functionCode_params 作为缓存键，区分同一功能不同参数的场景
+  // 缓存每个标签作用域 + 功能编码 + 参数组合的数据
   const cache = ref<Map<string, WorkbenchCacheItem>>(new Map());
 
-  function getCacheKey(functionCode: string, params: string): string {
-    return `${functionCode}_${params}`;
+  function getCacheKey(functionCode: string, params: string, scopeKey = ''): string {
+    const normalizedScopeKey = scopeKey.trim();
+    return normalizedScopeKey ? `${normalizedScopeKey}::${functionCode}_${params}` : `${functionCode}_${params}`;
   }
 
   // 获取缓存数据
-  function getCache(functionCode: string, params: string): WorkbenchCacheItem | undefined {
-    return cache.value.get(getCacheKey(functionCode, params));
+  function getCache(functionCode: string, params: string, scopeKey = ''): WorkbenchCacheItem | undefined {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey));
   }
 
   // 设置缓存数据
-  function setCache(functionCode: string, params: string, data: Partial<WorkbenchCacheItem>) {
-    const key = getCacheKey(functionCode, params);
+  function setCache(functionCode: string, params: string, data: Partial<WorkbenchCacheItem>, scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     cache.value.set(key, {
       pageMeta: data.pageMeta ?? existing?.pageMeta ?? null,
@@ -72,8 +72,8 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   // 清除指定功能的缓存
-  function clearCache(functionCode: string, params: string) {
-    cache.value.delete(getCacheKey(functionCode, params));
+  function clearCache(functionCode: string, params: string, scopeKey = '') {
+    cache.value.delete(getCacheKey(functionCode, params, scopeKey));
   }
 
   // 清除所有缓存
@@ -82,19 +82,19 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   // 检查是否有缓存
-  function hasCache(functionCode: string, params: string): boolean {
-    return cache.value.has(getCacheKey(functionCode, params));
+  function hasCache(functionCode: string, params: string, scopeKey = ''): boolean {
+    return cache.value.has(getCacheKey(functionCode, params, scopeKey));
   }
 
-  function getFilterModel(functionCode: string, params: string): any {
-    return cache.value.get(getCacheKey(functionCode, params))?.filterModel ?? null;
+  function getFilterModel(functionCode: string, params: string, scopeKey = ''): any {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.filterModel ?? null;
   }
 
-  function setFilterModel(functionCode: string, params: string, filterModel: any) {
+  function setFilterModel(functionCode: string, params: string, filterModel: any, scopeKey = '') {
     if (!filterModel || Object.keys(filterModel).length === 0) {
       return;
     }
-    const key = getCacheKey(functionCode, params);
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.filterModel = filterModel;
@@ -126,8 +126,8 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     }
   }
 
-  function clearFilterModel(functionCode: string, params: string) {
-    const key = getCacheKey(functionCode, params);
+  function clearFilterModel(functionCode: string, params: string, scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.filterModel = null;
@@ -135,15 +135,15 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     }
   }
 
-  function getColumnState(functionCode: string, params: string): any {
-    return cache.value.get(getCacheKey(functionCode, params))?.columnState ?? null;
+  function getColumnState(functionCode: string, params: string, scopeKey = ''): any {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.columnState ?? null;
   }
 
-  function setColumnState(functionCode: string, params: string, columnState: any) {
+  function setColumnState(functionCode: string, params: string, columnState: any, scopeKey = '') {
     if (!columnState) {
       return;
     }
-    const key = getCacheKey(functionCode, params);
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.columnState = columnState;
@@ -175,8 +175,8 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     }
   }
 
-  function clearColumnState(functionCode: string, params: string) {
-    const key = getCacheKey(functionCode, params);
+  function clearColumnState(functionCode: string, params: string, scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.columnState = null;
@@ -185,12 +185,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   // 分页状态
-  function getPage(functionCode: string, params: string): number {
-    return cache.value.get(getCacheKey(functionCode, params))?.page ?? 1;
+  function getPage(functionCode: string, params: string, scopeKey = ''): number {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.page ?? 1;
   }
 
-  function setPage(functionCode: string, params: string, page: number) {
-    const key = getCacheKey(functionCode, params);
+  function setPage(functionCode: string, params: string, page: number, scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.page = page;
@@ -222,12 +222,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     }
   }
 
-  function getPageSize(functionCode: string, params: string): number {
-    return cache.value.get(getCacheKey(functionCode, params))?.pageSize ?? 500;
+  function getPageSize(functionCode: string, params: string, scopeKey = ''): number {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.pageSize ?? 500;
   }
 
-  function setPageSize(functionCode: string, params: string, pageSize: number) {
-    const key = getCacheKey(functionCode, params);
+  function setPageSize(functionCode: string, params: string, pageSize: number, scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.pageSize = pageSize;
@@ -260,12 +260,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   // 行选择状态
-  function getSelectedRows(functionCode: string, params: string): any[] {
-    return cache.value.get(getCacheKey(functionCode, params))?.selectedRows ?? [];
+  function getSelectedRows(functionCode: string, params: string, scopeKey = ''): any[] {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.selectedRows ?? [];
   }
 
-  function setSelectedRows(functionCode: string, params: string, selectedRows: any[]) {
-    const key = getCacheKey(functionCode, params);
+  function setSelectedRows(functionCode: string, params: string, selectedRows: any[], scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.selectedRows = selectedRows;
@@ -298,12 +298,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   // 字段选择状态
-  function getVisibleColumns(functionCode: string, params: string): string[] {
-    return cache.value.get(getCacheKey(functionCode, params))?.visibleColumns ?? [];
+  function getVisibleColumns(functionCode: string, params: string, scopeKey = ''): string[] {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.visibleColumns ?? [];
   }
 
-  function setVisibleColumns(functionCode: string, params: string, visibleColumns: string[]) {
-    const key = getCacheKey(functionCode, params);
+  function setVisibleColumns(functionCode: string, params: string, visibleColumns: string[], scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.visibleColumns = visibleColumns;
@@ -336,12 +336,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   // 固定列状态
-  function getPinColumns(functionCode: string, params: string): string[] {
-    return cache.value.get(getCacheKey(functionCode, params))?.pinColumns ?? [];
+  function getPinColumns(functionCode: string, params: string, scopeKey = ''): string[] {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.pinColumns ?? [];
   }
 
-  function setPinColumns(functionCode: string, params: string, pinColumns: string[]) {
-    const key = getCacheKey(functionCode, params);
+  function setPinColumns(functionCode: string, params: string, pinColumns: string[], scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.pinColumns = pinColumns;
@@ -374,12 +374,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   }
 
   // UI 状态
-  function getUIState(functionCode: string, params: string): WorkbenchCacheItem['uiState'] | null {
-    return cache.value.get(getCacheKey(functionCode, params))?.uiState ?? null;
+  function getUIState(functionCode: string, params: string, scopeKey = ''): WorkbenchCacheItem['uiState'] | null {
+    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.uiState ?? null;
   }
 
-  function setUIState(functionCode: string, params: string, uiState: Partial<WorkbenchCacheItem['uiState']>) {
-    const key = getCacheKey(functionCode, params);
+  function setUIState(functionCode: string, params: string, uiState: Partial<WorkbenchCacheItem['uiState']>, scopeKey = '') {
+    const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {
       existing.uiState = { ...existing.uiState, ...uiState };

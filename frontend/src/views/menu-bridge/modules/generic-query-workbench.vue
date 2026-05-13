@@ -79,6 +79,7 @@ const props = defineProps<{
   meta: MenuBridgeMeta;
   nativeOnly?: boolean;
   dynamicLike?: boolean;
+  cacheScopeKey?: string;
 }>();
 
 const lightGridTheme = themeAlpine.withParams({
@@ -288,9 +289,33 @@ const keyFieldCount = computed(() => {
 
 // 工具栏滚动相关
 const toolbarScrollRef = ref<HTMLDivElement | null>(null);
+const gridShellRef = ref<HTMLDivElement | null>(null);
 const showLeftArrow = ref(false);
 const showRightArrow = ref(false);
 let resizeObserver: ResizeObserver | null = null;
+
+function isGridShellVisible() {
+  if (!gridShellRef.value) return false;
+  return gridShellRef.value.offsetWidth > 0 && gridShellRef.value.offsetHeight > 0;
+}
+
+function hasSuspiciousNarrowColumnState(columnState: any[]) {
+  if (!Array.isArray(columnState) || columnState.length === 0) return false;
+
+  const dataColumns = columnState.filter((col: any) => {
+    const colId = String(col?.colId || '');
+    return colId && colId !== 'ag-Grid-SelectionColumn' && !colId.startsWith('ag-Grid-');
+  });
+
+  if (dataColumns.length === 0) return false;
+
+  const narrowCount = dataColumns.filter((col: any) => {
+    const width = Number(col?.width || 0);
+    return Number.isFinite(width) && width > 0 && width <= 80;
+  }).length;
+
+  return narrowCount / dataColumns.length >= 0.7;
+}
 
 // 检查滚动位置，控制箭头显示
 function checkScrollPosition() {
@@ -552,7 +577,53 @@ const filteredRows = computed(() => {
   return rows;
 });
 
-const workbenchStore = useWorkbenchStore();
+const rawWorkbenchStore = useWorkbenchStore();
+
+function getCacheScopeKey() {
+  return String(props.cacheScopeKey || '').trim();
+}
+
+const workbenchStore = {
+  getCache: (functionCode: string, params: string) => rawWorkbenchStore.getCache(functionCode, params, getCacheScopeKey()),
+  setCache: (functionCode: string, params: string, data: Partial<any>) =>
+    rawWorkbenchStore.setCache(functionCode, params, data, getCacheScopeKey()),
+  clearCache: (functionCode: string, params: string) => rawWorkbenchStore.clearCache(functionCode, params, getCacheScopeKey()),
+  getFilterModel: (functionCode: string, params: string) =>
+    rawWorkbenchStore.getFilterModel(functionCode, params, getCacheScopeKey()),
+  setFilterModel: (functionCode: string, params: string, filterModel: any) =>
+    rawWorkbenchStore.setFilterModel(functionCode, params, filterModel, getCacheScopeKey()),
+  clearFilterModel: (functionCode: string, params: string) =>
+    rawWorkbenchStore.clearFilterModel(functionCode, params, getCacheScopeKey()),
+  getColumnState: (functionCode: string, params: string) =>
+    rawWorkbenchStore.getColumnState(functionCode, params, getCacheScopeKey()),
+  setColumnState: (functionCode: string, params: string, columnState: any) =>
+    rawWorkbenchStore.setColumnState(functionCode, params, columnState, getCacheScopeKey()),
+  clearColumnState: (functionCode: string, params: string) =>
+    rawWorkbenchStore.clearColumnState(functionCode, params, getCacheScopeKey()),
+  getPage: (functionCode: string, params: string) => rawWorkbenchStore.getPage(functionCode, params, getCacheScopeKey()),
+  setPage: (functionCode: string, params: string, currentPage: number) =>
+    rawWorkbenchStore.setPage(functionCode, params, currentPage, getCacheScopeKey()),
+  getPageSize: (functionCode: string, params: string) =>
+    rawWorkbenchStore.getPageSize(functionCode, params, getCacheScopeKey()),
+  setPageSize: (functionCode: string, params: string, currentPageSize: number) =>
+    rawWorkbenchStore.setPageSize(functionCode, params, currentPageSize, getCacheScopeKey()),
+  getSelectedRows: (functionCode: string, params: string) =>
+    rawWorkbenchStore.getSelectedRows(functionCode, params, getCacheScopeKey()),
+  setSelectedRows: (functionCode: string, params: string, selectedRows: any[]) =>
+    rawWorkbenchStore.setSelectedRows(functionCode, params, selectedRows, getCacheScopeKey()),
+  getVisibleColumns: (functionCode: string, params: string) =>
+    rawWorkbenchStore.getVisibleColumns(functionCode, params, getCacheScopeKey()),
+  setVisibleColumns: (functionCode: string, params: string, visibleColumns: string[]) =>
+    rawWorkbenchStore.setVisibleColumns(functionCode, params, visibleColumns, getCacheScopeKey()),
+  getPinColumns: (functionCode: string, params: string) =>
+    rawWorkbenchStore.getPinColumns(functionCode, params, getCacheScopeKey()),
+  setPinColumns: (functionCode: string, params: string, pinColumns: string[]) =>
+    rawWorkbenchStore.setPinColumns(functionCode, params, pinColumns, getCacheScopeKey()),
+  getUIState: (functionCode: string, params: string) =>
+    rawWorkbenchStore.getUIState(functionCode, params, getCacheScopeKey()),
+  setUIState: (functionCode: string, params: string, uiState: any) =>
+    rawWorkbenchStore.setUIState(functionCode, params, uiState, getCacheScopeKey())
+};
 
 onActivated(() => {
   if (gridApi.value && !gridApi.value.isDestroyed()) {
@@ -714,7 +785,11 @@ onDeactivated(() => {
 
     // 保存列状态（包括 hide、width、sort、pinned 等）
     const columnState = gridApi.value.getColumnState();
-    if (columnState && Array.isArray(columnState) && columnState.length > 0) {
+    if (!isGridShellVisible()) {
+      console.log('[onDeactivated] Skip saving column state, grid shell is hidden for:', functionCode);
+    } else if (hasSuspiciousNarrowColumnState(columnState)) {
+      console.log('[onDeactivated] Skip suspicious narrow column state for:', functionCode);
+    } else if (columnState && Array.isArray(columnState) && columnState.length > 0) {
       console.log(
         '[onDeactivated] Saving column state for:',
         functionCode,
@@ -2850,7 +2925,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     }
   });
 
-  gridApi.value.addEventListener('columnResized', () => {
+  gridApi.value.addEventListener('columnResized', (colEvent: any) => {
     if (isRestoringColumnState.value) {
       console.log('[columnResized] Skipping save, isRestoringColumnState is true');
       return;
@@ -2859,8 +2934,24 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       console.log('[columnResized] Skipping save, isInitialLoading is true');
       return;
     }
+    if (colEvent?.finished === false) {
+      return;
+    }
+    const resizeSource = String(colEvent?.source || '');
+    if (resizeSource === 'gridSizeChanged' || resizeSource === 'sizeColumnsToFit' || resizeSource === 'api') {
+      console.log('[columnResized] Skipping non-user resize source:', resizeSource);
+      return;
+    }
+    if (!isGridShellVisible()) {
+      console.log('[columnResized] Skipping save, grid shell is hidden');
+      return;
+    }
     if (capturedFunctionCode && gridApi.value) {
       const columnState = gridApi.value.getColumnState();
+      if (hasSuspiciousNarrowColumnState(columnState)) {
+        console.log('[columnResized] Skipping suspicious narrow column state for:', capturedFunctionCode);
+        return;
+      }
       // 检查当前是否有排序信息
       const currentSortedCols = columnState.filter((col: any) => col.sort);
       // 获取缓存中的排序信息
@@ -3080,7 +3171,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       :content-style="{ padding: '0' }"
       class="grid-card rounded-12px shadow-sm workbench-grid-card"
     >
-      <div class="ag-theme-shell" :class="{ 'ag-theme-shell-dynamic': props.dynamicLike }">
+      <div ref="gridShellRef" class="ag-theme-shell" :class="{ 'ag-theme-shell-dynamic': props.dynamicLike }">
         <div v-if="loading" class="grid-loading">
           <NSpin size="large" />
         </div>

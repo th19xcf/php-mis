@@ -15,6 +15,7 @@ const route = useRoute();
 const themeStore = useThemeStore();
 const tabStore = useTabStore();
 const isDarkMode = computed(() => themeStore.darkMode);
+const workbenchCacheScopeKey = computed(() => route.fullPath);
 
 const meta = computed(() => {
   const routeMeta = (route.meta || {}) as Record<string, unknown>;
@@ -190,8 +191,9 @@ function handleIframeLoad() {
         <!-- 通用查询工作台 - 使用 KeepAlive 缓存组件，避免数据互相干扰 -->
         <KeepAlive v-else-if="activeView === 'workbench' && meta.functionCode && isCurrentRouteActive">
           <GenericQueryWorkbench
-            :key="meta.functionCode"
+            :key="workbenchCacheScopeKey"
             :meta="meta"
+            :cache-scope-key="workbenchCacheScopeKey"
             :native-only="isNativeOnlyFunction"
             :dynamic-like="false"
           />
