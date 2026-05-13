@@ -1084,6 +1084,17 @@ async function handleRefresh() {
     });
   }
 
+  // 清除 AG Grid 排序
+  if (gridApi.value) {
+    gridApi.value.applyColumnState({
+      state: fieldColumnOptions.value.map(item => ({
+        colId: String(item.value),
+        sort: null
+      })),
+      defaultState: { sort: null }
+    });
+  }
+
   // 清除 AG Grid 筛选条件
   if (gridApi.value) {
     gridApi.value.setFilterModel(null);
