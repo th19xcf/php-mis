@@ -2807,4 +2807,178 @@ class Workbench extends BaseController
             return $this->error('5001', '获取弹窗级别数据失败: ' . $e->getMessage());
         }
     }
+
+    /**
+     * 表级修改提交
+     * 直接在表格中修改数据后批量提交
+     */
+    public function tableEdit(string $functionCode = '')
+    {
+        try {
+            $functionCode = trim($functionCode);
+            if ($functionCode === '') {
+                throw new \RuntimeException('功能编码不能为空');
+            }
+
+            // 获取请求数据（修改后的行数据数组）
+            $rows = $this->request->getJSON(true) ?? [];
+            if (empty($rows)) {
+                return $this->error('5001', '没有要提交的修改数据');
+            }
+
+            // 获取 session 信息
+            $session = \Config\Services::session();
+            $userWorkid = $session->get('user_workid') ?? 'system';
+
+            // 获取查询配置
+            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            if (!$queryConfig || $queryConfig['dataTable'] === '') {
+                return $this->error('5001', '修改失败：未找到数据表配置');
+            }
+
+            $dataTable = $queryConfig['dataTable'];
+            $dataModel = $queryConfig['dataModel'];
+
+            // 获取主键字段
+            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            if (empty($primaryKey)) {
+                return $this->error('5001', '修改失败：未找到主键字段');
+            }
+
+            error_log('tableEdit - functionCode: ' . $functionCode);
+            error_log('tableEdit - dataTable: ' . $dataTable);
+            error_log('tableEdit - dataModel: ' . $dataModel);
+            error_log('tableEdit - primaryKey: ' . $primaryKey);
+            error_log('tableEdit - rows count: ' . count($rows));
+
+            // 根据数据模式执行不同的更新逻辑
+            $num = 0;
+            switch ($dataModel) {
+                case '0':
+                    // 模式0：直接更新每条记录
+                    foreach ($rows as $row) {
+                        $where = $this->buildWhereFromData($row, $primaryKey);
+                        if (empty($where)) {
+                            continue;
+                        }
+
+                        // 构建更新字段（排除主键）
+                        $updates = [];
+                        foreach ($row as $key => $value) {
+                            if ($key !== $primaryKey && !in_array($key, ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识', '有效标识', '记录开始日期', '记录结束日期'])) {
+                                $updates[] = sprintf('`%s` = "%s"', $key, addslashes($value));
+                            }
+                        }
+
+                        if (empty($updates)) {
+                            continue;
+                        }
+
+                        $sqlUpdate = sprintf(
+                            'UPDATE %s SET %s WHERE %s',
+                            $dataTable,
+                            implode(', ', $updates),
+                            $where
+                        );
+                        $this->common->sql_log('表级修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
+                        $num += $this->common->exec($sqlUpdate);
+                    }
+                    break;
+
+                case '1':
+                case '2':
+                    // 模式1/2：标记修改（每条记录都添加新版本）
+                    foreach ($rows as $row) {
+                        $where = $this->buildWhereFromData($row, $primaryKey);
+                        if (empty($where)) {
+                            continue;
+                        }
+
+                        // 先获取原始记录
+                        $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where);
+                        $result = $this->common->select($sqlSelect);
+                        if ($result === false) {
+                            continue;
+                        }
+                        $originalRow = $result->getRowArray();
+                        if (empty($originalRow)) {
+                            continue;
+                        }
+
+                        // 更新原始记录为无效
+                        $sqlUpdateOld = sprintf(
+                            'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
+                            $dataTable,
+                            $userWorkid,
+                            date('Y-m-d H:i:s'),
+                            date('Y-m-d H:i:s'),
+                            $where
+                        );
+                        $this->common->sql_log('表级修改[1-旧]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
+                        $this->common->exec($sqlUpdateOld);
+
+                        // 插入新记录
+                        $fields = [];
+                        $values = [];
+                        foreach ($originalRow as $key => $val) {
+                            // 使用修改后的值，如果没有修改则使用原值
+                            if (isset($row[$key]) && !in_array($key, ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识', '有效标识', '记录开始日期', '记录结束日期'])) {
+                                $fields[] = sprintf('`%s`', $key);
+                                $values[] = sprintf('"%s"', addslashes($row[$key]));
+                            } else if (!in_array($key, ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识', '有效标识', '记录开始日期', '记录结束日期'])) {
+                                $fields[] = sprintf('`%s`', $key);
+                                $values[] = sprintf('"%s"', addslashes($val));
+                            }
+                        }
+
+                        // 更新操作字段
+                        $fields[] = '`操作记录`';
+                        $values[] = '"新增"';
+                        $fields[] = '`操作来源`';
+                        $values[] = '"工作台"';
+                        $fields[] = '`操作人员`';
+                        $values[] = sprintf('"%s"', $userWorkid);
+                        $fields[] = '`操作时间`';
+                        $values[] = sprintf('"%s"', date('Y-m-d H:i:s'));
+                        $fields[] = '`结束操作时间`';
+                        $values[] = '"9999-12-31"';
+                        $fields[] = '`删除标识`';
+                        $values[] = '"0"';
+                        $fields[] = '`有效标识`';
+                        $values[] = '"1"';
+
+                        if ($dataModel === '2') {
+                            $fields[] = '`记录开始日期`';
+                            $values[] = sprintf('"%s"', date('Y-m-d'));
+                            $fields[] = '`记录结束日期`';
+                            $values[] = '"9999-12-31"';
+                        }
+
+                        $sqlInsert = sprintf(
+                            'INSERT INTO %s (%s) VALUES (%s)',
+                            $dataTable,
+                            implode(', ', $fields),
+                            implode(', ', $values)
+                        );
+                        $this->common->sql_log('表级修改[1-新]', $functionCode, sprintf('表名=`%s`', $dataTable));
+                        $num += $this->common->exec($sqlInsert);
+                    }
+                    break;
+
+                default:
+                    return $this->error('5001', sprintf('修改失败,数据模式[-%s-]错误', $dataModel));
+            }
+
+            return $this->success([
+                'success' => true,
+                'message' => sprintf('表级修改提交成功,修改了 %d 条记录', $num),
+                'updatedCount' => $num
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            error_log('表级修改提交失败: ' . $e->getMessage());
+            return $this->error('5001', '表级修改提交失败：' . $e->getMessage());
+        }
+    }
 }

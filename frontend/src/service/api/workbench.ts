@@ -104,3 +104,12 @@ export function fetchPopupLevelData(functionCode: string, objectName: string, le
     params: { objectName, level, parentCode }
   });
 }
+
+// 表级修改提交
+export function submitTableEdit(functionCode: string, data: Api.Workbench.QueryRecord[]) {
+  return request<Api.Workbench.UpdateResult>({
+    url: `/workbench/table-edit/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data
+  });
+}

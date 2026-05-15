@@ -50,6 +50,7 @@ $routes->group('workbench', static function ($routes) {
 	$routes->post('update-row/(:segment)', 'Workbench::updateRow/$1');
 	$routes->post('batch-update-row/(:segment)', 'Workbench::batchUpdateRow/$1');
 	$routes->post('delete-row/(:segment)', 'Workbench::deleteRow/$1');
+	$routes->post('table-edit/(:segment)', 'Workbench::tableEdit/$1');
 });
 
 $routes->group('comment', static function ($routes) {

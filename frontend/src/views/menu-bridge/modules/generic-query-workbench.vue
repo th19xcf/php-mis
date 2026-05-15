@@ -33,7 +33,8 @@ import * as XLSX from 'xlsx';
 import {
   fetchWorkbenchPage,
   fetchWorkbenchQuery,
-  fetchWorkbenchDrill
+  fetchWorkbenchDrill,
+  submitTableEdit
 } from '@/service/api/workbench';
 import { useColorMark } from '@/hooks/business/use-color-mark';
 import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
@@ -129,6 +130,16 @@ const isInitialLoading = ref(false);
 // 缓存数据，避免重复请求
 const isDataLoaded = ref(false);
 
+// 表级修改相关状态
+const tableModifiedRows = ref<Set<string | number>>(new Set());
+// 存储修改的字段和值（只包含修改的字段）
+const modifiedRowsData = ref<Map<string | number, Record<string, any>>>(new Map());
+// 存储原始行数据（用于获取主键）
+const originalRowsData = ref<Map<string | number, Api.Workbench.QueryRecord>>(new Map());
+const hasTableModifications = computed(() => tableModifiedRows.value.size > 0);
+// 防止递归触发 cellValueChanged
+const isRestoringCellValue = ref(false);
+
 // 记录当前已加载的 functionCode 和 params，用于检测是否真的需要重新加载
 const loadedFunctionCode = ref<string>('');
 const loadedParams = ref<string>('');
@@ -182,6 +193,17 @@ watch(
     }
   },
   { deep: true }
+);
+
+// 监听主题模式变化，刷新单元格样式
+watch(
+  () => isDarkMode.value,
+  () => {
+    // 主题切换时刷新所有单元格
+    if (gridApi.value && !gridApi.value.isDestroyed()) {
+      gridApi.value.refreshCells({ force: true });
+    }
+  }
 );
 
 // 颜色标注相关
@@ -262,6 +284,9 @@ function normalizePageSize(size?: number) {
   return PAGE_SIZE_OPTIONS.includes(size as (typeof PAGE_SIZE_OPTIONS)[number]) ? size! : PAGE_SIZE_OPTIONS[0];
 }
 
+// 是否有整表修改权限
+const hasTableEditAuth = computed(() => pageMeta.value?.toolbar.tableEdit === true);
+
 const defaultColDef = {
   width: 120,
   minWidth: 0,
@@ -272,7 +297,7 @@ const defaultColDef = {
   filterParams: {
     maxNumConditions: 5
   }
-} as const;
+};
 
 /**
  * 解析样式字符串为 CSS 对象
@@ -347,62 +372,74 @@ const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
     }
 
     // 添加提示、异常和颜色标注样式处理
-    if (column.errorCondition || column.hintCondition || column.colorMarkEnabled) {
-      definition.cellStyle = (params: any) => {
-        const field = column.field;
-        const data = params.data || {};
+    definition.cellStyle = (params: any) => {
+      const field = column.field;
+      const data = params.data || {};
+      const rowIndex = params.rowIndex;
 
-        // 优先检查颜色标注条件（用户主动设置的优先级最高）
-        if (column.colorMarkEnabled && colorMarkConfig.value) {
-          const { field1, operator, field2, style } = colorMarkConfig.value;
-          // 处理当前列是字段一或字段二的情况
-          if (field === field1 || field === field2) {
-            const val1 = Number(data[field1]);
-            const val2 = Number(data[field2]);
-            let match = false;
-            switch (operator) {
-              case '大于':
-                match = val1 > val2;
-                break;
-              case '小于':
-                match = val1 < val2;
-                break;
-              case '等于':
-                match = val1 === val2;
-                break;
-              case '大于等于':
-                match = val1 >= val2;
-                break;
-              case '小于等于':
-                match = val1 <= val2;
-                break;
-              case '不等于':
-                match = val1 !== val2;
-                break;
-            }
-            if (match) return style;
-          }
+      // 优先检查是否是修改过的单元格
+      const rowId = getRowId(data, rowIndex);
+      const modifiedFields = modifiedRowsData.value.get(rowId);
+      if (modifiedFields && field in modifiedFields) {
+        // 修改过的单元格显示特殊背景色（根据主题模式）
+        if (isDarkMode.value) {
+          // Dark模式：使用深色背景，确保文字清晰可见
+          return { backgroundColor: '#856404', color: '#ffffff', border: 'none', outline: 'none', boxShadow: 'none' };
         }
+        // Light模式：使用淡黄色背景
+        return { backgroundColor: '#fff3cd', color: '#000000', border: 'none', outline: 'none', boxShadow: 'none' };
+      }
 
-        // 然后检查异常条件
-        if (column.errorCondition) {
-          const errorKey = `异常^${field}`;
-          if (data[errorKey] === '1' || data[errorKey] === 1) {
-            return parseStyleString(column.errorStyle || '');
+      // 优先检查颜色标注条件（用户主动设置的优先级最高）
+      if (column.colorMarkEnabled && colorMarkConfig.value) {
+        const { field1, operator, field2, style } = colorMarkConfig.value;
+        // 处理当前列是字段一或字段二的情况
+        if (field === field1 || field === field2) {
+          const val1 = Number(data[field1]);
+          const val2 = Number(data[field2]);
+          let match = false;
+          switch (operator) {
+            case '大于':
+              match = val1 > val2;
+              break;
+            case '小于':
+              match = val1 < val2;
+              break;
+            case '等于':
+              match = val1 === val2;
+              break;
+            case '大于等于':
+              match = val1 >= val2;
+              break;
+            case '小于等于':
+              match = val1 <= val2;
+              break;
+            case '不等于':
+              match = val1 !== val2;
+              break;
           }
+          if (match) return style;
         }
+      }
 
-        // 最后检查提示条件
-        if (column.hintCondition) {
-          const hintKey = `提示^${field}`;
-          if (data[hintKey] === '1' || data[hintKey] === 1) {
-            return parseStyleString(column.hintStyle || '');
-          }
+      // 然后检查异常条件
+      if (column.errorCondition) {
+        const errorKey = `异常^${field}`;
+        if (data[errorKey] === '1' || data[errorKey] === 1) {
+          return parseStyleString(column.errorStyle || '');
         }
+      }
 
-        return null;
-      };
-    }
+      // 最后检查提示条件
+      if (column.hintCondition) {
+        const hintKey = `提示^${field}`;
+        if (data[hintKey] === '1' || data[hintKey] === 1) {
+          return parseStyleString(column.hintStyle || '');
+        }
+      }
+
+      return null;
+    };
 
     return definition;
   });
@@ -465,6 +502,15 @@ const fieldColumnOptions = computed(() => {
 const filteredRows = computed(() => {
   let rows = [...serverRows.value];
   const keyword = quickKeyword.value.trim().toLowerCase();
+
+  // 应用修改后的数据
+  rows = rows.map((row, index) => {
+    const rowId = getRowId(row, index);
+    if (modifiedRowsData.value.has(rowId)) {
+      return { ...row, ...modifiedRowsData.value.get(rowId) };
+    }
+    return row;
+  });
 
   if (keyword) {
     rows = rows.filter(row =>
@@ -575,6 +621,11 @@ async function loadPage() {
     total.value = 0;
     return;
   }
+
+  // 清空表级修改记录
+  tableModifiedRows.value.clear();
+  modifiedRowsData.value.clear();
+  originalRowsData.value.clear();
 
   // 设置初始加载标志，防止 columnResized 事件保存状态
   isInitialLoading.value = true;
@@ -1383,6 +1434,128 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
   registerGridPersistenceListeners();
 }
+
+// 获取行的唯一标识（优先使用 GUID，其次使用 id，最后使用索引）
+function getRowId(row: Api.Workbench.QueryRecord, index: number): string {
+  if (row.GUID) return String(row.GUID);
+  if (row.id) return String(row.id);
+  if (row.ID) return String(row.ID);
+  return String(index);
+}
+
+// 处理单元格值变化事件（表级修改）
+function handleCellValueChanged(event: any) {
+  // 如果正在恢复单元格值，跳过处理（防止递归）
+  if (isRestoringCellValue.value) {
+    return;
+  }
+
+  // 检查是否有整表修改权限
+  if (!hasTableEditAuth.value) {
+    // 只提示一次
+    msg('warning', '数据在此处修改无效，请点击"单条修改"或"多条修改"按钮进行修改');
+    // 恢复原值
+    isRestoringCellValue.value = true;
+    const rowNode = event.node;
+    const originalValue = event.oldValue;
+    const field = event.colDef.field;
+    // 使用 setDataValue 恢复原始值
+    rowNode.setDataValue(field, originalValue);
+    // 延迟重置标志，确保事件处理完成
+    setTimeout(() => {
+      isRestoringCellValue.value = false;
+    }, 0);
+    return;
+  }
+
+  // 记录修改的行ID（使用数据中的 GUID 或 id）
+  const rowData = event.data;
+  const rowIndex = event.rowIndex;
+  const rowId = getRowId(rowData, rowIndex);
+  
+  tableModifiedRows.value.add(rowId);
+  
+  // 保存原始行数据（用于获取主键）
+  if (!originalRowsData.value.has(rowId)) {
+    originalRowsData.value.set(rowId, { ...rowData });
+  }
+  
+  // 只存储修改的字段和值
+  const currentData = modifiedRowsData.value.get(rowId) || {};
+  currentData[event.colDef.field] = event.newValue;
+  modifiedRowsData.value.set(rowId, currentData);
+}
+
+// 处理表级修改提交
+async function handleTableEditSubmit() {
+  if (tableModifiedRows.value.size === 0) {
+    msg('warning', '没有需要提交的修改');
+    return;
+  }
+
+  const functionCode = String(props.meta.functionCode || '').trim();
+  if (!functionCode) {
+    msg('error', '功能编码不能为空');
+    return;
+  }
+
+  // 收集修改的数据（只包含主键字段和修改的字段）
+  const modifiedData: Api.Workbench.QueryRecord[] = [];
+  tableModifiedRows.value.forEach((rowId) => {
+    const originalRow = originalRowsData.value.get(rowId);
+    const modifiedFields = modifiedRowsData.value.get(rowId);
+    
+    if (originalRow && modifiedFields) {
+      // 构建提交数据：主键字段 + 修改的字段
+      const submitData: Record<string, any> = {};
+      
+      // 添加主键字段（GUID、id、ID）
+      if (originalRow.GUID !== undefined) submitData.GUID = originalRow.GUID;
+      if (originalRow.id !== undefined) submitData.id = originalRow.id;
+      if (originalRow.ID !== undefined) submitData.ID = originalRow.ID;
+      
+      // 添加修改的字段（排除序号字段）
+      Object.keys(modifiedFields).forEach((field) => {
+        // 排除序号字段（通常名为"序号"或以"序号"开头）
+        if (field !== '序号' && !field.startsWith('序号')) {
+          submitData[field] = modifiedFields[field];
+        }
+      });
+      
+      modifiedData.push(submitData);
+    }
+  });
+
+  if (modifiedData.length === 0) {
+    msg('warning', '没有需要提交的修改');
+    return;
+  }
+
+  try {
+    const { data, error } = await submitTableEdit(functionCode, modifiedData);
+    if (error) {
+      msg('error', error.message || '表级修改提交失败');
+      return;
+    }
+
+    if (data?.success) {
+      msg('success', data.message || '表级修改提交成功');
+      // 清空修改记录
+      tableModifiedRows.value.clear();
+      modifiedRowsData.value.clear();
+      originalRowsData.value.clear();
+      // 刷新数据
+      const currentParams = String(props.meta.params || '').trim();
+      workbenchStore.clearCache(functionCode, currentParams);
+      isDataLoaded.value = false;
+      loadPage();
+    } else {
+      msg('error', data?.message || '表级修改提交失败');
+    }
+  } catch (e: any) {
+    msg('error', e.message || '表级修改提交失败');
+  }
+}
 </script>
 
 <template>
@@ -1432,6 +1605,13 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
               多条修改
             </NButton>
             <NButton v-if="pageMeta?.toolbar.delete" :disabled="deleteLoading" @click="handleDelete">删除</NButton>
+            <NButton
+              v-if="pageMeta?.toolbar.tableEdit"
+              :disabled="!hasTableModifications"
+              @click="handleTableEditSubmit"
+            >
+              表级修改提交
+            </NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
           </div>
@@ -1483,7 +1663,6 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           :default-col-def="defaultColDef"
           :row-height="38"
           :header-height="40"
-          :read-only-edit="true"
           :row-data="filteredRows"
           :locale-text="AG_GRID_LOCALE_CN"
           :pagination="true"
@@ -1499,6 +1678,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           }"
           class="query-grid"
           @grid-ready="handleGridReady"
+          @cell-value-changed="handleCellValueChanged"
         />
       </div>
     </NCard>
