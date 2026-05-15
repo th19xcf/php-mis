@@ -246,7 +246,13 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     workbenchStore.setSelectedRows(functionCode, params, selectedRows);
 
     const columnState = options.gridApi.value.getColumnState();
-    if (options.isGridShellVisible() && !options.hasSuspiciousNarrowColumnState(columnState) && columnState && Array.isArray(columnState) && columnState.length > 0) {
+    if (
+      options.isGridShellVisible() &&
+      !options.hasSuspiciousNarrowColumnState(columnState) &&
+      columnState &&
+      Array.isArray(columnState) &&
+      columnState.length > 0
+    ) {
       workbenchStore.setColumnState(functionCode, params, columnState);
     }
 
@@ -338,7 +344,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       }
     });
 
-    api.addEventListener('columnVisible', (colEvent: any) => {
+    api.addEventListener('columnVisible', (_colEvent: any) => {
       if (options.isRestoringColumnState.value) {
         return;
       }
