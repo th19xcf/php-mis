@@ -632,8 +632,10 @@ async function loadPage() {
 
   // 检查 store 缓存
   const cached = workbenchStore.getCache(functionCode, params);
+  const scopeKey = getCacheScopeKey();
+  console.log('[loadPage] Checking cache:', { functionCode, params, scopeKey, hasCache: !!cached, isDataLoaded: cached?.isDataLoaded, cacheTimestamp: cached?.timestamp });
   if (cached && cached.isDataLoaded) {
-    console.log('Using cached data for:', functionCode);
+    console.log('[loadPage] ✅ CACHE HIT! Loading data from MEMORY for:', functionCode, 'rows:', cached.serverRows.length);
     pageMeta.value = cached.pageMeta;
     serverRows.value = cached.serverRows;
     total.value = cached.total;
@@ -666,84 +668,43 @@ async function loadPage() {
     }
 
     // 刷新表格（列状态由 onActivated 恢复，避免重复恢复）
+    // 缓存命中时跳过列宽自适应，避免大数据量下的性能问题
     setTimeout(() => {
       if (gridApi.value) {
         gridApi.value.refreshCells({ force: true });
-
-        // 只有在没有缓存列状态时才执行列宽自适应
-        const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
-        console.log('[loadPage] Checking column state for autoSize:', functionCode, cachedColumnState);
-        if (!cachedColumnState || !Array.isArray(cachedColumnState) || cachedColumnState.length === 0) {
-          // 如果没有缓存的列状态，执行列宽自适应
-          const api = gridApi.value;
-          if (api && !api.isDestroyed()) {
-            const columnState = api.getColumnState();
-            console.log('[loadPage] Auto-sizing columns for:', functionCode, columnState);
-            if (columnState && Array.isArray(columnState)) {
-              const allColIds = columnState
-                .map((state: any) => state.colId)
-                .filter((colId: string) => {
-                  if (colId === 'ag-Grid-SelectionColumn') return false;
-                  const column = api.getColumn(colId);
-                  if (column) {
-                    const def = column.getColDef();
-                    if (isGuidColumn(String(def.field || ''), String(def.headerName || def.field || ''))) {
-                      return false;
-                    }
-                  }
-                  return true;
-                });
-
-              console.log('[loadPage] Auto-sizing column IDs:', allColIds);
-              if (allColIds.length > 0) {
-                api.autoSizeColumns(allColIds, false);
-
-                const maxWidth = 300;
-                allColIds.forEach((colId: string) => {
-                  const column = api.getColumn(colId);
-                  if (column) {
-                    const currentWidth = column.getActualWidth();
-                    if (currentWidth > maxWidth) {
-                      api.setColumnWidths([{ key: colId, newWidth: maxWidth }]);
-                    }
-                  }
-                });
-                console.log('[loadPage] Auto-size completed for:', functionCode);
-              }
-            }
-          }
-        } else {
-          console.log('[loadPage] Using cached column state, skipping autoSize for:', functionCode);
-        }
         // 重置初始加载标志
         isInitialLoading.value = false;
-        console.log('[loadPage] Initial loading completed for:', functionCode);
+        console.log('[loadPage] Cache hit, skipping autoSize for:', functionCode);
       }
-    }, 100);
+    }, 50);
 
-    // 缓存加载完成后，恢复行选择状态
+    // 缓存加载完成后，恢复行选择状态（使用更短的延迟）
     setTimeout(() => {
       const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
       if (cachedSelectedRows.length > 0 && gridApi.value && !gridApi.value.isDestroyed()) {
         isRestoringSelection.value = true;
+        // 只恢复前100条选中记录，避免大数据量下的性能问题
+        const rowsToRestore = cachedSelectedRows.slice(0, 100);
         gridApi.value.forEachNode(node => {
           const rowData = node.data;
           if (!rowData) return;
-          const isSelected = cachedSelectedRows.some((cachedRow: any) => {
+          const isSelected = rowsToRestore.some((cachedRow: any) => {
             return (rowData.GUID && cachedRow.GUID === rowData.GUID) || (rowData.id && cachedRow.id === rowData.id);
           });
-          node.setSelected(isSelected);
+          if (isSelected) {
+            node.setSelected(true);
+          }
         });
         isRestoringSelection.value = false;
       }
       // 重置分页恢复标志
       isRestoringPage.value = false;
-    }, 200);
+    }, 100);
 
     // 缓存加载完成后，检查工具栏滚动状态
     setTimeout(() => {
       checkScrollPosition();
-    }, 350);
+    }, 150);
 
     return;
   }

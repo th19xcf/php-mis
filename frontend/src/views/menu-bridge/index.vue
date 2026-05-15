@@ -15,7 +15,13 @@ const route = useRoute();
 const themeStore = useThemeStore();
 const tabStore = useTabStore();
 const isDarkMode = computed(() => themeStore.darkMode);
-const workbenchCacheScopeKey = computed(() => route.fullPath);
+// cacheScopeKey 只基于 functionCode 和 params，确保切换标签页时缓存能命中
+const workbenchCacheScopeKey = computed(() => {
+  const functionCode = String(route.query.functionCode || route.meta?.functionCode || '');
+  const rawParams = route.query.params || route.meta?.params || '';
+  const params = typeof rawParams === 'string' ? rawParams : JSON.stringify(rawParams);
+  return `${functionCode}_${params}`;
+});
 
 const meta = computed(() => {
   const routeMeta = (route.meta || {}) as Record<string, unknown>;

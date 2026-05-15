@@ -92,13 +92,24 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       rawWorkbenchStore.setUIState(functionCode, params, uiState, options.getCacheScopeKey())
   };
 
+  // 用于防止重复触发恢复操作
+  let isRestoringState = false;
+
   function restoreGridStateOnActivated() {
     if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
       return;
     }
 
+    // 防止重复触发
+    if (isRestoringState) {
+      return;
+    }
+    isRestoringState = true;
+
     const functionCode = getFunctionCode();
     const params = getParams();
+
+    console.log('[onActivated] Restoring grid state from cache for:', functionCode);
 
     const cachedUIState = workbenchStore.getUIState(functionCode, params);
     if (cachedUIState) {
@@ -112,102 +123,100 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     }
 
     const cachedFilterModel = workbenchStore.getFilterModel(functionCode, params);
-    if (cachedFilterModel && Object.keys(cachedFilterModel).length > 0) {
-      options.isRestoringFilter.value = true;
-      nextTick(() => {
-        if (options.gridApi.value && !options.gridApi.value.isDestroyed()) {
-          options.gridApi.value.setFilterModel(cachedFilterModel);
-        }
-        options.isRestoringFilter.value = false;
-      });
-    }
-
     const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
-    console.log('[onActivated] Restoring column state for:', functionCode, 'state count:', cachedColumnState?.length);
-    if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
-      console.log(
-        '[onActivated] Column hide states:',
-        cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-      );
-      const sortedColumns = cachedColumnState.filter((col: any) => col.sort);
-      console.log('[onActivated] Sorted columns in cache:', sortedColumns);
+    const cachedPage = workbenchStore.getPage(functionCode, params);
+    const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
+    const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
 
+    // 合并所有需要 nextTick 的操作到一个回调中
+    const hasFilter = cachedFilterModel && Object.keys(cachedFilterModel).length > 0;
+    const hasColumnState = cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0;
+    const hasPageChange = cachedPage > 1 || cachedPageSize !== options.defaultPageSize;
+    const hasSelection = cachedSelectedRows.length > 0;
+
+    if (hasColumnState) {
       if (options.pageMeta.value?.columns) {
-        console.log(
-          '[onActivated] pageMeta columns fields:',
-          options.pageMeta.value.columns.map(c => c.field)
-        );
-        console.log(
-          '[onActivated] cachedColumnState colIds:',
-          cachedColumnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-        );
-
+        // 使用 Map 优化查找性能 O(n) -> O(1)
+        const colStateMap = new Map(cachedColumnState.map((c: any) => [c.colId, c]));
         options.pageMeta.value.columns = options.pageMeta.value.columns.map(column => {
-          const colState = cachedColumnState.find((c: any) => c.colId === column.field);
+          const colState = colStateMap.get(column.field);
           if (colState && colState.hide !== undefined) {
-            console.log(`[onActivated] Updating column ${column.field}: hidden = ${colState.hide}`);
             return { ...column, hidden: colState.hide };
           }
           return column;
         });
-        console.log('[onActivated] Updated pageMeta columns hidden state');
       }
-
       options.isRestoringColumnState.value = true;
-      nextTick(() => {
-        if (options.gridApi.value && !options.gridApi.value.isDestroyed()) {
-          console.log('[onActivated] Applying column state:', cachedColumnState);
-          options.gridApi.value.applyColumnState({ state: cachedColumnState, applyOrder: true });
-          const afterApply = options.gridApi.value.getColumnState();
-          const afterSorted = afterApply.filter((col: any) => col.sort);
-          console.log('[onActivated] Sorted columns after apply:', afterSorted);
-
-          const cachedVisibleColumns = workbenchStore.getVisibleColumns(functionCode, params);
-          if (cachedVisibleColumns.length > 0) {
-            options.visibleFieldColumns.value = cachedVisibleColumns;
-          }
-
-          const cachedPinColumns = workbenchStore.getPinColumns(functionCode, params);
-          if (cachedPinColumns.length > 0) {
-            options.pinTargetFields.value = cachedPinColumns;
-          }
-        }
-
-        setTimeout(() => {
-          options.isRestoringColumnState.value = false;
-          console.log('[onActivated] Column state restore completed for:', functionCode);
-        }, 500);
-      });
     }
 
-    const cachedPage = workbenchStore.getPage(functionCode, params);
-    const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
-    if (cachedPage > 1 || cachedPageSize !== options.defaultPageSize) {
+    if (hasFilter) {
+      options.isRestoringFilter.value = true;
+    }
+
+    if (hasPageChange) {
       options.isRestoringPage.value = true;
       options.page.value = cachedPage;
       options.pageSize.value = cachedPageSize;
-      nextTick(() => {
-        options.isRestoringPage.value = false;
-      });
     }
 
-    const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
-    if (cachedSelectedRows.length > 0 && options.gridApi.value) {
+    if (hasSelection) {
       options.isRestoringSelection.value = true;
-      nextTick(() => {
-        if (options.gridApi.value && !options.gridApi.value.isDestroyed()) {
-          options.gridApi.value.forEachNode(node => {
-            const rowData = node.data;
-            if (!rowData) return;
-            const isSelected = cachedSelectedRows.some((cachedRow: any) => {
-              return (rowData.GUID && cachedRow.GUID === rowData.GUID) || (rowData.id && cachedRow.id === rowData.id);
-            });
-            node.setSelected(isSelected);
-          });
-        }
-        options.isRestoringSelection.value = false;
-      });
     }
+
+    // 合并为一个 nextTick 回调，减少渲染次数
+    nextTick(() => {
+      if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
+        isRestoringState = false;
+        return;
+      }
+
+      // 恢复筛选
+      if (hasFilter) {
+        options.gridApi.value.setFilterModel(cachedFilterModel);
+        options.isRestoringFilter.value = false;
+      }
+
+      // 恢复列状态
+      if (hasColumnState) {
+        options.gridApi.value.applyColumnState({ state: cachedColumnState, applyOrder: true });
+
+        const cachedVisibleColumns = workbenchStore.getVisibleColumns(functionCode, params);
+        if (cachedVisibleColumns.length > 0) {
+          options.visibleFieldColumns.value = cachedVisibleColumns;
+        }
+
+        const cachedPinColumns = workbenchStore.getPinColumns(functionCode, params);
+        if (cachedPinColumns.length > 0) {
+          options.pinTargetFields.value = cachedPinColumns;
+        }
+      }
+
+      // 恢复行选择 - 跳过大数据量的恢复以避免性能问题
+      if (hasSelection && cachedSelectedRows.length <= 10) {
+        // 只恢复前10条选中记录
+        const rowsToRestore = cachedSelectedRows.slice(0, 10);
+        // 使用 Set 优化查找性能
+        const guidSet = new Set(rowsToRestore.filter((r: any) => r.GUID).map((r: any) => r.GUID));
+        const idSet = new Set(rowsToRestore.filter((r: any) => r.id).map((r: any) => r.id));
+
+        options.gridApi.value.forEachNode(node => {
+          const rowData = node.data;
+          if (!rowData) return;
+          const isSelected = (rowData.GUID && guidSet.has(rowData.GUID)) || (rowData.id && idSet.has(rowData.id));
+          if (isSelected) {
+            node.setSelected(true);
+          }
+        });
+      }
+      options.isRestoringSelection.value = false;
+
+      // 延迟重置标志
+      setTimeout(() => {
+        options.isRestoringColumnState.value = false;
+        options.isRestoringPage.value = false;
+        isRestoringState = false;
+      }, 100);
+    });
   }
 
   function persistGridStateOnDeactivated() {
@@ -237,16 +246,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     workbenchStore.setSelectedRows(functionCode, params, selectedRows);
 
     const columnState = options.gridApi.value.getColumnState();
-    if (!options.isGridShellVisible()) {
-      console.log('[onDeactivated] Skip saving column state, grid shell is hidden for:', functionCode);
-    } else if (options.hasSuspiciousNarrowColumnState(columnState)) {
-      console.log('[onDeactivated] Skip suspicious narrow column state for:', functionCode);
-    } else if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-      console.log(
-        '[onDeactivated] Saving column state for:',
-        functionCode,
-        columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-      );
+    if (options.isGridShellVisible() && !options.hasSuspiciousNarrowColumnState(columnState) && columnState && Array.isArray(columnState) && columnState.length > 0) {
       workbenchStore.setColumnState(functionCode, params, columnState);
     }
 
@@ -301,7 +301,6 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       }
       if (capturedFunctionCode && options.gridApi.value) {
         const columnState = options.gridApi.value.getColumnState();
-        console.log('[sortChanged] Saving column state for:', capturedFunctionCode, columnState);
         if (columnState && Array.isArray(columnState) && columnState.length > 0) {
           workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
         }
@@ -309,12 +308,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     });
 
     api.addEventListener('columnResized', (colEvent: any) => {
-      if (options.isRestoringColumnState.value) {
-        console.log('[columnResized] Skipping save, isRestoringColumnState is true');
-        return;
-      }
-      if (options.isInitialLoading.value) {
-        console.log('[columnResized] Skipping save, isInitialLoading is true');
+      if (options.isRestoringColumnState.value || options.isInitialLoading.value) {
         return;
       }
       if (colEvent?.finished === false) {
@@ -322,35 +316,22 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       }
       const resizeSource = String(colEvent?.source || '');
       if (resizeSource === 'gridSizeChanged' || resizeSource === 'sizeColumnsToFit' || resizeSource === 'api') {
-        console.log('[columnResized] Skipping non-user resize source:', resizeSource);
         return;
       }
       if (!options.isGridShellVisible()) {
-        console.log('[columnResized] Skipping save, grid shell is hidden');
         return;
       }
       if (capturedFunctionCode && options.gridApi.value) {
         const columnState = options.gridApi.value.getColumnState();
         if (options.hasSuspiciousNarrowColumnState(columnState)) {
-          console.log('[columnResized] Skipping suspicious narrow column state for:', capturedFunctionCode);
           return;
         }
         const currentSortedCols = columnState.filter((col: any) => col.sort);
         const cachedColumnState = workbenchStore.getColumnState(capturedFunctionCode, capturedParams);
         const cachedSortedCols = cachedColumnState?.filter((col: any) => col.sort) || [];
-        console.log(
-          '[columnResized] Current sorted:',
-          currentSortedCols.length,
-          'Cached sorted:',
-          cachedSortedCols.length,
-          'for:',
-          capturedFunctionCode
-        );
         if (currentSortedCols.length === 0 && cachedSortedCols.length > 0) {
-          console.log('[columnResized] Skipping save to preserve sort state for:', capturedFunctionCode);
           return;
         }
-        console.log('[columnResized] Saving column state for:', capturedFunctionCode, columnState);
         if (columnState && Array.isArray(columnState) && columnState.length > 0) {
           workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
         }
@@ -361,22 +342,9 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       if (options.isRestoringColumnState.value) {
         return;
       }
-      console.log(
-        '[columnVisible] Event triggered for:',
-        capturedFunctionCode,
-        'column:',
-        colEvent.column?.getColDef()?.field,
-        'visible:',
-        colEvent.visible
-      );
       if (capturedFunctionCode && options.gridApi.value) {
         const columnState = options.gridApi.value.getColumnState();
         if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-          console.log(
-            '[columnVisible] Saving column state for:',
-            capturedFunctionCode,
-            columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-          );
           workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
         }
 
@@ -398,15 +366,9 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       if (options.isRestoringColumnState.value) {
         return;
       }
-      console.log('[dragStopped] Event triggered for:', capturedFunctionCode);
       if (capturedFunctionCode && options.gridApi.value) {
         const columnState = options.gridApi.value.getColumnState();
         if (columnState && Array.isArray(columnState) && columnState.length > 0) {
-          console.log(
-            '[dragStopped] Saving column state for:',
-            capturedFunctionCode,
-            columnState.map((c: any) => ({ colId: c.colId, hide: c.hide }))
-          );
           workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);
         }
       }
