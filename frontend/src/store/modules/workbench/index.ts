@@ -25,6 +25,8 @@ export interface WorkbenchCacheItem {
     selectedValue: string;
   };
   timestamp: number;
+  // 新增：原始数据量标记，用于大数据量检测
+  rowCount?: number;
 }
 
 export const useWorkbenchStore = defineStore('workbench', () => {
@@ -41,13 +43,30 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     return cache.value.get(getCacheKey(functionCode, params, scopeKey));
   }
 
+  // 大数据量阈值：超过此值只缓存部分数据
+  const LARGE_DATASET_THRESHOLD = 5000;
+  const LARGE_DATASET_CACHE_SIZE = 500;
+
   // 设置缓存数据
   function setCache(functionCode: string, params: string, data: Partial<WorkbenchCacheItem>, scopeKey = '') {
     const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
+
+    // 大数据量优化：如果超过阈值，只缓存前 N 条数据
+    let rowsToCache = data.serverRows ?? existing?.serverRows ?? [];
+    const originalRowCount = data.serverRows?.length ?? existing?.rowCount ?? rowsToCache.length;
+
+    if (originalRowCount > LARGE_DATASET_THRESHOLD && rowsToCache.length > LARGE_DATASET_CACHE_SIZE) {
+      console.log(`[WorkbenchStore] Large dataset detected (${originalRowCount} rows), caching first ${LARGE_DATASET_CACHE_SIZE} rows only`);
+      rowsToCache = rowsToCache.slice(0, LARGE_DATASET_CACHE_SIZE);
+    }
+
+    const resolvedPinColumns = data.pinColumns ?? existing?.pinColumns ?? [];
+    console.log('[Store:setCache] key:', key, 'data.pinColumns:', data.pinColumns, 'existing?.pinColumns:', existing?.pinColumns, 'resolved:', resolvedPinColumns);
+
     cache.value.set(key, {
       pageMeta: data.pageMeta ?? existing?.pageMeta ?? null,
-      serverRows: data.serverRows ?? existing?.serverRows ?? [],
+      serverRows: rowsToCache,
       total: data.total ?? existing?.total ?? 0,
       isDataLoaded: data.isDataLoaded ?? existing?.isDataLoaded ?? false,
       filterModel: data.filterModel ?? existing?.filterModel ?? null,
@@ -57,17 +76,19 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       pageSize: data.pageSize ?? existing?.pageSize ?? 500,
       selectedRows: data.selectedRows ?? existing?.selectedRows ?? [],
       visibleColumns: data.visibleColumns ?? existing?.visibleColumns ?? [],
-      pinColumns: data.pinColumns ?? existing?.pinColumns ?? [],
-      uiState: data.uiState ?? existing?.uiState ?? {
-        conditionVisible: false,
-        fieldColumnVisible: false,
-        pinColumnVisible: false,
-        quickKeyword: '',
-        selectedField: '',
-        selectedOperator: 'contains',
-        selectedValue: ''
-      },
-      timestamp: Date.now()
+      pinColumns: resolvedPinColumns,
+      uiState: data.uiState ??
+        existing?.uiState ?? {
+          conditionVisible: false,
+          fieldColumnVisible: false,
+          pinColumnVisible: false,
+          quickKeyword: '',
+          selectedField: '',
+          selectedOperator: 'contains',
+          selectedValue: ''
+        },
+      timestamp: Date.now(),
+      rowCount: originalRowCount
     });
   }
 
@@ -337,15 +358,20 @@ export const useWorkbenchStore = defineStore('workbench', () => {
 
   // 固定列状态
   function getPinColumns(functionCode: string, params: string, scopeKey = ''): string[] {
-    return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.pinColumns ?? [];
+    const key = getCacheKey(functionCode, params, scopeKey);
+    const entry = cache.value.get(key);
+    console.log('[Store:getPinColumns] key:', key, 'entry exists:', !!entry, 'pinColumns:', entry?.pinColumns);
+    return entry?.pinColumns ?? [];
   }
 
   function setPinColumns(functionCode: string, params: string, pinColumns: string[], scopeKey = '') {
     const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
+    console.log('[Store:setPinColumns] key:', key, 'pinColumns:', pinColumns, 'existing exists:', !!existing, 'existing.pinColumns:', existing?.pinColumns);
     if (existing) {
       existing.pinColumns = pinColumns;
       existing.timestamp = Date.now();
+      console.log('[Store:setPinColumns] Updated existing entry, pinColumns is now:', existing.pinColumns);
     } else {
       cache.value.set(key, {
         pageMeta: null,
@@ -370,6 +396,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
         },
         timestamp: Date.now()
       });
+      console.log('[Store:setPinColumns] Created new entry with pinColumns:', pinColumns);
     }
   }
 
@@ -378,7 +405,12 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     return cache.value.get(getCacheKey(functionCode, params, scopeKey))?.uiState ?? null;
   }
 
-  function setUIState(functionCode: string, params: string, uiState: Partial<WorkbenchCacheItem['uiState']>, scopeKey = '') {
+  function setUIState(
+    functionCode: string,
+    params: string,
+    uiState: Partial<WorkbenchCacheItem['uiState']>,
+    scopeKey = ''
+  ) {
     const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
     if (existing) {

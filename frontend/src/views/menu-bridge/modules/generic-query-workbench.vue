@@ -30,12 +30,7 @@ import {
 } from 'naive-ui';
 import * as XLSX from 'xlsx';
 
-import {
-  fetchWorkbenchPage,
-  fetchWorkbenchQuery,
-  fetchWorkbenchDrill,
-  submitTableEdit
-} from '@/service/api/workbench';
+import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill, submitTableEdit } from '@/service/api/workbench';
 import { useColorMark } from '@/hooks/business/use-color-mark';
 import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
 import { useWorkbenchDelete } from '@/hooks/business/use-workbench-delete';
@@ -76,7 +71,6 @@ const props = defineProps<{
   meta: MenuBridgeMeta;
   nativeOnly?: boolean;
   dynamicLike?: boolean;
-  cacheScopeKey?: string;
 }>();
 
 const lightGridTheme = themeAlpine.withParams({
@@ -544,7 +538,9 @@ const {
 });
 
 function getCacheScopeKey() {
-  return String(props.cacheScopeKey || '').trim();
+  // cacheScopeKey 已经包含了 functionCode 和 params，所以这里只返回空字符串
+  // 让 getCacheKey 使用 functionCode 和 params 作为缓存键
+  return '';
 }
 
 const { workbenchStore, registerGridPersistenceListeners } = useWorkbenchGridState({
@@ -633,9 +629,31 @@ async function loadPage() {
   // 检查 store 缓存
   const cached = workbenchStore.getCache(functionCode, params);
   const scopeKey = getCacheScopeKey();
-  console.log('[loadPage] Checking cache:', { functionCode, params, scopeKey, hasCache: !!cached, isDataLoaded: cached?.isDataLoaded, cacheTimestamp: cached?.timestamp });
+  console.log('[loadPage] Checking cache:', {
+    functionCode,
+    params,
+    scopeKey,
+    hasCache: !!cached,
+    isDataLoaded: cached?.isDataLoaded,
+    cacheTimestamp: cached?.timestamp
+  });
   if (cached && cached.isDataLoaded) {
-    console.log('[loadPage] ✅ CACHE HIT! Loading data from MEMORY for:', functionCode, 'rows:', cached.serverRows.length);
+    console.log(
+      '[loadPage] ✅ CACHE HIT! Loading data from MEMORY for:',
+      functionCode,
+      'rows:',
+      cached.serverRows.length,
+      'originalRowCount:',
+      cached.rowCount || cached.serverRows.length
+    );
+
+    // 大数据量检测：如果缓存被截断，显示提示
+    const originalRowCount = cached.rowCount || cached.serverRows.length;
+    if (originalRowCount > 5000 && cached.serverRows.length < originalRowCount) {
+      console.log(`[loadPage] Large dataset cached: ${originalRowCount} rows, showing first ${cached.serverRows.length} rows`);
+      // 可以在这里添加用户提示：window.$message?.info(`大数据集：仅显示前 ${cached.serverRows.length} 条记录`);
+    }
+
     pageMeta.value = cached.pageMeta;
     serverRows.value = cached.serverRows;
     total.value = cached.total;
@@ -667,44 +685,49 @@ async function loadPage() {
       pageSize.value = cachedPageSize;
     }
 
-    // 刷新表格（列状态由 onActivated 恢复，避免重复恢复）
-    // 缓存命中时跳过列宽自适应，避免大数据量下的性能问题
-    setTimeout(() => {
-      if (gridApi.value) {
-        gridApi.value.refreshCells({ force: true });
+    // 使用 requestAnimationFrame 优化刷新时机，避免阻塞主线程
+    requestAnimationFrame(() => {
+      if (gridApi.value && !gridApi.value.isDestroyed()) {
+        // 大数据量时跳过 force 刷新，减少性能开销
+        if (cached.serverRows.length > 1000) {
+          gridApi.value.refreshCells();
+        } else {
+          gridApi.value.refreshCells({ force: true });
+        }
         // 重置初始加载标志
         isInitialLoading.value = false;
-        console.log('[loadPage] Cache hit, skipping autoSize for:', functionCode);
+        console.log('[loadPage] Cache hit, grid refreshed for:', functionCode);
       }
-    }, 50);
 
-    // 缓存加载完成后，恢复行选择状态（使用更短的延迟）
-    setTimeout(() => {
-      const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
-      if (cachedSelectedRows.length > 0 && gridApi.value && !gridApi.value.isDestroyed()) {
-        isRestoringSelection.value = true;
-        // 只恢复前100条选中记录，避免大数据量下的性能问题
-        const rowsToRestore = cachedSelectedRows.slice(0, 100);
-        gridApi.value.forEachNode(node => {
-          const rowData = node.data;
-          if (!rowData) return;
-          const isSelected = rowsToRestore.some((cachedRow: any) => {
-            return (rowData.GUID && cachedRow.GUID === rowData.GUID) || (rowData.id && cachedRow.id === rowData.id);
+      // 在下一帧恢复行选择状态
+      requestAnimationFrame(() => {
+        const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
+        if (cachedSelectedRows.length > 0 && gridApi.value && !gridApi.value.isDestroyed()) {
+          isRestoringSelection.value = true;
+          // 只恢复前10条选中记录，避免大数据量下的性能问题
+          const rowsToRestore = cachedSelectedRows.slice(0, 10);
+          const guidSet = new Set(rowsToRestore.filter((r: any) => r.GUID).map((r: any) => r.GUID));
+          const idSet = new Set(rowsToRestore.filter((r: any) => r.id).map((r: any) => r.id));
+
+          gridApi.value.forEachNode(node => {
+            const rowData = node.data;
+            if (!rowData) return;
+            const isSelected = (rowData.GUID && guidSet.has(rowData.GUID)) || (rowData.id && idSet.has(rowData.id));
+            if (isSelected) {
+              node.setSelected(true);
+            }
           });
-          if (isSelected) {
-            node.setSelected(true);
-          }
-        });
-        isRestoringSelection.value = false;
-      }
-      // 重置分页恢复标志
-      isRestoringPage.value = false;
-    }, 100);
+          isRestoringSelection.value = false;
+        }
+        // 重置分页恢复标志
+        isRestoringPage.value = false;
 
-    // 缓存加载完成后，检查工具栏滚动状态
-    setTimeout(() => {
-      checkScrollPosition();
-    }, 150);
+        // 检查工具栏滚动状态（最低优先级）
+        setTimeout(() => {
+          checkScrollPosition();
+        }, 50);
+      });
+    });
 
     return;
   }
@@ -1433,14 +1456,14 @@ function handleCellValueChanged(event: any) {
   const rowData = event.data;
   const rowIndex = event.rowIndex;
   const rowId = getRowId(rowData, rowIndex);
-  
+
   tableModifiedRows.value.add(rowId);
-  
+
   // 保存原始行数据（用于获取主键）
   if (!originalRowsData.value.has(rowId)) {
     originalRowsData.value.set(rowId, { ...rowData });
   }
-  
+
   // 只存储修改的字段和值
   const currentData = modifiedRowsData.value.get(rowId) || {};
   currentData[event.colDef.field] = event.newValue;
@@ -1462,27 +1485,27 @@ async function handleTableEditSubmit() {
 
   // 收集修改的数据（只包含主键字段和修改的字段）
   const modifiedData: Api.Workbench.QueryRecord[] = [];
-  tableModifiedRows.value.forEach((rowId) => {
+  tableModifiedRows.value.forEach(rowId => {
     const originalRow = originalRowsData.value.get(rowId);
     const modifiedFields = modifiedRowsData.value.get(rowId);
-    
+
     if (originalRow && modifiedFields) {
       // 构建提交数据：主键字段 + 修改的字段
       const submitData: Record<string, any> = {};
-      
+
       // 添加主键字段（GUID、id、ID）
       if (originalRow.GUID !== undefined) submitData.GUID = originalRow.GUID;
       if (originalRow.id !== undefined) submitData.id = originalRow.id;
       if (originalRow.ID !== undefined) submitData.ID = originalRow.ID;
-      
+
       // 添加修改的字段（排除序号字段）
-      Object.keys(modifiedFields).forEach((field) => {
+      Object.keys(modifiedFields).forEach(field => {
         // 排除序号字段（通常名为"序号"或以"序号"开头）
         if (field !== '序号' && !field.startsWith('序号')) {
           submitData[field] = modifiedFields[field];
         }
       });
-      
+
       modifiedData.push(submitData);
     }
   });
@@ -1637,6 +1660,8 @@ async function handleTableEditSubmit() {
             resizable: false,
             headerClass: 'selection-header-left'
           }"
+          :row-buffer="10"
+          :suppress-column-virtualisation="false"
           class="query-grid"
           @grid-ready="handleGridReady"
           @cell-value-changed="handleCellValueChanged"

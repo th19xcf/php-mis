@@ -199,7 +199,6 @@ function handleIframeLoad() {
           <GenericQueryWorkbench
             :key="workbenchCacheScopeKey"
             :meta="meta"
-            :cache-scope-key="workbenchCacheScopeKey"
             :native-only="isNativeOnlyFunction"
             :dynamic-like="false"
           />
