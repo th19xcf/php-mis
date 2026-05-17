@@ -6,8 +6,11 @@ class EmployeeApi extends BaseApiController
 {
     public function tree()
     {
-        $menuId = $this->request->getGet('menu_id');
-        $locationAuthzCond = $this->userContext->getSessionValue($menuId . '-location_authz_cond') ?: '1=1';
+        $user = $this->userContext->getSessionUser();
+        $locationAuthz = $user['locationAuthz'] ?? '';
+        $locationAuthzCond = $locationAuthz !== '' 
+            ? sprintf('locate(属地,"%s")>0', $locationAuthz) 
+            : '1=1';
 
         $sql = sprintf('
             select GUID,姓名,工号1 as 工号,属地,员工状态,

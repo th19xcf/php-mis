@@ -360,7 +360,7 @@ class Workbench extends BaseController
             'roleCodes' => $roleCodes,
             'roleCodesQuoted' => $this->quoteList($roleCodes),
             'roleCodesRaw' => (string) ($row['角色编码'] ?? ''),
-            'locationAuth' => (string) (($row['属地赋权'] ?? '') === '' ? $companyId : $row['属地赋权']),
+            'locationAuth' => (string) (trim($row['属地赋权'] ?? '') === '' ? $companyId : $row['属地赋权']),
             'deptCodeAuth' => $this->splitCsv((string) ($row['部门编码赋权'] ?? '')),
             'deptNameAuth' => $this->splitCsv((string) ($row['部门全称赋权'] ?? '')),
             'workIdAuth' => (string) ($row['工号限权'] ?? '0'),

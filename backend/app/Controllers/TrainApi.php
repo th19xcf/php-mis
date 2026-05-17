@@ -6,8 +6,11 @@ class TrainApi extends BaseApiController
 {
     public function tree()
     {
-        $menuId = $this->request->getGet('menu_id');
-        $locationAuthzCond = $this->userContext->getSessionValue($menuId . '-location_authz_cond') ?: '1=1';
+        $user = $this->userContext->getSessionUser();
+        $locationAuthz = $user['locationAuthz'] ?? '';
+        $locationAuthzCond = $locationAuthz !== '' 
+            ? sprintf('locate(属地,"%s")>0', $locationAuthz) 
+            : '1=1';
 
         $sql = sprintf('
             select GUID,姓名,身份证号,手机号码,属地,

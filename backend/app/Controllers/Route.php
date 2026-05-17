@@ -2,66 +2,30 @@
 
 namespace App\Controllers;
 
-use App\Libraries\SessionUserContext;
-use CodeIgniter\HTTP\RequestInterface;
-use CodeIgniter\HTTP\ResponseInterface;
-use Psr\Log\LoggerInterface;
-use App\Models\Mcommon;
-
-class Route extends BaseController
+class Route extends BaseApiController
 {
-    private SessionUserContext $userContext;
-
-    public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
-    {
-        parent::initController($request, $response, $logger);
-        $this->userContext = new SessionUserContext();
-    }
-
-    //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
-    // API: 获取用户菜单路由
-    //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
     public function getUserRoutes()
     {
-        log_message('error', 'getUserRoutes() called');
-
-        // 验证Authorization头
         $authHeader = $this->request->getHeaderLine('Authorization');
         if (empty($authHeader)) {
             $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
         }
 
-        log_message('error', 'Authorization header: ' . ($authHeader ?: 'empty'));
-
         if (empty($authHeader)) {
-            return $this->response->setJSON([
-                'code' => '4010',
-                'msg' => 'Token required',
-                'data' => null
-            ]);
+            return $this->error(4010, 'Token required');
         }
 
-        // 从session中取出数据
         try {
             $user = $this->userContext->requireLogin();
         } catch (\RuntimeException $e) {
-            return $this->response->setJSON([
-                'code' => '4011',
-                'msg' => 'Session expired, please login again',
-                'data' => null
-            ]);
+            return $this->error(4011, 'Session expired, please login again');
         }
 
         $company_id = $user['companyId'];
         $user_workid = $user['workId'];
         $user_pswd = $user['password'];
 
-        log_message('error', 'Session data - company_id: ' . ($company_id ?: 'empty') . ', user_workid: ' . ($user_workid ?: 'empty'));
-
         try {
-            $model = new Mcommon();
-
-            // 读出用户对应的角色
             $sql = sprintf('
                 select
                     员工编号,姓名,工号,t1.角色组,
@@ -95,51 +59,40 @@ class Route extends BaseController
                 ) as t2 on t1.角色组=t2.角色组',
                 $company_id, $user_workid);
 
-            $query = $model->select($sql);
-            $results = $query->getResult();
+            $results = $this->model->select($sql)->getResult();
 
             $user_role_authz = '';
 
-            foreach ($results as $row)
-            {
-                // 角色
+            foreach ($results as $row) {
                 $role_arr = explode(',', $row->角色编码);
                 $role_arr = array_unique($role_arr);
 
                 $user_role_authz = '';
-                foreach ($role_arr as $role)
-                {
+                foreach ($role_arr as $role) {
                     $user_role_authz = ($user_role_authz == '') ? sprintf('"%s"', $role) : sprintf('%s,"%s"', $user_role_authz, $role);
                 }
 
-                // 个人属地赋权
-                if ($row->属地赋权 == '')
-                {
+                if (trim($row->属地赋权) == '') {
                     $row->属地赋权 = $company_id;
                 }
                 $user_location_authz = $row->属地赋权;
 
-                // 部门编码赋权
                 $user_dept_code_arr = ($row->部门编码赋权 == '') ? [] : explode(',', $row->部门编码赋权);
                 $user_dept_code_arr = array_unique($user_dept_code_arr);
 
                 $user_dept_code_authz = '';
-                foreach ($user_dept_code_arr as $dept_code)
-                {
+                foreach ($user_dept_code_arr as $dept_code) {
                     $user_dept_code_authz = ($user_dept_code_authz == '') ? sprintf('"%s"', $dept_code) : sprintf('%s,"%s"', $user_dept_code_authz, $dept_code);
                 }
 
-                // 部门全称赋权
                 $user_dept_name_arr = ($row->部门全称赋权 == '') ? [] : explode(',', $row->部门全称赋权);
                 $user_dept_name_arr = array_unique($user_dept_name_arr);
 
                 $user_dept_name_authz = '';
-                foreach ($user_dept_name_arr as $dept_name)
-                {
+                foreach ($user_dept_name_arr as $dept_name) {
                     $user_dept_name_authz = ($user_dept_name_authz == '') ? sprintf('"%s"', $dept_name) : sprintf('%s,"%s"', $user_dept_name_authz, $dept_name);
                 }
 
-                // 存入session
                 $session_arr = [];
                 $session_arr['user_role'] = $row->角色编码;
                 $session_arr['user_role_authz'] = $user_role_authz;
@@ -157,13 +110,9 @@ class Route extends BaseController
                 $session->set($session_arr);
             }
 
-            // 从session中取出数据
             $session = \Config\Services::session();
-            $user_upkeep_authz = $session->get('user_upkeep_authz');
             $user_role_authz = $session->get('user_role_authz');
-            $user_workid_authz = $session->get('user_workid_authz');
 
-            // 读出角色对应的功能赋权
             $sql = sprintf(
                 'select
                     t1.角色编码,t1.角色名称,
@@ -232,31 +181,20 @@ class Route extends BaseController
                 group by t1.功能赋权
                 order by t2.一级菜单顺序,t2.二级菜单顺序', $user_role_authz);
 
-            $query = $model->select($sql);
-            $results = $query->getResult();
-
-            log_message('error', 'SQL results count: ' . count($results));
+            $results = $this->model->select($sql)->getResult();
 
             $function_authz_arr = [];
             $menuMap = [];
 
-            foreach ($results as $row)
-            {
-                // 功能访问权限
+            foreach ($results as $row) {
                 $function_authz_arr[$row->功能赋权] = $row->功能赋权;
 
-                // 显示标志不等于1,不生成菜单
-                if ($row->菜单显示 != 1)
-                {
+                if ($row->菜单显示 != 1) {
                     continue;
                 }
 
-                // 生成路由名称（用于前端导航）
-                // 使用功能编码作为唯一路由名称
                 $routeName = $row->功能编码;
-                
-                // 如果功能模块为空，表示使用原生 Vue 组件（如合同管理）
-                // 否则使用通用查询工作台
+
                 if ($row->功能模块 === '' || $row->功能模块 === null) {
                     $menuItem = [
                         'name' => $routeName,
@@ -283,7 +221,6 @@ class Route extends BaseController
                     ];
                 }
 
-                // 存储一级菜单信息
                 if (!isset($menuMap[$row->一级菜单])) {
                     $menuMap[$row->一级菜单] = [
                         'name' => $row->一级菜单,
@@ -298,44 +235,73 @@ class Route extends BaseController
                     ];
                 }
 
-                // 添加子菜单
                 $menuMap[$row->一级菜单]['children'][] = $menuItem;
             }
 
-            // 按顺序排列一级菜单（保持数据库返回的顺序）
             $menuList = array_values($menuMap);
 
-            log_message('error', 'Menu list count: ' . count($menuList));
-
-            // 存入session
             $session_arr = [];
             $session_arr['function_authz'] = $function_authz_arr;
             $session = \Config\Services::session();
             $session->set($session_arr);
 
-            log_message('error', 'Returning menu data');
-
-            return $this->response->setJSON([
-                'code' => '0000',
-                'msg' => 'Success',
-                'data' => [
-                    'routes' => $menuList,
-                    'home' => 'home'
-                ]
+            return $this->success([
+                'routes' => $menuList,
+                'home' => 'home'
             ]);
         } catch (\Exception $e) {
             log_message('error', 'Exception in getUserRoutes: ' . $e->getMessage());
-            return $this->response->setJSON([
-                'code' => '5000',
-                'msg' => 'Error: ' . $e->getMessage(),
-                'data' => null
-            ]);
+            return $this->serverError('Error: ' . $e->getMessage());
         }
     }
 
-    //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
-    // 汉字转拼音（简单实现）
-    //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
+    public function getConstantRoutes()
+    {
+        return $this->success([
+            [
+                'name' => 'root',
+                'path' => '/',
+                'redirect' => '/home',
+                'meta' => ['title' => 'Root']
+            ],
+            [
+                'name' => 'login',
+                'path' => '/login',
+                'component' => 'layout.blank$view.login',
+                'meta' => ['title' => '登录', 'constant' => true, 'keepAlive' => false]
+            ],
+            [
+                'name' => '403',
+                'path' => '/403',
+                'component' => 'view.403',
+                'meta' => ['title' => '403', 'constant' => true]
+            ],
+            [
+                'name' => '404',
+                'path' => '/404',
+                'component' => 'view.404',
+                'meta' => ['title' => '404', 'constant' => true]
+            ],
+            [
+                'name' => '500',
+                'path' => '/500',
+                'component' => 'view.500',
+                'meta' => ['title' => '500', 'constant' => true]
+            ]
+        ]);
+    }
+
+    public function isRouteExist()
+    {
+        $routeName = $this->request->getGet('routeName');
+
+        if (empty($routeName)) {
+            return $this->error(4000, 'Invalid request');
+        }
+
+        return $this->success(true);
+    }
+
     private function toPinyin($str)
     {
         $pinyinMap = [
@@ -360,85 +326,5 @@ class Route extends BaseController
         }
 
         return preg_replace('/[^\x{4e00}-\x{9fa5}]/u', '', $str);
-    }
-
-    //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
-    // API: 获取常量路由
-    //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
-    public function getConstantRoutes()
-    {
-        return $this->response->setJSON([
-            'code' => '0000',
-            'msg' => 'Success',
-            'data' => [
-                [
-                    'name' => 'root',
-                    'path' => '/',
-                    'redirect' => '/home',
-                    'meta' => [
-                        'title' => 'Root'
-                    ]
-                ],
-                [
-                    'name' => 'login',
-                    'path' => '/login',
-                    'component' => 'layout.blank$view.login',
-                    'meta' => [
-                        'title' => '登录',
-                        'constant' => true,
-                        'keepAlive' => false
-                    ]
-                ],
-                [
-                    'name' => '403',
-                    'path' => '/403',
-                    'component' => 'view.403',
-                    'meta' => [
-                        'title' => '403',
-                        'constant' => true
-                    ]
-                ],
-                [
-                    'name' => '404',
-                    'path' => '/404',
-                    'component' => 'view.404',
-                    'meta' => [
-                        'title' => '404',
-                        'constant' => true
-                    ]
-                ],
-                [
-                    'name' => '500',
-                    'path' => '/500',
-                    'component' => 'view.500',
-                    'meta' => [
-                        'title' => '500',
-                        'constant' => true
-                    ]
-                ]
-            ]
-        ]);
-    }
-
-    //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
-    // API: 检查路由是否存在
-    //+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=
-    public function isRouteExist()
-    {
-        $routeName = $this->request->getGet('routeName');
-
-        if (empty($routeName)) {
-            return $this->response->setJSON([
-                'code' => '4000',
-                'msg' => 'Invalid request',
-                'data' => false
-            ]);
-        }
-
-        return $this->response->setJSON([
-            'code' => '0000',
-            'msg' => 'Success',
-            'data' => true
-        ]);
     }
 }

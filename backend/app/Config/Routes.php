@@ -13,6 +13,12 @@ $routes->group('auth', static function ($routes) {
 	$routes->post('refreshToken', 'Auth::refreshToken');
 });
 
+$routes->group('route', static function ($routes) {
+	$routes->get('getUserRoutes', 'Route::getUserRoutes');
+	$routes->get('getConstantRoutes', 'Route::getConstantRoutes');
+	$routes->get('isRouteExist', 'Route::isRouteExist');
+});
+
 $routes->group('frame', static function ($routes) {
 	$routes->get('init/(:segment)', 'Frame::init/$1');
 	$routes->get('init/(:segment)/(:segment)', 'Frame::init/$1/$2');
