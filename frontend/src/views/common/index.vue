@@ -8,7 +8,6 @@ const pageTitle = ref('');
 onMounted(() => {
   // 从路由参数或查询参数中获取页面信息
   pageTitle.value = (route.meta.title as string) || '功能页面';
-  console.log('Dynamic page loaded:', route.name, route.path);
 });
 </script>
 

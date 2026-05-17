@@ -149,7 +149,6 @@ async function initRoute(to: RouteLocationNormalized): Promise<RouteLocationRaw 
       },
       replace: true
     };
-    console.log('[Route Guard] /dynamic-menu redirect:', { originalQuery: to.query, newLocation: location });
     return location;
   }
 

@@ -130,7 +130,6 @@ watch(
   menu2 => {
     if (menu2) {
       setTimeout(() => {
-        console.log('[menu-bridge] Setting tab label to:', menu2);
         tabStore.setTabLabel(menu2);
       }, 100);
     }

@@ -49,47 +49,32 @@ export const useContractStore = defineStore('contract-store', () => {
     loading.value = true;
     try {
       const queryParams = params || searchParams.value;
-      console.log('Fetching contract list with params:', queryParams);
       const response = await fetchContractList(queryParams);
-      console.log('Raw response:', JSON.stringify(response, null, 2));
       // Handle both transformed data and raw response
       const data = response?.data || response;
-      console.log('Extracted data:', JSON.stringify(data, null, 2));
       if (data && Array.isArray(data.list)) {
         contractList.value = data.list;
         pagination.value.total = data.total || 0;
-        console.log('Contract list set, length:', contractList.value.length);
-      } else {
-        console.error('Invalid response format, data:', data);
-        console.error('Invalid response format, list:', data?.list);
       }
-    } catch (error) {
-      console.error('Error loading contract list:', error);
+    } catch {
+      // Error loading contract list
     } finally {
       loading.value = false;
     }
   }
 
   async function loadContractDetail(guid: number) {
-    console.log('[ContractStore] loadContractDetail START, guid:', guid);
     loading.value = true;
     try {
-      console.log('[ContractStore] loadContractDetail called with guid:', guid);
       const result = await fetchContractDetail(guid);
-      console.log('[ContractStore] fetchContractDetail raw result:', result);
 
       // Extract actual data from response - result may be wrapped {data: {...}, error: null}
       const data = (result as any)?.data || (result as any);
-      console.log('[ContractStore] extracted data:', data);
 
       if (data) {
         currentContract.value = data as Api.Contract.ContractDetail;
-        console.log('[ContractStore] currentContract.value set:', currentContract.value);
       }
       return data;
-    } catch (error) {
-      console.error('[ContractStore] loadContractDetail error:', error);
-      throw error;
     } finally {
       loading.value = false;
     }
@@ -215,17 +200,13 @@ export const useContractStore = defineStore('contract-store', () => {
   }
 
   async function loadContractStats() {
-    console.log('[ContractStore] loadContractStats called');
     const result = await fetchContractStats();
-    console.log('[ContractStore] fetchContractStats raw result:', result);
 
     // Extract actual data from response
     const data = (result as any)?.data || (result as any);
-    console.log('[ContractStore] loadContractStats extracted data:', data);
 
     if (data) {
       stats.value = data as Api.Contract.ContractStats;
-      console.log('[ContractStore] stats.value set:', stats.value);
     }
   }
 

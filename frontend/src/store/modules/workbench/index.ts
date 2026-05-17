@@ -57,12 +57,10 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     const originalRowCount = data.serverRows?.length ?? existing?.rowCount ?? rowsToCache.length;
 
     if (originalRowCount > LARGE_DATASET_THRESHOLD && rowsToCache.length > LARGE_DATASET_CACHE_SIZE) {
-      console.log(`[WorkbenchStore] Large dataset detected (${originalRowCount} rows), caching first ${LARGE_DATASET_CACHE_SIZE} rows only`);
       rowsToCache = rowsToCache.slice(0, LARGE_DATASET_CACHE_SIZE);
     }
 
     const resolvedPinColumns = data.pinColumns ?? existing?.pinColumns ?? [];
-    console.log('[Store:setCache] key:', key, 'data.pinColumns:', data.pinColumns, 'existing?.pinColumns:', existing?.pinColumns, 'resolved:', resolvedPinColumns);
 
     cache.value.set(key, {
       pageMeta: data.pageMeta ?? existing?.pageMeta ?? null,
@@ -360,18 +358,15 @@ export const useWorkbenchStore = defineStore('workbench', () => {
   function getPinColumns(functionCode: string, params: string, scopeKey = ''): string[] {
     const key = getCacheKey(functionCode, params, scopeKey);
     const entry = cache.value.get(key);
-    console.log('[Store:getPinColumns] key:', key, 'entry exists:', !!entry, 'pinColumns:', entry?.pinColumns);
     return entry?.pinColumns ?? [];
   }
 
   function setPinColumns(functionCode: string, params: string, pinColumns: string[], scopeKey = '') {
     const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
-    console.log('[Store:setPinColumns] key:', key, 'pinColumns:', pinColumns, 'existing exists:', !!existing, 'existing.pinColumns:', existing?.pinColumns);
     if (existing) {
       existing.pinColumns = pinColumns;
       existing.timestamp = Date.now();
-      console.log('[Store:setPinColumns] Updated existing entry, pinColumns is now:', existing.pinColumns);
     } else {
       cache.value.set(key, {
         pageMeta: null,
@@ -396,7 +391,6 @@ export const useWorkbenchStore = defineStore('workbench', () => {
         },
         timestamp: Date.now()
       });
-      console.log('[Store:setPinColumns] Created new entry with pinColumns:', pinColumns);
     }
   }
 

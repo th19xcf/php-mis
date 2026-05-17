@@ -131,20 +131,14 @@ function onRowClicked(event: { data: Api.Contract.ContractListItem }) {
 
 function onSelectionChanged() {
   const selected = gridApi.value?.getSelectedRows();
-  console.log('[Contract] Selection changed, selected:', selected);
-  console.log('[Contract] contractStore:', contractStore);
-  console.log('[Contract] contractStore.loadContractDetail:', contractStore.loadContractDetail);
   if (selected && selected.length > 0) {
     const guid = selected[0].GUID;
-    console.log('[Contract] Loading detail for GUID:', guid);
-    console.log('[Contract] About to call loadContractDetail');
     try {
       contractStore.loadContractDetail(guid).then(() => {
-        console.log('[Contract] loadContractDetail completed, currentContract:', contractStore.currentContract);
+        // loadContractDetail completed
       });
-      console.log('[Contract] After calling loadContractDetail');
-    } catch (err) {
-      console.error('[Contract] Error calling loadContractDetail:', err);
+    } catch {
+      // Error calling loadContractDetail
     }
     contractStore.loadContractFlow(guid);
   }
@@ -197,10 +191,8 @@ async function handleRefresh() {
 }
 
 function openCreateModal() {
-  console.log('[Contract] openCreateModal called, formMode:', formMode.value, 'showFormModal:', showFormModal.value);
   formMode.value = 'create';
   showFormModal.value = true;
-  console.log('[Contract] after setting, showFormModal:', showFormModal.value);
 }
 
 function openEditModal() {
@@ -396,19 +388,17 @@ async function _handlePageSizeChange(pageSize: number) {
 }
 
 onMounted(async () => {
-  console.log('[Contract] onMounted called');
   await Promise.all([
     contractStore.loadContractList(),
     contractStore.loadContractOptions(),
     contractStore.loadContractStats()
   ]);
-  console.log('[Contract] onMounted completed, stats:', contractStore.stats);
 });
 
 watch(
   () => contractStore.contractList,
-  newList => {
-    console.log('Contract list changed:', newList);
+  () => {
+    // Contract list changed
   },
   { immediate: true }
 );

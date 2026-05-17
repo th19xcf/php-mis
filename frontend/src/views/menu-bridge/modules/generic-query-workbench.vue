@@ -61,9 +61,7 @@ function isGuidColumn(field: string, label: string) {
   return field.trim().toUpperCase() === 'GUID' || label.trim().toUpperCase() === 'GUID';
 }
 
-// 消息辅助函数：同时输出到控制台和页面
-function msg(type: 'success' | 'error' | 'warning' | 'info', message: string, data?: unknown) {
-  console.log(`[${type.toUpperCase()}]`, message, data ?? '');
+function msg(type: 'success' | 'error' | 'warning' | 'info', message: string, _data?: unknown) {
   window.$message?.[type](message);
 }
 
@@ -173,12 +171,6 @@ watch(
 
     // 只有当 functionCode 或 params 发生变化时才重新加载
     if (newFunctionCode !== oldFunctionCode || newParams !== oldParams) {
-      console.log('Meta changed, reloading page', {
-        newFunctionCode,
-        newParams,
-        oldFunctionCode,
-        oldParams
-      });
       loadedFunctionCode.value = newFunctionCode;
       loadedParams.value = newParams;
       isDataLoaded.value = false;
@@ -628,30 +620,11 @@ async function loadPage() {
 
   // 检查 store 缓存
   const cached = workbenchStore.getCache(functionCode, params);
-  const scopeKey = getCacheScopeKey();
-  console.log('[loadPage] Checking cache:', {
-    functionCode,
-    params,
-    scopeKey,
-    hasCache: !!cached,
-    isDataLoaded: cached?.isDataLoaded,
-    cacheTimestamp: cached?.timestamp
-  });
   if (cached && cached.isDataLoaded) {
-    console.log(
-      '[loadPage] ✅ CACHE HIT! Loading data from MEMORY for:',
-      functionCode,
-      'rows:',
-      cached.serverRows.length,
-      'originalRowCount:',
-      cached.rowCount || cached.serverRows.length
-    );
-
     // 大数据量检测：如果缓存被截断，显示提示
     const originalRowCount = cached.rowCount || cached.serverRows.length;
     if (originalRowCount > 5000 && cached.serverRows.length < originalRowCount) {
-      console.log(`[loadPage] Large dataset cached: ${originalRowCount} rows, showing first ${cached.serverRows.length} rows`);
-      // 可以在这里添加用户提示：window.$message?.info(`大数据集：仅显示前 ${cached.serverRows.length} 条记录`);
+      // 大数据集：仅显示前 N 条记录
     }
 
     pageMeta.value = cached.pageMeta;
@@ -696,7 +669,6 @@ async function loadPage() {
         }
         // 重置初始加载标志
         isInitialLoading.value = false;
-        console.log('[loadPage] Cache hit, grid refreshed for:', functionCode);
       }
 
       // 在下一帧恢复行选择状态
@@ -741,7 +713,6 @@ async function loadPage() {
   if (drillParamsStr && drillParamsStr !== '') {
     try {
       const drillParams = JSON.parse(drillParamsStr);
-      console.log('解析钻取参数:', drillParams);
 
       // 获取原始钻取条件 SQL（如：财务月份=`$本年度月份` or 工作预算月份=`$本年度月份`）
       const rawDrillCondition = drillParams['钻取条件'] || '';
@@ -759,7 +730,6 @@ async function loadPage() {
         }
         // 将反引号替换为单引号（SQL 语法）
         drillConditionSql = drillConditionSql.replace(/`/g, "'");
-        console.log('钻取条件 SQL:', drillConditionSql);
       }
 
       // 从钻取参数中提取字段和值作为过滤条件（备用逻辑）
@@ -776,9 +746,8 @@ async function loadPage() {
           });
         }
       }
-      console.log('钻取过滤条件:', drillFilters);
-    } catch (e) {
-      console.error('解析钻取参数失败:', e);
+    } catch {
+      // 解析钻取参数失败，忽略
     }
   }
 
@@ -857,7 +826,6 @@ async function loadPage() {
     }
     // 重置初始加载标志
     isInitialLoading.value = false;
-    console.log('[loadPage] Initial loading completed for:', functionCode);
   }, 300);
 }
 
@@ -1181,31 +1149,10 @@ function handleDataDrill() {
   fetchWorkbenchDrill(functionCode, {})
     .then(({ data, error }) => {
       loading.value = false;
-      console.log('Drill response:', { data, error });
       if (error) {
         msg('error', '获取钻取选项失败', error);
         return;
       }
-
-      if (data.debug) {
-        console.log('=== 钻取调试信息 ===');
-        console.log('functionCode:', data.debug.functionCode);
-        console.log('queryModule:', data.debug.queryModule);
-        console.log('drillModule:', data.debug.drillModule);
-        console.log('options count:', data.options?.length || 0);
-        console.log('options:', data.options);
-        console.log('options type:', typeof data.options);
-        console.log('options isArray:', Array.isArray(data.options));
-        console.log('options length:', data.options?.length);
-        console.log('condition result:', !!(data.options && data.options.length > 0));
-        const debugInfo = data.debug as any;
-        console.log('functionAuth (from current context):', debugInfo.functionAuth);
-        console.log('drillOptionsRaw (from SQL):', debugInfo.drillOptionsRaw);
-      }
-
-      console.log('Checking if should show dialog...');
-      console.log('data.options:', data.options);
-      console.log('data.options?.length:', data.options?.length);
 
       if (data.options && data.options.length > 0) {
         // 参考旧版：显示钻取选项（单选按钮）
@@ -1222,39 +1169,23 @@ function handleDataDrill() {
           raw: opt
         }));
 
-        console.log('Opening drill dialog with options:', options);
-
-        console.log('Options for dialog:', options);
-        console.log('Options count:', options.length);
-        console.log('First option:', options[0]);
-
         // 使用 ref 存储选中的选项
         const selectedOption = ref<(typeof options)[0] | null>(options[0] || null);
 
         // 先定义 handleDrillConfirm 函数
         const handleDrillConfirm = (selectedOpt: (typeof options)[0]) => {
-          console.log('Selected drill option:', selectedOpt);
-          console.log('Selected row data:', selectedRow);
-
           // 参考旧版 Vgrid_aggrid.php 的钻取参数构建逻辑
           const drillItem = selectedOpt.raw;
           const drillFieldsStr = drillItem.drillFields || '';
           const sendObj: Record<string, any> = {};
 
-          console.log('Drill fields string:', drillFieldsStr);
-
           // 处理钻取字段：格式为 字段1;字段2;...
           const nlArr = drillFieldsStr.split(';').filter(f => f.trim());
-          console.log('Drill fields array:', nlArr);
 
           let hasValidField = false;
 
           for (const field of nlArr) {
             const trimmedField = field.trim();
-            console.log(`Checking field "${trimmedField}":`, {
-              exists: trimmedField && selectedRow[trimmedField] !== undefined,
-              value: selectedRow[trimmedField]
-            });
             if (trimmedField && selectedRow[trimmedField] !== undefined && selectedRow[trimmedField] !== '') {
               sendObj[trimmedField] = selectedRow[trimmedField];
               hasValidField = true;
@@ -1262,7 +1193,7 @@ function handleDataDrill() {
           }
 
           if (!hasValidField) {
-            msg('warning', '钻取字段为空，无法钻取', { drillFields: nlArr, selectedRow });
+            msg('warning', '钻取字段为空，无法钻取');
             return;
           }
 
@@ -1272,20 +1203,13 @@ function handleDataDrill() {
           // 参考旧版：获取显示的列
           const visibleColumns: string[] = [];
           const columns = gridApi.value?.getColumns() || [];
-          console.log(
-            'All columns:',
-            columns.map(c => ({ id: c.getColId(), visible: c.isVisible() }))
-          );
           for (const col of columns) {
             if (col.getColId() === 'ag-Grid-SelectionColumn') continue;
             if (col.getColId() === '序号') continue;
             if (!col.isVisible()) continue;
             visibleColumns.push(col.getColId());
           }
-          console.log('Visible columns:', visibleColumns);
           sendObj['字段选择'] = visibleColumns;
-
-          console.log('Drill sendObj:', sendObj);
 
           // 参考旧版 parent.window.goto 跳转逻辑
           const targetFunctionCode = drillItem.functionCode;
@@ -1311,12 +1235,8 @@ function handleDataDrill() {
         const drillSelectedValue = ref<string>(options[0]?.value || '');
 
         const renderDrillDialogContent = () => {
-          console.log('renderDrillDialogContent called with options:', options);
-          console.log('Initial drillSelectedValue:', drillSelectedValue.value);
-
           // 处理单选按钮点击
           const handleRadioClick = (value: string) => {
-            console.log('Radio clicked:', value);
             drillSelectedValue.value = value;
             selectedOption.value = options.find(opt => opt.value === value) || null;
           };
@@ -1328,7 +1248,6 @@ function handleDataDrill() {
               {
                 value: drillSelectedValue.value,
                 'onUpdate:value': (value: string) => {
-                  console.log('NRadioGroup value changed:', value);
                   handleRadioClick(value);
                 },
                 style: { flex: 1, overflow: 'auto', padding: '16px' }
@@ -1384,7 +1303,6 @@ function handleDataDrill() {
       } else {
         const drillModule = data.debug?.drillModule || 'empty';
         const queryModule = data.debug?.queryModule || 'empty';
-        console.log('No drill options found. Drill module:', drillModule, 'Query module:', queryModule);
 
         if (drillModule && drillModule !== 'empty' && drillModule !== queryModule) {
           msg('warning', `钻取模块 [${drillModule}] 在 def_drill_config 表中未找到配置`);
@@ -1865,9 +1783,9 @@ async function handleTableEditSubmit() {
                 :style="
                   isDarkMode
                     ? {
-                      borderBottomColor: '#4b5965',
-                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                    }
+                        borderBottomColor: '#4b5965',
+                        borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                      }
                     : {}
                 "
               >

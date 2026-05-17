@@ -1,4 +1,4 @@
-import { nextTick, onActivated, onDeactivated } from 'vue';
+import { onActivated, onDeactivated } from 'vue';
 import type { Ref } from 'vue';
 import type { GridApi } from 'ag-grid-community';
 import { useWorkbenchStore } from '@/store/modules/workbench';
@@ -84,8 +84,9 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       rawWorkbenchStore.setVisibleColumns(functionCode, params, visibleColumns, options.getCacheScopeKey()),
     getPinColumns: (functionCode: string, params: string) =>
       rawWorkbenchStore.getPinColumns(functionCode, params, options.getCacheScopeKey()),
-    setPinColumns: (functionCode: string, params: string, pinColumns: string[]) =>
-      rawWorkbenchStore.setPinColumns(functionCode, params, pinColumns, options.getCacheScopeKey()),
+    setPinColumns: (functionCode: string, params: string, pinColumns: string[]) => {
+      rawWorkbenchStore.setPinColumns(functionCode, params, pinColumns, options.getCacheScopeKey());
+    },
     getUIState: (functionCode: string, params: string) =>
       rawWorkbenchStore.getUIState(functionCode, params, options.getCacheScopeKey()),
     setUIState: (functionCode: string, params: string, uiState: any) =>
@@ -109,8 +110,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     const functionCode = getFunctionCode();
     const params = getParams();
 
-    console.log('[onActivated] Restoring grid state from cache for:', functionCode);
-
+    // 第一步：恢复 UI 状态（立即执行，不阻塞）
     const cachedUIState = workbenchStore.getUIState(functionCode, params);
     if (cachedUIState) {
       options.conditionVisible.value = cachedUIState.conditionVisible;
@@ -128,24 +128,21 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
     const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
 
-    // 合并所有需要 nextTick 的操作到一个回调中
     const hasFilter = cachedFilterModel && Object.keys(cachedFilterModel).length > 0;
     const hasColumnState = cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0;
     const hasPageChange = cachedPage > 1 || cachedPageSize !== options.defaultPageSize;
     const hasSelection = cachedSelectedRows.length > 0;
 
-    if (hasColumnState) {
-      if (options.pageMeta.value?.columns) {
-        // 使用 Map 优化查找性能 O(n) -> O(1)
-        const colStateMap = new Map(cachedColumnState.map((c: any) => [c.colId, c]));
-        options.pageMeta.value.columns = options.pageMeta.value.columns.map(column => {
-          const colState = colStateMap.get(column.field);
-          if (colState && colState.hide !== undefined) {
-            return { ...column, hidden: colState.hide };
-          }
-          return column;
-        });
-      }
+    // 预更新列隐藏状态（不触发重绘）
+    if (hasColumnState && options.pageMeta.value?.columns) {
+      const colStateMap = new Map(cachedColumnState.map((c: any) => [c.colId, c]));
+      options.pageMeta.value.columns = options.pageMeta.value.columns.map(column => {
+        const colState = colStateMap.get(column.field);
+        if (colState && colState.hide !== undefined) {
+          return { ...column, hidden: colState.hide };
+        }
+        return column;
+      });
       options.isRestoringColumnState.value = true;
     }
 
@@ -163,59 +160,96 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       options.isRestoringSelection.value = true;
     }
 
-    // 合并为一个 nextTick 回调，减少渲染次数
-    nextTick(() => {
+    // 使用 requestAnimationFrame 分帧执行，避免阻塞主线程
+    requestAnimationFrame(() => {
       if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
         isRestoringState = false;
         return;
       }
 
-      // 恢复筛选
+      // 第一帧：恢复筛选（优先级较高）
       if (hasFilter) {
         options.gridApi.value.setFilterModel(cachedFilterModel);
         options.isRestoringFilter.value = false;
       }
 
-      // 恢复列状态
-      if (hasColumnState) {
-        options.gridApi.value.applyColumnState({ state: cachedColumnState, applyOrder: true });
-
-        const cachedVisibleColumns = workbenchStore.getVisibleColumns(functionCode, params);
-        if (cachedVisibleColumns.length > 0) {
-          options.visibleFieldColumns.value = cachedVisibleColumns;
+      // 第二帧：恢复列状态（可能触发重绘，延迟执行）
+      requestAnimationFrame(() => {
+        if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
+          isRestoringState = false;
+          return;
         }
 
-        const cachedPinColumns = workbenchStore.getPinColumns(functionCode, params);
-        if (cachedPinColumns.length > 0) {
-          options.pinTargetFields.value = cachedPinColumns;
+        if (hasColumnState) {
+          // 延迟应用列状态，避免与数据加载冲突
+          setTimeout(() => {
+            if (options.gridApi.value && !options.gridApi.value.isDestroyed()) {
+              // 确保标志位正确设置，防止 columnPinned 事件覆盖
+              options.isRestoringColumnState.value = true;
+
+              // 获取固定列信息并合并到 columnState 中
+              const cachedPinColumns = workbenchStore.getPinColumns(functionCode, params);
+              // 将 Proxy 数组转换为普通数组
+              const pinColumnsArray = Array.from(cachedPinColumns);
+
+              // 将固定列信息合并到 columnState 中
+              const mergedColumnState = cachedColumnState.map((col: any) => {
+                if (pinColumnsArray.includes(col.colId)) {
+                  return { ...col, pinned: 'left' };
+                }
+                return col;
+              });
+
+              options.gridApi.value.applyColumnState({ state: mergedColumnState, applyOrder: true });
+
+              const cachedVisibleColumns = workbenchStore.getVisibleColumns(functionCode, params);
+              if (cachedVisibleColumns.length > 0) {
+                options.visibleFieldColumns.value = cachedVisibleColumns;
+              }
+
+              if (cachedPinColumns.length > 0) {
+                options.pinTargetFields.value = cachedPinColumns;
+              }
+
+              // 延迟重置标志，确保所有列状态事件处理完毕
+              setTimeout(() => {
+                options.isRestoringColumnState.value = false;
+              }, 100);
+            }
+          }, 50);
         }
-      }
 
-      // 恢复行选择 - 跳过大数据量的恢复以避免性能问题
-      if (hasSelection && cachedSelectedRows.length <= 10) {
-        // 只恢复前10条选中记录
-        const rowsToRestore = cachedSelectedRows.slice(0, 10);
-        // 使用 Set 优化查找性能
-        const guidSet = new Set(rowsToRestore.filter((r: any) => r.GUID).map((r: any) => r.GUID));
-        const idSet = new Set(rowsToRestore.filter((r: any) => r.id).map((r: any) => r.id));
-
-        options.gridApi.value.forEachNode(node => {
-          const rowData = node.data;
-          if (!rowData) return;
-          const isSelected = (rowData.GUID && guidSet.has(rowData.GUID)) || (rowData.id && idSet.has(rowData.id));
-          if (isSelected) {
-            node.setSelected(true);
+        // 第三帧：恢复行选择（最低优先级）
+        requestAnimationFrame(() => {
+          if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
+            isRestoringState = false;
+            return;
           }
-        });
-      }
-      options.isRestoringSelection.value = false;
 
-      // 延迟重置标志
-      setTimeout(() => {
-        options.isRestoringColumnState.value = false;
-        options.isRestoringPage.value = false;
-        isRestoringState = false;
-      }, 100);
+          // 恢复行选择 - 只恢复前10条选中记录，避免大数据量下的性能问题
+          if (hasSelection && cachedSelectedRows.length <= 10) {
+            const rowsToRestore = cachedSelectedRows.slice(0, 10);
+            const guidSet = new Set(rowsToRestore.filter((r: any) => r.GUID).map((r: any) => r.GUID));
+            const idSet = new Set(rowsToRestore.filter((r: any) => r.id).map((r: any) => r.id));
+
+            options.gridApi.value.forEachNode(node => {
+              const rowData = node.data;
+              if (!rowData) return;
+              const isSelected = (rowData.GUID && guidSet.has(rowData.GUID)) || (rowData.id && idSet.has(rowData.id));
+              if (isSelected) {
+                node.setSelected(true);
+              }
+            });
+          }
+          options.isRestoringSelection.value = false;
+
+          // 延迟重置所有标志（注意：isRestoringColumnState 已在上面重置）
+          setTimeout(() => {
+            options.isRestoringPage.value = false;
+            isRestoringState = false;
+          }, 100);
+        });
+      });
     });
   }
 
@@ -270,14 +304,8 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       .filter((field): field is string => field !== undefined);
     workbenchStore.setVisibleColumns(functionCode, params, visibleCols);
 
-    const pinnedCols = allColumns
-      .filter(col => {
-        const colDef = col.getColDef();
-        return colDef.pinned && colDef.field;
-      })
-      .map(col => col.getColDef().field as string)
-      .filter((field): field is string => field !== undefined);
-    workbenchStore.setPinColumns(functionCode, params, pinnedCols);
+    // 注意：不在这里保存 pinColumns，因为 getColumnState() 不包含 pinned 信息
+    // pinColumns 已由 columnPinned 事件监听器正确保存
   }
 
   function registerGridPersistenceListeners() {
@@ -380,20 +408,18 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       }
     });
 
-    api.addEventListener('columnPinned', () => {
+    api.addEventListener('columnPinned', (_event: any) => {
       if (options.isRestoringColumnState.value) {
         return;
       }
       if (capturedFunctionCode && options.gridApi.value) {
-        const allColumns = options.gridApi.value.getColumns();
-        if (allColumns) {
-          const pinnedCols = allColumns
-            .filter(col => {
-              const colDef = col.getColDef();
-              return colDef.pinned && colDef.field;
-            })
-            .map(col => col.getColDef().field as string)
-            .filter((field): field is string => field !== undefined);
+        // 使用 getColumnState() 获取固定列信息，而不是 getColumns()
+        const columnState = options.gridApi.value.getColumnState();
+        if (columnState && Array.isArray(columnState)) {
+          const pinnedCols = columnState
+            .filter((col: any) => col.pinned)
+            .map((col: any) => col.colId)
+            .filter((colId: string) => colId !== undefined);
           workbenchStore.setPinColumns(capturedFunctionCode, capturedParams, pinnedCols);
         }
       }

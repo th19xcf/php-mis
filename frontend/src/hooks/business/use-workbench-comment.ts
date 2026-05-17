@@ -85,16 +85,15 @@ export function useWorkbenchComment(options: UseWorkbenchCommentOptions) {
 
     try {
       const { data, error } = await fetchCommentFields(functionCode);
-      console.log('批注字段接口返回:', { data, error });
       if (data) {
         commentFields.value = data.fields || [];
         commentKeyFields.value = data.keyFields || '';
       }
       if (error) {
-        console.error('批注字段接口错误:', error);
+        // 批注字段接口错误
       }
-    } catch (error) {
-      console.error('加载批注字段失败:', error);
+    } catch {
+      // 加载批注字段失败
     }
   }
 
