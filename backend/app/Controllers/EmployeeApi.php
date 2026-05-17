@@ -2,33 +2,12 @@
 
 namespace App\Controllers;
 
-use App\Constants\ApiCode;
-use App\Libraries\SessionUserContext;
-use App\Models\Mcommon;
-use CodeIgniter\HTTP\RequestInterface;
-use CodeIgniter\HTTP\ResponseInterface;
-use Psr\Log\LoggerInterface;
-
-class EmployeeApi extends BaseController
+class EmployeeApi extends BaseApiController
 {
-    protected $model;
-    private SessionUserContext $userContext;
-
-    public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
-    {
-        parent::initController($request, $response, $logger);
-        $this->model = new Mcommon();
-        $this->userContext = new SessionUserContext();
-    }
-
     public function tree()
     {
         $menuId = $this->request->getGet('menu_id');
-        $locationAuthzCond = $this->userContext->getSessionValue($menuId . '-location_authz_cond');
-        
-        if (empty($locationAuthzCond)) {
-            $locationAuthzCond = '1=1';
-        }
+        $locationAuthzCond = $this->userContext->getSessionValue($menuId . '-location_authz_cond') ?: '1=1';
 
         $sql = sprintf('
             select GUID,姓名,工号1 as 工号,属地,员工状态,
@@ -43,31 +22,20 @@ class EmployeeApi extends BaseController
                 convert(姓名 using gbk)',
             $locationAuthzCond);
 
-        $query = $this->model->select($sql);
-        $results = $query->getResultArray();
-
+        $results = $this->model->select($sql)->getResultArray();
         $tree = $this->buildTree($results);
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $tree
-        ]);
+        return $this->success($tree);
     }
 
     public function detail($guid = '')
     {
         if (empty($guid)) {
-            $json = $this->request->getJSON(true);
-            $guid = $json['guid'] ?? '';
+            $guid = $this->getGuidFromRequest();
         }
 
         if (empty($guid)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '人员GUID不能为空',
-                'data' => null
-            ]);
+            return $this->paramError('人员GUID不能为空');
         }
 
         $sql = sprintf('
@@ -81,37 +49,22 @@ class EmployeeApi extends BaseController
             where GUID="%s" and 有效标识="1" and 删除标识="0"',
             $guid);
 
-        $query = $this->model->select($sql);
-        $result = $query->getRowArray();
+        $result = $this->model->select($sql)->getRowArray();
 
         if (!$result) {
-            return $this->response->setJSON([
-                'code' => ApiCode::NOT_FOUND,
-                'msg' => '人员不存在',
-                'data' => null
-            ]);
+            return $this->notFound('人员不存在');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $result
-        ]);
+        return $this->success($result);
     }
 
     public function update()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
-        if (empty($data['guid'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '人员GUID不能为空',
-                'data' => null
-            ]);
+        if ($error = $this->requireParam($data, 'guid')) {
+            return $error;
         }
-
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guid = $data['guid'];
         $effectiveDate = $data['生效日期'] ?? date('Y-m-d');
@@ -120,15 +73,10 @@ class EmployeeApi extends BaseController
             select * from ee_onjob
             where GUID="%s" and 有效标识="1" and 删除标识="0"',
             $guid);
-        $oldQuery = $this->model->select($oldSql);
-        $oldRecord = $oldQuery->getRowArray();
+        $oldRecord = $this->model->select($oldSql)->getRowArray();
 
         if (!$oldRecord) {
-            return $this->response->setJSON([
-                'code' => ApiCode::NOT_FOUND,
-                'msg' => '人员不存在',
-                'data' => null
-            ]);
+            return $this->notFound('人员不存在');
         }
 
         if (!empty($data['员工状态']) && $data['员工状态'] === '离职') {
@@ -158,11 +106,7 @@ class EmployeeApi extends BaseController
 
             $num = $this->model->exec($sql);
 
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => sprintf('处理离职信息成功，修改 %d 条记录', $num),
-                'data' => null
-            ]);
+            return $this->success(null, sprintf('处理离职信息成功，修改 %d 条记录', $num));
         }
 
         $updateStr = '';
@@ -173,7 +117,7 @@ class EmployeeApi extends BaseController
             if (in_array($key, ['guid', '操作', '生效日期'])) continue;
             if ($value === '') continue;
 
-            if ($oldRecord[$key] ?? '' !== $value) {
+            if (($oldRecord[$key] ?? '') !== $value) {
                 $updateStr .= ($updateStr ? ',' : '') . $key;
                 $insertFields[] = $key;
                 $insertValues[] = sprintf('"%s"', addslashes($value));
@@ -181,11 +125,7 @@ class EmployeeApi extends BaseController
         }
 
         if (empty($updateStr)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '没有需要更新的字段',
-                'data' => null
-            ]);
+            return $this->success(null, '没有需要更新的字段');
         }
 
         $sqlInsert = sprintf('
@@ -210,7 +150,7 @@ class EmployeeApi extends BaseController
             from ee_onjob
             where GUID="%s"',
             $effectiveDate,
-            $userWorkid,
+            $this->getUserWorkId(),
             date('Y-m-d H:i:s'),
             $guid
         );
@@ -227,26 +167,16 @@ class EmployeeApi extends BaseController
         $this->model->exec($sqlInsert);
         $num = $this->model->exec($sqlUpdate);
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => sprintf('修改成功，修改 %d 条记录', $num),
-            'data' => null
-        ]);
+        return $this->success(null, sprintf('修改成功，修改 %d 条记录', $num));
     }
 
     public function batchUpdate()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
         if (empty($data['guids']) || !is_array($data['guids'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '请选择要修改的人员',
-                'data' => null
-            ]);
+            return $this->paramError('请选择要修改的人员');
         }
-
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
         $effectiveDate = $data['生效日期'] ?? date('Y-m-d');
@@ -259,11 +189,7 @@ class EmployeeApi extends BaseController
         }
 
         if (empty($updateFields)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '没有需要更新的字段',
-                'data' => null
-            ]);
+            return $this->success(null, '没有需要更新的字段');
         }
 
         $sql = sprintf('
@@ -271,61 +197,37 @@ class EmployeeApi extends BaseController
             set %s,操作人员="%s",操作时间="%s"
             where GUID in ("%s")',
             implode(',', $updateFields),
-            $userWorkid,
+            $this->getUserWorkId(),
             date('Y-m-d H:i:s'),
             $guidStr
         );
 
         $num = $this->model->exec($sql);
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => sprintf('批量修改成功，修改 %d 条记录', $num),
-            'data' => null
-        ]);
+        return $this->success(null, sprintf('批量修改成功，修改 %d 条记录', $num));
     }
 
     public function delete()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
         if (empty($data['guids']) || !is_array($data['guids'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '请选择要删除的人员',
-                'data' => null
-            ]);
+            return $this->paramError('请选择要删除的人员');
         }
 
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
-
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
+        $num = $this->deleteRecord('ee_onjob', sprintf('GUID in ("%s")', $guidStr));
 
-        $sql = sprintf('
-            update ee_onjob
-            set 操作记录="删除",记录结束日期="%s",
-                操作来源="页面",操作人员="%s",
-                结束操作时间="%s",
-                删除标识="1",有效标识="0"
-            where GUID in ("%s")',
-            date('Y-m-d'),
-            $userWorkid,
-            date('Y-m-d H:i:s'),
-            $guidStr
-        );
+        if ($num > 0) {
+            return $this->success(null, sprintf('删除成功，共删除 %d 条记录', $num));
+        }
 
-        $num = $this->model->exec($sql);
-
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => sprintf('删除成功，共删除 %d 条记录', $num),
-            'data' => null
-        ]);
+        return $this->serverError('删除失败');
     }
 
     public function options()
     {
-        $locationAuthz = $this->userContext->getSessionUser()['locationAuthz'] ?: '';
+        $locationAuthz = $this->getLocationAuthz();
 
         $regionSql = sprintf('
             select distinct 对象值 as value, 对象值 as label
@@ -338,25 +240,21 @@ class EmployeeApi extends BaseController
 
         $regionResult = $this->model->select($regionSql)->getResultArray();
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => [
-                'region' => $regionResult,
-                'status' => [
-                    ['value' => '在职', 'label' => '在职'],
-                    ['value' => '离职', 'label' => '离职']
-                ],
-                'positionType' => [
-                    ['value' => '生产岗', 'label' => '生产岗'],
-                    ['value' => '职能岗', 'label' => '职能岗'],
-                    ['value' => '管理岗', 'label' => '管理岗']
-                ],
-                'settlementType' => [
-                    ['value' => '按量结算', 'label' => '按量结算'],
-                    ['value' => '按席结算', 'label' => '按席结算'],
-                    ['value' => '无结算', 'label' => '无结算']
-                ]
+        return $this->success([
+            'region' => $regionResult,
+            'status' => [
+                ['value' => '在职', 'label' => '在职'],
+                ['value' => '离职', 'label' => '离职']
+            ],
+            'positionType' => [
+                ['value' => '生产岗', 'label' => '生产岗'],
+                ['value' => '职能岗', 'label' => '职能岗'],
+                ['value' => '管理岗', 'label' => '管理岗']
+            ],
+            'settlementType' => [
+                ['value' => '按量结算', 'label' => '按量结算'],
+                ['value' => '按席结算', 'label' => '按席结算'],
+                ['value' => '无结算', 'label' => '无结算']
             ]
         ]);
     }

@@ -2,31 +2,11 @@
 
 namespace App\Controllers;
 
-use App\Constants\ApiCode;
-use App\Libraries\SessionUserContext;
-use App\Models\Mcommon;
-use CodeIgniter\HTTP\RequestInterface;
-use CodeIgniter\HTTP\ResponseInterface;
-use Psr\Log\LoggerInterface;
-
-class DeptApi extends BaseController
+class DeptApi extends BaseApiController
 {
-    protected $model;
-    private SessionUserContext $userContext;
-
-    public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
-    {
-        parent::initController($request, $response, $logger);
-        $this->model = new Mcommon();
-        $this->userContext = new SessionUserContext();
-    }
-
-    /**
-     * 获取部门树形结构
-     */
     public function tree()
     {
-        $deptAuthz = $this->userContext->getSessionUser()['deptAuthz'] ?: '';
+        $deptAuthz = $this->getDeptAuthz();
 
         $sql = sprintf('
             SELECT GUID, 部门编码, 部门名称, 部门级别, 上级部门编码, 负责人, 有无下级部门, 属地
@@ -36,35 +16,20 @@ class DeptApi extends BaseController
             ORDER BY 部门级别 ASC, 部门编码 ASC
         ', $deptAuthz, $deptAuthz);
 
-        $query = $this->model->select($sql);
-        $results = $query->getResultArray();
-
-        // 构建树形结构
+        $results = $this->model->select($sql)->getResultArray();
         $tree = $this->buildTree($results);
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $tree
-        ]);
+        return $this->success($tree);
     }
 
-    /**
-     * 获取部门详情
-     */
     public function detail($guid = '')
     {
         if (empty($guid)) {
-            $json = $this->request->getJSON(true);
-            $guid = $json['guid'] ?? '';
+            $guid = $this->getGuidFromRequest();
         }
 
         if (empty($guid)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '部门GUID不能为空',
-                'data' => null
-            ]);
+            return $this->paramError('部门GUID不能为空');
         }
 
         $sql = sprintf('
@@ -76,79 +41,41 @@ class DeptApi extends BaseController
             WHERE GUID = "%s" AND 删除标识 = "0" AND 有效标识 = "1"
         ', $guid);
 
-        $query = $this->model->select($sql);
-        $result = $query->getRowArray();
+        $result = $this->model->select($sql)->getRowArray();
 
         if (!$result) {
-            return $this->response->setJSON([
-                'code' => ApiCode::NOT_FOUND,
-                'msg' => '部门不存在',
-                'data' => null
-            ]);
+            return $this->notFound('部门不存在');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $result
-        ]);
+        return $this->success($result);
     }
 
-    /**
-     * 新增下级部门
-     */
     public function add()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
-        // 校验必填项
-        if (empty($data['parentCode'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '上级部门编码不能为空',
-                'data' => null
-            ]);
-        }
-        if (empty($data['deptName'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '部门名称不能为空',
-                'data' => null
-            ]);
+        if ($error = $this->requireParams($data, ['parentCode', 'deptName'])) {
+            return $error;
         }
 
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
-
-        // 查询上级部门信息
         $parentSql = sprintf('
             SELECT 部门编码, 部门名称, 部门级别, 部门全称
             FROM def_dept
             WHERE 部门编码 = "%s" AND 删除标识 = "0" AND 有效标识 = "1"
         ', $data['parentCode']);
-        $parentQuery = $this->model->select($parentSql);
-        $parent = $parentQuery->getRowArray();
+        $parent = $this->model->select($parentSql)->getRowArray();
 
         if (!$parent) {
-            return $this->response->setJSON([
-                'code' => ApiCode::NOT_FOUND,
-                'msg' => '上级部门不存在',
-                'data' => null
-            ]);
+            return $this->notFound('上级部门不存在');
         }
 
-        // 生成新部门编码
         $childLevel = $parent['部门级别'] + 1;
         $newCode = $this->generateDeptCode($data['parentCode']);
 
         if (!$newCode) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SERVER_ERROR,
-                'msg' => '生成部门编码失败',
-                'data' => null
-            ]);
+            return $this->serverError('生成部门编码失败');
         }
 
-        // 构建部门全称
         $fullName = $parent['部门全称'] ? $parent['部门全称'] . '>>' . $data['deptName'] : $data['deptName'];
 
         $insertSql = sprintf('
@@ -175,76 +102,46 @@ class DeptApi extends BaseController
             $data['region'] ?? '',
             $data['budgetFullName'] ?? '',
             $data['effectiveDate'] ?? date('Y-m-d'),
-            $userWorkid,
+            $this->getUserWorkId(),
             date('Y-m-d H:i:s')
         );
 
         $num = $this->model->exec($insertSql);
 
         if ($num > 0) {
-            // 更新上级部门的有无下级部门标识
             $updateParentSql = sprintf('
-                UPDATE def_dept
-                SET 有无下级部门 = "有"
-                WHERE 部门编码 = "%s"
+                UPDATE def_dept SET 有无下级部门 = "有" WHERE 部门编码 = "%s"
             ', $data['parentCode']);
             $this->model->exec($updateParentSql);
 
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '新增部门成功',
-                'data' => ['deptCode' => $newCode]
-            ]);
+            return $this->success(['deptCode' => $newCode], '新增部门成功');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '新增部门失败',
-            'data' => null
-        ]);
+        return $this->serverError('新增部门失败');
     }
 
-    /**
-     * 修改部门信息
-     */
     public function update()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
-        if (empty($data['guid'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '部门GUID不能为空',
-                'data' => null
-            ]);
+        if ($error = $this->requireParam($data, 'guid')) {
+            return $error;
         }
-
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guid = $data['guid'];
-        $effectiveDate = $data['effectiveDate'] ?? date('Y-m-d');
 
-        // 查询原记录
         $oldSql = sprintf('
-            SELECT * FROM def_dept
-            WHERE GUID = "%s" AND 删除标识 = "0" AND 有效标识 = "1"
+            SELECT * FROM def_dept WHERE GUID = "%s" AND 删除标识 = "0" AND 有效标识 = "1"
         ', $guid);
-        $oldQuery = $this->model->select($oldSql);
-        $oldRecord = $oldQuery->getRowArray();
+        $oldRecord = $this->model->select($oldSql)->getRowArray();
 
         if (!$oldRecord) {
-            return $this->response->setJSON([
-                'code' => ApiCode::NOT_FOUND,
-                'msg' => '部门不存在',
-                'data' => null
-            ]);
+            return $this->notFound('部门不存在');
         }
 
-        // 构建更新字段
         $updateFields = [];
         if (isset($data['deptName']) && $data['deptName'] !== $oldRecord['部门名称']) {
             $updateFields[] = sprintf('部门名称 = "%s"', $data['deptName']);
-            // 更新全称
             $parentFullName = $this->getParentFullName($oldRecord['上级部门编码']);
             $newFullName = $parentFullName ? $parentFullName . '>>' . $data['deptName'] : $data['deptName'];
             $updateFields[] = sprintf('部门全称 = "%s"', $newFullName);
@@ -263,110 +160,54 @@ class DeptApi extends BaseController
         }
 
         if (empty($updateFields)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '没有需要更新的字段',
-                'data' => null
-            ]);
+            return $this->success(null, '没有需要更新的字段');
         }
 
-        $updateFields[] = sprintf('操作记录 = "更新[2]"');
-        $updateFields[] = sprintf('操作来源 = "页面更新"');
-        $updateFields[] = sprintf('操作人员 = "%s"', $userWorkid);
+        $updateFields[] = '操作记录 = "更新[2]"';
+        $updateFields[] = '操作来源 = "页面更新"';
+        $updateFields[] = sprintf('操作人员 = "%s"', $this->getUserWorkId());
         $updateFields[] = sprintf('结束操作时间 = "%s"', date('Y-m-d H:i:s'));
 
-        $updateSql = sprintf('
-            UPDATE def_dept
-            SET %s
-            WHERE GUID = "%s"
-        ', implode(', ', $updateFields), $guid);
-
+        $updateSql = sprintf('UPDATE def_dept SET %s WHERE GUID = "%s"', implode(', ', $updateFields), $guid);
         $num = $this->model->exec($updateSql);
 
         if ($num > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '修改部门信息成功',
-                'data' => null
-            ]);
+            return $this->success(null, '修改部门信息成功');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '修改部门信息失败',
-            'data' => null
-        ]);
+        return $this->serverError('修改部门信息失败');
     }
 
-    /**
-     * 删除部门（逻辑删除）
-     */
     public function delete()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
-        if (empty($data['guid'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '部门GUID不能为空',
-                'data' => null
-            ]);
+        if ($error = $this->requireParam($data, 'guid')) {
+            return $error;
         }
 
         $guid = $data['guid'];
 
-        // 检查是否有下级部门
         $checkSql = sprintf('
-            SELECT COUNT(*) as cnt
-            FROM def_dept
+            SELECT COUNT(*) as cnt FROM def_dept
             WHERE 上级部门编码 = (SELECT 部门编码 FROM def_dept WHERE GUID = "%s")
                 AND 删除标识 = "0" AND 有效标识 = "1"
         ', $guid);
-        $checkQuery = $this->model->select($checkSql);
-        $checkResult = $checkQuery->getRowArray();
+        $checkResult = $this->model->select($checkSql)->getRowArray();
 
         if ($checkResult && $checkResult['cnt'] > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::BUSINESS_ERROR,
-                'msg' => '该部门存在下级部门，不能删除',
-                'data' => null
-            ]);
+            return $this->businessError('该部门存在下级部门，不能删除');
         }
 
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
-
-        $deleteSql = sprintf('
-            UPDATE def_dept
-            SET 记录结束日期 = "%s",
-                操作记录 = "删除",
-                操作来源 = "页面",
-                操作人员 = "%s",
-                结束操作时间 = "%s",
-                删除标识 = "1",
-                有效标识 = "0"
-            WHERE GUID = "%s"
-        ', date('Y-m-d'), $userWorkid, date('Y-m-d H:i:s'), $guid);
-
-        $num = $this->model->exec($deleteSql);
+        $num = $this->deleteRecord('def_dept', sprintf('GUID = "%s"', $guid));
 
         if ($num > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '删除部门成功',
-                'data' => null
-            ]);
+            return $this->success(null, '删除部门成功');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '删除部门失败',
-            'data' => null
-        ]);
+        return $this->serverError('删除部门失败');
     }
 
-    /**
-     * 获取部门编码选项（用于下拉选择）
-     */
     public function options()
     {
         $sql = '
@@ -376,23 +217,10 @@ class DeptApi extends BaseController
             ORDER BY 部门编码 ASC
         ';
 
-        $query = $this->model->select($sql);
-        $results = $query->getResultArray();
-
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $results
-        ]);
+        $results = $this->model->select($sql)->getResultArray();
+        return $this->success($results);
     }
 
-    //-------------------------
-    // 私有辅助方法
-    //-------------------------
-
-    /**
-     * 构建树形结构
-     */
     private function buildTree(array $data, string $parentCode = ''): array
     {
         $tree = [];
@@ -423,41 +251,28 @@ class DeptApi extends BaseController
         return $tree;
     }
 
-    /**
-     * 生成新部门编码
-     */
     private function generateDeptCode(string $parentCode): ?string
     {
-        // 查询当前父部门下最大的子部门编码
         $sql = sprintf('
             SELECT MAX(CAST(SUBSTRING_INDEX(部门编码, "-", -1) AS UNSIGNED)) as max_num
             FROM def_dept
             WHERE 上级部门编码 = "%s" AND 删除标识 = "0"
         ', $parentCode);
 
-        $query = $this->model->select($sql);
-        $result = $query->getRowArray();
-
+        $result = $this->model->select($sql)->getRowArray();
         $maxNum = $result['max_num'] ?? 0;
-        $newNum = $maxNum + 1;
 
-        return $parentCode . '-' . $newNum;
+        return $parentCode . '-' . ($maxNum + 1);
     }
 
-    /**
-     * 获取上级部门全称
-     */
     private function getParentFullName(string $parentCode): string
     {
         $sql = sprintf('
-            SELECT 部门全称
-            FROM def_dept
+            SELECT 部门全称 FROM def_dept
             WHERE 部门编码 = "%s" AND 删除标识 = "0" AND 有效标识 = "1"
         ', $parentCode);
 
-        $query = $this->model->select($sql);
-        $result = $query->getRowArray();
-
+        $result = $this->model->select($sql)->getRowArray();
         return $result['部门全称'] ?? '';
     }
 }

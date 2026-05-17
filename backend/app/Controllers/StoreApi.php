@@ -2,33 +2,12 @@
 
 namespace App\Controllers;
 
-use App\Constants\ApiCode;
-use App\Libraries\SessionUserContext;
-use App\Models\Mcommon;
-use CodeIgniter\HTTP\RequestInterface;
-use CodeIgniter\HTTP\ResponseInterface;
-use Psr\Log\LoggerInterface;
-
-class StoreApi extends BaseController
+class StoreApi extends BaseApiController
 {
-    protected $model;
-    private SessionUserContext $userContext;
-
-    public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
-    {
-        parent::initController($request, $response, $logger);
-        $this->model = new Mcommon();
-        $this->userContext = new SessionUserContext();
-    }
-
     public function tree()
     {
         $menuId = $this->request->getGet('menu_id');
-        $locationAuthzCond = $this->userContext->getSessionValue($menuId . '-location_authz_cond');
-        
-        if (empty($locationAuthzCond)) {
-            $locationAuthzCond = '1=1';
-        }
+        $locationAuthzCond = $this->userContext->getSessionValue($menuId . '-location_authz_cond') ?: '1=1';
 
         $sql = sprintf('
             select 
@@ -42,31 +21,20 @@ class StoreApi extends BaseController
             order by 属地,field(邀约结果,"通过","未通过","考虑","拒绝","未邀约"),面试信息,招聘渠道,convert(姓名 using gbk)',
             $locationAuthzCond);
 
-        $query = $this->model->select($sql);
-        $results = $query->getResultArray();
-
+        $results = $this->model->select($sql)->getResultArray();
         $tree = $this->buildTree($results);
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $tree
-        ]);
+        return $this->success($tree);
     }
 
     public function detail($guid = '')
     {
         if (empty($guid)) {
-            $json = $this->request->getJSON(true);
-            $guid = $json['guid'] ?? '';
+            $guid = $this->getGuidFromRequest();
         }
 
         if (empty($guid)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '人员GUID不能为空',
-                'data' => null
-            ]);
+            return $this->paramError('人员GUID不能为空');
         }
 
         $sql = sprintf('
@@ -81,222 +49,90 @@ class StoreApi extends BaseController
             where GUID="%s" and 有效标识="1" and 删除标识="0"',
             $guid);
 
-        $query = $this->model->select($sql);
-        $result = $query->getRowArray();
+        $result = $this->model->select($sql)->getRowArray();
 
         if (!$result) {
-            return $this->response->setJSON([
-                'code' => ApiCode::NOT_FOUND,
-                'msg' => '人员不存在',
-                'data' => null
-            ]);
+            return $this->notFound('人员不存在');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $result
-        ]);
+        return $this->success($result);
     }
 
     public function add()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
-        if (empty($data['姓名'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '姓名不能为空',
-                'data' => null
-            ]);
+        if ($error = $this->requireParam($data, '姓名')) {
+            return $error;
         }
 
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
-
-        $fields = [];
-        $values = [];
-
-        $data['操作记录'] = '新增';
-        $data['操作来源'] = '页面新增';
-        $data['操作人员'] = $userWorkid;
-        $data['开始操作时间'] = date('Y-m-d H:i:s');
-        $data['操作时间'] = date('Y-m-d H:i:s');
-        $data['有效标识'] = '1';
-        $data['删除标识'] = '0';
-
-        foreach ($data as $key => $value) {
-            if ($key === '操作') continue;
-            $fields[] = $key;
-            $values[] = sprintf('"%s"', addslashes($value));
-        }
-
-        $sql = sprintf(
-            'insert into ee_store (%s) values (%s)',
-            implode(',', $fields),
-            implode(',', $values)
-        );
-
-        $num = $this->model->exec($sql);
+        $data = $this->buildInsertData($data);
+        $num = $this->insertRecord('ee_store', $data);
 
         if ($num > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '新增邀约信息成功',
-                'data' => null
-            ]);
+            return $this->success(null, '新增邀约信息成功');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '新增邀约信息失败',
-            'data' => null
-        ]);
+        return $this->serverError('新增邀约信息失败');
     }
 
     public function update()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
-        if (empty($data['guid'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '人员GUID不能为空',
-                'data' => null
-            ]);
+        if ($error = $this->requireParam($data, 'guid')) {
+            return $error;
         }
-
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guid = $data['guid'];
-        $updateFields = [];
-
-        $data['操作记录'] = '修改';
-        $data['操作来源'] = '页面修改';
-        $data['操作人员'] = $userWorkid;
-        $data['操作时间'] = date('Y-m-d H:i:s');
-
-        foreach ($data as $key => $value) {
-            if (in_array($key, ['guid', '操作', '人员'])) continue;
-            if ($value === '') continue;
-            $updateFields[] = sprintf('%s="%s"', $key, addslashes($value));
-        }
-
-        if (empty($updateFields)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '没有需要更新的字段',
-                'data' => null
-            ]);
-        }
-
-        $sql = sprintf(
-            'update ee_store set %s where GUID="%s"',
-            implode(',', $updateFields),
-            $guid
-        );
-
-        $num = $this->model->exec($sql);
+        $data = $this->buildUpdateData($data);
+        $num = $this->updateRecord('ee_store', $data, sprintf('GUID="%s"', $guid));
 
         if ($num > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '修改邀约信息成功',
-                'data' => null
-            ]);
+            return $this->success(null, '修改邀约信息成功');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '修改邀约信息失败',
-            'data' => null
-        ]);
+        return $this->success(null, '没有需要更新的字段');
     }
 
     public function delete()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
         if (empty($data['guids']) || !is_array($data['guids'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '请选择要删除的人员',
-                'data' => null
-            ]);
+            return $this->paramError('请选择要删除的人员');
         }
-
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
-
-        $sql = sprintf('
-            update ee_store
-            set 操作记录="删除",操作来源="页面删除",操作人员="%s",
-                结束操作时间="%s",操作时间="%s",
-                删除标识="1",有效标识="0"
-            where GUID in ("%s")',
-            $userWorkid,
-            date('Y-m-d H:i:s'),
-            date('Y-m-d H:i:s'),
-            $guidStr
-        );
-
-        $num = $this->model->exec($sql);
+        $num = $this->deleteRecord('ee_store', sprintf('GUID in ("%s")', $guidStr));
 
         if ($num > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => sprintf('删除成功，共删除 %d 条记录', $num),
-                'data' => null
-            ]);
+            return $this->success(null, sprintf('删除成功，共删除 %d 条记录', $num));
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '删除失败',
-            'data' => null
-        ]);
+        return $this->serverError('删除失败');
     }
 
     public function transfer()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
         if (empty($data['guids']) || !is_array($data['guids'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '请选择要转入面试的人员',
-                'data' => null
-            ]);
+            return $this->paramError('请选择要转入面试的人员');
         }
 
         if (empty($data['面试结果'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '面试结果不能为空',
-                'data' => null
-            ]);
+            return $this->paramError('面试结果不能为空');
         }
-
-        $userWorkid = $this->userContext->getSessionUser()['workId'] ?: 'system';
 
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
 
-        $interview = '';
-        switch ($data['面试结果']) {
-            case '通过':
-            case '未通过':
-                $interview = '已面试';
-                break;
-            case '拒绝':
-                $interview = '拒绝';
-                break;
-            case '未面试':
-                $interview = '未面试';
-                break;
-            default:
-                $interview = '待面试';
-                break;
-        }
+        $interview = match ($data['面试结果']) {
+            '通过', '未通过' => '已面试',
+            '拒绝' => '拒绝',
+            '未面试' => '未面试',
+            default => '待面试'
+        };
 
         $sql = sprintf('
             update ee_store
@@ -305,7 +141,7 @@ class StoreApi extends BaseController
                 结束操作时间="%s",操作时间="%s"
             where GUID in ("%s")',
             $interview,
-            $userWorkid,
+            $this->getUserWorkId(),
             date('Y-m-d H:i:s'),
             date('Y-m-d H:i:s'),
             $guidStr
@@ -336,7 +172,7 @@ class StoreApi extends BaseController
                 $data['面试人'] ?? '',
                 $data['面试结果'],
                 $data['预约培训日期'] ?? '',
-                $userWorkid,
+                $this->getUserWorkId(),
                 date('Y-m-d H:i:s'),
                 $guidStr
             );
@@ -344,16 +180,12 @@ class StoreApi extends BaseController
             $this->model->exec($sql);
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => sprintf('更新面试信息成功，更新 %d 条记录', $num),
-            'data' => null
-        ]);
+        return $this->success(null, sprintf('更新面试信息成功，更新 %d 条记录', $num));
     }
 
     public function options()
     {
-        $locationAuthz = $this->userContext->getSessionUser()['locationAuthz'] ?: '';
+        $locationAuthz = $this->getLocationAuthz();
 
         $regionSql = sprintf('
             select distinct 对象值 as value, 对象值 as label
@@ -376,26 +208,22 @@ class StoreApi extends BaseController
         $regionResult = $this->model->select($regionSql)->getResultArray();
         $channelResult = $this->model->select($channelSql)->getResultArray();
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => [
-                'region' => $regionResult,
-                'channel' => $channelResult,
-                'result' => [
-                    ['value' => '通过', 'label' => '通过'],
-                    ['value' => '未通过', 'label' => '未通过'],
-                    ['value' => '考虑', 'label' => '考虑'],
-                    ['value' => '拒绝', 'label' => '拒绝'],
-                    ['value' => '未邀约', 'label' => '未邀约']
-                ],
-                'interviewResult' => [
-                    ['value' => '通过', 'label' => '通过'],
-                    ['value' => '未通过', 'label' => '未通过'],
-                    ['value' => '考虑', 'label' => '考虑'],
-                    ['value' => '拒绝', 'label' => '拒绝'],
-                    ['value' => '未面试', 'label' => '未面试']
-                ]
+        return $this->success([
+            'region' => $regionResult,
+            'channel' => $channelResult,
+            'result' => [
+                ['value' => '通过', 'label' => '通过'],
+                ['value' => '未通过', 'label' => '未通过'],
+                ['value' => '考虑', 'label' => '考虑'],
+                ['value' => '拒绝', 'label' => '拒绝'],
+                ['value' => '未邀约', 'label' => '未邀约']
+            ],
+            'interviewResult' => [
+                ['value' => '通过', 'label' => '通过'],
+                ['value' => '未通过', 'label' => '未通过'],
+                ['value' => '考虑', 'label' => '考虑'],
+                ['value' => '拒绝', 'label' => '拒绝'],
+                ['value' => '未面试', 'label' => '未面试']
             ]
         ]);
     }

@@ -2,31 +2,12 @@
 
 namespace App\Controllers;
 
-use App\Constants\ApiCode;
-use App\Models\Mcommon;
-use CodeIgniter\HTTP\RequestInterface;
-use CodeIgniter\HTTP\ResponseInterface;
-use Psr\Log\LoggerInterface;
-
-class TrainApi extends BaseController
+class TrainApi extends BaseApiController
 {
-    protected $model;
-
-    public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
-    {
-        parent::initController($request, $response, $logger);
-        $this->model = new Mcommon();
-    }
-
     public function tree()
     {
-        $session = \Config\Services::session();
         $menuId = $this->request->getGet('menu_id');
-        $locationAuthzCond = $session->get($menuId . '-location_authz_cond');
-        
-        if (empty($locationAuthzCond)) {
-            $locationAuthzCond = '1=1';
-        }
+        $locationAuthzCond = $this->userContext->getSessionValue($menuId . '-location_authz_cond') ?: '1=1';
 
         $sql = sprintf('
             select GUID,姓名,身份证号,手机号码,属地,
@@ -40,31 +21,20 @@ class TrainApi extends BaseController
                 培训老师,培训开始日期 desc,convert(姓名 using gbk)',
             $locationAuthzCond);
 
-        $query = $this->model->select($sql);
-        $results = $query->getResultArray();
-
+        $results = $this->model->select($sql)->getResultArray();
         $tree = $this->buildTree($results);
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $tree
-        ]);
+        return $this->success($tree);
     }
 
     public function detail($guid = '')
     {
         if (empty($guid)) {
-            $json = $this->request->getJSON(true);
-            $guid = $json['guid'] ?? '';
+            $guid = $this->getGuidFromRequest();
         }
 
         if (empty($guid)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '人员GUID不能为空',
-                'data' => null
-            ]);
+            return $this->paramError('人员GUID不能为空');
         }
 
         $sql = sprintf('
@@ -77,105 +47,48 @@ class TrainApi extends BaseController
             where GUID="%s" and 有效标识="1" and 删除标识="0"',
             $guid);
 
-        $query = $this->model->select($sql);
-        $result = $query->getRowArray();
+        $result = $this->model->select($sql)->getRowArray();
 
         if (!$result) {
-            return $this->response->setJSON([
-                'code' => ApiCode::NOT_FOUND,
-                'msg' => '人员不存在',
-                'data' => null
-            ]);
+            return $this->notFound('人员不存在');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => $result
-        ]);
+        return $this->success($result);
     }
 
     public function update()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
-        if (empty($data['guid'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '人员GUID不能为空',
-                'data' => null
-            ]);
+        if ($error = $this->requireParam($data, 'guid')) {
+            return $error;
         }
-
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
 
         $guid = $data['guid'];
-        $updateFields = [];
-
-        $data['操作记录'] = '修改';
-        $data['操作来源'] = '页面修改';
-        $data['操作人员'] = $userWorkid;
-        $data['操作时间'] = date('Y-m-d H:i:s');
-
-        foreach ($data as $key => $value) {
-            if (in_array($key, ['guid', '操作', '人员'])) continue;
-            if ($value === '') continue;
-            $updateFields[] = sprintf('%s="%s"', $key, addslashes($value));
-        }
-
-        if (empty($updateFields)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '没有需要更新的字段',
-                'data' => null
-            ]);
-        }
-
-        $sql = sprintf(
-            'update ee_train set %s where GUID="%s"',
-            implode(',', $updateFields),
-            $guid
-        );
-
-        $num = $this->model->exec($sql);
+        $data = $this->buildUpdateData($data);
+        $num = $this->updateRecord('ee_train', $data, sprintf('GUID="%s"', $guid));
 
         if ($num > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '修改培训信息成功',
-                'data' => null
-            ]);
+            return $this->success(null, '修改培训信息成功');
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '修改培训信息失败',
-            'data' => null
-        ]);
+        return $this->success(null, '没有需要更新的字段');
     }
 
     public function batchUpdate()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
         if (empty($data['guids']) || !is_array($data['guids'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '请选择要修改的人员',
-                'data' => null
-            ]);
+            return $this->paramError('请选择要修改的人员');
         }
-
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
 
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
         $updateFields = [];
 
         $data['操作记录'] = '批量修改';
         $data['操作来源'] = '页面修改';
-        $data['操作人员'] = $userWorkid;
+        $data['操作人员'] = $this->getUserWorkId();
         $data['操作时间'] = date('Y-m-d H:i:s');
 
         foreach ($data as $key => $value) {
@@ -185,11 +98,7 @@ class TrainApi extends BaseController
         }
 
         if (empty($updateFields)) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => '没有需要更新的字段',
-                'data' => null
-            ]);
+            return $this->success(null, '没有需要更新的字段');
         }
 
         $sql = sprintf(
@@ -201,86 +110,41 @@ class TrainApi extends BaseController
         $num = $this->model->exec($sql);
 
         if ($num > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => sprintf('批量修改成功，修改 %d 条记录', $num),
-                'data' => null
-            ]);
+            return $this->success(null, sprintf('批量修改成功，修改 %d 条记录', $num));
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '批量修改失败',
-            'data' => null
-        ]);
+        return $this->serverError('批量修改失败');
     }
 
     public function delete()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
         if (empty($data['guids']) || !is_array($data['guids'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '请选择要删除的人员',
-                'data' => null
-            ]);
+            return $this->paramError('请选择要删除的人员');
         }
-
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
 
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
-
-        $sql = sprintf('
-            update ee_train
-            set 操作来源="删除",
-                操作来源="页面删除",操作人员="%s",
-                删除标识="1",有效标识="0"
-            where GUID in ("%s")',
-            $userWorkid,
-            $guidStr
-        );
-
-        $num = $this->model->exec($sql);
+        $num = $this->deleteRecord('ee_train', sprintf('GUID in ("%s")', $guidStr));
 
         if ($num > 0) {
-            return $this->response->setJSON([
-                'code' => ApiCode::SUCCESS,
-                'msg' => sprintf('删除成功，共删除 %d 条记录', $num),
-                'data' => null
-            ]);
+            return $this->success(null, sprintf('删除成功，共删除 %d 条记录', $num));
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SERVER_ERROR,
-            'msg' => '删除失败',
-            'data' => null
-        ]);
+        return $this->serverError('删除失败');
     }
 
     public function transfer()
     {
-        $data = $this->request->getJSON(true);
+        $data = $this->getJsonInput();
 
         if (empty($data['guids']) || !is_array($data['guids'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '请选择要转入在职的人员',
-                'data' => null
-            ]);
+            return $this->paramError('请选择要转入在职的人员');
         }
 
         if (empty($data['培训状态'])) {
-            return $this->response->setJSON([
-                'code' => ApiCode::PARAM_ERROR,
-                'msg' => '培训状态不能为空',
-                'data' => null
-            ]);
+            return $this->paramError('培训状态不能为空');
         }
-
-        $session = \Config\Services::session();
-        $userWorkid = $session->get('user_workid') ?? 'system';
 
         $guidStr = implode('","', array_map('addslashes', $data['guids']));
         $endTime = date('Y-m-d H:i:s');
@@ -296,7 +160,7 @@ class TrainApi extends BaseController
                 $data['培训结束日期'] ?? '',
                 $endTime,
                 $endTime,
-                $userWorkid,
+                $this->getUserWorkId(),
                 $guidStr
             );
 
@@ -358,7 +222,7 @@ class TrainApi extends BaseController
                 $data['岗位类型'] ?? '',
                 $data['结算类型'] ?? '',
                 $data['培训结束日期'] ?? '',
-                $userWorkid,
+                $this->getUserWorkId(),
                 $startTime,
                 $guidStr
             );
@@ -375,24 +239,19 @@ class TrainApi extends BaseController
                 $data['培训离开原因'] ?? '',
                 $endTime,
                 $endTime,
-                $userWorkid,
+                $this->getUserWorkId(),
                 $guidStr
             );
 
             $num = $this->model->exec($sql);
         }
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => sprintf('更新培训状态成功，更新 %d 条记录', $num ?? 0),
-            'data' => null
-        ]);
+        return $this->success(null, sprintf('更新培训状态成功，更新 %d 条记录', $num ?? 0));
     }
 
     public function options()
     {
-        $session = \Config\Services::session();
-        $locationAuthz = $session->get('user_location_authz') ?: '';
+        $locationAuthz = $this->getLocationAuthz();
 
         $regionSql = sprintf('
             select distinct 对象值 as value, 对象值 as label
@@ -415,29 +274,25 @@ class TrainApi extends BaseController
         $regionResult = $this->model->select($regionSql)->getResultArray();
         $trainBizResult = $this->model->select($trainBizSql)->getResultArray();
 
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => 'Success',
-            'data' => [
-                'region' => $regionResult,
-                'trainBiz' => $trainBizResult,
-                'trainStatus' => [
-                    ['value' => '通过', 'label' => '通过'],
-                    ['value' => '未通过', 'label' => '未通过'],
-                    ['value' => '离开', 'label' => '离开'],
-                    ['value' => '淘汰', 'label' => '淘汰'],
-                    ['value' => '转期', 'label' => '转期']
-                ],
-                'positionType' => [
-                    ['value' => '生产岗', 'label' => '生产岗'],
-                    ['value' => '职能岗', 'label' => '职能岗'],
-                    ['value' => '管理岗', 'label' => '管理岗']
-                ],
-                'settlementType' => [
-                    ['value' => '按量结算', 'label' => '按量结算'],
-                    ['value' => '按席结算', 'label' => '按席结算'],
-                    ['value' => '无结算', 'label' => '无结算']
-                ]
+        return $this->success([
+            'region' => $regionResult,
+            'trainBiz' => $trainBizResult,
+            'trainStatus' => [
+                ['value' => '通过', 'label' => '通过'],
+                ['value' => '未通过', 'label' => '未通过'],
+                ['value' => '离开', 'label' => '离开'],
+                ['value' => '淘汰', 'label' => '淘汰'],
+                ['value' => '转期', 'label' => '转期']
+            ],
+            'positionType' => [
+                ['value' => '生产岗', 'label' => '生产岗'],
+                ['value' => '职能岗', 'label' => '职能岗'],
+                ['value' => '管理岗', 'label' => '管理岗']
+            ],
+            'settlementType' => [
+                ['value' => '按量结算', 'label' => '按量结算'],
+                ['value' => '按席结算', 'label' => '按席结算'],
+                ['value' => '无结算', 'label' => '无结算']
             ]
         ]);
     }
