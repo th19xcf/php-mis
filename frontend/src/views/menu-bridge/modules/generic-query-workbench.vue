@@ -1334,6 +1334,17 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     }, 100);
   }
 
+  event.api.addEventListener('sortChanged', () => {
+    if (isRestoringColumnState.value) {
+      return;
+    }
+    const currentPage = event.api.paginationGetCurrentPage();
+    if (currentPage !== 0) {
+      event.api.paginationGoToFirstPage();
+      page.value = 1;
+    }
+  });
+
   registerGridPersistenceListeners();
 }
 
