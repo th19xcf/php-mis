@@ -65,6 +65,7 @@ function startResize(e: MouseEvent) {
     document.body.style.userSelect = '';
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
+    localStorage.setItem('contract-splitter-width', String(leftWidth.value));
   }
 
   document.addEventListener('mousemove', onMouseMove);
@@ -388,6 +389,13 @@ async function _handlePageSizeChange(pageSize: number) {
 }
 
 onMounted(async () => {
+  const savedWidth = localStorage.getItem('contract-splitter-width');
+  if (savedWidth) {
+    const width = Number(savedWidth);
+    if (!Number.isNaN(width) && width >= minLeftWidth && width <= maxLeftWidth) {
+      leftWidth.value = width;
+    }
+  }
   await Promise.all([
     contractStore.loadContractList(),
     contractStore.loadContractOptions(),

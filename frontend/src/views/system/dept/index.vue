@@ -42,6 +42,7 @@ function startResize(e: MouseEvent) {
     document.body.style.userSelect = '';
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
+    localStorage.setItem('dept-splitter-width', String(leftWidth.value));
   }
 
   document.addEventListener('mousemove', onMouseMove);
@@ -227,6 +228,13 @@ function renderPrefix({ option }: { option: TreeOption }) {
 }
 
 onMounted(() => {
+  const savedWidth = localStorage.getItem('dept-splitter-width');
+  if (savedWidth) {
+    const width = Number(savedWidth);
+    if (!Number.isNaN(width) && width >= minLeftWidth && width <= maxLeftWidth) {
+      leftWidth.value = width;
+    }
+  }
   deptStore.loadTreeData();
 });
 </script>

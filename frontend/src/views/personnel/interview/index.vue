@@ -39,7 +39,7 @@ const addForm = ref({
   面试日期: new Date().toISOString().split('T')[0],
   面试结果: '',
   面试人: '',
-  预约培训日期: null,
+  预约培训日期: undefined,
   住宿: '',
   备注说明: ''
 });
@@ -88,6 +88,7 @@ function startResize(e: MouseEvent) {
     document.body.style.userSelect = '';
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
+    localStorage.setItem('interview-splitter-width', String(leftWidth.value));
   }
 
   document.addEventListener('mousemove', onMouseMove);
@@ -153,7 +154,7 @@ function openAddModal() {
     面试日期: new Date().toISOString().split('T')[0],
     面试结果: '',
     面试人: '',
-    预约培训日期: null,
+    预约培训日期: undefined,
     住宿: '',
     备注说明: ''
   };
@@ -294,6 +295,13 @@ function renderPrefix({ option }: { option: TreeOption }) {
 }
 
 onMounted(() => {
+  const savedWidth = localStorage.getItem('interview-splitter-width');
+  if (savedWidth) {
+    const width = Number(savedWidth);
+    if (!Number.isNaN(width) && width >= minLeftWidth && width <= maxLeftWidth) {
+      leftWidth.value = width;
+    }
+  }
   interviewStore.loadTreeData();
   interviewStore.loadOptions();
 });

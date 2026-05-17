@@ -49,6 +49,7 @@ function startResize(e: MouseEvent) {
     document.body.style.userSelect = '';
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
+    localStorage.setItem('train-splitter-width', String(leftWidth.value));
   }
   document.addEventListener('mousemove', onMouseMove);
   document.addEventListener('mouseup', onMouseUp);
@@ -197,6 +198,13 @@ function convertToTreeOptions(nodes: Api.Train.TrainTreeNode[]): TreeOption[] {
 }
 
 onMounted(async () => {
+  const savedWidth = localStorage.getItem('train-splitter-width');
+  if (savedWidth) {
+    const width = Number(savedWidth);
+    if (!Number.isNaN(width) && width >= 200 && width <= 600) {
+      leftWidth.value = width;
+    }
+  }
   loadTree();
   const { data } = await fetchTrainOptions();
   if (data) options.value = data;
