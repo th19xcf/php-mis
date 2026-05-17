@@ -207,5 +207,38 @@ declare namespace Api {
       items: PopupLevelItem[];
       level: number;
     }
+
+    interface DebugData {
+      functionCode: string;
+      queryTable: string;
+      queryWhere: string;
+      queryGroup: string;
+      queryOrder: string;
+      mode: string;
+      selectParts: string[];
+      whereParts: string[];
+      countSql: string | null;
+      querySql: string;
+      userAuth: {
+        companyId: string;
+        userWorkId: string;
+        roleCodes: string[];
+        locationAuth: string;
+        deptCodeAuth: string[];
+        deptNameAuth: string[];
+        debugAuth: boolean;
+      };
+      functionAuth: {
+        module: string;
+        params: string;
+        deptAuthCond: string;
+        locationAuthCond: string;
+      };
+      columns: Array<{
+        列名: string;
+        查询名: string;
+        字段名: string;
+      }>;
+    }
   }
 }

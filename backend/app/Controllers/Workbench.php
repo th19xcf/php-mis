@@ -60,6 +60,187 @@ class Workbench extends BaseController
         }
     }
 
+    public function debug(string $functionCode = '')
+    {
+        try {
+            $payload = $this->request->getJSON(true) ?? [];
+
+            [$context, $definition] = $this->buildWorkbenchContext($functionCode);
+
+            $queryConfig = $context['query'];
+            $functionAuth = $context['function'];
+            $userAuth = $context['user'];
+            $columns = $context['columns'];
+
+            $fetchAll = filter_var($payload['all'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $current = max(1, (int) ($payload['current'] ?? 1));
+            $size = max(1, min(200, (int) ($payload['size'] ?? 20)));
+
+            if ($fetchAll) {
+                $current = 1;
+            }
+
+            $columnMap = [];
+            foreach ($columns as $column) {
+                $columnMap[(string) ($column['列名'] ?? '')] = $column;
+            }
+
+            $selectParts = [];
+            $hintErrorParts = [];
+            foreach ($columns as $column) {
+                $alias = (string) ($column['列名'] ?? '');
+                $queryName = (string) ($column['查询名'] ?? '');
+                if ($alias === '' || $queryName === '') {
+                    continue;
+                }
+
+                if ((string) ($column['字符转换'] ?? '0') === '1') {
+                    $selectParts[] = sprintf("replace(replace(%s, '\"', '~~'), '\'', '~~') as `%s`", $queryName, $alias);
+                } elseif ((string) ($column['加密显示'] ?? '0') === '1') {
+                    $selectParts[] = sprintf('"*" as `%s`', $alias);
+                } elseif ((string) ($column['工号限权'] ?? '0') !== '0' && $functionAuth['workIdAuth'] !== '0' && (string) ($column['工号字段'] ?? '') !== '') {
+                    $selectParts[] = sprintf(
+                        'if(%s=%s,%s,"-") as `%s`',
+                        $column['工号字段'],
+                        $this->quote($userAuth['userWorkId']),
+                        $queryName,
+                        $alias
+                    );
+                } else {
+                    $selectParts[] = sprintf('%s as `%s`', $queryName, $alias);
+                }
+
+                $hintCondition = trim((string) ($column['提示条件'] ?? ''));
+                $errorCondition = trim((string) ($column['异常条件'] ?? ''));
+                if ($hintCondition !== '') {
+                    $hintErrorParts[] = sprintf('if(%s,"1","0") as `提示^%s`', $hintCondition, $alias);
+                }
+                if ($errorCondition !== '') {
+                    $hintErrorParts[] = sprintf('if(%s,"1","0") as `异常^%s`', $errorCondition, $alias);
+                }
+            }
+
+            if (!empty($hintErrorParts)) {
+                $selectParts = array_merge($selectParts, $hintErrorParts);
+            }
+
+            $whereParts = [];
+            if ($queryConfig['queryWhere'] !== '') {
+                $whereParts[] = $queryConfig['queryWhere'];
+            }
+            if ($functionAuth['deptAuthCond'] !== '') {
+                $whereParts[] = $functionAuth['deptAuthCond'];
+            }
+            if ($functionAuth['locationAuthCond'] !== '') {
+                $whereParts[] = $functionAuth['locationAuthCond'];
+            }
+
+            $filters = is_array($payload['filters'] ?? null) ? $payload['filters'] : [];
+            foreach ($filters as $filter) {
+                if (!is_array($filter)) {
+                    continue;
+                }
+                $fieldKey = trim((string) ($filter['fieldKey'] ?? ''));
+                $operator = trim((string) ($filter['operator'] ?? 'contains'));
+                $value = trim((string) ($filter['value'] ?? ''));
+                if ($fieldKey === '' || $value === '' || !isset($columnMap[$fieldKey])) {
+                    continue;
+                }
+
+                $fieldName = trim((string) ($columnMap[$fieldKey]['字段名'] ?? ''));
+                if ($fieldName === '') {
+                    continue;
+                }
+
+                switch ($operator) {
+                    case 'equals':
+                        $whereParts[] = sprintf('%s=%s', $fieldName, $this->quote($value));
+                        break;
+                    case 'startsWith':
+                        $whereParts[] = sprintf('%s like %s', $fieldName, $this->quote($value . '%'));
+                        break;
+                    default:
+                        $whereParts[] = sprintf('%s like %s', $fieldName, $this->quote('%' . $value . '%'));
+                        break;
+                }
+            }
+
+            $drillCondition = trim((string) ($payload['drillCondition'] ?? ''));
+            if ($drillCondition !== '') {
+                $whereParts[] = $drillCondition;
+            }
+
+            $baseFromSql = sprintf(' from %s', $queryConfig['queryTable']);
+            $whereSql = $whereParts ? ' where ' . implode(' and ', $whereParts) : '';
+            $groupSql = $queryConfig['queryGroup'] !== '' ? ' group by ' . $queryConfig['queryGroup'] : '';
+            $orderSql = $queryConfig['queryOrder'] !== '' ? ' order by ' . $queryConfig['queryOrder'] : '';
+            $offset = ($current - 1) * $size;
+
+            if ($fetchAll) {
+                $querySql = sprintf(
+                    'select (@i:=@i+1) as 序号, %s%s, (select @i:=0) as xh%s%s%s',
+                    implode(',', $selectParts),
+                    $baseFromSql,
+                    $whereSql,
+                    $groupSql,
+                    $orderSql
+                );
+            } else {
+                $countSql = sprintf('select count(1) as total from (select 1%s%s%s) as total_rows', $baseFromSql, $whereSql, $groupSql);
+                $querySql = sprintf(
+                    'select (@i:=@i+1) as 序号, %s%s, (select @i:=%d) as xh%s%s%s limit %d offset %d',
+                    implode(',', $selectParts),
+                    $baseFromSql,
+                    $offset,
+                    $whereSql,
+                    $groupSql,
+                    $orderSql,
+                    $size,
+                    $offset
+                );
+            }
+
+            return $this->success([
+                'functionCode' => $functionCode,
+                'queryTable' => $queryConfig['queryTable'],
+                'queryWhere' => $queryConfig['queryWhere'],
+                'queryGroup' => $queryConfig['queryGroup'],
+                'queryOrder' => $queryConfig['queryOrder'],
+                'mode' => $queryConfig['mode'],
+                'selectParts' => $selectParts,
+                'whereParts' => $whereParts,
+                'countSql' => $countSql ?? null,
+                'querySql' => $querySql,
+                'userAuth' => [
+                    'companyId' => $userAuth['companyId'],
+                    'userWorkId' => $userAuth['userWorkId'],
+                    'roleCodes' => $userAuth['roleCodes'],
+                    'locationAuth' => $userAuth['locationAuth'],
+                    'deptCodeAuth' => $userAuth['deptCodeAuth'],
+                    'deptNameAuth' => $userAuth['deptNameAuth'],
+                    'debugAuth' => $userAuth['debugAuth']
+                ],
+                'functionAuth' => [
+                    'module' => $functionAuth['module'],
+                    'params' => $functionAuth['params'],
+                    'deptAuthCond' => $functionAuth['deptAuthCond'],
+                    'locationAuthCond' => $functionAuth['locationAuthCond']
+                ],
+                'columns' => array_map(function ($col) {
+                    return [
+                        '列名' => $col['列名'] ?? '',
+                        '查询名' => $col['查询名'] ?? '',
+                        '字段名' => $col['字段名'] ?? ''
+                    ];
+                }, $columns)
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            return $this->error('5003', '获取调试信息失败');
+        }
+    }
+
     private function buildWorkbenchContext(string $functionCode): array
     {
         $functionCode = trim($functionCode);
@@ -86,11 +267,7 @@ class Workbench extends BaseController
         }
 
         $columnDefinitions = $this->buildColumnDefinitions($columns);
-        
-        // 调试：检查返回的列定义
-        $colorMarkCount = count(array_filter($columnDefinitions, fn($col) => $col['colorMarkEnabled'] ?? false));
-        error_log("buildWorkbenchContext: Total columns: " . count($columnDefinitions) . ", Color mark enabled: {$colorMarkCount}");
-        
+
         $definition = [
             'functionCode' => $functionCode,
             'title' => $functionAuth['menu2'],
@@ -376,9 +553,6 @@ class Workbench extends BaseController
 
         foreach ($columns as $column) {
             $title = (string) ($column['列名'] ?? '');
-            // 调试：检查可颜色标注字段
-            $colorMarkValue = $column['可颜色标注'] ?? 'not_set';
-            error_log("Column: {$title}, 可颜色标注: {$colorMarkValue}");
             $items[] = [
                 'field' => $title,
                 'title' => $title,
@@ -866,7 +1040,7 @@ class Workbench extends BaseController
 
             $query = $this->common->select($sql);
             if ($query === false) {
-                error_log('查询 def_query_config 失败: ' . $sql);
+                log_message('error', '查询 def_query_config 失败');
                 return $this->success(['columns' => []]);
             }
 
@@ -888,7 +1062,7 @@ class Workbench extends BaseController
 
             $query = $this->common->select($sql);
             if ($query === false) {
-                error_log('查询 def_import_column 失败: ' . $sql);
+                log_message('error', '查询 def_import_column 失败');
                 return $this->success(['columns' => []]);
             }
 
@@ -910,8 +1084,8 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            error_log('获取导入列配置失败: ' . $e->getMessage());
-            return $this->error(ApiCode::SERVER_ERROR, '获取导入列配置失败: ' . $e->getMessage());
+            log_message('error', '获取导入列配置失败: ' . $e->getMessage());
+            return $this->error(ApiCode::SERVER_ERROR, '获取导入列配置失败');
         }
     }
 
@@ -946,9 +1120,6 @@ class Workbench extends BaseController
                 '$属地' => $userLocation
             ];
 
-            error_log('导入请求: functionCode=' . $functionCode . ', userWorkid=' . $userWorkid . ', menu1=' . $menu1 . ', menu2=' . $menu2);
-            error_log('导入数据条数: ' . count($importData));
-
             // 获取查询配置
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || $queryConfig['dataTable'] === '') {
@@ -957,8 +1128,6 @@ class Workbench extends BaseController
 
             $dataTable = $queryConfig['dataTable'];
             $importModule = $queryConfig['importModule'];
-
-            error_log('数据表: ' . $dataTable . ', 导入模块: ' . $importModule);
 
             // 生成临时表名（与旧版保持一致）
             $tmpTableName = sprintf('tmp_%s_%s_%s_%s', $functionCode, $menu1, $menu2, $userWorkid);
@@ -1170,8 +1339,8 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            error_log('导入数据失败: ' . $e->getMessage());
-            return $this->error(ApiCode::SERVER_ERROR, '导入数据失败: ' . $e->getMessage());
+            log_message('error', '导入数据失败: ' . $e->getMessage());
+            return $this->error(ApiCode::SERVER_ERROR, '导入数据失败');
         }
     }
 
@@ -1199,7 +1368,6 @@ class Workbench extends BaseController
         }
 
         $sql = sprintf('CREATE TABLE %s (%s)', $tableName, implode(',', $fieldDefs));
-        error_log('创建临时表 SQL: ' . $sql);
         $result = $this->common->exec($sql);
 
         return $result !== false;
@@ -1308,7 +1476,7 @@ class Workbench extends BaseController
                 ];
             }
         } catch (\Throwable $e) {
-            error_log('事务插入失败: ' . $e->getMessage());
+            log_message('error', '事务插入失败: ' . $e->getMessage());
             return [
                 'success' => false,
                 'count' => count($data),
@@ -1367,8 +1535,6 @@ class Workbench extends BaseController
                 $tempTable
             );
 
-            error_log('导入SQL: ' . $sql);
-
             $result = $db->query($sql);
             $affectedRows = $db->affectedRows();
 
@@ -1390,7 +1556,7 @@ class Workbench extends BaseController
                 'errors' => []
             ];
         } catch (\Throwable $e) {
-            error_log('从临时表导入失败: ' . $e->getMessage());
+            log_message('error', '从临时表导入失败: ' . $e->getMessage());
             return [
                 'success' => false,
                 'count' => 0,
@@ -1604,7 +1770,7 @@ class Workbench extends BaseController
                 'errors' => []
             ];
         } catch (\Throwable $e) {
-            error_log('滤重检查失败: ' . $e->getMessage());
+            log_message('error', '滤重检查失败: ' . $e->getMessage());
             return [
                 'hasError' => false,
                 'message' => '',
@@ -1640,11 +1806,8 @@ class Workbench extends BaseController
             // 执行后处理存储过程
             $spSql = sprintf('call %s', $afterProcess);
             $this->common->select($spSql);
-
-            error_log('执行后处理模块: ' . $afterProcess);
         } catch (\Throwable $e) {
-            error_log('执行后处理模块失败: ' . $e->getMessage());
-            // 后处理失败不影响导入结果，只记录日志
+            log_message('error', '执行后处理模块失败: ' . $e->getMessage());
         }
     }
 
@@ -1658,9 +1821,6 @@ class Workbench extends BaseController
             $session = \Config\Services::session();
             $fieldModule = $session->get($functionCode . '-field_module');
 
-            error_log('addFields - functionCode: ' . $functionCode);
-            error_log('addFields - fieldModule from session: ' . ($fieldModule ?? 'null'));
-
             if (empty($fieldModule)) {
                 // 查询字段模块 - 使用与 buildWorkbenchContext 相同的方式
                 $sql = sprintf(
@@ -1669,17 +1829,14 @@ class Workbench extends BaseController
                     )',
                     $this->quote($functionCode)
                 );
-                error_log('addFields - SQL: ' . $sql);
                 $result = $this->common->select($sql);
                 if ($result !== false) {
                     $row = $result->getRowArray();
                     $fieldModule = $row['字段模块'] ?? '';
-                    error_log('addFields - fieldModule from db: ' . ($fieldModule ?? 'null'));
                 }
             }
 
             if (empty($fieldModule)) {
-                error_log('addFields - fieldModule is empty, returning empty fields');
                 return $this->success(['fields' => []]);
             }
 
@@ -1696,15 +1853,11 @@ class Workbench extends BaseController
             );
 
             $result = $this->common->select($sql);
-            error_log('addFields - query SQL: ' . $sql);
             if ($result === false) {
-                error_log('addFields - query result is false');
-                return $this->success(['fields' => [], 'debug' => ['sql' => $sql, 'error' => 'query failed']]);
+                return $this->success(['fields' => []]);
             }
 
             $columns = $result->getResultArray();
-            error_log('addFields - columns count: ' . count($columns));
-            error_log('addFields - columns data: ' . json_encode($columns));
             $fields = [];
 
             foreach ($columns as $col) {
@@ -1750,16 +1903,9 @@ class Workbench extends BaseController
                 $fields[] = $field;
             }
 
-            return $this->success([
-                'fields' => $fields,
-                'debug' => [
-                    'functionCode' => $functionCode,
-                    'fieldModule' => $fieldModule,
-                    'columnsCount' => count($columns)
-                ]
-            ]);
+            return $this->success(['fields' => $fields]);
         } catch (\Throwable $e) {
-            error_log('获取新增字段配置失败: ' . $e->getMessage());
+            log_message('error', '获取新增字段配置失败: ' . $e->getMessage());
             return $this->error('5001', '获取新增字段配置失败');
         }
     }
@@ -1839,8 +1985,8 @@ class Workbench extends BaseController
                 'message' => sprintf('新增成功,新增 %d 条记录', $num)
             ]);
         } catch (\Throwable $e) {
-            error_log('新增记录失败: ' . $e->getMessage());
-            return $this->error('5001', '新增失败：' . $e->getMessage());
+            log_message('error', '新增记录失败: ' . $e->getMessage());
+            return $this->error('5001', '新增失败');
         }
     }
 
@@ -1877,14 +2023,11 @@ class Workbench extends BaseController
             );
 
             $result = $this->common->select($sql);
-            error_log('updateFields - query SQL: ' . $sql);
             if ($result === false) {
-                error_log('updateFields - query result is false');
                 return $this->success(['fields' => [], 'currentData' => []]);
             }
 
             $columns = $result->getResultArray();
-            error_log('updateFields - columns count: ' . count($columns));
             $fields = [];
 
             foreach ($columns as $col) {
@@ -1939,7 +2082,7 @@ class Workbench extends BaseController
                 'currentData' => $currentData
             ]);
         } catch (\Throwable $e) {
-            error_log('获取修改字段配置失败: ' . $e->getMessage());
+            log_message('error', '获取修改字段配置失败: ' . $e->getMessage());
             return $this->error('5001', '获取修改字段配置失败');
         }
     }
@@ -1982,12 +2125,6 @@ class Workbench extends BaseController
             if (empty($primaryKey)) {
                 return $this->error('5001', '修改失败：未找到主键字段');
             }
-
-            error_log('updateRow - functionCode: ' . $functionCode);
-            error_log('updateRow - dataTable: ' . $dataTable);
-            error_log('updateRow - dataModel: ' . $dataModel);
-            error_log('updateRow - primaryKey: ' . $primaryKey);
-            error_log('updateRow - keyValues: ' . json_encode($keyValues));
 
             // 构建 where 条件
             $keyStr = implode(',', array_map(fn($v) => sprintf("'%s'", addslashes($v)), $keyValues));
@@ -2096,8 +2233,8 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            error_log('修改记录失败: ' . $e->getMessage());
-            return $this->error('5001', '修改失败：' . $e->getMessage());
+            log_message('error', '修改记录失败: ' . $e->getMessage());
+            return $this->error('5001', '修改失败');
         }
     }
 
@@ -2144,13 +2281,6 @@ class Workbench extends BaseController
             if (empty($primaryKey)) {
                 return $this->error('5001', '修改失败：未找到主键字段');
             }
-
-            error_log('batchUpdateRow - functionCode: ' . $functionCode);
-            error_log('batchUpdateRow - dataTable: ' . $dataTable);
-            error_log('batchUpdateRow - dataModel: ' . $dataModel);
-            error_log('batchUpdateRow - primaryKey: ' . $primaryKey);
-            error_log('batchUpdateRow - keyValues count: ' . count($keyValues));
-            error_log('batchUpdateRow - formData: ' . json_encode($formData));
 
             // 构建更新字段
             $updates = [];
@@ -2262,8 +2392,8 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            error_log('批量修改记录失败: ' . $e->getMessage());
-            return $this->error('5001', '批量修改失败：' . $e->getMessage());
+            log_message('error', '批量修改记录失败: ' . $e->getMessage());
+            return $this->error('5001', '批量修改失败');
         }
     }
 
@@ -2470,12 +2600,6 @@ class Workbench extends BaseController
                 return $this->error('5001', '删除失败：未找到主键字段');
             }
 
-            error_log('deleteRow - functionCode: ' . $functionCode);
-            error_log('deleteRow - dataTable: ' . $dataTable);
-            error_log('deleteRow - dataModel: ' . $dataModel);
-            error_log('deleteRow - primaryKey: ' . $primaryKey);
-            error_log('deleteRow - keyValues: ' . json_encode($keyValues));
-
             // 构建 where 条件
             $keyStr = implode(',', array_map(fn($v) => sprintf("'%s'", addslashes($v)), $keyValues));
             $where = sprintf('%s in (%s)', $primaryKey, $keyStr);
@@ -2517,8 +2641,8 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            error_log('删除记录失败: ' . $e->getMessage());
-            return $this->error('5001', '删除失败：' . $e->getMessage());
+            log_message('error', '删除记录失败: ' . $e->getMessage());
+            return $this->error('5001', '删除失败');
         }
     }
 
@@ -2578,10 +2702,6 @@ class Workbench extends BaseController
                 $objectName = '';
             }
 
-            // 调试：记录接收到的参数
-            error_log('popupData - functionCode: ' . $functionCode);
-            error_log('popupData - objectName from query: ' . $objectName);
-
             // 查询弹窗配置
             // 注意：前端传递的是"对象"字段的值（如"预算部门^全称"），不是"对象名称"
             $sql = sprintf(
@@ -2592,7 +2712,6 @@ class Workbench extends BaseController
                 $this->quote($functionCode),
                 $this->quote($objectName)
             );
-            error_log('popupData - SQL: ' . $sql);
 
             $result = $this->common->select($sql);
             if ($result === false) {
@@ -2654,10 +2773,8 @@ class Workbench extends BaseController
                 'maxLevel' => $objRows[0]['最大级别'] ?? 1
             ]);
         } catch (\Throwable $e) {
-            error_log('获取弹窗数据失败: ' . $e->getMessage());
-            error_log('获取弹窗数据失败 - 文件: ' . $e->getFile() . ':' . $e->getLine());
-            error_log('获取弹窗数据失败 - 堆栈: ' . $e->getTraceAsString());
-            return $this->error('5001', '获取弹窗数据失败: ' . $e->getMessage());
+            log_message('error', '获取弹窗数据失败: ' . $e->getMessage());
+            return $this->error('5001', '获取弹窗数据失败');
         }
     }
 
@@ -2719,8 +2836,8 @@ class Workbench extends BaseController
                 'maxLevel' => $maxLevel
             ]);
         } catch (\Throwable $e) {
-            error_log('获取弹窗级别配置失败: ' . $e->getMessage());
-            return $this->error('5001', '获取弹窗级别配置失败: ' . $e->getMessage());
+            log_message('error', '获取弹窗级别配置失败: ' . $e->getMessage());
+            return $this->error('5001', '获取弹窗级别配置失败');
         }
     }
 
@@ -2803,8 +2920,8 @@ class Workbench extends BaseController
                 'level' => $level
             ]);
         } catch (\Throwable $e) {
-            error_log('获取弹窗级别数据失败: ' . $e->getMessage());
-            return $this->error('5001', '获取弹窗级别数据失败: ' . $e->getMessage());
+            log_message('error', '获取弹窗级别数据失败: ' . $e->getMessage());
+            return $this->error('5001', '获取弹窗级别数据失败');
         }
     }
 
@@ -2844,12 +2961,6 @@ class Workbench extends BaseController
             if (empty($primaryKey)) {
                 return $this->error('5001', '修改失败：未找到主键字段');
             }
-
-            error_log('tableEdit - functionCode: ' . $functionCode);
-            error_log('tableEdit - dataTable: ' . $dataTable);
-            error_log('tableEdit - dataModel: ' . $dataModel);
-            error_log('tableEdit - primaryKey: ' . $primaryKey);
-            error_log('tableEdit - rows count: ' . count($rows));
 
             // 根据数据模式执行不同的更新逻辑
             $num = 0;
@@ -2977,8 +3088,8 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            error_log('表级修改提交失败: ' . $e->getMessage());
-            return $this->error('5001', '表级修改提交失败：' . $e->getMessage());
+            log_message('error', '表级修改提交失败: ' . $e->getMessage());
+            return $this->error('5001', '表级修改提交失败');
         }
     }
 }

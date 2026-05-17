@@ -113,3 +113,12 @@ export function submitTableEdit(functionCode: string, data: Api.Workbench.QueryR
     data
   });
 }
+
+// 获取调试信息
+export function fetchWorkbenchDebug(functionCode: string, data: Api.Workbench.QueryPayload) {
+  return request<Api.Workbench.DebugData>({
+    url: `/workbench/debug/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data
+  });
+}

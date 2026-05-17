@@ -39,6 +39,7 @@ $routes->group('workbench', static function ($routes) {
 	$routes->get('page/(:segment)', 'Workbench::page/$1');
 	$routes->post('query/(:segment)', 'Workbench::query/$1');
 	$routes->post('drill/(:segment)', 'Workbench::drill/$1');
+	$routes->post('debug/(:segment)', 'Workbench::debug/$1');
 	$routes->get('import-columns/(:segment)', 'Workbench::importColumns/$1');
 	$routes->post('import/(:segment)', 'Workbench::import/$1');
 	$routes->get('add-fields/(:segment)', 'Workbench::addFields/$1');

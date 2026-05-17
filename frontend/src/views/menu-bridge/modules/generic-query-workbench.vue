@@ -30,7 +30,7 @@ import {
 } from 'naive-ui';
 import * as XLSX from 'xlsx';
 
-import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill, submitTableEdit } from '@/service/api/workbench';
+import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill, submitTableEdit, fetchWorkbenchDebug } from '@/service/api/workbench';
 import { useColorMark } from '@/hooks/business/use-color-mark';
 import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
 import { useWorkbenchDelete } from '@/hooks/business/use-workbench-delete';
@@ -1125,6 +1125,79 @@ function handleExport() {
   msg('success', `成功导出 ${rowData.length} 条数据`);
 }
 
+async function handleDebug() {
+  const functionCode = String(props.meta.functionCode || '').trim();
+  if (!functionCode) {
+    msg('error', '功能编码不能为空');
+    return;
+  }
+
+  try {
+    const payload: Api.Workbench.QueryPayload = {
+      all: true,
+      filters: []
+    };
+
+    const { data, error } = await fetchWorkbenchDebug(functionCode, payload);
+    
+    if (error) {
+      msg('error', '获取调试信息失败');
+      return;
+    }
+
+    console.group('🔍 调试信息 - ' + data.functionCode);
+    console.log('📊 查询配置:');
+    console.log('  - 查询表:', data.queryTable);
+    console.log('  - 查询模式:', data.mode);
+    console.log('  - WHERE 条件:', data.queryWhere || '(无)');
+    console.log('  - GROUP BY:', data.queryGroup || '(无)');
+    console.log('  - ORDER BY:', data.queryOrder || '(无)');
+    
+    console.log('\n📝 SELECT 部分:');
+    data.selectParts.forEach((part, index) => {
+      console.log(`  ${index + 1}. ${part}`);
+    });
+    
+    console.log('\n🔧 WHERE 部分:');
+    if (data.whereParts.length > 0) {
+      data.whereParts.forEach((part, index) => {
+        console.log(`  ${index + 1}. ${part}`);
+      });
+    } else {
+      console.log('  (无)');
+    }
+    
+    console.log('\n💻 SQL 语句:');
+    console.log('  计数 SQL:', data.countSql || '(不适用)');
+    console.log('  查询 SQL:', data.querySql);
+    
+    console.log('\n👤 用户权限:');
+    console.log('  - 公司ID:', data.userAuth.companyId);
+    console.log('  - 工号:', data.userAuth.userWorkId);
+    console.log('  - 角色编码:', data.userAuth.roleCodes.join(', ') || '(无)');
+    console.log('  - 属地赋权:', data.userAuth.locationAuth);
+    console.log('  - 部门编码赋权:', data.userAuth.deptCodeAuth.join(', ') || '(无)');
+    console.log('  - 部门全称赋权:', data.userAuth.deptNameAuth.join(', ') || '(无)');
+    console.log('  - 调试权限:', data.userAuth.debugAuth ? '有' : '无');
+    
+    console.log('\n⚙️ 功能权限:');
+    console.log('  - 模块:', data.functionAuth.module);
+    console.log('  - 参数:', data.functionAuth.params || '(无)');
+    console.log('  - 部门权限条件:', data.functionAuth.deptAuthCond || '(无)');
+    console.log('  - 属地权限条件:', data.functionAuth.locationAuthCond || '(无)');
+    
+    console.log('\n📋 字段映射:');
+    console.table(data.columns);
+    
+    console.groupEnd();
+    
+    msg('success', '调试信息已输出到控制台');
+  } catch (err) {
+    msg('error', '获取调试信息失败');
+    console.error('调试信息获取错误:', err);
+  }
+}
+
 function handleDataDrill() {
   // 参考旧版 Vgrid_aggrid.php，必须先选择 1 条记录
   const selectedRows = gridApi.value?.getSelectedRows() || [];
@@ -1527,6 +1600,7 @@ async function handleTableEditSubmit() {
             </NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
+            <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" @click="handleDebug">调试</NButton>
           </div>
 
           <!-- 右箭头 -->
