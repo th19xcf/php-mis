@@ -83,6 +83,11 @@ export const themeSettings: App.Theme.ThemeSetting = {
         container: 'rgb(28, 28, 28)',
         layout: 'rgb(18, 18, 18)',
         'base-text': 'rgb(224, 224, 224)'
+      },
+      boxShadow: {
+        header: '0 1px 2px rgb(255, 255, 255, 0.05)',
+        sider: '2px 0 8px 0 rgb(255, 255, 255, 0.03)',
+        tab: '0 1px 2px rgb(255, 255, 255, 0.05)'
       }
     }
   }
