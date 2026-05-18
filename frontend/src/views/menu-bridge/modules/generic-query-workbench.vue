@@ -30,7 +30,13 @@ import {
 } from 'naive-ui';
 import * as XLSX from 'xlsx';
 
-import { fetchWorkbenchPage, fetchWorkbenchQuery, fetchWorkbenchDrill, submitTableEdit, fetchWorkbenchDebug } from '@/service/api/workbench';
+import {
+  fetchWorkbenchPage,
+  fetchWorkbenchQuery,
+  fetchWorkbenchDrill,
+  submitTableEdit,
+  fetchWorkbenchDebug
+} from '@/service/api/workbench';
 import { useColorMark } from '@/hooks/business/use-color-mark';
 import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
 import { useWorkbenchDelete } from '@/hooks/business/use-workbench-delete';
@@ -1139,7 +1145,7 @@ async function handleDebug() {
     };
 
     const { data, error } = await fetchWorkbenchDebug(functionCode, payload);
-    
+
     if (error) {
       msg('error', '获取调试信息失败');
       return;
@@ -1152,12 +1158,12 @@ async function handleDebug() {
     console.log('  - WHERE 条件:', data.queryWhere || '(无)');
     console.log('  - GROUP BY:', data.queryGroup || '(无)');
     console.log('  - ORDER BY:', data.queryOrder || '(无)');
-    
+
     console.log('\n📝 SELECT 部分:');
     data.selectParts.forEach((part, index) => {
       console.log(`  ${index + 1}. ${part}`);
     });
-    
+
     console.log('\n🔧 WHERE 部分:');
     if (data.whereParts.length > 0) {
       data.whereParts.forEach((part, index) => {
@@ -1166,11 +1172,11 @@ async function handleDebug() {
     } else {
       console.log('  (无)');
     }
-    
+
     console.log('\n💻 SQL 语句:');
     console.log('  计数 SQL:', data.countSql || '(不适用)');
     console.log('  查询 SQL:', data.querySql);
-    
+
     console.log('\n👤 用户权限:');
     console.log('  - 公司ID:', data.userAuth.companyId);
     console.log('  - 工号:', data.userAuth.userWorkId);
@@ -1179,18 +1185,18 @@ async function handleDebug() {
     console.log('  - 部门编码赋权:', data.userAuth.deptCodeAuth.join(', ') || '(无)');
     console.log('  - 部门全称赋权:', data.userAuth.deptNameAuth.join(', ') || '(无)');
     console.log('  - 调试权限:', data.userAuth.debugAuth ? '有' : '无');
-    
+
     console.log('\n⚙️ 功能权限:');
     console.log('  - 模块:', data.functionAuth.module);
     console.log('  - 参数:', data.functionAuth.params || '(无)');
     console.log('  - 部门权限条件:', data.functionAuth.deptAuthCond || '(无)');
     console.log('  - 属地权限条件:', data.functionAuth.locationAuthCond || '(无)');
-    
+
     console.log('\n📋 字段映射:');
     console.table(data.columns);
-    
+
     console.groupEnd();
-    
+
     msg('success', '调试信息已输出到控制台');
   } catch (err) {
     msg('error', '获取调试信息失败');
@@ -1600,7 +1606,7 @@ async function handleTableEditSubmit() {
             </NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
-            <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" @click="handleDebug">调试</NButton>
+            <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="handleDebug">调试</NButton>
           </div>
 
           <!-- 右箭头 -->
@@ -3456,5 +3462,39 @@ async function handleTableEditSubmit() {
 .popup-levels-hint {
   padding: 8px 0;
   font-size: 12px;
+}
+
+/* 调试按钮 light 模式适配 */
+.debug-btn {
+  --n-color: #e6a23c;
+  --n-color-hover: #ebb563;
+  --n-color-pressed: #cf9236;
+  --n-text-color: #ffffff;
+  --n-text-color-hover: #ffffff;
+  --n-text-color-pressed: #ffffff;
+  --n-border: 1px solid #e6a23c;
+  --n-border-hover: 1px solid #ebb563;
+  --n-border-pressed: 1px solid #cf9236;
+}
+
+.debug-btn:hover {
+  --n-color: #ebb563;
+}
+
+.debug-btn:active {
+  --n-color: #cf9236;
+}
+
+/* 深色主题下调试按钮样式保持原样 */
+.system-dark .debug-btn {
+  --n-color: rgba(230, 162, 60, 0.2);
+  --n-color-hover: rgba(230, 162, 60, 0.3);
+  --n-color-pressed: rgba(230, 162, 60, 0.35);
+  --n-text-color: #e6a23c;
+  --n-text-color-hover: #f0c78a;
+  --n-text-color-pressed: #e6a23c;
+  --n-border: 1px solid rgba(230, 162, 60, 0.5);
+  --n-border-hover: 1px solid rgba(230, 162, 60, 0.7);
+  --n-border-pressed: 1px solid rgba(230, 162, 60, 0.8);
 }
 </style>
