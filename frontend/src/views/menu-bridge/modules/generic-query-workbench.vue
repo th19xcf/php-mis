@@ -17,7 +17,6 @@ import * as XLSX from 'xlsx';
 
 import {
   fetchWorkbenchPage,
-  fetchWorkbenchQuery,
   fetchWorkbenchPageData,
   fetchWorkbenchDrill,
   submitTableEdit,
@@ -147,7 +146,9 @@ function checkAndLoadData() {
   const currentFunctionCode = String(props.meta.functionCode || '');
   const currentParams = String(props.meta.params || '');
 
-  console.log(`[📋 checkAndLoadData] functionCode=${currentFunctionCode}, isDataLoaded=${isDataLoaded.value}, loadedFunctionCode=${loadedFunctionCode.value}`);
+  console.log(
+    `[📋 checkAndLoadData] functionCode=${currentFunctionCode}, isDataLoaded=${isDataLoaded.value}, loadedFunctionCode=${loadedFunctionCode.value}`
+  );
 
   // 如果 functionCode 为空，不加载数据
   if (!currentFunctionCode) {
@@ -156,7 +157,8 @@ function checkAndLoadData() {
   }
 
   // 只有当数据未加载，或者 functionCode/params 发生变化时才加载
-  const shouldLoad = !isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value;
+  const shouldLoad =
+    !isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value;
   console.log(`[📋 checkAndLoadData] 是否加载: ${shouldLoad}`);
 
   if (shouldLoad) {
@@ -286,10 +288,6 @@ function hasSuspiciousNarrowColumnState(columnState: any[]) {
   }).length;
 
   return narrowCount / dataColumns.length >= 0.7;
-}
-
-function normalizePageSize(size?: number) {
-  return PAGE_SIZE_OPTIONS.includes(size as (typeof PAGE_SIZE_OPTIONS)[number]) ? size! : PAGE_SIZE_OPTIONS[0];
 }
 
 // 是否有整表修改权限
@@ -953,11 +951,11 @@ async function loadRemainingData(
   meta: Api.Workbench.PageMeta,
   filters: QueryFilter[],
   drillConditionSql: string,
-  total: number
+  totalRecords: number
 ) {
   const bgTimer = createTimer('后台加载总耗时');
   const firstChunkSize = serverRows.value.length; // 首屏已加载的条数
-  const remainingCount = total - firstChunkSize; // 剩余需要加载的条数
+  const remainingCount = totalRecords - firstChunkSize; // 剩余需要加载的条数
 
   if (remainingCount <= 0) {
     console.log('[性能] 数据已全部加载');
@@ -1061,10 +1059,10 @@ async function loadRemainingData(
   cacheTimer.end();
 
   isChunkLoading.value = false;
-  console.log('[性能] 后台加载完成，总数据量:', serverRows.value.length, '期望:', total);
+  console.log('[性能] 后台加载完成，总数据量:', serverRows.value.length, '期望:', totalRecords);
   // 数据完整性校验
-  if (serverRows.value.length !== total) {
-    console.warn('[性能] ⚠️ 数据量不匹配！实际:', serverRows.value.length, '期望:', total);
+  if (serverRows.value.length !== totalRecords) {
+    console.warn('[性能] ⚠️ 数据量不匹配！实际:', serverRows.value.length, '期望:', totalRecords);
   }
   bgTimer.end();
 }
@@ -1935,7 +1933,9 @@ async function handleTableEditSubmit() {
         <!-- 分片加载进度提示 -->
         <div v-if="isChunkLoading && !loading" class="chunk-loading-progress">
           <NSpin size="small" />
-          <span class="progress-text">已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录...</span>
+          <span class="progress-text">
+            已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录...
+          </span>
         </div>
       </div>
     </NCard>
