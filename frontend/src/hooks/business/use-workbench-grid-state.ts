@@ -97,12 +97,17 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
   let isRestoringState = false;
 
   function restoreGridStateOnActivated() {
+    const restoreStart = performance.now();
+    console.log(`[🔄 grid-state] restoreGridStateOnActivated 开始, functionCode=${getFunctionCode()}, 时间: ${restoreStart.toFixed(1)}ms`);
+
     if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
+      console.log(`[🔄 grid-state] restoreGridStateOnActivated 跳过: gridApi 不可用`);
       return;
     }
 
     // 防止重复触发
     if (isRestoringState) {
+      console.log(`[🔄 grid-state] restoreGridStateOnActivated 跳过: 正在恢复中`);
       return;
     }
     isRestoringState = true;
@@ -162,6 +167,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
 
     // 使用 requestAnimationFrame 分帧执行，避免阻塞主线程
     requestAnimationFrame(() => {
+      console.log(`[🔄 grid-state] Frame1: 恢复筛选, hasFilter=${hasFilter}, 时间: ${performance.now().toFixed(1)}ms, 距开始: ${(performance.now() - restoreStart).toFixed(1)}ms`);
       if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
         isRestoringState = false;
         return;
@@ -175,6 +181,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
 
       // 第二帧：恢复列状态（可能触发重绘，延迟执行）
       requestAnimationFrame(() => {
+        console.log(`[🔄 grid-state] Frame2: 恢复列状态, hasColumnState=${hasColumnState}, 时间: ${performance.now().toFixed(1)}ms, 距开始: ${(performance.now() - restoreStart).toFixed(1)}ms`);
         if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
           isRestoringState = false;
           return;
@@ -221,6 +228,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
 
         // 第三帧：恢复行选择（最低优先级）
         requestAnimationFrame(() => {
+          console.log(`[🔄 grid-state] Frame3: 恢复行选择, hasSelection=${hasSelection}, 时间: ${performance.now().toFixed(1)}ms, 距开始: ${(performance.now() - restoreStart).toFixed(1)}ms`);
           if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
             isRestoringState = false;
             return;
@@ -247,6 +255,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
           setTimeout(() => {
             options.isRestoringPage.value = false;
             isRestoringState = false;
+            console.log(`[🔄 grid-state] restoreGridStateOnActivated 完成, 总耗时: ${(performance.now() - restoreStart).toFixed(1)}ms`);
           }, 100);
         });
       });
@@ -254,7 +263,9 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
   }
 
   function persistGridStateOnDeactivated() {
+    const deactStart = performance.now();
     const functionCode = getFunctionCode();
+    console.log(`[🔄 grid-state] persistGridStateOnDeactivated 开始, functionCode=${functionCode}, 时间: ${deactStart.toFixed(1)}ms`);
     const params = getParams();
 
     if (!functionCode) return;

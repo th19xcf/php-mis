@@ -107,6 +107,7 @@ function handleMousedown(e: MouseEvent, tab: App.Global.Tab) {
 function switchTab(e: MouseEvent, tab: App.Global.Tab) {
   if ([MIDDLE_MOUSE_BUTTON, RIGHT_MOUSE_BUTTON].includes(e.button)) return;
 
+  console.log(`[🔀 switchTab] 点击标签页: ${tab.label}, functionCode=${tab.fullPath}, 时间: ${performance.now().toFixed(1)}ms`);
   tabStore.switchRouteByTab(tab);
 }
 
