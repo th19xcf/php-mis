@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, h, onMounted, watch } from 'vue';
+import { computed, ref, shallowRef, h, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -18,6 +18,7 @@ import * as XLSX from 'xlsx';
 import {
   fetchWorkbenchPage,
   fetchWorkbenchQuery,
+  fetchWorkbenchPageData,
   fetchWorkbenchDrill,
   submitTableEdit,
   fetchWorkbenchDebug
@@ -91,12 +92,19 @@ const activeGridTheme = computed(() => (isDarkMode.value ? darkGridTheme : light
 
 const loading = ref(false);
 const pageMeta = ref<Api.Workbench.PageMeta | null>(null);
-const serverRows = ref<Api.Workbench.QueryRecord[]>([]);
+const serverRows = shallowRef<Api.Workbench.QueryRecord[]>([]);
 const total = ref(0);
 const page = ref(1);
 const PAGE_SIZE_OPTIONS = [500, 1000, 2000] as const;
 const paginationPageSizeSelector = [...PAGE_SIZE_OPTIONS];
 const pageSize = ref<number>(PAGE_SIZE_OPTIONS[0]);
+
+// 分片加载相关状态
+const CHUNK_SIZE = 1000; // 每片 1000 条
+const isChunkLoading = ref(false); // 是否正在分片加载
+const loadedCount = ref(0); // 已加载数量
+const totalCount = ref(0); // 总数量
+const isInitialChunkLoaded = ref(false); // 首片是否已加载
 
 const quickKeyword = ref('');
 const conditionVisible = ref(false);
@@ -139,26 +147,37 @@ function checkAndLoadData() {
   const currentFunctionCode = String(props.meta.functionCode || '');
   const currentParams = String(props.meta.params || '');
 
+  console.log(`[📋 checkAndLoadData] functionCode=${currentFunctionCode}, isDataLoaded=${isDataLoaded.value}, loadedFunctionCode=${loadedFunctionCode.value}`);
+
   // 如果 functionCode 为空，不加载数据
   if (!currentFunctionCode) {
+    console.log('[📋 checkAndLoadData] functionCode 为空，跳过加载');
     return;
   }
 
   // 只有当数据未加载，或者 functionCode/params 发生变化时才加载
-  if (!isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value) {
+  const shouldLoad = !isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value;
+  console.log(`[📋 checkAndLoadData] 是否加载: ${shouldLoad}`);
+
+  if (shouldLoad) {
     loadedFunctionCode.value = currentFunctionCode;
     loadedParams.value = currentParams;
     loadPage();
     isDataLoaded.value = true;
+  } else {
+    console.log('[📋 checkAndLoadData] 数据已加载且未变化，跳过');
   }
 }
 
 // 生命周期钩子
 onMounted(() => {
+  const functionCode = String(props.meta.functionCode || '');
+  const params = String(props.meta.params || '');
+  console.log(`[🔄 onMounted] 组件挂载 functionCode=${functionCode}, params=${params}`);
   checkAndLoadData();
 });
 
-// 监听 props.meta 的变化，处理 Tab 切换和数据钻取
+// 监听 props.meta 的变化，处理钻取（同一组件内 params 变化）
 watch(
   () => props.meta,
   (newMeta, oldMeta) => {
@@ -168,12 +187,17 @@ watch(
     const oldParams = String(oldMeta?.params || '');
 
     // 只有当 functionCode 或 params 发生变化时才重新加载
-    if (newFunctionCode !== oldFunctionCode || newParams !== oldParams) {
+    // 注意：由于 :key 的存在，切换标签页时组件会重新创建，不会触发这里的 watch
+    // 这里的 watch 主要用于处理钻取（同一 functionCode 下 params 变化）
+    if (newFunctionCode === oldFunctionCode && newParams !== oldParams) {
+      console.log(`[🔍 钻取] functionCode=${newFunctionCode}, params 变化`);
+      const drillTimer = createTimer('🔍 钻取总耗时');
       loadedFunctionCode.value = newFunctionCode;
       loadedParams.value = newParams;
       isDataLoaded.value = false;
       loadPage();
       isDataLoaded.value = true;
+      drillTimer.end();
     }
   },
   { deep: true }
@@ -483,31 +507,42 @@ const fieldColumnOptions = computed(() => {
     .filter(item => !isGuidColumn(String(item.value), String(item.label)));
 });
 
-const filteredRows = computed(() => {
-  let rows = [...serverRows.value];
-  const keyword = quickKeyword.value.trim().toLowerCase();
+// 使用 shallowRef 存储处理后的数据，避免 Vue 深层响应式开销
+const processedRows = shallowRef<Api.Workbench.QueryRecord[]>([]);
 
-  // 应用修改后的数据
-  rows = rows.map((row, index) => {
-    const rowId = getRowId(row, index);
-    if (modifiedRowsData.value.has(rowId)) {
-      return { ...row, ...modifiedRowsData.value.get(rowId) };
+// 监听 serverRows 和修改的数据，更新 processedRows
+watch(
+  () => [serverRows.value.length, modifiedRowsData.value],
+  () => {
+    const rows = serverRows.value.map((row, index) => {
+      const rowId = getRowId(row, index);
+      if (modifiedRowsData.value.has(rowId)) {
+        return { ...row, ...modifiedRowsData.value.get(rowId) };
+      }
+      return row;
+    });
+    processedRows.value = rows;
+
+    // 直接更新 AG Grid 数据，不通过 Vue 响应式
+    const api = gridApi.value;
+    if (api && !api.isDestroyed()) {
+      // 获取当前 AG Grid 中的行数
+      const currentRowCount = api.getDisplayedRowCount();
+
+      if (currentRowCount === 0 || rows.length <= currentRowCount) {
+        // 首次加载或数据量减少：使用 setRowData 设置全部数据
+        api.setGridOption('rowData', rows);
+      } else {
+        // 分片加载新增数据：使用 applyTransaction 添加新行
+        const newRows = rows.slice(currentRowCount);
+        if (newRows.length > 0) {
+          api.applyTransaction({ add: newRows });
+        }
+      }
     }
-    return row;
-  });
-
-  if (keyword) {
-    rows = rows.filter(row =>
-      Object.values(row).some(value =>
-        String(value ?? '')
-          .toLowerCase()
-          .includes(keyword)
-      )
-    );
-  }
-
-  return rows;
-});
+  },
+  { immediate: true, deep: false }
+);
 
 const {
   fieldColumnVisible,
@@ -598,7 +633,20 @@ const {
   notify: (type, message) => msg(type, message)
 });
 
+// 性能计时工具
+function createTimer(label: string) {
+  const start = performance.now();
+  return {
+    end: () => {
+      const duration = performance.now() - start;
+      console.log(`[性能计时] ${label}: ${duration.toFixed(2)}ms`);
+      return duration;
+    }
+  };
+}
+
 async function loadPage() {
+  const totalTimer = createTimer('loadPage 总耗时');
   const functionCode = String(props.meta.functionCode || '').trim();
   const params = String(props.meta.params || '').trim();
   if (!functionCode) {
@@ -618,24 +666,28 @@ async function loadPage() {
 
   // 检查 store 缓存
   const cached = workbenchStore.getCache(functionCode, params);
-  if (cached && cached.isDataLoaded) {
-    // 大数据量检测：如果缓存被截断，显示提示
-    const originalRowCount = cached.rowCount || cached.serverRows.length;
-    if (originalRowCount > 5000 && cached.serverRows.length < originalRowCount) {
-      // 大数据集：仅显示前 N 条记录
-    }
+  // 检查缓存是否完整（数据量是否等于总数）
+  const isCacheComplete = cached && cached.isDataLoaded && cached.serverRows.length === cached.total;
 
+  if (isCacheComplete) {
+    console.log('[📦 缓存恢复] 数据量:', cached.serverRows.length);
+    const cacheTimer = createTimer('📦 缓存恢复总耗时');
+
+    // 步骤1: 恢复基本状态
+    const step1Timer = createTimer('  [缓存-1] 恢复基本状态');
     pageMeta.value = cached.pageMeta;
-    serverRows.value = cached.serverRows;
     total.value = cached.total;
+    totalCount.value = cached.total;
+    loadedCount.value = cached.total;
+    isInitialChunkLoaded.value = true;
     loading.value = false;
-
-    // 恢复已加载状态
     loadedFunctionCode.value = functionCode;
     loadedParams.value = String(props.meta.params || '');
     isDataLoaded.value = true;
+    step1Timer.end();
 
-    // 恢复 UI 状态
+    // 步骤2: 恢复 UI 状态
+    const step2Timer = createTimer('  [缓存-2] 恢复 UI 状态');
     const cachedUIState = workbenchStore.getUIState(functionCode, params);
     if (cachedUIState) {
       conditionVisible.value = cachedUIState.conditionVisible;
@@ -655,49 +707,69 @@ async function loadPage() {
       page.value = cachedPage;
       pageSize.value = cachedPageSize;
     }
+    step2Timer.end();
 
-    // 使用 requestAnimationFrame 优化刷新时机，避免阻塞主线程
-    requestAnimationFrame(() => {
-      if (gridApi.value && !gridApi.value.isDestroyed()) {
-        // 大数据量时跳过 force 刷新，减少性能开销
-        if (cached.serverRows.length > 1000) {
-          gridApi.value.refreshCells();
-        } else {
-          gridApi.value.refreshCells({ force: true });
-        }
-        // 重置初始加载标志
-        isInitialLoading.value = false;
-      }
+    // 步骤3: 恢复表格数据
+    const step3Timer = createTimer('  [缓存-3] 恢复表格数据');
+    // 大数据量时分片恢复，避免阻塞 UI
+    if (cached.serverRows.length > CHUNK_SIZE) {
+      console.log(`[📦 缓存恢复] 大数据量分片恢复: 先显示 ${CHUNK_SIZE} 条`);
+      // 先显示第一片数据，让标签页立即响应
+      const firstChunk = cached.serverRows.slice(0, CHUNK_SIZE);
+      serverRows.value = firstChunk;
+      step3Timer.end();
 
-      // 在下一帧恢复行选择状态
+      // 在下一帧恢复剩余数据
       requestAnimationFrame(() => {
-        const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
-        if (cachedSelectedRows.length > 0 && gridApi.value && !gridApi.value.isDestroyed()) {
-          isRestoringSelection.value = true;
-          // 只恢复前10条选中记录，避免大数据量下的性能问题
-          const rowsToRestore = cachedSelectedRows.slice(0, 10);
-          const guidSet = new Set(rowsToRestore.filter((r: any) => r.GUID).map((r: any) => r.GUID));
-          const idSet = new Set(rowsToRestore.filter((r: any) => r.id).map((r: any) => r.id));
-
-          gridApi.value.forEachNode(node => {
-            const rowData = node.data;
-            if (!rowData) return;
-            const isSelected = (rowData.GUID && guidSet.has(rowData.GUID)) || (rowData.id && idSet.has(rowData.id));
-            if (isSelected) {
-              node.setSelected(true);
-            }
-          });
-          isRestoringSelection.value = false;
-        }
-        // 重置分页恢复标志
-        isRestoringPage.value = false;
-
-        // 检查工具栏滚动状态（最低优先级）
+        const step4Timer = createTimer('  [缓存-4] 恢复剩余数据');
+        // 使用 setTimeout 让出主线程
         setTimeout(() => {
-          checkScrollPosition();
-        }, 50);
+          serverRows.value = cached.serverRows;
+          isInitialLoading.value = false;
+          step4Timer.end();
+          cacheTimer.end();
+          totalTimer.end();
+          console.log('[📦 缓存恢复] ✅ 完成');
+        }, 100);
       });
-    });
+    } else {
+      // 小数据量直接恢复
+      serverRows.value = cached.serverRows;
+      isInitialLoading.value = false;
+      step3Timer.end();
+      cacheTimer.end();
+      totalTimer.end();
+      console.log('[📦 缓存恢复] ✅ 完成（小数据量直接恢复）');
+    }
+
+    // 恢复行选择状态（延迟执行，不阻塞主流程）
+    setTimeout(() => {
+      const selectTimer = createTimer('  [缓存-5] 恢复行选择状态');
+      const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
+      if (cachedSelectedRows.length > 0 && gridApi.value && !gridApi.value.isDestroyed()) {
+        isRestoringSelection.value = true;
+        // 只恢复前10条选中记录，避免大数据量下的性能问题
+        const rowsToRestore = cachedSelectedRows.slice(0, 10);
+        const guidSet = new Set(rowsToRestore.filter((r: any) => r.GUID).map((r: any) => r.GUID));
+        const idSet = new Set(rowsToRestore.filter((r: any) => r.id).map((r: any) => r.id));
+
+        gridApi.value.forEachNode(node => {
+          const rowData = node.data;
+          if (!rowData) return;
+          const isSelected = (rowData.GUID && guidSet.has(rowData.GUID)) || (rowData.id && idSet.has(rowData.id));
+          if (isSelected) {
+            node.setSelected(true);
+          }
+        });
+        isRestoringSelection.value = false;
+      }
+      // 重置分页恢复标志
+      isRestoringPage.value = false;
+      selectTimer.end();
+
+      // 检查工具栏滚动状态（最低优先级）
+      checkScrollPosition();
+    }, 200);
 
     return;
   }
@@ -749,40 +821,85 @@ async function loadPage() {
     }
   }
 
-  // 并行发送页面元数据和数据查询请求
-  const [pageResult, allRows] = await Promise.all([
-    fetchWorkbenchPage(functionCode),
-    fetchAllRows(functionCode, drillFilters, drillConditionSql)
-  ]);
+  // 优化：先只获取页面元数据和第一页数据，快速显示
+  console.log('[性能] 开始加载，functionCode:', functionCode);
+  const metaTimer = createTimer('获取页面元数据');
+  const pageResult = await fetchWorkbenchPage(functionCode);
+  metaTimer.end();
 
-  const { data, error } = pageResult;
-
-  if (error || !allRows) {
+  if (pageResult.error) {
     loading.value = false;
     return;
   }
 
+  const data = pageResult.data;
   pageMeta.value = data.meta;
-  serverRows.value = allRows;
-  total.value = allRows.length;
   page.value = 1;
-  pageSize.value = normalizePageSize(Number(data.size));
+  pageSize.value = PAGE_SIZE_OPTIONS[0]; // 使用默认分页大小
   selectedField.value = data.meta.conditions[0]?.fieldKey || '';
   selectedValue.value = '';
-  loading.value = false;
+
+  // 立即获取第一页数据（快速显示）
+  const firstPageTimer = createTimer('获取第一页数据');
+  const firstPageResult = await fetchWorkbenchPageData(functionCode, {
+    current: 1,
+    size: CHUNK_SIZE, // 1000条
+    fetchTotal: true,
+    filters: drillFilters,
+    drillCondition: drillConditionSql || undefined
+  });
+  firstPageTimer.end();
+
+  if (firstPageResult.error) {
+    loading.value = false;
+    return;
+  }
+
+  const firstPageData = firstPageResult.data;
+  total.value = firstPageData.total;
+  totalCount.value = firstPageData.total;
+
+  // 立即显示第一页数据
+  const renderTimer = createTimer('首屏渲染');
+  serverRows.value = firstPageData.records;
+  loadedCount.value = firstPageData.records.length;
+  isInitialChunkLoaded.value = true;
+  loading.value = false; // 主加载完成，显示首屏
+  renderTimer.end();
+
+  // 保存第一页到缓存
+  workbenchStore.setCache(functionCode, params, {
+    pageMeta: data.meta,
+    serverRows: firstPageData.records,
+    total: firstPageData.total,
+    isDataLoaded: false // 标记为未完全加载
+  });
+
+  totalTimer.end();
+
+  // 如果还有更多数据，在后台加载
+  if (firstPageData.hasMore) {
+    console.log('[性能] 开始后台加载剩余数据，总数:', firstPageData.total);
+    isChunkLoading.value = true;
+
+    // 延迟 500ms 后开始后台加载，确保首屏已渲染完成
+    setTimeout(() => {
+      loadRemainingData(functionCode, params, data.meta, drillFilters, drillConditionSql, firstPageData.total);
+    }, 500);
+  } else {
+    // 数据量小于1000，已全部加载
+    workbenchStore.setCache(functionCode, params, {
+      pageMeta: data.meta,
+      serverRows: firstPageData.records,
+      total: firstPageData.total,
+      isDataLoaded: true
+    });
+  }
 
   // 页面元数据加载完成后，检查工具栏滚动状态
   setTimeout(() => {
     checkScrollPosition();
   }, 100);
-
-  // 保存到 store 缓存
-  workbenchStore.setCache(functionCode, params, {
-    pageMeta: data.meta,
-    serverRows: allRows,
-    total: allRows.length,
-    isDataLoaded: true
-  });
 
   // 数据加载完成后，调整列宽度
   setTimeout(() => {
@@ -827,20 +944,164 @@ async function loadPage() {
   }, 300);
 }
 
-async function fetchAllRows(functionCode: string, filters: QueryFilter[], drillConditionSql?: string) {
-  const result = await fetchWorkbenchQuery(functionCode, {
-    current: 1,
-    size: pageSize.value,
-    all: true,
-    filters,
-    drillCondition: drillConditionSql || ''
-  });
+/**
+ * 后台加载剩余数据 - 优化版：并行加载
+ */
+async function loadRemainingData(
+  functionCode: string,
+  params: string,
+  meta: Api.Workbench.PageMeta,
+  filters: QueryFilter[],
+  drillConditionSql: string,
+  total: number
+) {
+  const bgTimer = createTimer('后台加载总耗时');
+  const firstChunkSize = serverRows.value.length; // 首屏已加载的条数
+  const remainingCount = total - firstChunkSize; // 剩余需要加载的条数
 
-  if (result.error) {
-    return null;
+  if (remainingCount <= 0) {
+    console.log('[性能] 数据已全部加载');
+    bgTimer.end();
+    return;
   }
 
-  return result.data.records;
+  // 后台阶段使用更大分片减少请求次数；通过 offset 保证与首屏后续数据连续
+  const PAGE_SIZE = 5000;
+
+  // 滚动并发：避免“整批等待最慢请求”造成额外空转时间
+  // 并发上限控制在 6，通常可显著缩短总耗时，同时避免对后端造成过高瞬时压力
+  const CONCURRENT_REQUESTS = Math.max(3, Math.min(6, Math.ceil(remainingCount / PAGE_SIZE / 4)));
+
+  const chunksNeeded = Math.ceil(remainingCount / PAGE_SIZE);
+  const totalOffsets = Array.from({ length: chunksNeeded }, (_, i) => firstChunkSize + i * PAGE_SIZE);
+  let nextChunkIndex = 0;
+  let activeRequests = 0;
+  let loadedRows = 0;
+
+  // 保证按 offset 顺序拼接，避免并发返回顺序导致数据显示乱序
+  const chunkRecordsMap = new Map<number, Api.Workbench.QueryRecord[]>();
+  let nextMergeOffset = firstChunkSize;
+
+  const mergeReadyPages = () => {
+    const mergedRows: Api.Workbench.QueryRecord[] = [];
+    while (chunkRecordsMap.has(nextMergeOffset)) {
+      const rows = chunkRecordsMap.get(nextMergeOffset) || [];
+      chunkRecordsMap.delete(nextMergeOffset);
+      mergedRows.push(...rows);
+      nextMergeOffset += PAGE_SIZE;
+    }
+
+    if (mergedRows.length > 0) {
+      const updateTimer = createTimer('更新UI');
+      serverRows.value = [...serverRows.value, ...mergedRows];
+      updateTimer.end();
+    }
+  };
+
+  await new Promise<void>(resolve => {
+    const schedule = () => {
+      while (activeRequests < CONCURRENT_REQUESTS && nextChunkIndex < totalOffsets.length) {
+        const offset = totalOffsets[nextChunkIndex++];
+        const current = Math.floor(offset / PAGE_SIZE) + 1;
+        activeRequests += 1;
+        const pageTimer = createTimer(`加载分片 offset=${offset}, size=${PAGE_SIZE}`);
+
+        fetchWorkbenchPageData(functionCode, {
+          current,
+          size: PAGE_SIZE,
+          offset,
+          fetchTotal: false,
+          filters,
+          drillCondition: drillConditionSql || undefined
+        })
+          .then(result => {
+            pageTimer.end();
+            if (result.error) {
+              console.error('[性能] 加载分片失败, offset=', offset, ', 错误:', result.error);
+              chunkRecordsMap.set(offset, []);
+              return;
+            }
+
+            const records = result.data.records;
+            loadedRows += records.length;
+            loadedCount.value = firstChunkSize + loadedRows;
+            chunkRecordsMap.set(offset, records);
+            mergeReadyPages();
+          })
+          .finally(async () => {
+            activeRequests -= 1;
+
+            // 页面隐藏时适度降载，减少后台无效抢占
+            if (document.hidden) {
+              await new Promise(r => setTimeout(r, 300));
+            }
+
+            if (nextChunkIndex >= totalOffsets.length && activeRequests === 0) {
+              mergeReadyPages();
+              resolve();
+              return;
+            }
+
+            schedule();
+          });
+      }
+    };
+
+    schedule();
+  });
+
+  // 全部加载完成后，更新缓存为完整数据（serverRows 已经是完整数据）
+  const cacheTimer = createTimer('更新缓存');
+  workbenchStore.setCache(functionCode, params, {
+    pageMeta: meta,
+    serverRows: serverRows.value,
+    total,
+    isDataLoaded: true
+  });
+  cacheTimer.end();
+
+  isChunkLoading.value = false;
+  console.log('[性能] 后台加载完成，总数据量:', serverRows.value.length, '期望:', total);
+  // 数据完整性校验
+  if (serverRows.value.length !== total) {
+    console.warn('[性能] ⚠️ 数据量不匹配！实际:', serverRows.value.length, '期望:', total);
+  }
+  bgTimer.end();
+}
+
+/**
+ * 使用分页 API 获取所有数据（用于导出等需要全量数据的场景）
+ */
+async function fetchAllRows(functionCode: string, filters: QueryFilter[], drillConditionSql?: string) {
+  const allRows: Api.Workbench.QueryRecord[] = [];
+  let current = 1;
+  const size = 5000; // 每页 5000 条
+  let hasMore = true;
+
+  while (hasMore) {
+    const result = await fetchWorkbenchPageData(functionCode, {
+      current,
+      size,
+      fetchTotal: current === 1, // 只有第一页需要总数
+      filters,
+      drillCondition: drillConditionSql || undefined
+    });
+
+    if (result.error) {
+      break;
+    }
+
+    allRows.push(...result.data.records);
+    hasMore = result.data.hasMore;
+    current++;
+
+    // 如果数据量很大，让出时间片避免阻塞
+    if (allRows.length % 10000 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+  }
+
+  return allRows;
 }
 
 async function queryPage() {
@@ -1650,7 +1911,8 @@ async function handleTableEditSubmit() {
           :default-col-def="defaultColDef"
           :row-height="38"
           :header-height="40"
-          :row-data="filteredRows"
+          :row-data="processedRows"
+          :quick-filter-text="quickKeyword"
           :locale-text="AG_GRID_LOCALE_CN"
           :pagination="true"
           :pagination-page-size="pageSize"
@@ -1659,16 +1921,22 @@ async function handleTableEditSubmit() {
           :selection-column-def="{
             width: 37,
             minWidth: 37,
-            // 不设置 maxWidth，选择列也允许自适应（但宽度已足够）
             resizable: false,
             headerClass: 'selection-header-left'
           }"
-          :row-buffer="10"
+          :row-buffer="20"
           :suppress-column-virtualisation="false"
+          :suppress-row-virtualisation="false"
+          :animate-rows="false"
           class="query-grid"
           @grid-ready="handleGridReady"
           @cell-value-changed="handleCellValueChanged"
         />
+        <!-- 分片加载进度提示 -->
+        <div v-if="isChunkLoading && !loading" class="chunk-loading-progress">
+          <NSpin size="small" />
+          <span class="progress-text">已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录...</span>
+        </div>
       </div>
     </NCard>
 
@@ -2985,5 +3253,36 @@ async function handleTableEditSubmit() {
   --n-border: 1px solid rgba(230, 162, 60, 0.5);
   --n-border-hover: 1px solid rgba(230, 162, 60, 0.7);
   --n-border-pressed: 1px solid rgba(230, 162, 60, 0.8);
+}
+
+/* 分片加载进度提示样式 */
+.chunk-loading-progress {
+  position: absolute;
+  bottom: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.chunk-loading-progress .progress-text {
+  font-size: 13px;
+  color: #666;
+  white-space: nowrap;
+}
+
+/* 深色主题下的进度提示 */
+.system-dark .chunk-loading-progress {
+  background: rgba(45, 45, 48, 0.95);
+}
+
+.system-dark .chunk-loading-progress .progress-text {
+  color: #ccc;
 }
 </style>

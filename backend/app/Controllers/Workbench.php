@@ -21,21 +21,11 @@ class Workbench extends BaseController
     public function page(string $functionCode = '')
     {
         try {
-            $payload = [
-                'current' => 1,
-                'size' => 20,
-                'filters' => []
-            ];
-
             [$context, $definition] = $this->buildWorkbenchContext($functionCode);
-            $records = $this->queryRecords($context, $payload);
 
+            // 只返回元数据，不查询数据，由前端单独请求数据
             return $this->success([
-                'meta' => $definition,
-                'records' => $records['records'],
-                'current' => $records['current'],
-                'size' => $records['size'],
-                'total' => $records['total']
+                'meta' => $definition
             ]);
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
@@ -58,6 +48,291 @@ class Workbench extends BaseController
         } catch (\Throwable $e) {
             return $this->error('5002', '工作台查询失败');
         }
+    }
+
+    /**
+     * 分页查询工作台数据
+     *
+     * @param string $functionCode 功能编码
+     * @return Response
+     */
+    public function queryPaged(string $functionCode = '')
+    {
+        try {
+            $payload = $this->request->getJSON(true) ?? [];
+
+            // 分页参数
+            $current = max(1, (int) ($payload['current'] ?? 1));
+            $size = max(1, min(5000, (int) ($payload['size'] ?? 1000))); // 最大 5000 条
+            $offset = max(0, (int) ($payload['offset'] ?? (($current - 1) * $size)));
+            $fetchTotal = filter_var($payload['fetchTotal'] ?? true, FILTER_VALIDATE_BOOLEAN);
+
+            // 获取上下文
+            [$context] = $this->buildWorkbenchContext($functionCode);
+
+            // 查询总数量（可选，首次加载时需要）
+            $total = 0;
+            if ($fetchTotal) {
+                $total = $this->queryTotalCount($context, $payload);
+            }
+
+            // 分页查询数据
+            $records = $this->queryRecordsPaged($context, $payload, $current, $size, $offset);
+
+            return $this->success([
+                'records' => $records,
+                'current' => $current,
+                'size' => $size,
+                'offset' => $offset,
+                'total' => $total,
+                'hasMore' => count($records) === $size // 是否还有更多数据
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '分页查询失败: ' . $e->getMessage());
+            return $this->error('5003', '分页查询失败: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 查询总记录数
+     *
+     * @param array $context 上下文信息
+     * @param array $payload 请求参数
+     * @return int 总记录数
+     */
+    private function queryTotalCount(array $context, array $payload): int
+    {
+        $queryConfig = $context['query'];
+        $functionAuth = $context['function'];
+        $columns = $context['columns'];
+
+        // 存储过程模式不支持分页查询
+        if ($queryConfig['mode'] === '存储过程') {
+            return 0;
+        }
+
+        // 构建列映射
+        $columnMap = [];
+        foreach ($columns as $column) {
+            $columnMap[(string) ($column['列名'] ?? '')] = $column;
+        }
+
+        // 构建 WHERE 条件
+        $whereParts = [];
+        if ($queryConfig['queryWhere'] !== '') {
+            $whereParts[] = $queryConfig['queryWhere'];
+        }
+        if ($functionAuth['deptAuthCond'] !== '') {
+            $whereParts[] = $functionAuth['deptAuthCond'];
+        }
+        if ($functionAuth['locationAuthCond'] !== '') {
+            $whereParts[] = $functionAuth['locationAuthCond'];
+        }
+
+        // 处理筛选条件
+        $filters = is_array($payload['filters'] ?? null) ? $payload['filters'] : [];
+        foreach ($filters as $filter) {
+            if (!is_array($filter)) {
+                continue;
+            }
+            $fieldKey = trim((string) ($filter['fieldKey'] ?? ''));
+            $operator = trim((string) ($filter['operator'] ?? 'contains'));
+            $value = trim((string) ($filter['value'] ?? ''));
+            if ($fieldKey === '' || $value === '' || !isset($columnMap[$fieldKey])) {
+                continue;
+            }
+
+            $fieldName = trim((string) ($columnMap[$fieldKey]['字段名'] ?? ''));
+            if ($fieldName === '') {
+                continue;
+            }
+
+            switch ($operator) {
+                case 'equals':
+                    $whereParts[] = sprintf('%s=%s', $fieldName, $this->quote($value));
+                    break;
+                case 'startsWith':
+                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->quote($value . '%'));
+                    break;
+                default:
+                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->quote('%' . $value . '%'));
+                    break;
+            }
+        }
+
+        // 处理钻取条件
+        $drillCondition = trim((string) ($payload['drillCondition'] ?? ''));
+        if ($drillCondition !== '') {
+            $whereParts[] = $drillCondition;
+        }
+
+        $baseFromSql = sprintf(' from %s', $queryConfig['queryTable']);
+        $whereSql = $whereParts ? ' where ' . implode(' and ', $whereParts) : '';
+        $groupSql = $queryConfig['queryGroup'] !== '' ? ' group by ' . $queryConfig['queryGroup'] : '';
+
+        // 查询总数量
+        $countSql = sprintf('select count(1) as total from (select 1%s%s%s) as total_rows', $baseFromSql, $whereSql, $groupSql);
+        $totalRow = $this->common->select($countSql)->getRowArray();
+
+        return (int) ($totalRow['total'] ?? 0);
+    }
+
+    /**
+     * 分页查询记录
+     *
+     * @param array $context 上下文信息
+     * @param array $payload 请求参数
+     * @param int $current 当前页码
+     * @param int $size 每页大小
+     * @return array 记录数组
+     */
+    private function queryRecordsPaged(array $context, array $payload, int $current, int $size, int $offset): array
+    {
+        $queryConfig = $context['query'];
+        $functionAuth = $context['function'];
+        $userAuth = $context['user'];
+        $columns = $context['columns'];
+
+        // 存储过程模式不支持分页查询
+        if ($queryConfig['mode'] === '存储过程') {
+            return [];
+        }
+
+        // 构建列映射
+        $columnMap = [];
+        foreach ($columns as $column) {
+            $columnMap[(string) ($column['列名'] ?? '')] = $column;
+        }
+
+        // 构建 SELECT 字段
+        $selectParts = [];
+        $hintErrorParts = [];
+        foreach ($columns as $column) {
+            $alias = (string) ($column['列名'] ?? '');
+            $queryName = (string) ($column['查询名'] ?? '');
+            if ($alias === '' || $queryName === '') {
+                continue;
+            }
+
+            if ((string) ($column['字符转换'] ?? '0') === '1') {
+                $selectParts[] = sprintf("replace(replace(%s, '\"', '~~'), '\'', '~~') as `%s`", $queryName, $alias);
+            } elseif ((string) ($column['加密显示'] ?? '0') === '1') {
+                $selectParts[] = sprintf('"*" as `%s`', $alias);
+            } elseif ((string) ($column['工号限权'] ?? '0') !== '0' && $functionAuth['workIdAuth'] !== '0' && (string) ($column['工号字段'] ?? '') !== '') {
+                $selectParts[] = sprintf(
+                    'if(%s=%s,%s,"-") as `%s`',
+                    $column['工号字段'],
+                    $this->quote($userAuth['userWorkId']),
+                    $queryName,
+                    $alias
+                );
+            } else {
+                $selectParts[] = sprintf('%s as `%s`', $queryName, $alias);
+            }
+
+            // 添加提示和异常标记字段
+            $hintCondition = trim((string) ($column['提示条件'] ?? ''));
+            $errorCondition = trim((string) ($column['异常条件'] ?? ''));
+            if ($hintCondition !== '') {
+                $hintErrorParts[] = sprintf('if(%s,"1","0") as `提示^%s`', $hintCondition, $alias);
+            }
+            if ($errorCondition !== '') {
+                $hintErrorParts[] = sprintf('if(%s,"1","0") as `异常^%s`', $errorCondition, $alias);
+            }
+        }
+
+        // 合并提示和异常字段到 selectParts
+        if (!empty($hintErrorParts)) {
+            $selectParts = array_merge($selectParts, $hintErrorParts);
+        }
+
+        // 构建 WHERE 条件
+        $whereParts = [];
+        if ($queryConfig['queryWhere'] !== '') {
+            $whereParts[] = $queryConfig['queryWhere'];
+        }
+        if ($functionAuth['deptAuthCond'] !== '') {
+            $whereParts[] = $functionAuth['deptAuthCond'];
+        }
+        if ($functionAuth['locationAuthCond'] !== '') {
+            $whereParts[] = $functionAuth['locationAuthCond'];
+        }
+
+        // 处理筛选条件
+        $filters = is_array($payload['filters'] ?? null) ? $payload['filters'] : [];
+        foreach ($filters as $filter) {
+            if (!is_array($filter)) {
+                continue;
+            }
+            $fieldKey = trim((string) ($filter['fieldKey'] ?? ''));
+            $operator = trim((string) ($filter['operator'] ?? 'contains'));
+            $value = trim((string) ($filter['value'] ?? ''));
+            if ($fieldKey === '' || $value === '' || !isset($columnMap[$fieldKey])) {
+                continue;
+            }
+
+            $fieldName = trim((string) ($columnMap[$fieldKey]['字段名'] ?? ''));
+            if ($fieldName === '') {
+                continue;
+            }
+
+            switch ($operator) {
+                case 'equals':
+                    $whereParts[] = sprintf('%s=%s', $fieldName, $this->quote($value));
+                    break;
+                case 'startsWith':
+                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->quote($value . '%'));
+                    break;
+                default:
+                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->quote('%' . $value . '%'));
+                    break;
+            }
+        }
+
+        // 处理钻取条件
+        $drillCondition = trim((string) ($payload['drillCondition'] ?? ''));
+        if ($drillCondition !== '') {
+            $whereParts[] = $drillCondition;
+        }
+
+        $baseFromSql = sprintf(' from %s', $queryConfig['queryTable']);
+        $whereSql = $whereParts ? ' where ' . implode(' and ', $whereParts) : '';
+        $groupSql = $queryConfig['queryGroup'] !== '' ? ' group by ' . $queryConfig['queryGroup'] : '';
+        $orderSql = $queryConfig['queryOrder'] !== '' ? ' order by ' . $queryConfig['queryOrder'] : '';
+        // 构建分页查询 SQL
+        $querySql = sprintf(
+            'select (@i:=@i+1) as 序号, %s%s, (select @i:=%d) as xh%s%s%s limit %d offset %d',
+            implode(',', $selectParts),
+            $baseFromSql,
+            $offset,
+            $whereSql,
+            $groupSql,
+            $orderSql,
+            $size,
+            $offset
+        );
+
+        // Debug: log the SQL query
+        log_message('debug', 'Workbench paged query SQL: ' . $querySql);
+
+        $rows = $this->common->select($querySql)->getResultArray();
+
+        // 处理数据类型转换
+        foreach ($rows as &$row) {
+            if (isset($row['序号'])) {
+                $row['序号'] = (int) $row['序号'];
+            }
+            foreach ($columns as $column) {
+                $title = (string) ($column['列名'] ?? '');
+                if ($title !== '' && array_key_exists($title, $row) && (string) ($column['列类型'] ?? '') === '数值' && is_numeric($row[$title])) {
+                    $row[$title] = strpos((string) $row[$title], '.') === false ? (int) $row[$title] : (float) $row[$title];
+                }
+            }
+        }
+
+        return $rows;
     }
 
     public function debug(string $functionCode = '')

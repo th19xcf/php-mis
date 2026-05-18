@@ -63,7 +63,7 @@ declare namespace Api {
       [key: string]: string | number | null;
     }
 
-    interface PageData extends Api.Common.PaginatingQueryRecord<QueryRecord> {
+    interface PageData {
       meta: PageMeta;
     }
 

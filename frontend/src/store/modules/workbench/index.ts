@@ -43,22 +43,13 @@ export const useWorkbenchStore = defineStore('workbench', () => {
     return cache.value.get(getCacheKey(functionCode, params, scopeKey));
   }
 
-  // 大数据量阈值：超过此值只缓存部分数据
-  const LARGE_DATASET_THRESHOLD = 5000;
-  const LARGE_DATASET_CACHE_SIZE = 500;
-
   // 设置缓存数据
   function setCache(functionCode: string, params: string, data: Partial<WorkbenchCacheItem>, scopeKey = '') {
     const key = getCacheKey(functionCode, params, scopeKey);
     const existing = cache.value.get(key);
 
-    // 大数据量优化：如果超过阈值，只缓存前 N 条数据
-    let rowsToCache = data.serverRows ?? existing?.serverRows ?? [];
-    const originalRowCount = data.serverRows?.length ?? existing?.rowCount ?? rowsToCache.length;
-
-    if (originalRowCount > LARGE_DATASET_THRESHOLD && rowsToCache.length > LARGE_DATASET_CACHE_SIZE) {
-      rowsToCache = rowsToCache.slice(0, LARGE_DATASET_CACHE_SIZE);
-    }
+    // 缓存所有数据（使用 shallowRef 后内存开销已大幅降低）
+    const rowsToCache = data.serverRows ?? existing?.serverRows ?? [];
 
     const resolvedPinColumns = data.pinColumns ?? existing?.pinColumns ?? [];
 
@@ -86,7 +77,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
           selectedValue: ''
         },
       timestamp: Date.now(),
-      rowCount: originalRowCount
+      rowCount: rowsToCache.length
     });
   }
 

@@ -1,7 +1,7 @@
 import { request } from '../request';
 
 export function fetchWorkbenchPage(functionCode: string) {
-  return request<Api.Workbench.PageData>({ url: `/workbench/page/${encodeURIComponent(functionCode)}` });
+  return request<{ meta: Api.Workbench.PageMeta }>({ url: `/workbench/page/${encodeURIComponent(functionCode)}` });
 }
 
 export function fetchWorkbenchQuery(functionCode: string, data: Api.Workbench.QueryPayload) {
@@ -9,6 +9,37 @@ export function fetchWorkbenchQuery(functionCode: string, data: Api.Workbench.Qu
     url: `/workbench/query/${encodeURIComponent(functionCode)}`,
     method: 'post',
     data
+  });
+}
+
+/**
+ * 分页查询工作台数据
+ * @param functionCode 功能编码
+ * @param params 分页参数
+ * @returns 分页数据
+ */
+export function fetchWorkbenchPageData(
+  functionCode: string,
+  params: {
+    current: number;
+    size: number;
+    offset?: number;
+    fetchTotal?: boolean;
+    drillCondition?: string;
+    filters?: any[];
+  }
+) {
+  return request<{
+    records: Api.Workbench.QueryRecord[];
+    current: number;
+    size: number;
+    offset?: number;
+    total: number;
+    hasMore: boolean;
+  }>({
+    url: `/workbench/queryPaged/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data: params
   });
 }
 
