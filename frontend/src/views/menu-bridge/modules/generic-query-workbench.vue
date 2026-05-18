@@ -12,22 +12,7 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import {
-  NButton,
-  NRadio,
-  NRadioGroup,
-  NForm,
-  NFormItem,
-  NSelect,
-  NModal,
-  NInput,
-  NInputNumber,
-  NDatePicker,
-  NEmpty,
-  NSpin,
-  NAlert,
-  NDataTable
-} from 'naive-ui';
+import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert } from 'naive-ui';
 import * as XLSX from 'xlsx';
 
 import {
@@ -47,6 +32,13 @@ import { useToolbarScroll } from '@/hooks/business/use-toolbar-scroll';
 import { useWorkbenchComment } from '@/hooks/business/use-workbench-comment';
 import { useWorkbenchGridState } from '@/hooks/business/use-workbench-grid-state';
 import { useThemeStore } from '@/store/modules/theme';
+import {
+  WorkbenchImport,
+  WorkbenchComment,
+  WorkbenchAddForm,
+  WorkbenchUpdateForm,
+  WorkbenchPopupSelect
+} from './components';
 
 const router = useRouter();
 
@@ -213,7 +205,7 @@ const {
   handleImport,
   triggerFileInput,
   handleFileSelect,
-  handleDrop,
+  handleDrop: _handleDrop,
   confirmImport,
   downloadImportTemplate,
   resetImportPreview
@@ -1058,7 +1050,7 @@ const {
   }
 });
 // 获取字段选项
-function getFieldOptions(field: any): Array<{ label: string; value: string }> {
+function _getFieldOptions(field: any): Array<{ label: string; value: string }> {
   return field.objectOptions || [];
 }
 
@@ -1606,7 +1598,9 @@ async function handleTableEditSubmit() {
             </NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
-            <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="handleDebug">调试</NButton>
+            <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="handleDebug">
+              调试
+            </NButton>
           </div>
 
           <!-- 右箭头 -->
@@ -1832,603 +1826,98 @@ async function handleTableEditSubmit() {
       </NSpace>
     </NModal>
 
-    <!-- 添加批注弹窗 -->
-    <NModal
-      v-model:show="addCommentVisible"
-      preset="card"
-      title="添加批注"
-      class="w-600px"
-      :class="{ 'comment-modal-dark': isDarkMode }"
-      :mask-closable="false"
-    >
-      <NSpin :show="commentLoading">
-        <NSpace vertical :size="16">
-          <!-- 1. 关键字段列表（从原表字段配置中提取） -->
-          <div v-if="keyFieldCount > 0" class="comment-form-wrapper">
-            <!-- 表头 -->
-            <div
-              class="comment-form-header"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              <div
-                class="comment-form-col comment-col-name"
-                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-              >
-                列名
-              </div>
-              <div
-                class="comment-form-col comment-col-type"
-                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-              >
-                列类型
-              </div>
-              <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">取值</div>
-            </div>
-
-            <!-- 关键字段数据 -->
-            <div class="comment-form-body" :style="isDarkMode ? { borderColor: '#4b5965' } : {}">
-              <div
-                v-for="(field, index) in keyFieldList"
-                :key="field.name"
-                class="comment-form-row"
-                :style="
-                  isDarkMode
-                    ? {
-                        borderBottomColor: '#4b5965',
-                        borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                      }
-                    : {}
-                "
-              >
-                <div
-                  class="comment-form-col comment-col-name"
-                  :style="
-                    isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}
-                  "
-                >
-                  {{ field.comment || field.name }}
-                </div>
-                <div
-                  class="comment-form-col comment-col-type"
-                  :style="
-                    isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}
-                  "
-                >
-                  {{ field.type }}
-                </div>
-                <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
-                  <span class="comment-key-field-value" :style="isDarkMode ? { color: '#b0b0b0' } : {}">
-                    {{ commentFormData[field.name] }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <NEmpty v-else description="该功能未配置批注模块" />
-
-          <!-- 2. 备注模块 -->
-          <div class="comment-form-wrapper">
-            <div
-              class="comment-form-header"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              <div
-                class="comment-form-col comment-col-name"
-                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-              >
-                备注模块
-              </div>
-              <div
-                class="comment-form-col comment-col-type"
-                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-              >
-                字符
-              </div>
-              <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
-                <span :style="isDarkMode ? { color: '#e0e0e0' } : {}">{{ commentModuleName }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 3. 备注说明 -->
-          <div class="comment-form-wrapper">
-            <div
-              class="comment-form-header"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              <div
-                class="comment-form-col comment-col-name"
-                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-              >
-                备注说明
-              </div>
-              <div
-                class="comment-form-col comment-col-type"
-                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-              >
-                文本
-              </div>
-              <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
-                <NInput v-model:value="commentRemark" type="textarea" placeholder="请输入备注说明" :rows="3" />
-              </div>
-            </div>
-          </div>
-
-          <NSpace justify="end">
-            <NButton @click="addCommentVisible = false">取消</NButton>
-            <NButton type="primary" :loading="commentLoading" @click="handleSubmitComment">确定</NButton>
-          </NSpace>
-        </NSpace>
-      </NSpin>
-    </NModal>
-
-    <!-- 查看批注弹窗 -->
-    <NModal v-model:show="viewCommentVisible" preset="card" title="查看批注" class="w-800px" :mask-closable="false">
-      <NSpin :show="commentLoading">
-        <NSpace vertical :size="16">
-          <!-- 卡片式批注列表 -->
-          <div v-if="commentList.length > 0" class="comment-card-list">
-            <div
-              v-for="(item, index) in commentList"
-              :key="index"
-              class="comment-card"
-              :class="{ 'comment-card-dark': isDarkMode }"
-            >
-              <!-- 头部：操作人员和时间 -->
-              <div class="comment-card-header">
-                <div class="comment-card-user">
-                  <span class="comment-card-user-icon">👤</span>
-                  <span>{{ item.操作人员 || '未知用户' }}</span>
-                </div>
-                <div class="comment-card-time">
-                  {{ item.操作时间 || item.创建时间 || '-' }}
-                </div>
-              </div>
-
-              <!-- 中部：备注说明 -->
-              <div class="comment-card-content">
-                <div class="comment-card-label">备注说明</div>
-                <div class="comment-card-text">{{ item.备注说明 || '无' }}</div>
-              </div>
-
-              <!-- 底部：关键字段信息 -->
-              <div class="comment-card-footer">
-                <div
-                  v-for="field in commentFields.filter(f => f.isKeyField && item[f.name])"
-                  :key="field.name"
-                  class="comment-card-tag"
-                >
-                  <span class="comment-card-tag-label">{{ field.comment || field.name }}:</span>
-                  <span class="comment-card-tag-value" :title="String(item[field.name])">{{ item[field.name] }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <NEmpty v-else description="暂无批注记录" />
-
-          <NSpace justify="end">
-            <NButton @click="viewCommentVisible = false">关闭</NButton>
-          </NSpace>
-        </NSpace>
-      </NSpin>
-    </NModal>
+    <!-- 批注弹窗 -->
+    <WorkbenchComment
+      v-model:add-visible="addCommentVisible"
+      v-model:view-visible="viewCommentVisible"
+      :loading="commentLoading"
+      :fields="commentFields"
+      :form-data="commentFormData"
+      :list="commentList"
+      :module-name="commentModuleName"
+      :remark="commentRemark"
+      :key-field-list="keyFieldList"
+      :key-field-count="keyFieldCount"
+      :is-dark-mode="isDarkMode"
+      @update:remark="commentRemark = $event"
+      @submit="handleSubmitComment"
+    />
 
     <!-- 导入弹窗 -->
-    <NModal v-model:show="importVisible" preset="card" title="数据导入" class="w-900px" :mask-closable="false">
-      <NSpin :show="importLoading">
-        <NSpace vertical :size="16">
-          <!-- 上传区域 -->
-          <div
-            v-if="importPreviewData.length === 0 && !importSuccess"
-            class="import-upload-area"
-            :class="{ 'import-upload-area-dark': isDarkMode }"
-            @click="triggerFileInput"
-            @dragover.prevent
-            @drop="handleDrop"
-          >
-            <input
-              ref="fileInputRef"
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              style="display: none"
-              @change="handleFileSelect"
-            />
-            <div class="import-upload-content">
-              <div class="import-upload-icon">📁</div>
-              <div class="import-upload-text">
-                <div>点击或拖拽文件到此处上传</div>
-                <div class="import-upload-hint">支持 .xlsx, .xls, .csv 格式</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 下载模板按钮 -->
-          <div v-if="importPreviewData.length === 0 && !importSuccess" class="import-template-row">
-            <NButton text type="primary" @click="downloadImportTemplate">📥 下载导入模板</NButton>
-          </div>
-
-          <!-- 错误提示 -->
-          <NAlert v-if="importError" type="error" :show-icon="true">
-            {{ importError }}
-          </NAlert>
-
-          <!-- 数据预览表格 -->
-          <div v-if="importPreviewData.length > 0 && !importSuccess">
-            <div class="import-preview-header" :class="{ 'import-preview-header-dark': isDarkMode }">
-              <span>数据预览</span>
-              <span class="import-preview-count">共 {{ importPreviewData.length }} 条数据</span>
-            </div>
-            <div class="import-preview-table-wrapper">
-              <NDataTable
-                :data="importPreviewData.slice(0, 10)"
-                :columns="importPreviewColumns"
-                size="small"
-                bordered
-                :scroll-x="1800"
-                :pagination="false"
-              />
-            </div>
-            <div v-if="importPreviewData.length > 10" class="import-preview-more">
-              还有 {{ importPreviewData.length - 10 }} 条数据未显示...
-            </div>
-          </div>
-
-          <!-- 导入成功提示 -->
-          <NAlert v-if="importSuccess" type="success" :show-icon="true">
-            {{ importSuccess.message }}
-          </NAlert>
-
-          <!-- 操作按钮 -->
-          <NSpace justify="end">
-            <NButton v-if="importPreviewData.length > 0 && !importSuccess" @click="resetImportPreview">
-              重新选择
-            </NButton>
-            <NButton @click="importVisible = false">关闭</NButton>
-            <NButton
-              v-if="importPreviewData.length > 0 && !importSuccess"
-              type="primary"
-              :disabled="importLoading"
-              @click="confirmImport"
-            >
-              确认导入
-            </NButton>
-          </NSpace>
-        </NSpace>
-      </NSpin>
-    </NModal>
+    <WorkbenchImport
+      v-model:visible="importVisible"
+      :loading="importLoading"
+      :preview-data="importPreviewData"
+      :error="importError"
+      :success="importSuccess"
+      :preview-columns="importPreviewColumns"
+      :is-dark-mode="isDarkMode"
+      @trigger-file-input="triggerFileInput"
+      @download-template="downloadImportTemplate"
+      @reset="resetImportPreview"
+      @confirm="confirmImport"
+    >
+      <template #file-input>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          style="display: none"
+          @change="handleFileSelect"
+        />
+      </template>
+    </WorkbenchImport>
 
     <!-- 弹窗选择对话框（懒加载级联选择） -->
-    <NModal
-      v-model:show="popupVisible"
-      preset="card"
-      :title="popupField?.columnName || '选择'"
-      class="w-600px"
-      :mask-closable="false"
-    >
-      <NSpin :show="popupLoading">
-        <NSpace vertical :size="16">
-          <!-- 级联选择 -->
-          <NFormItem label="选择路径">
-            <NCascader
-              v-model:value="popupSelectedValue"
-              :options="popupCascaderOptions"
-              :on-load="handleLoadCascaderChildren"
-              remote
-              expand-trigger="click"
-              placeholder="请选择"
-              clearable
-              @update:value="handleCascaderValueChange"
-            />
-          </NFormItem>
-
-          <!-- 级别提示 -->
-          <div v-if="popupLevels.length" class="popup-levels-hint">
-            <NText depth="3">
-              共 {{ popupMaxLevel }} 级：
-              <span v-for="(level, index) in popupLevels" :key="level.level">
-                {{ level.name }}
-                <span v-if="index < popupLevels.length - 1">→</span>
-              </span>
-            </NText>
-          </div>
-          <NEmpty v-else description="暂无数据" />
-
-          <!-- 操作按钮 -->
-          <NSpace justify="end">
-            <NButton @click="popupVisible = false">取消</NButton>
-            <NButton type="primary" :disabled="!popupSelectedValue" @click="confirmPopupSelection">确认</NButton>
-          </NSpace>
-        </NSpace>
-      </NSpin>
-    </NModal>
+    <WorkbenchPopupSelect
+      v-model:visible="popupVisible"
+      :loading="popupLoading"
+      :field="popupField"
+      :selected-value="popupSelectedValue"
+      :cascader-options="popupCascaderOptions"
+      :levels="popupLevels"
+      :max-level="popupMaxLevel"
+      @update:selected-value="handleCascaderValueChange"
+      @confirm="confirmPopupSelection"
+      @load-children="handleLoadCascaderChildren"
+    />
 
     <!-- 新增弹窗 -->
-    <NModal v-model:show="addVisible" preset="card" title="新增记录" class="w-800px" :mask-closable="false">
-      <NSpin :show="addLoading">
-        <NSpace vertical :size="16">
-          <!-- 错误提示 -->
-          <NAlert v-if="addError" type="error" :show-icon="true">
-            {{ addError }}
-          </NAlert>
-
-          <!-- 成功提示 -->
-          <NAlert v-if="addSuccess" type="success" :show-icon="true">
-            {{ addSuccess }}
-          </NAlert>
-
-          <!-- 新增表单 -->
-          <div v-if="!addSuccess">
-            <div style="margin-bottom: 10px; color: #666">字段数量: {{ addFormFields.length }}</div>
-            <NForm :model="addFormData" label-placement="left" label-width="120px">
-              <div class="add-form-grid">
-                <NFormItem
-                  v-for="field in addFormFields"
-                  :key="field.fieldName"
-                  :label="field.columnName"
-                  :required="field.required"
-                >
-                  <!-- 弹窗选择 -->
-                  <div v-if="field.inputType === 'popup'" class="popup-select-wrapper">
-                    <NInput
-                      v-model:value="addFormData[field.fieldName]"
-                      :placeholder="`请选择${field.columnName}`"
-                      readonly
-                      class="popup-input"
-                    >
-                      <template #suffix>
-                        <NButton text type="primary" @click="handleOpenPopup(field)">
-                          <template #icon>
-                            <span class="iconify" data-icon="mdi:magnify"></span>
-                          </template>
-                          选择
-                        </NButton>
-                      </template>
-                    </NInput>
-                  </div>
-                  <!-- 固定值下拉选择 -->
-                  <NSelect
-                    v-else-if="field.objectName && field.objectName !== '' && field.inputType !== 'popup'"
-                    v-model:value="addFormData[field.fieldName]"
-                    :options="field.objectOptions || []"
-                    :placeholder="`请选择${field.columnName}`"
-                    clearable
-                  />
-                  <!-- 日期选择 -->
-                  <NDatePicker
-                    v-else-if="field.fieldType === '日期'"
-                    v-model:formatted-value="addFormData[field.fieldName]"
-                    value-format="yyyy-MM-dd"
-                    type="date"
-                    :placeholder="`请选择${field.columnName}`"
-                    clearable
-                  />
-                  <!-- 数值输入 -->
-                  <NInputNumber
-                    v-else-if="field.fieldType === '数值'"
-                    v-model:value="addFormData[field.fieldName]"
-                    :placeholder="`请输入${field.columnName}`"
-                    clearable
-                  />
-                  <!-- 默认文本输入 -->
-                  <NInput
-                    v-else
-                    v-model:value="addFormData[field.fieldName]"
-                    :placeholder="`请输入${field.columnName}`"
-                    clearable
-                  />
-                </NFormItem>
-              </div>
-            </NForm>
-          </div>
-
-          <!-- 操作按钮 -->
-          <NSpace justify="end">
-            <NButton @click="addVisible = false">关闭</NButton>
-            <NButton v-if="!addSuccess" type="primary" :disabled="addLoading" @click="confirmAdd">确认新增</NButton>
-          </NSpace>
-        </NSpace>
-      </NSpin>
-    </NModal>
+    <WorkbenchAddForm
+      v-model:visible="addVisible"
+      :loading="addLoading"
+      :error="addError"
+      :success="addSuccess"
+      :form-fields="addFormFields"
+      :form-data="addFormData"
+      @confirm="confirmAdd"
+      @open-popup="handleOpenPopup"
+    />
 
     <!-- 修改弹窗 -->
-    <NModal v-model:show="updateVisible" preset="card" title="修改记录" class="w-800px" :mask-closable="false">
-      <NSpin :show="updateLoading">
-        <NSpace vertical :size="16">
-          <!-- 错误提示 -->
-          <NAlert v-if="updateError" type="error" :show-icon="true">
-            {{ updateError }}
-          </NAlert>
-
-          <!-- 成功提示 -->
-          <NAlert v-if="updateSuccess" type="success" :show-icon="true">
-            {{ updateSuccess }}
-          </NAlert>
-
-          <!-- 表单 -->
-          <div v-if="updateFormFields.length > 0" class="form-container">
-            <NForm label-placement="left" label-width="auto" :model="updateFormData">
-              <div class="form-grid">
-                <NFormItem
-                  v-for="field in updateFormFields"
-                  :key="field.fieldName"
-                  :label="field.columnName"
-                  :path="field.fieldName"
-                  :required="field.required"
-                >
-                  <!-- 下拉选择 -->
-                  <NSelect
-                    v-if="field.editorType === '下拉框' || field.fieldType === '选项'"
-                    v-model:value="updateFormData[field.fieldName]"
-                    :options="getFieldOptions(field)"
-                    :placeholder="`请选择${field.columnName}`"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                  <!-- 日期时间选择 -->
-                  <NDatePicker
-                    v-else-if="field.editorType === '日期时间' || field.fieldType === '日期时间'"
-                    v-model:formatted-value="updateFormData[field.fieldName]"
-                    value-format="yyyy-MM-dd HH:mm:ss"
-                    type="datetime"
-                    :placeholder="`请选择${field.columnName}`"
-                    :show-time="true"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                  <!-- 日期选择 -->
-                  <NDatePicker
-                    v-else-if="field.fieldType === '日期'"
-                    v-model:formatted-value="updateFormData[field.fieldName]"
-                    value-format="yyyy-MM-dd"
-                    type="date"
-                    :placeholder="`请选择${field.columnName}`"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                  <!-- 数值输入 -->
-                  <NInputNumber
-                    v-else-if="field.fieldType === '数值'"
-                    v-model:value="updateFormData[field.fieldName]"
-                    :placeholder="`请输入${field.columnName}`"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                  <!-- 弹窗选择 -->
-                  <div v-else-if="field.editorType === '弹窗选择'" class="popup-select-wrapper">
-                    <NInput
-                      :value="updateFormData[field.fieldName] || ''"
-                      :placeholder="`请选择${field.columnName}`"
-                      readonly
-                      class="popup-input"
-                    >
-                      <template #suffix>
-                        <NButton text type="primary" @click="handleOpenPopup(field)">选择</NButton>
-                      </template>
-                    </NInput>
-                  </div>
-                  <!-- 默认文本输入 -->
-                  <NInput
-                    v-else
-                    v-model:value="updateFormData[field.fieldName]"
-                    :placeholder="`请输入${field.columnName}`"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                </NFormItem>
-              </div>
-            </NForm>
-          </div>
-          <div v-else-if="!updateError && !updateLoading" class="text-center text-gray-400 py-8">暂无可修改的字段</div>
-
-          <!-- 操作按钮 -->
-          <NSpace justify="end">
-            <NButton @click="updateVisible = false">关闭</NButton>
-            <NButton v-if="!updateSuccess" type="primary" :disabled="updateLoading" @click="confirmUpdate">
-              确认修改
-            </NButton>
-          </NSpace>
-        </NSpace>
-      </NSpin>
-    </NModal>
+    <WorkbenchUpdateForm
+      v-model:visible="updateVisible"
+      :loading="updateLoading"
+      :error="updateError"
+      :success="updateSuccess"
+      :form-fields="updateFormFields"
+      :form-data="updateFormData"
+      @confirm="confirmUpdate"
+      @open-popup="handleOpenPopup"
+    />
 
     <!-- 批量修改弹窗 -->
-    <NModal v-model:show="batchUpdateVisible" preset="card" title="批量修改记录" class="w-800px" :mask-closable="false">
-      <NSpin :show="batchUpdateLoading">
-        <NSpace vertical :size="16">
-          <!-- 错误提示 -->
-          <NAlert v-if="batchUpdateError" type="error" :show-icon="true">
-            {{ batchUpdateError }}
-          </NAlert>
-
-          <!-- 成功提示 -->
-          <NAlert v-if="batchUpdateSuccess" type="success" :show-icon="true">
-            {{ batchUpdateSuccess }}
-          </NAlert>
-
-          <!-- 提示信息 -->
-          <NAlert type="info" :show-icon="true">请输入要修改的字段值，这些值将应用到所有选中的记录</NAlert>
-
-          <!-- 表单 -->
-          <div v-if="batchUpdateFormFields.length > 0" class="form-container">
-            <NForm label-placement="left" label-width="auto" :model="batchUpdateFormData">
-              <div class="form-grid">
-                <NFormItem
-                  v-for="field in batchUpdateFormFields"
-                  :key="field.fieldName"
-                  :label="field.columnName"
-                  :path="field.fieldName"
-                  :required="field.required"
-                >
-                  <!-- 下拉选择 -->
-                  <NSelect
-                    v-if="field.editorType === '下拉框' || field.fieldType === '选项'"
-                    v-model:value="batchUpdateFormData[field.fieldName]"
-                    :options="getFieldOptions(field)"
-                    :placeholder="`请选择${field.columnName}`"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                  <!-- 日期时间选择 -->
-                  <NDatePicker
-                    v-else-if="field.editorType === '日期时间' || field.fieldType === '日期时间'"
-                    v-model:formatted-value="batchUpdateFormData[field.fieldName]"
-                    value-format="yyyy-MM-dd HH:mm:ss"
-                    type="datetime"
-                    :placeholder="`请选择${field.columnName}`"
-                    :show-time="true"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                  <!-- 日期选择 -->
-                  <NDatePicker
-                    v-else-if="field.fieldType === '日期'"
-                    v-model:formatted-value="batchUpdateFormData[field.fieldName]"
-                    value-format="yyyy-MM-dd"
-                    type="date"
-                    :placeholder="`请选择${field.columnName}`"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                  <!-- 数值输入 -->
-                  <NInputNumber
-                    v-else-if="field.fieldType === '数值'"
-                    v-model:value="batchUpdateFormData[field.fieldName]"
-                    :placeholder="`请输入${field.columnName}`"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                  <!-- 默认文本输入 -->
-                  <NInput
-                    v-else
-                    v-model:value="batchUpdateFormData[field.fieldName]"
-                    :placeholder="`请输入${field.columnName}`"
-                    :readonly="field.readonly"
-                    clearable
-                  />
-                </NFormItem>
-              </div>
-            </NForm>
-          </div>
-          <div v-else-if="!batchUpdateError && !batchUpdateLoading" class="text-center text-gray-400 py-8">
-            暂无可修改的字段
-          </div>
-
-          <!-- 操作按钮 -->
-          <NSpace justify="end">
-            <NButton @click="batchUpdateVisible = false">关闭</NButton>
-            <NButton
-              v-if="!batchUpdateSuccess"
-              type="primary"
-              :disabled="batchUpdateLoading"
-              @click="confirmBatchUpdate"
-            >
-              确认批量修改
-            </NButton>
-          </NSpace>
-        </NSpace>
-      </NSpin>
-    </NModal>
+    <WorkbenchUpdateForm
+      v-model:visible="batchUpdateVisible"
+      :loading="batchUpdateLoading"
+      :error="batchUpdateError"
+      :success="batchUpdateSuccess"
+      :form-fields="batchUpdateFormFields"
+      :form-data="batchUpdateFormData"
+      is-batch
+      @confirm="confirmBatchUpdate"
+      @open-popup="handleOpenPopup"
+    />
   </div>
 </template>
 
