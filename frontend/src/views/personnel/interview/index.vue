@@ -326,7 +326,6 @@ onMounted(() => {
           selectable
           block-line
           block-node
-          multiple
           :expanded-keys="interviewStore.expandedKeys"
           default-expand-all
           @update:selected-keys="handleSelect"

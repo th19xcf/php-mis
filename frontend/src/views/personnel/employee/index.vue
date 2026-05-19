@@ -239,7 +239,6 @@ onMounted(async () => {
           selectable
           block-line
           block-node
-          multiple
           :expanded-keys="expandedKeys"
           default-expand-all
           @update:selected-keys="handleSelect"
