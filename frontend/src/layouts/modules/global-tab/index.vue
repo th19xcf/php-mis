@@ -7,6 +7,7 @@ import { useAppStore } from '@/store/modules/app';
 import { useThemeStore } from '@/store/modules/theme';
 import { useTabStore } from '@/store/modules/tab';
 import { isPC } from '@/utils/agent';
+import { setTabSwitchStartTime } from '@/utils/common';
 import BetterScroll from '@/components/custom/better-scroll.vue';
 import ContextMenu from './context-menu.vue';
 
@@ -107,7 +108,11 @@ function handleMousedown(e: MouseEvent, tab: App.Global.Tab) {
 function switchTab(e: MouseEvent, tab: App.Global.Tab) {
   if ([MIDDLE_MOUSE_BUTTON, RIGHT_MOUSE_BUTTON].includes(e.button)) return;
 
-  console.log(`[🔀 switchTab] 点击标签页: ${tab.label}, functionCode=${tab.fullPath}, 时间: ${performance.now().toFixed(1)}ms`);
+  const startTime = performance.now();
+  setTabSwitchStartTime(startTime, tab.label);
+  console.log(
+    `[🔀 switchTab] 点击标签页: ${tab.label}, functionCode=${tab.fullPath}, 开始时间: ${startTime.toFixed(1)}ms`
+  );
   tabStore.switchRouteByTab(tab);
 }
 

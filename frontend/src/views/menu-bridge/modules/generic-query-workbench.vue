@@ -1,3 +1,8 @@
+<script lang="ts">
+// 模块级加载锁，防止同一 functionCode 被多个组件实例重复加载
+const loadingLocks = new Map<string, boolean>();
+</script>
+
 <script setup lang="ts">
 import { computed, ref, shallowRef, h, onMounted, onActivated, onDeactivated, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -145,6 +150,7 @@ const loadedParams = ref<string>('');
 function checkAndLoadData() {
   const currentFunctionCode = String(props.meta.functionCode || '');
   const currentParams = String(props.meta.params || '');
+  const lockKey = `${currentFunctionCode}_${currentParams}`;
 
   console.log(
     `[📋 checkAndLoadData] functionCode=${currentFunctionCode}, isDataLoaded=${isDataLoaded.value}, loadedFunctionCode=${loadedFunctionCode.value}`
@@ -156,16 +162,29 @@ function checkAndLoadData() {
     return;
   }
 
+  // 模块级加载锁：如果同一 functionCode+params 正在加载，跳过
+  if (loadingLocks.get(lockKey)) {
+    console.log(`[📋 checkAndLoadData] ${lockKey} 正在加载中，跳过重复请求`);
+    return;
+  }
+
   // 只有当数据未加载，或者 functionCode/params 发生变化时才加载
   const shouldLoad =
     !isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value;
-  console.log(`[📋 checkAndLoadData] 是否加载: ${shouldLoad}, isDataLoaded=${isDataLoaded.value}, loadedFC=${loadedFunctionCode.value}, 时间: ${performance.now().toFixed(1)}ms`);
+  console.log(
+    `[📋 checkAndLoadData] 是否加载: ${shouldLoad}, isDataLoaded=${isDataLoaded.value}, loadedFC=${loadedFunctionCode.value}, 时间: ${performance.now().toFixed(1)}ms`
+  );
 
   if (shouldLoad) {
+    loadingLocks.set(lockKey, true);
     loadedFunctionCode.value = currentFunctionCode;
     loadedParams.value = currentParams;
     loadPage();
     isDataLoaded.value = true;
+    // 加载完成后释放锁（loadPage 是同步的缓存恢复，异步的接口请求）
+    setTimeout(() => {
+      loadingLocks.delete(lockKey);
+    }, 500);
   } else {
     console.log('[📋 checkAndLoadData] 数据已加载且未变化，跳过');
   }
@@ -175,13 +194,17 @@ function checkAndLoadData() {
 onMounted(() => {
   const functionCode = String(props.meta.functionCode || '');
   const params = String(props.meta.params || '');
-  console.log(`[🔄 onMounted] 组件挂载 functionCode=${functionCode}, params=${params}, 时间: ${performance.now().toFixed(1)}ms`);
+  console.log(
+    `[🔄 onMounted] 组件挂载 functionCode=${functionCode}, params=${params}, 时间: ${performance.now().toFixed(1)}ms`
+  );
   checkAndLoadData();
 });
 
 onActivated(() => {
   const functionCode = String(props.meta.functionCode || '');
-  console.log(`[🔄 onActivated] 组件激活 functionCode=${functionCode}, isDataLoaded=${isDataLoaded.value}, 时间: ${performance.now().toFixed(1)}ms`);
+  console.log(
+    `[🔄 onActivated] 组件激活 functionCode=${functionCode}, isDataLoaded=${isDataLoaded.value}, 时间: ${performance.now().toFixed(1)}ms`
+  );
 });
 
 onDeactivated(() => {
@@ -676,7 +699,9 @@ async function loadPage() {
   const cached = workbenchStore.getCache(functionCode, params);
   // 检查缓存是否完整（数据量是否等于总数）
   const isCacheComplete = cached && cached.isDataLoaded && cached.serverRows.length === cached.total;
-  console.log(`[📋 loadPage] functionCode=${functionCode}, 缓存命中=${!!cached}, 缓存完整=${isCacheComplete}, 时间: ${performance.now().toFixed(1)}ms`);
+  console.log(
+    `[📋 loadPage] functionCode=${functionCode}, 缓存命中=${!!cached}, 缓存完整=${isCacheComplete}, 时间: ${performance.now().toFixed(1)}ms`
+  );
 
   if (isCacheComplete) {
     console.log('[📦 缓存恢复] 数据量:', cached.serverRows.length);

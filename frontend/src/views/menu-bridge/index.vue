@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router';
 import { useThemeStore } from '@/store/modules/theme';
 import { useTabStore } from '@/store/modules/tab';
 import { getServiceBaseURL } from '@/utils/service';
+import { recordTabSwitchEnd } from '@/utils/common';
 import GenericQueryWorkbench from './modules/generic-query-workbench.vue';
 
 defineOptions({
@@ -81,20 +82,16 @@ const isNativeOnlyFunction = computed(() => {
   return true;
 });
 
-watch(
-  currentFunctionCode,
-  (newCode, oldCode) => {
-    console.log(`[🔀 menu-bridge] currentFunctionCode 变化: ${oldCode} → ${newCode}, 时间: ${performance.now().toFixed(1)}ms`);
-    activeView.value = 'workbench';
-    iframeLoaded.value = false;
-  },
-  { immediate: true }
-);
+// 移除 watch，只在 onActivated 中处理
 
 onActivated(() => {
-  console.log(`[🔀 menu-bridge] onActivated, functionCode=${currentFunctionCode.value}, 时间: ${performance.now().toFixed(1)}ms`);
   activeView.value = 'workbench';
   iframeLoaded.value = false;
+  
+  // 延迟记录切换完成，等待数据加载
+  setTimeout(() => {
+    recordTabSwitchEnd();
+  }, 300);
 });
 
 // 监听 route.query.menu2 变化，更新 Tab 标签（处理钻取场景）
