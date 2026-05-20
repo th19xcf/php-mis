@@ -126,6 +126,7 @@ class AuthModel
                 t2.二级菜单 as menu_level_2,
                 t2.功能模块 as module,
                 t2.参数 as params,
+                t2.前端路由 as frontend_route,
                 ifnull(t3.顺序, 999) as menu_level_1_order,
                 t2.菜单顺序 as menu_level_2_order
             from view_role as t1
@@ -135,7 +136,7 @@ class AuthModel
               and t1.角色编码 in ($roleInSql)
               and t2.菜单顺序 > 0
               and t2.菜单显示 = '1'
-            group by t2.功能编码, t2.一级菜单, t2.二级菜单, t2.功能模块, t2.参数, t3.顺序, t2.菜单顺序
+            group by t2.功能编码, t2.一级菜单, t2.二级菜单, t2.功能模块, t2.参数, t2.前端路由, t3.顺序, t2.菜单顺序
             order by menu_level_1_order, menu_level_2_order";
 
         $rows = $this->common->select($sql)->getResultArray();
@@ -165,6 +166,7 @@ class AuthModel
                 'functionCode' => (string) ($row['function_code'] ?? ''),
                 'module' => (string) ($row['module'] ?? ''),
                 'params' => (string) ($row['params'] ?? ''),
+                'frontendRoute' => (string) ($row['frontend_route'] ?? ''),
                 'order' => (int) ($row['menu_level_2_order'] ?? 999)
             ];
 

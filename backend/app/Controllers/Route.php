@@ -125,6 +125,7 @@ class Route extends BaseApiController
                     ifnull(t2.二级菜单,"") as 二级菜单,
                     ifnull(t2.功能模块,"") as 功能模块,
                     ifnull(t2.参数,"") as 参数,
+                    ifnull(t2.前端路由,"") as 前端路由,
                     ifnull(t2.一级菜单顺序,999) as 一级菜单顺序,
                     ifnull(t2.二级菜单顺序,999) as 二级菜单顺序,
                     ifnull(t2.菜单显示,"") as 菜单显示,
@@ -152,7 +153,7 @@ class Route extends BaseApiController
                     select
                         功能编码,
                         ta.一级菜单,ta.二级菜单,
-                        功能模块,参数,功能类型,模块名称,
+                        功能模块,参数,功能类型,模块名称,前端路由,
                         ifnull(tb.一级菜单顺序,999) as 一级菜单顺序,
                         二级菜单顺序,
                         菜单显示
@@ -160,7 +161,7 @@ class Route extends BaseApiController
                     (
                         select
                             功能编码,一级菜单,二级菜单,
-                            功能模块,参数,功能类型,模块名称,
+                            功能模块,参数,功能类型,模块名称,前端路由,
                             菜单顺序 as 二级菜单顺序,菜单显示
                         from def_function
                         where 菜单顺序>0
@@ -203,7 +204,8 @@ class Route extends BaseApiController
                         'meta' => [
                             'title' => $row->二级菜单,
                             'icon' => 'mdi:menu',
-                            'functionCode' => $row->功能编码
+                            'functionCode' => $row->功能编码,
+                            'frontendRoute' => $row->前端路由
                         ]
                     ];
                 } else {

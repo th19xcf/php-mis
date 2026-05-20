@@ -261,13 +261,15 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
               { key: 'menu1', value: String(menu1?.name || '') },
               { key: 'menu2', value: String(menu2?.name || '') },
               { key: 'module', value: String(menu2?.module || '') },
-              { key: 'params', value: String(menu2?.params || '') }
+              { key: 'params', value: String(menu2?.params || '') },
+              { key: 'frontendRoute', value: String(menu2?.frontendRoute || '') }
             ],
             functionCode: funcCode,
             menu1: String(menu1?.name || ''),
             menu2: String(menu2?.name || ''),
             module: String(menu2?.module || ''),
-            params: String(menu2?.params || '')
+            params: String(menu2?.params || ''),
+            frontendRoute: String(menu2?.frontendRoute || '')
           } as any
         } as ElegantConstRoute;
       });

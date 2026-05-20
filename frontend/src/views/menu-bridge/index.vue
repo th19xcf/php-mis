@@ -27,14 +27,13 @@ const workbenchCacheScopeKey = computed(() => {
 const meta = computed(() => {
   const routeMeta = (route.meta || {}) as Record<string, unknown>;
 
-  // 优先使用 query 参数（钻取时传递），其次使用 route.meta
   const functionCode = String(route.query.functionCode || routeMeta.functionCode || '');
   const module = String(route.query.module || routeMeta.module || '');
   const rawParams = route.query.params || routeMeta.params || '';
-  // 确保 params 是字符串，如果是对象则转成 JSON
   const params = typeof rawParams === 'string' ? rawParams : JSON.stringify(rawParams);
   const menu1 = String(route.query.menu1 || routeMeta.menu1 || '');
   const menu2 = String(route.query.menu2 || routeMeta.menu2 || '');
+  const frontendRoute = String(route.query.frontendRoute || routeMeta.frontendRoute || '');
 
   return {
     ...routeMeta,
@@ -43,39 +42,30 @@ const meta = computed(() => {
     params,
     menu1,
     menu2,
+    frontendRoute,
     title: menu2 || routeMeta.title || '动态菜单页面'
   };
 });
 const iframeLoaded = ref(false);
 const activeView = ref<'workbench' | 'legacy' | 'native'>('workbench');
-const currentFunctionCode = computed(() => String(meta.value.functionCode || '').trim());
 
-// 原生 Vue 组件映射表 - 功能编码 -> 组件路径
 const nativeComponentMap: Record<string, any> = {
-  // 1010 部门管理
-  '1010': defineAsyncComponent(() => import('@/views/system/dept/index.vue')),
-  // 2015 邀约人员维护
-  '2015': defineAsyncComponent(() => import('@/views/personnel/store/index.vue')),
-  // 2025 面试人员维护
-  '2025': defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
-  // 2035 培训人员维护
-  '2035': defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
-  // 2045 在职人员维护
-  '2045': defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
-  // contract 合同管理
+  dept: defineAsyncComponent(() => import('@/views/system/dept/index.vue')),
+  store: defineAsyncComponent(() => import('@/views/personnel/store/index.vue')),
+  interview: defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
+  train: defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
+  employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
   contract: defineAsyncComponent(() => import('@/views/contract/index.vue'))
 };
 
-// 判断当前功能是否使用原生 Vue 组件
 const isNativeFunction = computed(() => {
-  const funcCode = currentFunctionCode.value;
-  return funcCode && nativeComponentMap[funcCode];
+  const routeName = String(meta.value.frontendRoute || '').trim();
+  return routeName && nativeComponentMap[routeName];
 });
 
-// 获取当前功能的原生组件
 const currentNativeComponent = computed(() => {
-  const funcCode = currentFunctionCode.value;
-  return nativeComponentMap[funcCode] || null;
+  const routeName = String(meta.value.frontendRoute || '').trim();
+  return nativeComponentMap[routeName] || null;
 });
 
 const isNativeOnlyFunction = computed(() => {
@@ -87,7 +77,7 @@ const isNativeOnlyFunction = computed(() => {
 onActivated(() => {
   activeView.value = 'workbench';
   iframeLoaded.value = false;
-  
+
   // 延迟记录切换完成，等待数据加载
   setTimeout(() => {
     recordTabSwitchEnd();
