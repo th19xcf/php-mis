@@ -114,10 +114,7 @@ async function loadTree() {
   await storeStore.refreshTree();
 }
 
-function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
-  if (keys.length === 0) return;
-
-  const selectedPeople: string[] = [];
+function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
   const guids: string[] = [];
 
   function collectPeople(nodes: (TreeOption | null)[]) {
@@ -126,7 +123,6 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
       const data = node.data as Api.Store.StoreTreeNode;
       if (data.type === 'person' && data.guid) {
         guids.push(data.guid);
-        selectedPeople.push(data.name || '');
       }
       if (node.children) {
         collectPeople(node.children);
@@ -140,19 +136,28 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
       const data = node.data as Api.Store.StoreTreeNode;
       if (data.type === 'person' && data.guid) {
         guids.push(data.guid);
-        selectedPeople.push(data.name || '');
       } else if (node.children) {
         collectPeople(node.children);
       }
     }
   }
 
+  storeStore.setCheckedKeys(keys);
   storeStore.setSelectedGuids(guids);
+}
 
-  if (guids.length === 1) {
-    storeStore.loadStoreDetail(guids[0]);
-  } else {
-    storeStore.storeDetail = null;
+function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
+  if (keys.length === 0) return;
+
+  const key = keys[0];
+  const node = optionNodes.find(n => n?.key === key);
+  if (node) {
+    const data = node.data as Api.Store.StoreTreeNode;
+    if (data.type === 'person' && data.guid) {
+      storeStore.loadStoreDetail(data.guid);
+    } else {
+      storeStore.storeDetail = null;
+    }
   }
 }
 
@@ -264,9 +269,7 @@ async function handleEdit() {
     message.success('修改邀约信息成功');
     showEditModal.value = false;
     await loadTree();
-    if (selectedGuids.value.length === 1) {
-      await storeStore.loadStoreDetail(selectedGuids.value[0]);
-    }
+    await storeStore.loadStoreDetail(editForm.value.guid);
   }
 }
 
@@ -356,11 +359,15 @@ onMounted(() => {
         <NTree
           :data="treeData"
           :render-prefix="renderPrefix"
+          checkable
+          cascade
           selectable
           block-line
           block-node
+          :checked-keys="storeStore.checkedKeys"
           :expanded-keys="storeStore.expandedKeys"
           default-expand-all
+          @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
           @update:expanded-keys="storeStore.setExpandedKeys"
         />

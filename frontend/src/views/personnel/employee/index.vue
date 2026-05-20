@@ -15,6 +15,7 @@ const dialog = useDialog();
 const message = useMessage();
 
 const treeData = ref<TreeOption[]>([]);
+const checkedKeys = ref<string[]>([]);
 const selectedGuids = ref<string[]>([]);
 const employeeDetail = ref<Api.Employee.EmployeeDetail | null>(null);
 const expandedKeys = ref<string[]>([]);
@@ -76,15 +77,28 @@ async function loadTree() {
   if (data) treeData.value = convertToTreeOptions(data);
 }
 
-function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
+function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
   const guids: string[] = [];
   for (const key of keys) {
     const node = optionNodes.find(n => n?.key === key);
     if (node) collectGuids(node, guids);
   }
+  checkedKeys.value = keys;
   selectedGuids.value = guids;
-  if (guids.length === 1) loadDetail(guids[0]);
-  else employeeDetail.value = null;
+}
+
+function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
+  if (keys.length === 0) return;
+  const key = keys[0];
+  const node = optionNodes.find(n => n?.key === key);
+  if (node) {
+    const data = node.data as Api.Employee.EmployeeTreeNode;
+    if (data.type === 'person' && data.guid) {
+      loadDetail(data.guid);
+    } else {
+      employeeDetail.value = null;
+    }
+  }
 }
 
 function collectGuids(node: TreeOption | null, guids: string[]) {
@@ -162,6 +176,8 @@ async function handleBatch() {
   if (!error) {
     message.success('批量修改成功');
     showBatchModal.value = false;
+    checkedKeys.value = [];
+    selectedGuids.value = [];
     loadTree();
   }
 }
@@ -181,6 +197,7 @@ function handleDelete() {
       if (!error) {
         message.success('删除成功');
         selectedGuids.value = [];
+        checkedKeys.value = [];
         loadTree();
       }
     }
@@ -236,11 +253,15 @@ onMounted(async () => {
         <NTree
           :data="treeData"
           :render-prefix="renderPrefix"
+          checkable
+          cascade
           selectable
           block-line
           block-node
+          :checked-keys="checkedKeys"
           :expanded-keys="expandedKeys"
           default-expand-all
+          @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
           @update:expanded-keys="expandedKeys = $event"
         />

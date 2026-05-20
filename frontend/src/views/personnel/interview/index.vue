@@ -99,9 +99,7 @@ async function loadTree() {
   await interviewStore.refreshTree();
 }
 
-function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
-  if (keys.length === 0) return;
-
+function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
   const guids: string[] = [];
 
   function collectPeople(nodes: (TreeOption | null)[]) {
@@ -129,12 +127,22 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
     }
   }
 
+  interviewStore.setCheckedKeys(keys);
   interviewStore.setSelectedGuids(guids);
+}
 
-  if (guids.length === 1) {
-    interviewStore.loadInterviewDetail(guids[0]);
-  } else {
-    interviewStore.interviewDetail = null;
+function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
+  if (keys.length === 0) return;
+
+  const key = keys[0];
+  const node = optionNodes.find(n => n?.key === key);
+  if (node) {
+    const data = node.data as Api.Interview.InterviewTreeNode;
+    if (data.type === 'person' && data.guid) {
+      interviewStore.loadInterviewDetail(data.guid);
+    } else {
+      interviewStore.interviewDetail = null;
+    }
   }
 }
 
@@ -231,9 +239,7 @@ async function handleEdit() {
     message.success('修改面试信息成功');
     showEditModal.value = false;
     await loadTree();
-    if (selectedGuids.value.length === 1) {
-      await interviewStore.loadInterviewDetail(selectedGuids.value[0]);
-    }
+    await interviewStore.loadInterviewDetail(editForm.value.guid);
   }
 }
 
@@ -323,11 +329,15 @@ onMounted(() => {
         <NTree
           :data="treeData"
           :render-prefix="renderPrefix"
+          checkable
+          cascade
           selectable
           block-line
           block-node
+          :checked-keys="interviewStore.checkedKeys"
           :expanded-keys="interviewStore.expandedKeys"
           default-expand-all
+          @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
           @update:expanded-keys="interviewStore.setExpandedKeys"
         />

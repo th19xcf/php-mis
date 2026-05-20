@@ -5,6 +5,7 @@ import { fetchStoreTree, fetchStoreDetail, fetchStoreOptions } from '@/service/a
 
 export const useStoreStore = defineStore('store-store', () => {
   const treeData = ref<TreeOption[]>([]);
+  const checkedKeys = ref<string[]>([]);
   const selectedGuids = ref<string[]>([]);
   const storeDetail = ref<Api.Store.StoreDetail | null>(null);
   const isLoaded = ref(false);
@@ -41,6 +42,7 @@ export const useStoreStore = defineStore('store-store', () => {
   }
 
   function clearSelection() {
+    checkedKeys.value = [];
     selectedGuids.value = [];
     storeDetail.value = null;
   }
@@ -48,11 +50,17 @@ export const useStoreStore = defineStore('store-store', () => {
   function refreshTree() {
     isLoaded.value = false;
     treeData.value = [];
+    checkedKeys.value = [];
+    selectedGuids.value = [];
     return loadTreeData();
   }
 
   function setExpandedKeys(keys: string[]) {
     expandedKeys.value = keys;
+  }
+
+  function setCheckedKeys(keys: string[]) {
+    checkedKeys.value = keys;
   }
 
   function setSelectedGuids(guids: string[]) {
@@ -61,6 +69,7 @@ export const useStoreStore = defineStore('store-store', () => {
 
   return {
     treeData,
+    checkedKeys,
     selectedGuids,
     storeDetail,
     isLoaded,
@@ -73,6 +82,7 @@ export const useStoreStore = defineStore('store-store', () => {
     clearSelection,
     refreshTree,
     setExpandedKeys,
+    setCheckedKeys,
     setSelectedGuids
   };
 });

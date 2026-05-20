@@ -5,6 +5,7 @@ import { fetchInterviewTree, fetchInterviewDetail, fetchInterviewOptions } from 
 
 export const useInterviewStore = defineStore('interview-store', () => {
   const treeData = ref<TreeOption[]>([]);
+  const checkedKeys = ref<string[]>([]);
   const selectedGuids = ref<string[]>([]);
   const interviewDetail = ref<Api.Interview.InterviewDetail | null>(null);
   const isLoaded = ref(false);
@@ -41,6 +42,7 @@ export const useInterviewStore = defineStore('interview-store', () => {
   }
 
   function clearSelection() {
+    checkedKeys.value = [];
     selectedGuids.value = [];
     interviewDetail.value = null;
   }
@@ -48,11 +50,17 @@ export const useInterviewStore = defineStore('interview-store', () => {
   function refreshTree() {
     isLoaded.value = false;
     treeData.value = [];
+    checkedKeys.value = [];
+    selectedGuids.value = [];
     return loadTreeData();
   }
 
   function setExpandedKeys(keys: string[]) {
     expandedKeys.value = keys;
+  }
+
+  function setCheckedKeys(keys: string[]) {
+    checkedKeys.value = keys;
   }
 
   function setSelectedGuids(guids: string[]) {
@@ -61,6 +69,7 @@ export const useInterviewStore = defineStore('interview-store', () => {
 
   return {
     treeData,
+    checkedKeys,
     selectedGuids,
     interviewDetail,
     isLoaded,
@@ -73,6 +82,7 @@ export const useInterviewStore = defineStore('interview-store', () => {
     clearSelection,
     refreshTree,
     setExpandedKeys,
+    setCheckedKeys,
     setSelectedGuids
   };
 });
