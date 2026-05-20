@@ -4,7 +4,7 @@ namespace App\Controllers;
 
 use App\Constants\ApiCode;
 use App\Libraries\JwtTokenService;
-use App\Libraries\LocationAuthService;
+use App\Libraries\AuthorizationService;
 use App\Models\AuthModel;
 use App\Models\Mcommon;
 
@@ -245,8 +245,9 @@ class Auth extends BaseController
             $userRoleAuthz = ($userRoleAuthz === '') ? sprintf('"%s"', $role) : sprintf('%s,"%s"', $userRoleAuthz, $role);
         }
 
-        $locationAuthService = new LocationAuthService();
-        $userLocationAuth = $locationAuthService->normalize($this->loadUserLocationAuth($user['work_id'], $region));
+        $authorizationService = new AuthorizationService();
+        $userLocationAuth = $authorizationService->normalize($this->loadUserAuthField($user['work_id'], $region, '属地赋权'));
+        $userDeptNameAuth = $authorizationService->normalize($this->loadUserAuthField($user['work_id'], $region, '部门全称赋权'));
 
         $session->set([
             'company_id' => $region,
@@ -260,20 +261,22 @@ class Auth extends BaseController
             'log_switch' => $user['log_switch'],
             'user_role' => $userRoleAuthz,
             'user_role_authz' => $userRoleAuthz,
-            'user_location_authz' => $userLocationAuth
+            'user_location_authz' => $userLocationAuth,
+            'user_dept_name_authz' => $userDeptNameAuth
         ]);
     }
 
-    private function loadUserLocationAuth(string $workId, string $region): string
+    private function loadUserAuthField(string $workId, string $region, string $fieldName): string
     {
         $sql = sprintf(
-            'select replace(replace(属地赋权,"，",",")," ","") as 属地赋权 from def_user where 有效标识="1" and 员工属地=%s and 工号=%s',
+            'select replace(replace(%s,"，",",")," ","") as %s from def_user where 有效标识="1" and 员工属地=%s and 工号=%s',
+            $fieldName, $fieldName,
             $this->quote($region),
             $this->quote($workId)
         );
 
         $row = (new Mcommon())->select($sql)->getRowArray();
-        return (string) ($row['属地赋权'] ?? '');
+        return (string) ($row[$fieldName] ?? '');
     }
 
     private function quote(string $value): string

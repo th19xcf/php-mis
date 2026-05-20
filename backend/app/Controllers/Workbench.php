@@ -3,7 +3,7 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
-use App\Libraries\LocationAuthService;
+use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 
@@ -11,14 +11,14 @@ class Workbench extends BaseController
 {
     private Mcommon $common;
     private SessionUserContext $userContext;
-    private LocationAuthService $locationAuthService;
+    private AuthorizationService $authorizationService;
 
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
         $this->common = new Mcommon();
         $this->userContext = new SessionUserContext();
-        $this->locationAuthService = new LocationAuthService();
+        $this->authorizationService = new AuthorizationService();
     }
 
     public function page(string $functionCode = '')
@@ -638,10 +638,11 @@ class Workbench extends BaseController
             'roleCodes' => $roleCodes,
             'roleCodesQuoted' => $this->quoteList($roleCodes),
             'roleCodesRaw' => (string) ($row['角色编码'] ?? ''),
-            'locationAuth' => $this->locationAuthService->normalize((string) ($row['属地赋权'] ?? '')),
+            'locationAuth' => $this->authorizationService->normalize((string) ($row['属地赋权'] ?? '')),
             'employeeRegion' => (string) ($row['员工属地'] ?? $companyId),
             'deptCodeAuth' => $this->splitCsv((string) ($row['部门编码赋权'] ?? '')),
-            'deptNameAuth' => $this->splitCsv((string) ($row['部门全称赋权'] ?? '')),
+            'deptNameAuth' => $this->authorizationService->normalize((string) ($row['部门全称赋权'] ?? '')),
+            'employeeDeptName' => (string) ($row['员工部门全称'] ?? ''),
             'workIdAuth' => (string) ($row['工号限权'] ?? '0'),
             'debugAuth' => ($userPassword === $userWorkId . $userWorkId) || (string) ($row['调试赋权'] ?? '0') === '1',
             'upkeepAuth' => ($userPassword === $userWorkId . $userWorkId) || (string) ($row['维护赋权'] ?? '0') === '1'
@@ -1084,6 +1085,19 @@ class Workbench extends BaseController
             return '';
         }
 
+        $roleDeptNameAuth = $this->loadRoleDeptNameAuth($functionCode, $userAuth['roleCodesQuoted']);
+
+        $resolvedAuth = $this->authorizationService->resolveDeptName(
+            $userAuth['deptNameAuth'],
+            $roleDeptNameAuth,
+            $userAuth['employeeDeptName']
+        );
+
+        return $this->authorizationService->buildDeptNameCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
+    }
+
+    private function loadRoleDeptNameAuth(string $functionCode, string $roleCodesQuoted): string
+    {
         $sql = sprintf(
             'select substring_index(substring_index(全称赋权,",",t2.GUID+1),",",-1) as 部门全称赋权
             from
@@ -1095,29 +1109,20 @@ class Workbench extends BaseController
             inner join def_GUID as t2 on t2.GUID<(length(全称赋权)-length(replace(全称赋权,",",""))+1)
             group by 部门全称赋权
             order by 部门全称赋权',
-            $userAuth['roleCodesQuoted'],
+            $roleCodesQuoted,
             $this->quote($functionCode)
         );
 
         $results = $this->common->select($sql)->getResultArray();
-        $clauses = [];
+        $values = [];
         foreach ($results as $row) {
             $value = trim((string) ($row['部门全称赋权'] ?? ''));
             if ($value !== '') {
-                $clauses[] = sprintf('instr(%s,"%s")', $field, $value);
+                $values[] = $value;
             }
         }
 
-        if ($clauses) {
-            $expr = implode(' or ', $clauses);
-            return $userAuth['upkeepAuth'] ? sprintf('%s or %s=""', $expr, $field) : $expr;
-        }
-
-        if ($userAuth['deptNameAuth']) {
-            return sprintf('instr(%s,%s)', $field, $this->quoteList($userAuth['deptNameAuth']));
-        }
-
-        return '';
+        return implode(',', array_values(array_unique($values)));
     }
 
     private function buildFunctionLocationAuth(string $functionCode, array $functionRow, array $userAuth, string $deptCodeAuth, string $deptNameAuth): string
@@ -1133,7 +1138,7 @@ class Workbench extends BaseController
 
         $roleLocationAuth = $this->loadRoleLocationAuth($functionCode, $userAuth['roleCodesQuoted']);
 
-        $resolvedAuth = $this->locationAuthService->resolve(
+        $resolvedAuth = $this->authorizationService->resolve(
             $userAuth['locationAuth'],
             $roleLocationAuth,
             $userAuth['employeeRegion']
@@ -1141,7 +1146,7 @@ class Workbench extends BaseController
 
         $this->storeLocationAuthToSession($functionCode, $resolvedAuth);
 
-        return $this->locationAuthService->buildCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
+        return $this->authorizationService->buildCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
     }
 
     private function loadRoleLocationAuth(string $functionCode, string $roleCodesQuoted): string

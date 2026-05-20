@@ -3,7 +3,7 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
-use App\Libraries\LocationAuthService;
+use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 use CodeIgniter\HTTP\RequestInterface;
@@ -103,19 +103,36 @@ class BaseApiController extends BaseController
         $user = $this->userContext->getSessionUser();
         $userLocationAuth = (string) ($user['locationAuthz'] ?? '');
         $employeeRegion = (string) ($user['location'] ?? '');
-        $roleLocationAuth = $this->loadRoleLocationAuth($functionCode);
+        $roleLocationAuth = $this->loadRoleAuthField($functionCode, '属地赋权', '角色表属地');
 
-        $service = new LocationAuthService();
+        $service = new AuthorizationService();
         return $service->resolve($userLocationAuth, $roleLocationAuth, $employeeRegion);
     }
 
     protected function buildLocationCondition(string $field, string $resolvedAuth, bool $upkeepAuth = false): string
     {
-        $service = new LocationAuthService();
+        $service = new AuthorizationService();
         return $service->buildCondition($field, $resolvedAuth, $upkeepAuth);
     }
 
-    private function loadRoleLocationAuth(string $functionCode): string
+    protected function resolveDeptNameAuthz(string $functionCode): string
+    {
+        $user = $this->userContext->getSessionUser();
+        $userDeptNameAuth = (string) ($user['deptNameAuthz'] ?? '');
+        $employeeDeptName = (string) ($user['deptName'] ?? '');
+        $roleDeptNameAuth = $this->loadRoleAuthField($functionCode, '部门全称赋权', '全称赋权');
+
+        $service = new AuthorizationService();
+        return $service->resolveDeptName($userDeptNameAuth, $roleDeptNameAuth, $employeeDeptName);
+    }
+
+    protected function buildDeptNameCondition(string $field, string $resolvedAuth, bool $upkeepAuth = false): string
+    {
+        $service = new AuthorizationService();
+        return $service->buildDeptNameCondition($field, $resolvedAuth, $upkeepAuth);
+    }
+
+    private function loadRoleAuthField(string $functionCode, string $fieldName, string $aliasName): string
     {
         $user = $this->userContext->getSessionUser();
         $roleAuthz = trim((string) ($user['roleAuthz'] ?? ''));
@@ -124,24 +141,27 @@ class BaseApiController extends BaseController
         }
 
         $sql = sprintf(
-            'select substring_index(substring_index(角色表属地,",",t2.GUID+1),",",-1) as 属地赋权
+            'select substring_index(substring_index(%s,",",t2.GUID+1),",",-1) as %s
             from
             (
-                select GUID,replace(replace(属地赋权,"，",",")," ","") as 角色表属地
+                select GUID,replace(replace(%s,"，",",")," ","") as %s
                 from view_role
                 where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
             ) as t1
-            inner join def_GUID as t2 on t2.GUID<(length(角色表属地)-length(replace(角色表属地,",",""))+1)
-            group by 属地赋权
-            order by 属地赋权',
-            $roleAuthz,
-            $this->quoteValue($functionCode)
+            inner join def_GUID as t2 on t2.GUID<(length(%s)-length(replace(%s,",",""))+1)
+            group by %s
+            order by %s',
+            $aliasName, $fieldName,
+            $fieldName, $aliasName,
+            $roleAuthz, $this->quoteValue($functionCode),
+            $aliasName, $aliasName,
+            $fieldName, $fieldName
         );
 
         $results = $this->model->select($sql)->getResultArray();
         $values = [];
         foreach ($results as $row) {
-            $value = trim((string) ($row['属地赋权'] ?? ''));
+            $value = trim((string) ($row[$fieldName] ?? ''));
             if ($value !== '') {
                 $values[] = $value;
             }
