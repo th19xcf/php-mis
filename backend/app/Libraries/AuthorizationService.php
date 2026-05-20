@@ -23,8 +23,12 @@ class AuthorizationService
         $user = $this->normalize($userAuth);
         $role = $this->normalize($roleAuth);
 
+        if ($this->isUnlimited($user)) {
+            return '不限';
+        }
+
         if ($user !== '' && $role !== '') {
-            return $this->normalize($user . ',' . $role);
+            return $this->intersect($user, $role);
         }
 
         if ($user !== '') {
@@ -62,7 +66,7 @@ class AuthorizationService
 
     public function buildCondition(string $field, string $resolvedAuth, bool $upkeepAuth): string
     {
-        if ($field === '' || $resolvedAuth === '') {
+        if ($field === '' || $resolvedAuth === '' || $this->isUnlimited($resolvedAuth)) {
             return '';
         }
 
@@ -87,5 +91,18 @@ class AuthorizationService
     public function buildDeptNameCondition(string $field, string $resolvedAuth, bool $upkeepAuth): string
     {
         return $this->buildCondition($field, $resolvedAuth, $upkeepAuth);
+    }
+
+    private function isUnlimited(string $value): bool
+    {
+        return trim($value) === '不限';
+    }
+
+    private function intersect(string $a, string $b): string
+    {
+        $partsA = $this->split($a);
+        $partsB = $this->split($b);
+        $common = array_values(array_intersect($partsA, $partsB));
+        return implode(',', $common);
     }
 }

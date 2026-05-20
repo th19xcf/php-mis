@@ -101,8 +101,8 @@ class BaseApiController extends BaseController
     protected function resolveLocationAuthz(string $functionCode): string
     {
         $user = $this->userContext->getSessionUser();
-        $userLocationAuth = (string) ($user['locationAuthz'] ?? '');
         $employeeRegion = (string) ($user['location'] ?? '');
+        $userLocationAuth = $this->loadUserAuthField('属地赋权');
         $roleLocationAuth = $this->loadRoleAuthField($functionCode, '属地赋权', '角色表属地');
 
         $service = new AuthorizationService();
@@ -118,8 +118,8 @@ class BaseApiController extends BaseController
     protected function resolveDeptNameAuthz(string $functionCode): string
     {
         $user = $this->userContext->getSessionUser();
-        $userDeptNameAuth = (string) ($user['deptNameAuthz'] ?? '');
         $employeeDeptName = (string) ($user['deptName'] ?? '');
+        $userDeptNameAuth = $this->loadUserAuthField('部门全称赋权');
         $roleDeptNameAuth = $this->loadRoleAuthField($functionCode, '部门全称赋权', '全称赋权');
 
         $service = new AuthorizationService();
@@ -130,6 +130,26 @@ class BaseApiController extends BaseController
     {
         $service = new AuthorizationService();
         return $service->buildDeptNameCondition($field, $resolvedAuth, $upkeepAuth);
+    }
+
+    private function loadUserAuthField(string $fieldName): string
+    {
+        $user = $this->userContext->getSessionUser();
+        $region = (string) ($user['location'] ?? '');
+        $workId = (string) ($user['workId'] ?? '');
+        if ($region === '' || $workId === '') {
+            return '';
+        }
+
+        $sql = sprintf(
+            'select replace(replace(%s,"，",",")," ","") as %s from def_user where 有效标识="1" and 员工属地=%s and 工号=%s',
+            $fieldName, $fieldName,
+            $this->quoteValue($region),
+            $this->quoteValue($workId)
+        );
+
+        $row = $this->model->select($sql)->getRowArray();
+        return (string) ($row[$fieldName] ?? '');
     }
 
     private function loadRoleAuthField(string $functionCode, string $fieldName, string $aliasName): string
