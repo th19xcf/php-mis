@@ -39,5 +39,5 @@ export function fetchDeleteDept(guid: string) {
 
 /** 获取部门选项列表 */
 export function fetchDeptOptions() {
-  return request<Api.Dept.DeptOption[]>({ url: '/dept/options' });
+  return request<Api.Dept.DeptOptions>({ url: '/dept/options' });
 }

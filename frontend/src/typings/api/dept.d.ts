@@ -38,6 +38,7 @@ declare namespace Api {
       deptName: string;
       leader?: string;
       region?: string;
+      budgetFullName?: string;
       effectiveDate?: string;
       名称?: string;
       父级部门?: string;
@@ -73,6 +74,11 @@ declare namespace Api {
     interface DeptOption {
       value: string;
       label: string;
+    }
+
+    interface DeptOptions {
+      dept: DeptOption[];
+      region: DeptOption[];
     }
   }
 }

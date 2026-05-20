@@ -210,15 +210,28 @@ class DeptApi extends BaseApiController
 
     public function options()
     {
-        $sql = '
+        $deptSql = '
             SELECT GUID as value, 部门名称 as label, 部门编码 as code, 部门级别 as level
             FROM def_dept
             WHERE 删除标识 = "0" AND 有效标识 = "1"
             ORDER BY 部门编码 ASC
         ';
 
-        $results = $this->model->select($sql)->getResultArray();
-        return $this->success($results);
+        $deptResult = $this->model->select($deptSql)->getResultArray();
+
+        $regionSql = '
+            SELECT DISTINCT 对象值 as value, 对象值 as label
+            FROM def_object
+            WHERE 对象名称 = "属地" AND 有效标识 = "1"
+            ORDER BY CONVERT(对象值 USING GBK)
+        ';
+
+        $regionResult = $this->model->select($regionSql)->getResultArray();
+
+        return $this->success([
+            'dept' => $deptResult,
+            'region' => $regionResult
+        ]);
     }
 
     private function buildTree(array $data, string $parentCode = ''): array

@@ -2,7 +2,7 @@
 import { ref, onMounted, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
-import { fetchAddDept, fetchUpdateDept, fetchDeleteDept } from '@/service/api';
+import { fetchAddDept, fetchUpdateDept, fetchDeleteDept, fetchDeptOptions } from '@/service/api';
 import { useDeptStore } from '@/store/modules/dept';
 
 const dialog = useDialog();
@@ -61,6 +61,7 @@ const addForm = ref({
   deptName: '',
   leader: '',
   region: '',
+  budgetFullName: '',
   effectiveDate: new Date().toISOString().split('T')[0]
 });
 
@@ -74,12 +75,7 @@ const editForm = ref({
 });
 
 // 属地选项
-const regionOptions = [
-  { label: '北京总公司', value: '北京总公司' },
-  { label: '河北分公司', value: '河北分公司' },
-  { label: '四川分公司', value: '四川分公司' },
-  { label: '河南分公司', value: '河南分公司' }
-];
+const regionOptions = ref<{ label: string; value: string }[]>([]);
 
 // 加载部门树
 async function loadDeptTree() {
@@ -105,6 +101,7 @@ function openAddModal() {
     deptName: '',
     leader: '',
     region: '',
+    budgetFullName: '',
     effectiveDate: new Date().toISOString().split('T')[0]
   };
   showAddModal.value = true;
@@ -140,6 +137,7 @@ async function handleAdd() {
     deptName: addForm.value.deptName,
     leader: addForm.value.leader,
     region: addForm.value.region,
+    budgetFullName: addForm.value.budgetFullName,
     effectiveDate: addForm.value.effectiveDate
   });
   submitting.value = false;
@@ -227,7 +225,7 @@ function renderPrefix({ option }: { option: TreeOption }) {
   );
 }
 
-onMounted(() => {
+onMounted(async () => {
   const savedWidth = localStorage.getItem('dept-splitter-width');
   if (savedWidth) {
     const width = Number(savedWidth);
@@ -236,6 +234,10 @@ onMounted(() => {
     }
   }
   deptStore.loadTreeData();
+  const { data } = await fetchDeptOptions();
+  if (data) {
+    regionOptions.value = data.region || [];
+  }
 });
 </script>
 
@@ -354,6 +356,9 @@ onMounted(() => {
         </NFormItem>
         <NFormItem label="属地">
           <NSelect v-model:value="addForm.region" :options="regionOptions" placeholder="请选择属地" clearable />
+        </NFormItem>
+        <NFormItem label="预算表全称">
+          <NInput v-model:value="addForm.budgetFullName" placeholder="请输入预算表部门全称" />
         </NFormItem>
         <NFormItem label="生效日期">
           <NDatePicker
