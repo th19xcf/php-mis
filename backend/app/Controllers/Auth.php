@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Constants\ApiCode;
 use App\Libraries\JwtTokenService;
+use App\Libraries\LocationAuthService;
 use App\Models\AuthModel;
 use App\Models\Mcommon;
 
@@ -235,17 +236,18 @@ class Auth extends BaseController
     private function storeLegacySession(array $user, string $password, string $region): void
     {
         $session = \Config\Services::session();
-        
-        // 获取用户角色列表
+
         $authData = $this->authModel->getUserAuthData($user['work_id'], $user['region']);
         $roles = $authData['roles'] ?? [];
-        
-        // 构建角色编码字符串（用于SQL in条件）
+
         $userRoleAuthz = '';
         foreach ($roles as $role) {
             $userRoleAuthz = ($userRoleAuthz === '') ? sprintf('"%s"', $role) : sprintf('%s,"%s"', $userRoleAuthz, $role);
         }
-        
+
+        $locationAuthService = new LocationAuthService();
+        $userLocationAuth = $locationAuthService->normalize($this->loadUserLocationAuth($user['work_id'], $region));
+
         $session->set([
             'company_id' => $region,
             'user_id' => $user['id'],
@@ -256,9 +258,27 @@ class Auth extends BaseController
             'user_dept_code' => $user['dept_code'],
             'user_dept_name' => $user['dept_name'],
             'log_switch' => $user['log_switch'],
-            'user_role' => $userRoleAuthz,  // 用于权限检查
-            'user_role_authz' => $userRoleAuthz  // 兼容旧版字段名
+            'user_role' => $userRoleAuthz,
+            'user_role_authz' => $userRoleAuthz,
+            'user_location_authz' => $userLocationAuth
         ]);
+    }
+
+    private function loadUserLocationAuth(string $workId, string $region): string
+    {
+        $sql = sprintf(
+            'select replace(replace(属地赋权,"，",",")," ","") as 属地赋权 from def_user where 有效标识="1" and 员工属地=%s and 工号=%s',
+            $this->quote($region),
+            $this->quote($workId)
+        );
+
+        $row = (new Mcommon())->select($sql)->getRowArray();
+        return (string) ($row['属地赋权'] ?? '');
+    }
+
+    private function quote(string $value): string
+    {
+        return sprintf("'%s'", str_replace(["\\", "'"], ["\\\\", "\\'"], $value));
     }
 
 }

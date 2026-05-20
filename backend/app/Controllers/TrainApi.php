@@ -6,11 +6,11 @@ class TrainApi extends BaseApiController
 {
     public function tree()
     {
-        $user = $this->userContext->getSessionUser();
-        $locationAuthz = $user['locationAuthz'] ?? '';
-        $locationAuthzCond = $locationAuthz !== '' 
-            ? sprintf('locate(属地,"%s")>0', $locationAuthz) 
-            : '1=1';
+        $resolvedAuth = $this->resolveLocationAuthz('2035');
+        $locationAuthzCond = $this->buildLocationCondition('属地', $resolvedAuth);
+        if ($locationAuthzCond === '') {
+            $locationAuthzCond = '1=1';
+        }
 
         $sql = sprintf('
             select GUID,姓名,身份证号,手机号码,属地,
@@ -254,7 +254,8 @@ class TrainApi extends BaseApiController
 
     public function options()
     {
-        $locationAuthz = $this->getLocationAuthz();
+        $resolvedAuth = $this->resolveLocationAuthz('2035');
+        $locationAuthz = $resolvedAuth;
 
         $regionSql = sprintf('
             select distinct 对象值 as value, 对象值 as label

@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
+use App\Libraries\LocationAuthService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 use CodeIgniter\HTTP\RequestInterface;
@@ -95,6 +96,63 @@ class BaseApiController extends BaseController
     protected function getLocationAuthz(): string
     {
         return $this->userContext->getSessionUser()['locationAuthz'] ?? '';
+    }
+
+    protected function resolveLocationAuthz(string $functionCode): string
+    {
+        $user = $this->userContext->getSessionUser();
+        $userLocationAuth = (string) ($user['locationAuthz'] ?? '');
+        $employeeRegion = (string) ($user['location'] ?? '');
+        $roleLocationAuth = $this->loadRoleLocationAuth($functionCode);
+
+        $service = new LocationAuthService();
+        return $service->resolve($userLocationAuth, $roleLocationAuth, $employeeRegion);
+    }
+
+    protected function buildLocationCondition(string $field, string $resolvedAuth, bool $upkeepAuth = false): string
+    {
+        $service = new LocationAuthService();
+        return $service->buildCondition($field, $resolvedAuth, $upkeepAuth);
+    }
+
+    private function loadRoleLocationAuth(string $functionCode): string
+    {
+        $user = $this->userContext->getSessionUser();
+        $roleAuthz = trim((string) ($user['roleAuthz'] ?? ''));
+        if ($roleAuthz === '' || $functionCode === '') {
+            return '';
+        }
+
+        $sql = sprintf(
+            'select substring_index(substring_index(角色表属地,",",t2.GUID+1),",",-1) as 属地赋权
+            from
+            (
+                select GUID,replace(replace(属地赋权,"，",",")," ","") as 角色表属地
+                from view_role
+                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
+            ) as t1
+            inner join def_GUID as t2 on t2.GUID<(length(角色表属地)-length(replace(角色表属地,",",""))+1)
+            group by 属地赋权
+            order by 属地赋权',
+            $roleAuthz,
+            $this->quoteValue($functionCode)
+        );
+
+        $results = $this->model->select($sql)->getResultArray();
+        $values = [];
+        foreach ($results as $row) {
+            $value = trim((string) ($row['属地赋权'] ?? ''));
+            if ($value !== '') {
+                $values[] = $value;
+            }
+        }
+
+        return implode(',', array_values(array_unique($values)));
+    }
+
+    private function quoteValue(string $value): string
+    {
+        return sprintf("'%s'", str_replace(["\\", "'"], ["\\\\", "\\'"], $value));
     }
 
     protected function getJsonInput(): array
