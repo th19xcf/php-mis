@@ -243,7 +243,10 @@ onMounted(async () => {
   <div class="employee-container">
     <div class="employee-panel employee-panel-left" :style="{ width: leftWidth + 'px' }">
       <div class="panel-header">
-        <span class="text-lg font-600">在职人员</span>
+        <div class="flex items-center gap-12px">
+          <span class="text-lg font-600">在职人员</span>
+          <NTag type="success" size="small">2018</NTag>
+        </div>
         <NButton size="small" @click="loadTree">
           <template #icon><icon-mdi-refresh /></template>
           刷新

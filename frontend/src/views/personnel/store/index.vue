@@ -46,7 +46,7 @@ const addForm = ref({
   邀约日期: new Date().toISOString().split('T')[0],
   邀约人: '',
   邀约结果: '',
-  预约面试日期: ''
+  预约面试日期: null as string | null
 });
 
 const editForm = ref({
@@ -184,7 +184,7 @@ function openAddModal() {
     邀约日期: new Date().toISOString().split('T')[0],
     邀约人: '',
     邀约结果: '',
-    预约面试日期: ''
+    预约面试日期: null
   };
   showAddModal.value = true;
 }
@@ -347,7 +347,10 @@ onMounted(() => {
   <div class="store-container">
     <div class="store-panel store-panel-left" :style="{ width: leftWidth + 'px' }">
       <div class="panel-header">
-        <span class="text-lg font-600">邀约人员</span>
+        <div class="flex items-center gap-12px">
+          <span class="text-lg font-600">邀约人员</span>
+          <NTag type="success" size="small">2015</NTag>
+        </div>
         <NButton size="small" @click="loadTree">
           <template #icon>
             <icon-mdi-refresh />
@@ -469,7 +472,7 @@ onMounted(() => {
     </div>
 
     <NModal v-model:show="showAddModal" title="新增邀约信息" preset="card" class="w-150" :mask-closable="false">
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging">
+      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging" :column="2">
         <NFormItem label="姓名" required>
           <NInput v-model:value="addForm.姓名" placeholder="请输入姓名" />
         </NFormItem>
@@ -506,7 +509,7 @@ onMounted(() => {
             class="w-full"
           />
         </NFormItem>
-        <NFormItem label="预约面试日期">
+        <NFormItem label="预约面试日期" label-width="110">
           <NDatePicker
             v-model:formatted-value="addForm.预约面试日期"
             value-format="yyyy-MM-dd"

@@ -62,7 +62,7 @@ const addForm = ref({
   leader: '',
   region: '',
   budgetFullName: '',
-  effectiveDate: new Date().toISOString().split('T')[0]
+  effectiveDate: null as string | null
 });
 
 // 编辑表单
@@ -104,6 +104,10 @@ function openAddModal() {
     budgetFullName: '',
     effectiveDate: new Date().toISOString().split('T')[0]
   };
+  // 确保日期值有效，避免 DatePicker 格式化错误
+  if (!addForm.value.effectiveDate || addForm.value.effectiveDate === 'Invalid Date') {
+    addForm.value.effectiveDate = null;
+  }
   showAddModal.value = true;
 }
 
@@ -138,7 +142,7 @@ async function handleAdd() {
     leader: addForm.value.leader,
     region: addForm.value.region,
     budgetFullName: addForm.value.budgetFullName,
-    effectiveDate: addForm.value.effectiveDate
+    effectiveDate: addForm.value.effectiveDate || new Date().toISOString().split('T')[0]
   });
   submitting.value = false;
 
@@ -246,7 +250,10 @@ onMounted(async () => {
     <!-- 左侧树形结构 -->
     <div class="dept-panel dept-panel-left" :style="{ width: leftWidth + 'px' }">
       <div class="panel-header">
-        <span class="text-lg font-600">部门架构</span>
+        <div class="flex items-center gap-12px">
+          <span class="text-lg font-600">部门架构</span>
+          <NTag type="success" size="small">1010</NTag>
+        </div>
         <NButton size="small" @click="loadDeptTree">
           <template #icon>
             <icon-mdi-refresh />
@@ -355,7 +362,7 @@ onMounted(async () => {
           <NInput v-model:value="addForm.leader" placeholder="请输入负责人" />
         </NFormItem>
         <NFormItem label="属地">
-          <NSelect v-model:value="addForm.region" :options="regionOptions" placeholder="请选择属地" clearable />
+          <NSelect v-model:value="addForm.region" :options="regionOptions || []" placeholder="请选择属地" clearable />
         </NFormItem>
         <NFormItem label="预算表全称">
           <NInput v-model:value="addForm.budgetFullName" placeholder="请输入预算表部门全称" />
@@ -387,7 +394,7 @@ onMounted(async () => {
           <NInput v-model:value="editForm.leader" placeholder="请输入负责人" />
         </NFormItem>
         <NFormItem label="属地">
-          <NSelect v-model:value="editForm.region" :options="regionOptions" placeholder="请选择属地" clearable />
+          <NSelect v-model:value="editForm.region" :options="regionOptions || []" placeholder="请选择属地" clearable />
         </NFormItem>
         <NFormItem label="预算表全称">
           <div class="popup-select-wrapper">
