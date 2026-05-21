@@ -31,6 +31,9 @@ const isAddingMode = ref(false);
 const isBatchEditMode = ref(false);
 const batchEditFields = ref<AddField[]>([]);
 const batchEditForm = ref<Record<string, any>>({});
+const searchKeyword = ref('');
+const filteredTreeData = ref<TreeOption[]>([]);
+const expandedKeys = ref<string[]>([]);
 
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -352,6 +355,64 @@ function renderPrefix({ option }: { option: TreeOption }) {
   return h('span', { class: 'mr-1' }, icons[data.type] || '📄');
 }
 
+// 搜索过滤树形数据
+function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOption[]; expanded: string[] } {
+  const expanded: string[] = [];
+  const lowerKeyword = keyword.toLowerCase();
+
+  function filterNode(node: TreeOption): TreeOption | null {
+    const data = node.data as Api.Store.StoreTreeNode;
+    const label = (node.label as string) || '';
+    const match = label.toLowerCase().includes(lowerKeyword);
+
+    let filteredChildren: TreeOption[] = [];
+    if (node.children) {
+      for (const child of node.children as TreeOption[]) {
+        const filtered = filterNode(child);
+        if (filtered) {
+          filteredChildren.push(filtered);
+        }
+      }
+    }
+
+    // 如果当前节点匹配或有子节点匹配，则保留
+    if (match || filteredChildren.length > 0) {
+      if (filteredChildren.length > 0) {
+        expanded.push(node.key as string);
+      }
+      return {
+        ...node,
+        children: filteredChildren.length > 0 ? filteredChildren : node.children
+      };
+    }
+
+    return null;
+  }
+
+  const filtered = nodes.map(node => filterNode(node)).filter((n): n is TreeOption => n !== null);
+  return { nodes: filtered, expanded };
+}
+
+// 处理搜索
+function handleSearch() {
+  if (!searchKeyword.value.trim()) {
+    filteredTreeData.value = treeData.value;
+    expandedKeys.value = [];
+    return;
+  }
+
+  const { nodes, expanded } = filterTreeData(treeData.value, searchKeyword.value);
+  filteredTreeData.value = nodes;
+  expandedKeys.value = expanded;
+}
+
+// 清空搜索
+function clearSearch() {
+  searchKeyword.value = '';
+  filteredTreeData.value = treeData.value;
+  expandedKeys.value = [];
+}
+
 onMounted(async () => {
   const savedWidth = localStorage.getItem('store-splitter-width');
   if (savedWidth) {
@@ -360,8 +421,11 @@ onMounted(async () => {
       leftWidth.value = width;
     }
   }
-  storeStore.loadTreeData();
+  await storeStore.loadTreeData();
   storeStore.loadOptions();
+
+  // 初始化过滤后的树数据
+  filteredTreeData.value = treeData.value;
 
   // 加载详情字段配置
   const { data } = await fetchDetailFields('2015');
@@ -387,8 +451,25 @@ onMounted(async () => {
         </NButton>
       </div>
       <div class="panel-content">
+        <div class="mb-2">
+          <NInput
+            v-model:value="searchKeyword"
+            placeholder="搜索人员或分类..."
+            clearable
+            @keyup.enter="handleSearch"
+            @clear="clearSearch"
+          >
+            <template #suffix>
+              <NButton text size="small" @click="handleSearch">
+                <template #icon>
+                  <icon-mdi-magnify />
+                </template>
+              </NButton>
+            </template>
+          </NInput>
+        </div>
         <NTree
-          :data="treeData"
+          :data="filteredTreeData"
           :render-prefix="renderPrefix"
           checkable
           cascade
@@ -396,11 +477,11 @@ onMounted(async () => {
           block-line
           block-node
           :checked-keys="storeStore.checkedKeys"
-          :expanded-keys="storeStore.expandedKeys"
+          :expanded-keys="expandedKeys"
           default-expand-all
           @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
-          @update:expanded-keys="storeStore.setExpandedKeys"
+          @update:expanded-keys="expandedKeys = $event"
         />
       </div>
     </div>
