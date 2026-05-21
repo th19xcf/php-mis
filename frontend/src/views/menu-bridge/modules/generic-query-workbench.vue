@@ -543,7 +543,7 @@ const processedRows = shallowRef<Api.Workbench.QueryRecord[]>([]);
 
 // 监听 serverRows 和修改的数据，更新 processedRows
 watch(
-  () => [serverRows.value.length, modifiedRowsData.value],
+  () => [serverRows.value, modifiedRowsData.value],
   () => {
     const rows = serverRows.value.map((row, index) => {
       const rowId = getRowId(row, index);
