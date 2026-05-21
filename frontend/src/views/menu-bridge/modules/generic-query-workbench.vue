@@ -1467,10 +1467,10 @@ async function handleDebug() {
     console.log('\n👤 用户权限:');
     console.log('  - 公司ID:', data.userAuth.companyId);
     console.log('  - 工号:', data.userAuth.userWorkId);
-    console.log('  - 角色编码:', data.userAuth.roleCodes.join(', ') || '(无)');
+    console.log('  - 角色编码:', Array.isArray(data.userAuth.roleCodes) ? data.userAuth.roleCodes.join(', ') : (data.userAuth.roleCodes || '(无)'));
     console.log('  - 属地赋权:', data.userAuth.locationAuth);
-    console.log('  - 部门编码赋权:', data.userAuth.deptCodeAuth.join(', ') || '(无)');
-    console.log('  - 部门全称赋权:', data.userAuth.deptNameAuth.join(', ') || '(无)');
+    console.log('  - 部门编码赋权:', Array.isArray(data.userAuth.deptCodeAuth) ? data.userAuth.deptCodeAuth.join(', ') : (data.userAuth.deptCodeAuth || '(无)'));
+    console.log('  - 部门全称赋权:', Array.isArray(data.userAuth.deptNameAuth) ? data.userAuth.deptNameAuth.join(', ') : (data.userAuth.deptNameAuth || '(无)'));
     console.log('  - 调试权限:', data.userAuth.debugAuth ? '有' : '无');
 
     console.log('\n⚙️ 功能权限:');
