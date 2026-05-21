@@ -2,8 +2,9 @@
 import { ref, onMounted, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
-import { fetchAddStore, fetchUpdateStore, fetchDeleteStore, fetchTransferStore } from '@/service/api';
+import { fetchAddStore, fetchUpdateStore, fetchDeleteStore, fetchTransferStore, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
 import { useStoreStore } from '@/store/modules/store';
+import type { AddField, DetailField } from '@/typings/api/workbench';
 
 const dialog = useDialog();
 const message = useMessage();
@@ -19,68 +20,17 @@ const minLeftWidth = 200;
 const maxLeftWidth = 600;
 const isResizing = ref(false);
 
-const showAddModal = ref(false);
-const showEditModal = ref(false);
 const showTransferModal = ref(false);
 const submitting = ref(false);
-
-const addForm = ref({
-  姓名: '',
-  身份证号: '',
-  手机号码: '',
-  邀约次数: '1',
-  性别: '',
-  年龄: '',
-  学校: '',
-  专业: '',
-  现住址: '',
-  工作履历: '',
-  渠道类型: '',
-  招聘渠道: '',
-  渠道名称: '',
-  属地: '',
-  部门名称: '',
-  邀约业务: '',
-  邀约岗位: '',
-  工作地点: '',
-  邀约日期: new Date().toISOString().split('T')[0],
-  邀约人: '',
-  邀约结果: '',
-  预约面试日期: null as string | null
-});
-
-const editForm = ref({
-  guid: '',
-  姓名: '',
-  手机号码: '',
-  邀约次数: '',
-  学校: '',
-  专业: '',
-  现住址: '',
-  工作履历: '',
-  渠道类型: '',
-  招聘渠道: '',
-  渠道名称: '',
-  属地: '',
-  部门名称: '',
-  邀约业务: '',
-  邀约岗位: '',
-  工作地点: '',
-  邀约日期: '',
-  邀约人: '',
-  邀约结果: '',
-  预约面试日期: ''
-});
-
-const transferForm = ref({
-  面试结果: '',
-  面试日期: '',
-  面试人: '',
-  预约培训日期: '',
-  住宿: '',
-  通勤方式: '',
-  通勤时间: ''
-});
+const addFields = ref<AddField[]>([]);
+const addFormDynamic = ref<Record<string, any>>({});
+const detailFields = ref<DetailField[]>([]);
+const isEditingDetail = ref(false);
+const editDetailForm = ref<Record<string, any>>({});
+const isAddingMode = ref(false);
+const isBatchEditMode = ref(false);
+const batchEditFields = ref<AddField[]>([]);
+const batchEditForm = ref<Record<string, any>>({});
 
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -116,31 +66,24 @@ async function loadTree() {
 
 function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
   const guids: string[] = [];
+  const checkedKeySet = new Set(keys);
 
-  function collectPeople(nodes: (TreeOption | null)[]) {
+  // 递归遍历树，收集所有被勾选的人员节点
+  function traverseAndCollect(nodes: TreeOption[]) {
     for (const node of nodes) {
-      if (!node) continue;
       const data = node.data as Api.Store.StoreTreeNode;
-      if (data.type === 'person' && data.guid) {
+      // 如果当前节点被勾选且是人员类型
+      if (checkedKeySet.has(node.key as string) && data.type === 'person' && data.guid) {
         guids.push(data.guid);
       }
-      if (node.children) {
-        collectPeople(node.children);
+      // 递归处理子节点（即使父节点被勾选，也要检查子节点，因为cascade会勾选所有子节点）
+      if (node.children && node.children.length > 0) {
+        traverseAndCollect(node.children as TreeOption[]);
       }
     }
   }
 
-  for (const key of keys) {
-    const node = optionNodes.find(n => n?.key === key);
-    if (node) {
-      const data = node.data as Api.Store.StoreTreeNode;
-      if (data.type === 'person' && data.guid) {
-        guids.push(data.guid);
-      } else if (node.children) {
-        collectPeople(node.children);
-      }
-    }
-  }
+  traverseAndCollect(treeData.value);
 
   storeStore.setCheckedKeys(keys);
   storeStore.setSelectedGuids(guids);
@@ -161,63 +104,152 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
   }
 }
 
-function openAddModal() {
-  addForm.value = {
-    姓名: '',
-    身份证号: '',
-    手机号码: '',
-    邀约次数: '1',
-    性别: '',
-    年龄: '',
-    学校: '',
-    专业: '',
-    现住址: '',
-    工作履历: '',
-    渠道类型: '',
-    招聘渠道: '',
-    渠道名称: '',
-    属地: '',
-    部门名称: '',
-    邀约业务: '',
-    邀约岗位: '',
-    工作地点: '',
-    邀约日期: new Date().toISOString().split('T')[0],
-    邀约人: '',
-    邀约结果: '',
-    预约面试日期: null
-  };
-  showAddModal.value = true;
+async function openAddModal() {
+  // 加载动态字段配置
+  const { data } = await fetchAddFields('2015');
+  if (data?.fields) {
+    addFields.value = data.fields;
+    // 初始化表单数据
+    const formData: Record<string, any> = {};
+    data.fields.forEach((field: AddField) => {
+      // 日期字段默认值为 null，避免 DatePicker 格式化错误
+      if (field.fieldType === '日期') {
+        formData[field.columnName] = field.defaultValue || null;
+      } else {
+        formData[field.columnName] = field.defaultValue || '';
+      }
+    });
+    addFormDynamic.value = formData;
+  }
+  isAddingMode.value = true;
 }
 
-function openEditModal() {
+function cancelAddMode() {
+  isAddingMode.value = false;
+  addFormDynamic.value = {};
+}
+
+async function saveAddMode() {
+  // 验证必填字段
+  const requiredField = addFields.value.find(f => f.required && !addFormDynamic.value[f.columnName]);
+  if (requiredField) {
+    message.error(`${requiredField.fieldName}不能为空`);
+    return;
+  }
+
+  submitting.value = true;
+  const { error } = await fetchAddStore(addFormDynamic.value);
+  submitting.value = false;
+
+  if (!error) {
+    message.success('新增邀约信息成功');
+    isAddingMode.value = false;
+    addFormDynamic.value = {};
+    await loadTree();
+  }
+}
+
+async function openBatchEditModal() {
+  if (selectedGuids.value.length === 0) {
+    message.warning('请先选择要修改的人员');
+    return;
+  }
+
+  // 加载批量修改字段配置
+  const { data } = await fetchBatchEditFields('2015');
+  if (data?.fields) {
+    batchEditFields.value = data.fields;
+    // 初始化表单数据（使用默认值）
+    const formData: Record<string, any> = {};
+    data.fields.forEach((field: AddField) => {
+      if (field.fieldType === '日期') {
+        formData[field.columnName] = field.defaultValue || null;
+      } else {
+        formData[field.columnName] = field.defaultValue || '';
+      }
+    });
+    batchEditForm.value = formData;
+    isBatchEditMode.value = true;
+  }
+}
+
+function cancelBatchEditMode() {
+  isBatchEditMode.value = false;
+  batchEditForm.value = {};
+}
+
+async function saveBatchEditMode() {
+  if (selectedGuids.value.length === 0) {
+    message.warning('请先选择要修改的人员');
+    return;
+  }
+
+  submitting.value = true;
+
+  // 批量更新每个选中的人员
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const guid of selectedGuids.value) {
+    const { error } = await fetchUpdateStore({
+      guid,
+      ...batchEditForm.value
+    });
+    if (error) {
+      failCount++;
+    } else {
+      successCount++;
+    }
+  }
+
+  submitting.value = false;
+
+  if (failCount === 0) {
+    message.success(`成功修改 ${successCount} 条记录`);
+    isBatchEditMode.value = false;
+    batchEditForm.value = {};
+    await loadTree();
+  } else {
+    message.warning(`成功 ${successCount} 条，失败 ${failCount} 条`);
+  }
+}
+
+function startEditDetail() {
   if (!storeDetail.value) {
     message.warning('请先选择要编辑的人员');
     return;
   }
+  // 初始化编辑表单数据
+  const formData: Record<string, any> = {};
+  detailFields.value.forEach(field => {
+    if (field.editable) {
+      formData[field.columnName] = storeDetail.value?.[field.columnName] || '';
+    }
+  });
+  editDetailForm.value = formData;
+  isEditingDetail.value = true;
+}
 
-  editForm.value = {
+function cancelDetailEdit() {
+  isEditingDetail.value = false;
+  editDetailForm.value = {};
+}
+
+async function saveDetailEdit() {
+  if (!storeDetail.value) return;
+
+  submitting.value = true;
+  const { error } = await fetchUpdateStore({
     guid: storeDetail.value.GUID,
-    姓名: storeDetail.value.姓名,
-    手机号码: storeDetail.value.手机号码,
-    邀约次数: storeDetail.value.邀约次数,
-    学校: storeDetail.value.学校,
-    专业: storeDetail.value.专业,
-    现住址: storeDetail.value.现住址,
-    工作履历: storeDetail.value.工作履历,
-    渠道类型: storeDetail.value.渠道类型,
-    招聘渠道: storeDetail.value.招聘渠道,
-    渠道名称: storeDetail.value.渠道名称,
-    属地: storeDetail.value.属地,
-    部门名称: storeDetail.value.部门名称,
-    邀约业务: storeDetail.value.邀约业务,
-    邀约岗位: storeDetail.value.邀约岗位,
-    工作地点: storeDetail.value.工作地点,
-    邀约日期: storeDetail.value.邀约日期,
-    邀约人: storeDetail.value.邀约人,
-    邀约结果: storeDetail.value.邀约结果,
-    预约面试日期: storeDetail.value.预约面试日期
-  };
-  showEditModal.value = true;
+    ...editDetailForm.value
+  });
+  submitting.value = false;
+
+  if (!error) {
+    message.success('修改成功');
+    isEditingDetail.value = false;
+    await storeStore.loadStoreDetail(storeDetail.value.GUID);
+  }
 }
 
 function openTransferModal() {
@@ -238,38 +270,28 @@ function openTransferModal() {
   showTransferModal.value = true;
 }
 
+// 处理弹窗选择
+function handlePopupSelect(field: AddField) {
+  // TODO: 实现弹窗选择逻辑，根据 field.objectName 打开对应弹窗
+  message.info(`打开${field.fieldName}选择弹窗`);
+}
+
 async function handleAdd() {
-  if (!addForm.value.姓名.trim()) {
-    message.error('姓名不能为空');
+  // 验证必填字段
+  const requiredField = addFields.value.find(f => f.required && !addFormDynamic.value[f.columnName]);
+  if (requiredField) {
+    message.error(`${requiredField.fieldName}不能为空`);
     return;
   }
 
   submitting.value = true;
-  const { error } = await fetchAddStore(addForm.value);
+  const { error } = await fetchAddStore(addFormDynamic.value);
   submitting.value = false;
 
   if (!error) {
     message.success('新增邀约信息成功');
     showAddModal.value = false;
     await loadTree();
-  }
-}
-
-async function handleEdit() {
-  if (!editForm.value.姓名.trim()) {
-    message.error('姓名不能为空');
-    return;
-  }
-
-  submitting.value = true;
-  const { error } = await fetchUpdateStore(editForm.value);
-  submitting.value = false;
-
-  if (!error) {
-    message.success('修改邀约信息成功');
-    showEditModal.value = false;
-    await loadTree();
-    await storeStore.loadStoreDetail(editForm.value.guid);
   }
 }
 
@@ -330,7 +352,7 @@ function renderPrefix({ option }: { option: TreeOption }) {
   return h('span', { class: 'mr-1' }, icons[data.type] || '📄');
 }
 
-onMounted(() => {
+onMounted(async () => {
   const savedWidth = localStorage.getItem('store-splitter-width');
   if (savedWidth) {
     const width = Number(savedWidth);
@@ -340,6 +362,12 @@ onMounted(() => {
   }
   storeStore.loadTreeData();
   storeStore.loadOptions();
+
+  // 加载详情字段配置
+  const { data } = await fetchDetailFields('2015');
+  if (data?.fields) {
+    detailFields.value = data.fields;
+  }
 });
 </script>
 
@@ -391,11 +419,11 @@ onMounted(() => {
             </template>
             新增
           </NButton>
-          <NButton type="info" size="small" @click="openEditModal">
+          <NButton type="info" size="small" @click="openBatchEditModal">
             <template #icon>
               <icon-mdi-pencil />
             </template>
-            修改
+            多条修改
           </NButton>
           <NButton type="warning" size="small" @click="openTransferModal">
             <template #icon>
@@ -412,163 +440,217 @@ onMounted(() => {
         </NSpace>
       </div>
       <div class="panel-content">
-        <div v-if="storeDetail" class="space-y-4">
-          <NDescriptions bordered :column="2" size="small">
-            <NDescriptionsItem label="姓名">
-              {{ storeDetail.姓名 }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="手机号码">
-              {{ storeDetail.手机号码 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="身份证号">
-              {{ storeDetail.身份证号 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="性别">
-              {{ storeDetail.性别 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="年龄">
-              {{ storeDetail.年龄 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="邀约次数">
-              {{ storeDetail.邀约次数 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="属地">
-              {{ storeDetail.属地 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="招聘渠道">
-              {{ storeDetail.招聘渠道 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="邀约日期">
-              {{ storeDetail.邀约日期 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="邀约人">
-              {{ storeDetail.邀约人 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="邀约结果">
-              <NTag :type="storeDetail.邀约结果 === '通过' ? 'success' : 'default'" size="small">
-                {{ storeDetail.邀约结果 || '-' }}
-              </NTag>
-            </NDescriptionsItem>
-            <NDescriptionsItem label="面试信息">
-              {{ storeDetail.面试信息 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="预约面试日期" :span="2">
-              {{ storeDetail.预约面试日期 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="学校">
-              {{ storeDetail.学校 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="专业">
-              {{ storeDetail.专业 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="现住址" :span="2">
-              {{ storeDetail.现住址 || '-' }}
-            </NDescriptionsItem>
-          </NDescriptions>
+        <!-- 批量修改模式 -->
+        <div v-if="isBatchEditMode">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">多条修改 (已选择 {{ selectedGuids.length }} 人)</span>
+            <NSpace>
+              <NButton type="primary" size="small" :loading="submitting" @click="saveBatchEditMode">保存</NButton>
+              <NButton size="small" @click="cancelBatchEditMode">取消</NButton>
+            </NSpace>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="field in batchEditFields" :key="field.columnName">
+                <td>
+                  {{ field.fieldName }}
+                  <span v-if="field.required" class="text-red-500 ml-1">*</span>
+                </td>
+                <td>
+                  <!-- 下拉选择 -->
+                  <NSelect
+                    v-if="field.objectOptions && field.objectOptions.length > 0"
+                    v-model:value="batchEditForm[field.columnName]"
+                    :options="field.objectOptions"
+                    size="small"
+                  />
+                  <!-- 日期选择 -->
+                  <NDatePicker
+                    v-else-if="field.fieldType === '日期'"
+                    v-model:formatted-value="batchEditForm[field.columnName]"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                  <!-- 弹窗选择 -->
+                  <NInput
+                    v-else-if="field.inputType === 'popup'"
+                    v-model:value="batchEditForm[field.columnName]"
+                    size="small"
+                    readonly
+                    @click="handlePopupSelect(field)"
+                  />
+                  <!-- 文本输入 -->
+                  <NInput
+                    v-else
+                    v-model:value="batchEditForm[field.columnName]"
+                    size="small"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
         </div>
 
-        <NEmpty v-else description="请选择左侧人员查看详情" class="py-20" />
+        <!-- 新增模式 -->
+        <div v-else-if="isAddingMode">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">新增邀约信息</span>
+            <NSpace>
+              <NButton type="primary" size="small" :loading="submitting" @click="saveAddMode">保存</NButton>
+              <NButton size="small" @click="cancelAddMode">取消</NButton>
+            </NSpace>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th class="w-24">是否可新增</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="field in addFields" :key="field.columnName">
+                <td>
+                  {{ field.fieldName }}
+                  <span v-if="field.required" class="text-red-500 ml-1">*</span>
+                </td>
+                <td>
+                  <NTag type="success" size="small">是</NTag>
+                </td>
+                <td>
+                  <!-- 下拉选择 -->
+                  <NSelect
+                    v-if="field.objectOptions && field.objectOptions.length > 0"
+                    v-model:value="addFormDynamic[field.columnName]"
+                    :options="field.objectOptions"
+                    size="small"
+                  />
+                  <!-- 日期选择 -->
+                  <NDatePicker
+                    v-else-if="field.fieldType === '日期'"
+                    v-model:formatted-value="addFormDynamic[field.columnName]"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                  <!-- 弹窗选择 -->
+                  <NInput
+                    v-else-if="field.inputType === 'popup'"
+                    v-model:value="addFormDynamic[field.columnName]"
+                    size="small"
+                    readonly
+                    @click="handlePopupSelect(field)"
+                  />
+                  <!-- 文本输入 -->
+                  <NInput
+                    v-else
+                    v-model:value="addFormDynamic[field.columnName]"
+                    size="small"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </div>
+
+        <!-- 详情/编辑模式 -->
+        <div v-else-if="storeDetail">
+          <div class="flex justify-end mb-2">
+            <NButton v-if="!isEditingDetail" type="primary" size="small" @click="startEditDetail">
+              <template #icon>
+                <icon-mdi-pencil />
+              </template>
+              编辑
+            </NButton>
+            <NSpace v-else>
+              <NButton type="primary" size="small" :loading="submitting" @click="saveDetailEdit">保存</NButton>
+              <NButton size="small" @click="cancelDetailEdit">取消</NButton>
+            </NSpace>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th class="w-24">是否可修改</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="field in detailFields" :key="field.columnName">
+                <td>{{ field.fieldName }}</td>
+                <td>
+                  <NTag :type="field.editable ? 'success' : 'default'" size="small">
+                    {{ field.editable ? '是' : '否' }}
+                  </NTag>
+                </td>
+                <td>
+                  <!-- 编辑模式 -->
+                  <template v-if="isEditingDetail && field.editable">
+                    <!-- 获取对应的新增字段配置 -->
+                    <template v-for="addField in addFields" :key="addField.columnName">
+                      <template v-if="addField.columnName === field.columnName">
+                        <!-- 下拉选择 -->
+                        <NSelect
+                          v-if="addField.objectOptions && addField.objectOptions.length > 0"
+                          v-model:value="editDetailForm[field.columnName]"
+                          :options="addField.objectOptions"
+                          size="small"
+                        />
+                        <!-- 日期选择 -->
+                        <NDatePicker
+                          v-else-if="addField.fieldType === '日期'"
+                          v-model:formatted-value="editDetailForm[field.columnName]"
+                          value-format="yyyy-MM-dd"
+                          type="date"
+                          size="small"
+                          class="w-full"
+                        />
+                        <!-- 弹窗选择 -->
+                        <NInput
+                          v-else-if="addField.inputType === 'popup'"
+                          v-model:value="editDetailForm[field.columnName]"
+                          size="small"
+                          readonly
+                          @click="handlePopupSelect(addField)"
+                        />
+                        <!-- 文本输入 -->
+                        <NInput
+                          v-else
+                          v-model:value="editDetailForm[field.columnName]"
+                          size="small"
+                        />
+                      </template>
+                    </template>
+                  </template>
+                  <!-- 查看模式 -->
+                  <template v-else>
+                    <template v-if="field.columnName === '邀约结果'">
+                      <NTag :type="storeDetail[field.columnName] === '通过' ? 'success' : 'default'" size="small">
+                        {{ storeDetail[field.columnName] || '-' }}
+                      </NTag>
+                    </template>
+                    <template v-else>
+                      {{ storeDetail[field.columnName] || '-' }}
+                    </template>
+                  </template>
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </div>
+
+        <NEmpty v-else description="请选择左侧人员查看详情或点击新增" class="py-20" />
       </div>
     </div>
-
-    <NModal v-model:show="showAddModal" title="新增邀约信息" preset="card" class="w-150" :mask-closable="false">
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging" :column="2">
-        <NFormItem label="姓名" required>
-          <NInput v-model:value="addForm.姓名" placeholder="请输入姓名" />
-        </NFormItem>
-        <NFormItem label="手机号码">
-          <NInput v-model:value="addForm.手机号码" placeholder="请输入手机号码" />
-        </NFormItem>
-        <NFormItem label="身份证号">
-          <NInput v-model:value="addForm.身份证号" placeholder="请输入身份证号" />
-        </NFormItem>
-        <NFormItem label="属地">
-          <NSelect v-model:value="addForm.属地" :options="options?.region || []" placeholder="请选择属地" clearable />
-        </NFormItem>
-        <NFormItem label="招聘渠道">
-          <NSelect
-            v-model:value="addForm.招聘渠道"
-            :options="options?.channel || []"
-            placeholder="请选择招聘渠道"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="邀约结果">
-          <NSelect
-            v-model:value="addForm.邀约结果"
-            :options="options?.result || []"
-            placeholder="请选择邀约结果"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="邀约日期">
-          <NDatePicker
-            v-model:formatted-value="addForm.邀约日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-        <NFormItem label="预约面试日期" label-width="110">
-          <NDatePicker
-            v-model:formatted-value="addForm.预约面试日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showAddModal = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="handleAdd">确认</NButton>
-        </NSpace>
-      </template>
-    </NModal>
-
-    <NModal v-model:show="showEditModal" title="修改邀约信息" preset="card" class="w-150" :mask-closable="false">
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging">
-        <NFormItem label="姓名" required>
-          <NInput v-model:value="editForm.姓名" placeholder="请输入姓名" />
-        </NFormItem>
-        <NFormItem label="手机号码">
-          <NInput v-model:value="editForm.手机号码" placeholder="请输入手机号码" />
-        </NFormItem>
-        <NFormItem label="属地">
-          <NSelect v-model:value="editForm.属地" :options="options?.region || []" placeholder="请选择属地" clearable />
-        </NFormItem>
-        <NFormItem label="招聘渠道">
-          <NSelect
-            v-model:value="editForm.招聘渠道"
-            :options="options?.channel || []"
-            placeholder="请选择招聘渠道"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="邀约结果">
-          <NSelect
-            v-model:value="editForm.邀约结果"
-            :options="options?.result || []"
-            placeholder="请选择邀约结果"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="预约面试日期">
-          <NDatePicker
-            v-model:formatted-value="editForm.预约面试日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showEditModal = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="handleEdit">确认</NButton>
-        </NSpace>
-      </template>
-    </NModal>
 
     <NModal v-model:show="showTransferModal" title="转入面试" preset="card" class="w-120" :mask-closable="false">
       <NAlert type="info" class="mb-4">已选择 {{ selectedGuids.length }} 人</NAlert>
@@ -607,6 +689,7 @@ onMounted(() => {
         </NSpace>
       </template>
     </NModal>
+
   </div>
 </template>
 

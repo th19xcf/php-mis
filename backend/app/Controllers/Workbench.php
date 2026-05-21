@@ -2209,6 +2209,166 @@ class Workbench extends BaseController
     }
 
     /**
+     * 获取详情显示字段配置
+     */
+    public function detailFields(string $functionCode = '')
+    {
+        try {
+            // 从 session 获取字段模块
+            $session = \Config\Services::session();
+            $fieldModule = $session->get($functionCode . '-field_module');
+
+            if (empty($fieldModule)) {
+                $sql = sprintf(
+                    'select 字段模块 from def_query_config where 查询模块 in (
+                        select 模块名称 from def_function where 有效标识="1" and 功能编码=%s
+                    )',
+                    $this->quote($functionCode)
+                );
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $row = $result->getRowArray();
+                    $fieldModule = $row['字段模块'] ?? '';
+                }
+            }
+
+            if (empty($fieldModule)) {
+                return $this->success(['fields' => []]);
+            }
+
+            // 查询可在详情中显示的字段
+            $sql = sprintf(
+                'select
+                    列名, 字段名, 列类型, 列宽度, 可修改, 不可为空, 列顺序
+                from view_function
+                where 功能编码=%s and 列顺序>0
+                group by 列名
+                order by 列顺序',
+                $this->quote($functionCode)
+            );
+
+            $result = $this->common->select($sql);
+            if ($result === false) {
+                return $this->success(['fields' => []]);
+            }
+
+            $columns = $result->getResultArray();
+            $fields = [];
+
+            foreach ($columns as $col) {
+                $fields[] = [
+                    'columnName' => $col['列名'],
+                    'fieldName' => $col['字段名'],
+                    'fieldType' => $col['列类型'] ?? '字符',
+                    'width' => (int) (($col['列宽度'] ?? 0) > 0 ? $col['列宽度'] : max(strlen($col['列名'] ?? '') * 16, 120)),
+                    'editable' => in_array((string) ($col['可修改'] ?? '0'), ['1', '2'], true),
+                    'required' => (string) ($col['不可为空'] ?? '0') === '1'
+                ];
+            }
+
+            return $this->success(['fields' => $fields]);
+        } catch (\Throwable $e) {
+            log_message('error', '获取详情字段配置失败: ' . $e->getMessage());
+            return $this->error('5002', '获取详情字段配置失败');
+        }
+    }
+
+    /**
+     * 获取批量修改字段配置（可修改="2"）
+     */
+    public function batchEditFields(string $functionCode = '')
+    {
+        try {
+            // 从 session 获取字段模块
+            $session = \Config\Services::session();
+            $fieldModule = $session->get($functionCode . '-field_module');
+
+            if (empty($fieldModule)) {
+                $sql = sprintf(
+                    'select 字段模块 from def_query_config where 查询模块 in (
+                        select 模块名称 from def_function where 有效标识="1" and 功能编码=%s
+                    )',
+                    $this->quote($functionCode)
+                );
+                $result = $this->common->select($sql);
+                if ($result !== false) {
+                    $row = $result->getRowArray();
+                    $fieldModule = $row['字段模块'] ?? '';
+                }
+            }
+
+            if (empty($fieldModule)) {
+                return $this->success(['fields' => []]);
+            }
+
+            // 查询可批量修改的字段（可修改="2"）
+            $sql = sprintf(
+                'select
+                    列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 列顺序
+                from view_function
+                where 功能编码=%s and 列顺序>0 and 可修改="2"
+                group by 列名
+                order by 列顺序',
+                $this->quote($functionCode)
+            );
+
+            $result = $this->common->select($sql);
+            if ($result === false) {
+                return $this->success(['fields' => []]);
+            }
+
+            $columns = $result->getResultArray();
+            $fields = [];
+
+            foreach ($columns as $col) {
+                $field = [
+                    'columnName' => $col['列名'],
+                    'fieldName' => $col['字段名'],
+                    'fieldType' => $col['列类型'] ?? '字符',
+                    'required' => (string) ($col['不可为空'] ?? '0') === '1',
+                    'defaultValue' => $col['缺省值'] ?? '',
+                    'objectName' => '',
+                    'inputType' => 'text'
+                ];
+
+                // 处理系统变量默认值
+                if ($field['defaultValue'] === '$当日日期') {
+                    $field['defaultValue'] = date('Y-m-d');
+                } elseif ($field['defaultValue'] === '$时间戳') {
+                    $field['defaultValue'] = date('Y-m-d H:i:s');
+                } elseif ($field['defaultValue'] === '$工号') {
+                    $field['defaultValue'] = $session->get('user_workid') ?? '';
+                } elseif ($field['defaultValue'] === '$属地') {
+                    $field['defaultValue'] = $session->get('user_location') ?? '';
+                }
+
+                // 处理赋值类型
+                $赋值类型 = $col['赋值类型'] ?? '';
+                $对象 = $col['对象'] ?? '';
+
+                // 如果赋值类型包含"固定值"，则查询对象选项
+                if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
+                    $field['objectName'] = $对象;
+                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                }
+
+                // 如果赋值类型是"弹窗"，则标记为弹窗类型
+                if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
+                    $field['inputType'] = 'popup';
+                    $field['objectName'] = $对象;
+                }
+
+                $fields[] = $field;
+            }
+
+            return $this->success(['fields' => $fields]);
+        } catch (\Throwable $e) {
+            log_message('error', '获取批量修改字段配置失败: ' . $e->getMessage());
+            return $this->error('5003', '获取批量修改字段配置失败');
+        }
+    }
+
+    /**
      * 新增记录
      */
     public function addRow(string $functionCode = '')

@@ -74,6 +74,18 @@ export function fetchAddFields(functionCode: string) {
   });
 }
 
+export function fetchDetailFields(functionCode: string) {
+  return request<Api.Workbench.DetailFieldsData>({
+    url: `/workbench/detail-fields/${encodeURIComponent(functionCode)}`
+  });
+}
+
+export function fetchBatchEditFields(functionCode: string) {
+  return request<Api.Workbench.AddFieldsData>({
+    url: `/workbench/batch-edit-fields/${encodeURIComponent(functionCode)}`
+  });
+}
+
 export function addRow(functionCode: string, data: Record<string, any>) {
   return request<Api.Workbench.AddResult>({
     url: `/workbench/add-row/${encodeURIComponent(functionCode)}`,

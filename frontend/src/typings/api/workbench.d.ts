@@ -150,6 +150,19 @@ declare namespace Api {
       };
     }
 
+    interface DetailField {
+      columnName: string;
+      fieldName: string;
+      fieldType: string;
+      width: number;
+      editable: boolean;
+      required: boolean;
+    }
+
+    interface DetailFieldsData {
+      fields: DetailField[];
+    }
+
     interface AddResult {
       success: boolean;
       message: string;
