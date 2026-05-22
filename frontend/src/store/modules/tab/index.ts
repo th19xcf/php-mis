@@ -80,8 +80,38 @@ export const useTabStore = defineStore(SetupStoreId.Tab, () => {
    */
   function addTab(route: App.Global.TabRoute, active = true) {
     const tab = getTabByRoute(route);
+    const isDynamicMenuTab = tab.routePath.startsWith('/dynamic-menu/');
 
     const isHomeTab = tab.id === homeTab.value?.id;
+
+    if (!isHomeTab && isDynamicMenuTab) {
+      // 兼容历史缓存：同一 dynamic-menu 路由可能残留多个不同 id（旧规则含 query）
+      const sameRouteTabs = tabs.value.filter(item => item.routePath === tab.routePath);
+
+      if (sameRouteTabs.length > 0) {
+        const primaryTab = sameRouteTabs[0];
+        primaryTab.id = tab.id;
+        primaryTab.label = tab.label;
+        primaryTab.routeKey = tab.routeKey;
+        primaryTab.routePath = tab.routePath;
+        primaryTab.fullPath = tab.fullPath;
+        primaryTab.icon = tab.icon;
+        primaryTab.localIcon = tab.localIcon;
+        primaryTab.i18nKey = tab.i18nKey;
+
+        if (sameRouteTabs.length > 1) {
+          tabs.value = tabs.value.filter((item, index) => {
+            if (item.routePath !== tab.routePath) return true;
+            return item === primaryTab && index === tabs.value.indexOf(primaryTab);
+          });
+        }
+
+        if (active) {
+          setActiveTabId(primaryTab.id);
+        }
+        return;
+      }
+    }
 
     if (!isHomeTab && !isTabInTabs(tab.id, tabs.value)) {
       tabs.value.push(tab);
@@ -213,7 +243,13 @@ export const useTabStore = defineStore(SetupStoreId.Tab, () => {
   async function switchRouteByTab(tab: App.Global.Tab) {
     const fail = await routerPush(tab.fullPath);
     if (!fail) {
-      setActiveTabId(tab.id);
+      const normalizedId = getTabIdByRoute({
+        path: tab.routePath,
+        fullPath: tab.fullPath,
+        query: (router.currentRoute.value.query || {}) as Record<string, any>,
+        meta: (router.currentRoute.value.meta || {}) as any
+      } as App.Global.TabRoute);
+      setActiveTabId(normalizedId || tab.id);
     }
   }
 

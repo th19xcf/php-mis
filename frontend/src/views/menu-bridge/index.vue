@@ -16,14 +16,7 @@ const route = useRoute();
 const themeStore = useThemeStore();
 const tabStore = useTabStore();
 const isDarkMode = computed(() => themeStore.darkMode);
-// cacheScopeKey 只基于 functionCode 和 params，确保切换标签页时缓存能命中
-const workbenchCacheScopeKey = computed(() => {
-  const functionCode = String(route.query.functionCode || route.meta?.functionCode || '');
-  const rawParams = route.query.params || route.meta?.params || '';
-  const params = typeof rawParams === 'string' ? rawParams : JSON.stringify(rawParams);
-  return `${functionCode}_${params}`;
-});
-
+// workbench 由路由级 KeepAlive 保活，内部实例不再额外加 key
 const meta = computed(() => {
   const routeMeta = (route.meta || {}) as Record<string, unknown>;
 
@@ -46,6 +39,7 @@ const meta = computed(() => {
     title: menu2 || routeMeta.title || '动态菜单页面'
   };
 });
+
 const iframeLoaded = ref(false);
 const activeView = ref<'workbench' | 'legacy' | 'native'>('workbench');
 
@@ -154,14 +148,12 @@ function handleIframeLoad() {
         </template>
 
         <!-- 通用查询工作台 - 使用 KeepAlive 缓存组件，避免数据互相干扰 -->
-        <KeepAlive v-else-if="activeView === 'workbench' && meta.functionCode">
-          <GenericQueryWorkbench
-            :key="workbenchCacheScopeKey"
-            :meta="meta"
-            :native-only="isNativeOnlyFunction"
-            :dynamic-like="false"
-          />
-        </KeepAlive>
+        <GenericQueryWorkbench
+          v-else-if="activeView === 'workbench' && meta.functionCode"
+          :meta="meta"
+          :native-only="isNativeOnlyFunction"
+          :dynamic-like="false"
+        />
 
         <!-- iframe 旧版页面 -->
         <div v-else-if="legacyUrl && !isNativeOnlyFunction" class="iframe-shell">

@@ -23,7 +23,15 @@ const tabStore = useTabStore();
 
 <template>
   <RouterView v-slot="{ Component, route }">
-    <KeepAlive :include="routeStore.cacheRoutes" :exclude="routeStore.excludeCacheRoutes">
+    <component
+      :is="Component"
+      v-if="appStore.reloadFlag && String(route.path || '').startsWith('/dynamic-menu/')"
+      :key="route.fullPath"
+      :class="{ 'p-16px': showPadding }"
+      class="flex-grow bg-layout transition-300"
+    />
+
+    <KeepAlive v-else :include="routeStore.cacheRoutes" :exclude="routeStore.excludeCacheRoutes">
       <component
         :is="Component"
         v-if="appStore.reloadFlag"

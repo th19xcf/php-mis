@@ -44,7 +44,11 @@ export function getTabIdByRoute(route: App.Global.TabRoute) {
 
   let id = path;
 
-  if (meta.multiTab) {
+  const isDynamicMenuRoute = path.startsWith('/dynamic-menu/');
+
+  if (isDynamicMenuRoute) {
+    id = path;
+  } else if (meta.multiTab || path === '/menu-bridge') {
     const queryKeys = Object.keys(query).sort();
     const qs = queryKeys.map(key => `${key}=${query[key]}`).join('&');
 

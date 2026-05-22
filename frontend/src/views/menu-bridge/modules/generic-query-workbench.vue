@@ -151,6 +151,8 @@ function checkAndLoadData() {
   const currentFunctionCode = String(props.meta.functionCode || '');
   const currentParams = String(props.meta.params || '');
   const lockKey = `${currentFunctionCode}_${currentParams}`;
+  const cached = workbenchStore.getCache(currentFunctionCode, currentParams);
+  const isCacheComplete = cached && cached.isDataLoaded && cached.serverRows.length === cached.total;
 
   console.log(
     `[📋 checkAndLoadData] functionCode=${currentFunctionCode}, isDataLoaded=${isDataLoaded.value}, loadedFunctionCode=${loadedFunctionCode.value}`
@@ -163,7 +165,7 @@ function checkAndLoadData() {
   }
 
   // 模块级加载锁：如果同一 functionCode+params 正在加载，跳过
-  if (loadingLocks.get(lockKey)) {
+  if (loadingLocks.get(lockKey) && !isCacheComplete) {
     console.log(`[📋 checkAndLoadData] ${lockKey} 正在加载中，跳过重复请求`);
     return;
   }
