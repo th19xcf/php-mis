@@ -785,7 +785,13 @@ onActivated(() => {
           <div class="flex justify-between items-center mb-2">
             <span class="text-lg font-600">邀约信息</span>
             <div>
-              <NButton v-if="!isEditingDetail" type="primary" size="small" @click="startEditDetail">
+              <NButton 
+                v-if="!isEditingDetail" 
+                type="primary" 
+                size="small" 
+                :disabled="!storeDetail || !storeStore.selectedGuids.includes(String(storeDetail.GUID))"
+                @click="startEditDetail"
+              >
                 <template #icon>
                   <icon-mdi-pencil />
                 </template>
