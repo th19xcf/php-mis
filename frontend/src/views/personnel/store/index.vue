@@ -2,16 +2,9 @@
 import { ref, onMounted, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
-import {
-  fetchAddStore,
-  fetchUpdateStore,
-  fetchDeleteStore,
-  fetchTransferStore,
-  fetchAddFields,
-  fetchDetailFields,
-  fetchBatchEditFields
-} from '@/service/api';
+import { fetchAddStore, fetchUpdateStore, fetchDeleteStore, fetchTransferStore, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
 import { useStoreStore } from '@/store/modules/store';
+import type { AddField, DetailField } from '@/typings/api/workbench';
 
 const dialog = useDialog();
 const message = useMessage();
@@ -29,15 +22,14 @@ const isResizing = ref(false);
 
 const showTransferModal = ref(false);
 const submitting = ref(false);
-const transferForm = ref<Record<string, any>>({});
-const addFields = ref<Api.Workbench.AddField[]>([]);
+const addFields = ref<AddField[]>([]);
 const addFormDynamic = ref<Record<string, any>>({});
-const detailFields = ref<Api.Workbench.DetailField[]>([]);
+const detailFields = ref<DetailField[]>([]);
 const isEditingDetail = ref(false);
 const editDetailForm = ref<Record<string, any>>({});
 const isAddingMode = ref(false);
 const isBatchEditMode = ref(false);
-const batchEditFields = ref<Api.Workbench.AddField[]>([]);
+const batchEditFields = ref<AddField[]>([]);
 const batchEditForm = ref<Record<string, any>>({});
 const searchKeyword = ref('');
 const filteredTreeData = ref<TreeOption[]>([]);
@@ -75,7 +67,7 @@ async function loadTree() {
   await storeStore.refreshTree();
 }
 
-function handleCheck(keys: string[], _optionNodes: (TreeOption | null)[]) {
+function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
   const guids: string[] = [];
   const checkedKeySet = new Set(keys);
 
@@ -122,7 +114,7 @@ async function openAddModal() {
     addFields.value = data.fields;
     // 初始化表单数据
     const formData: Record<string, any> = {};
-    data.fields.forEach((field: Api.Workbench.AddField) => {
+    data.fields.forEach((field: AddField) => {
       // 日期字段默认值为 null，避免 DatePicker 格式化错误
       if (field.fieldType === '日期') {
         formData[field.columnName] = field.defaultValue || null;
@@ -149,7 +141,7 @@ async function saveAddMode() {
   }
 
   submitting.value = true;
-  const { error } = await fetchAddStore(addFormDynamic.value as any);
+  const { error } = await fetchAddStore(addFormDynamic.value);
   submitting.value = false;
 
   if (!error) {
@@ -172,7 +164,7 @@ async function openBatchEditModal() {
     batchEditFields.value = data.fields;
     // 初始化表单数据（使用默认值）
     const formData: Record<string, any> = {};
-    data.fields.forEach((field: Api.Workbench.AddField) => {
+    data.fields.forEach((field: AddField) => {
       if (field.fieldType === '日期') {
         formData[field.columnName] = field.defaultValue || null;
       } else {
@@ -234,7 +226,7 @@ function startEditDetail() {
   const formData: Record<string, any> = {};
   detailFields.value.forEach(field => {
     if (field.editable) {
-      formData[field.columnName] = (storeDetail.value as any)?.[field.columnName] || '';
+      formData[field.columnName] = storeDetail.value?.[field.columnName] || '';
     }
   });
   editDetailForm.value = formData;
@@ -282,12 +274,12 @@ function openTransferModal() {
 }
 
 // 处理弹窗选择
-function handlePopupSelect(field: Api.Workbench.AddField) {
+function handlePopupSelect(field: AddField) {
   // TODO: 实现弹窗选择逻辑，根据 field.objectName 打开对应弹窗
   message.info(`打开${field.fieldName}选择弹窗`);
 }
 
-async function _handleAdd() {
+async function handleAdd() {
   // 验证必填字段
   const requiredField = addFields.value.find(f => f.required && !addFormDynamic.value[f.columnName]);
   if (requiredField) {
@@ -296,13 +288,12 @@ async function _handleAdd() {
   }
 
   submitting.value = true;
-  const { error } = await fetchAddStore(addFormDynamic.value as any);
+  const { error } = await fetchAddStore(addFormDynamic.value);
   submitting.value = false;
 
   if (!error) {
     message.success('新增邀约信息成功');
-    isAddingMode.value = false;
-    addFormDynamic.value = {};
+    showAddModal.value = false;
     await loadTree();
   }
 }
@@ -316,7 +307,7 @@ async function handleTransfer() {
   submitting.value = true;
   const { error } = await fetchTransferStore({
     guids: selectedGuids.value,
-    ...(transferForm.value as any)
+    ...transferForm.value
   });
   submitting.value = false;
 
@@ -370,7 +361,7 @@ function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOpti
   const lowerKeyword = keyword.toLowerCase();
 
   function filterNode(node: TreeOption): TreeOption | null {
-    const _data = node.data as Api.Store.StoreTreeNode;
+    const data = node.data as Api.Store.StoreTreeNode;
     const label = (node.label as string) || '';
     const match = label.toLowerCase().includes(lowerKeyword);
 
@@ -578,7 +569,11 @@ onMounted(async () => {
                     @click="handlePopupSelect(field)"
                   />
                   <!-- 文本输入 -->
-                  <NInput v-else v-model:value="batchEditForm[field.columnName]" size="small" />
+                  <NInput
+                    v-else
+                    v-model:value="batchEditForm[field.columnName]"
+                    size="small"
+                  />
                 </td>
               </tr>
             </tbody>
@@ -637,7 +632,11 @@ onMounted(async () => {
                     @click="handlePopupSelect(field)"
                   />
                   <!-- 文本输入 -->
-                  <NInput v-else v-model:value="addFormDynamic[field.columnName]" size="small" />
+                  <NInput
+                    v-else
+                    v-model:value="addFormDynamic[field.columnName]"
+                    size="small"
+                  />
                 </td>
               </tr>
             </tbody>
@@ -705,22 +704,23 @@ onMounted(async () => {
                           @click="handlePopupSelect(addField)"
                         />
                         <!-- 文本输入 -->
-                        <NInput v-else v-model:value="editDetailForm[field.columnName]" size="small" />
+                        <NInput
+                          v-else
+                          v-model:value="editDetailForm[field.columnName]"
+                          size="small"
+                        />
                       </template>
                     </template>
                   </template>
                   <!-- 查看模式 -->
                   <template v-else>
                     <template v-if="field.columnName === '邀约结果'">
-                      <NTag
-                        :type="(storeDetail as any)?.[field.columnName] === '通过' ? 'success' : 'default'"
-                        size="small"
-                      >
-                        {{ (storeDetail as any)?.[field.columnName] || '-' }}
+                      <NTag :type="storeDetail[field.columnName] === '通过' ? 'success' : 'default'" size="small">
+                        {{ storeDetail[field.columnName] || '-' }}
                       </NTag>
                     </template>
                     <template v-else>
-                      {{ (storeDetail as any)?.[field.columnName] || '-' }}
+                      {{ storeDetail[field.columnName] || '-' }}
                     </template>
                   </template>
                 </td>

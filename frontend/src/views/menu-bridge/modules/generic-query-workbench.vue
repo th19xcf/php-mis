@@ -1693,6 +1693,8 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
   const functionCode = String(props.meta.functionCode || '').trim();
   const params = String(props.meta.params || '').trim();
+
+  // 恢复筛选条件
   const cachedFilterModel = workbenchStore.getFilterModel(functionCode, params);
   if (cachedFilterModel) {
     setTimeout(() => {
@@ -1700,6 +1702,43 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
         gridApi.value.setFilterModel(cachedFilterModel);
       }
     }, 100);
+  }
+
+  // 恢复列状态（包括排序、列宽、列顺序、固定列等）
+  const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
+  if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
+    setTimeout(() => {
+      if (gridApi.value && !gridApi.value.isDestroyed()) {
+        isRestoringColumnState.value = true;
+
+        // 合并固定列信息
+        const cachedPinColumns = workbenchStore.getPinColumns(functionCode, params);
+        const pinColumnsArray = Array.from(cachedPinColumns);
+        const mergedColumnState = cachedColumnState.map((col: any) => {
+          if (pinColumnsArray.includes(col.colId)) {
+            return { ...col, pinned: 'left' };
+          }
+          return col;
+        });
+
+        gridApi.value.applyColumnState({ state: mergedColumnState, applyOrder: true });
+
+        // 恢复可见列
+        const cachedVisibleColumns = workbenchStore.getVisibleColumns(functionCode, params);
+        if (cachedVisibleColumns.length > 0) {
+          visibleFieldColumns.value = cachedVisibleColumns;
+        }
+
+        // 恢复固定列
+        if (cachedPinColumns.length > 0) {
+          pinTargetFields.value = cachedPinColumns;
+        }
+
+        setTimeout(() => {
+          isRestoringColumnState.value = false;
+        }, 100);
+      }
+    }, 150);
   }
 
   event.api.addEventListener('sortChanged', () => {

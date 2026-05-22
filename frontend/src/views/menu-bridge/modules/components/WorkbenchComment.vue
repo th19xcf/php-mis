@@ -63,9 +63,9 @@ const emit = defineEmits<{
               :style="
                 isDarkMode
                   ? {
-                      borderBottomColor: '#4b5965',
-                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                    }
+                    borderBottomColor: '#4b5965',
+                    borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
+                  }
                   : {}
               "
             >
