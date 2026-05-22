@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, h, computed } from 'vue';
+import { ref, onMounted, onActivated, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
 import { fetchAddStore, fetchUpdateStore, fetchDeleteStore, fetchTransferStore, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
@@ -22,15 +22,23 @@ const isResizing = ref(false);
 
 const showTransferModal = ref(false);
 const submitting = ref(false);
-const addFields = ref<AddField[]>([]);
-const addFormDynamic = ref<Record<string, any>>({});
+// 新增模式状态从 store 获取
+const isAddingMode = computed(() => storeStore.isAddingMode);
+const addFormDynamic = computed({
+  get: () => storeStore.addFormDynamic,
+  set: (val) => storeStore.setAddFormDynamic(val)
+});
+const addFields = computed(() => storeStore.addFields);
 const detailFields = ref<DetailField[]>([]);
 const isEditingDetail = ref(false);
 const editDetailForm = ref<Record<string, any>>({});
-const isAddingMode = ref(false);
-const isBatchEditMode = ref(false);
-const batchEditFields = ref<AddField[]>([]);
-const batchEditForm = ref<Record<string, any>>({});
+// 多条修改模式状态从 store 获取
+const isBatchEditMode = computed(() => storeStore.isBatchEditMode);
+const batchEditForm = computed({
+  get: () => storeStore.batchEditForm,
+  set: (val) => storeStore.setBatchEditForm(val)
+});
+const batchEditFields = computed(() => storeStore.batchEditFields);
 const searchKeyword = ref('');
 const filteredTreeData = ref<TreeOption[]>([]);
 const expandedKeys = ref<string[]>([]);
@@ -107,11 +115,16 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
   }
 }
 
+function handleExpandedKeysChange(keys: string[]) {
+  expandedKeys.value = keys;
+  storeStore.setExpandedKeys(keys);
+}
+
 async function openAddModal() {
   // 加载动态字段配置
   const { data } = await fetchAddFields('2015');
   if (data?.fields) {
-    addFields.value = data.fields;
+    storeStore.setAddFields(data.fields);
     // 初始化表单数据
     const formData: Record<string, any> = {};
     data.fields.forEach((field: AddField) => {
@@ -122,14 +135,13 @@ async function openAddModal() {
         formData[field.columnName] = field.defaultValue || '';
       }
     });
-    addFormDynamic.value = formData;
+    storeStore.setAddFormDynamic(formData);
   }
-  isAddingMode.value = true;
+  storeStore.setAddingMode(true);
 }
 
 function cancelAddMode() {
-  isAddingMode.value = false;
-  addFormDynamic.value = {};
+  storeStore.clearAddState();
 }
 
 async function saveAddMode() {
@@ -146,8 +158,7 @@ async function saveAddMode() {
 
   if (!error) {
     message.success('新增邀约信息成功');
-    isAddingMode.value = false;
-    addFormDynamic.value = {};
+    storeStore.clearAddState();
     await loadTree();
   }
 }
@@ -171,14 +182,14 @@ async function openBatchEditModal() {
         formData[field.columnName] = field.defaultValue || '';
       }
     });
-    batchEditForm.value = formData;
-    isBatchEditMode.value = true;
+    storeStore.setBatchEditFields(data.fields);
+    storeStore.setBatchEditForm(formData);
+    storeStore.setBatchEditMode(true);
   }
 }
 
 function cancelBatchEditMode() {
-  isBatchEditMode.value = false;
-  batchEditForm.value = {};
+  storeStore.clearBatchEditState();
 }
 
 async function saveBatchEditMode() {
@@ -209,8 +220,7 @@ async function saveBatchEditMode() {
 
   if (failCount === 0) {
     message.success(`成功修改 ${successCount} 条记录`);
-    isBatchEditMode.value = false;
-    batchEditForm.value = {};
+    storeStore.clearBatchEditState();
     await loadTree();
   } else {
     message.warning(`成功 ${successCount} 条，失败 ${failCount} 条`);
@@ -293,7 +303,7 @@ async function handleAdd() {
 
   if (!error) {
     message.success('新增邀约信息成功');
-    showAddModal.value = false;
+    storeStore.clearAddState();
     await loadTree();
   }
 }
@@ -427,11 +437,22 @@ onMounted(async () => {
   // 初始化过滤后的树数据
   filteredTreeData.value = treeData.value;
 
+  // 从 store 恢复展开状态
+  expandedKeys.value = storeStore.expandedKeys;
+
   // 加载详情字段配置
   const { data } = await fetchDetailFields('2015');
   if (data?.fields) {
     detailFields.value = data.fields;
   }
+});
+
+// 组件重新激活时恢复状态（KeepAlive 缓存）
+onActivated(() => {
+  // 恢复展开状态
+  expandedKeys.value = storeStore.expandedKeys;
+  // 恢复过滤后的树数据
+  filteredTreeData.value = treeData.value;
 });
 </script>
 
@@ -481,7 +502,7 @@ onMounted(async () => {
           default-expand-all
           @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
-          @update:expanded-keys="expandedKeys = $event"
+          @update:expanded-keys="handleExpandedKeysChange"
         />
       </div>
     </div>

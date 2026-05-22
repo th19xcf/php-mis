@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { fetchStoreTree, fetchStoreDetail, fetchStoreOptions } from '@/service/api';
+import type { AddField } from '@/typings/api/workbench';
 
 export const useStoreStore = defineStore('store-store', () => {
   const treeData = ref<TreeOption[]>([]);
@@ -12,6 +13,14 @@ export const useStoreStore = defineStore('store-store', () => {
   const loading = ref(false);
   const expandedKeys = ref<string[]>([]);
   const options = ref<Api.Store.StoreOptions | null>(null);
+  // 多条修改模式状态
+  const isBatchEditMode = ref(false);
+  const batchEditForm = ref<Record<string, any>>({});
+  const batchEditFields = ref<AddField[]>([]);
+  // 新增模式状态
+  const isAddingMode = ref(false);
+  const addFormDynamic = ref<Record<string, any>>({});
+  const addFields = ref<AddField[]>([]);
 
   async function loadTreeData() {
     loading.value = true;
@@ -67,6 +76,42 @@ export const useStoreStore = defineStore('store-store', () => {
     selectedGuids.value = guids;
   }
 
+  function setBatchEditMode(mode: boolean) {
+    isBatchEditMode.value = mode;
+  }
+
+  function setBatchEditForm(form: Record<string, any>) {
+    batchEditForm.value = form;
+  }
+
+  function setBatchEditFields(fields: AddField[]) {
+    batchEditFields.value = fields;
+  }
+
+  function clearBatchEditState() {
+    isBatchEditMode.value = false;
+    batchEditForm.value = {};
+    batchEditFields.value = [];
+  }
+
+  function setAddingMode(mode: boolean) {
+    isAddingMode.value = mode;
+  }
+
+  function setAddFormDynamic(form: Record<string, any>) {
+    addFormDynamic.value = form;
+  }
+
+  function setAddFields(fields: AddField[]) {
+    addFields.value = fields;
+  }
+
+  function clearAddState() {
+    isAddingMode.value = false;
+    addFormDynamic.value = {};
+    addFields.value = [];
+  }
+
   return {
     treeData,
     checkedKeys,
@@ -76,6 +121,12 @@ export const useStoreStore = defineStore('store-store', () => {
     loading,
     expandedKeys,
     options,
+    isBatchEditMode,
+    batchEditForm,
+    batchEditFields,
+    isAddingMode,
+    addFormDynamic,
+    addFields,
     loadTreeData,
     loadStoreDetail,
     loadOptions,
@@ -83,7 +134,15 @@ export const useStoreStore = defineStore('store-store', () => {
     refreshTree,
     setExpandedKeys,
     setCheckedKeys,
-    setSelectedGuids
+    setSelectedGuids,
+    setBatchEditMode,
+    setBatchEditForm,
+    setBatchEditFields,
+    clearBatchEditState,
+    setAddingMode,
+    setAddFormDynamic,
+    setAddFields,
+    clearAddState
   };
 });
 
