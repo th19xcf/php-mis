@@ -22,6 +22,8 @@ const isResizing = ref(false);
 
 const showTransferModal = ref(false);
 const submitting = ref(false);
+const transferForm = ref<Record<string, any>>({});
+const isTransferMode = ref(false);
 // 新增模式状态从 store 获取
 const isAddingMode = computed(() => storeStore.isAddingMode);
 const addFormDynamic = computed({
@@ -172,7 +174,6 @@ async function openBatchEditModal() {
   // 加载批量修改字段配置
   const { data } = await fetchBatchEditFields('2015');
   if (data?.fields) {
-    batchEditFields.value = data.fields;
     // 初始化表单数据（使用默认值）
     const formData: Record<string, any> = {};
     data.fields.forEach((field: AddField) => {
@@ -227,18 +228,37 @@ async function saveBatchEditMode() {
   }
 }
 
-function startEditDetail() {
+async function startEditDetail() {
   if (!storeDetail.value) {
     message.warning('请先选择要编辑的人员');
     return;
   }
-  // 初始化编辑表单数据
+  
+  // 加载新增字段配置，用于编辑时显示控件
+  if (!addFields.value || addFields.value.length === 0) {
+    const { data } = await fetchAddFields('2015');
+    if (data?.fields) {
+      storeStore.setAddFields(data.fields);
+    }
+  }
+  
+  // 初始化编辑表单数据，保留原记录所有字段内容
   const formData: Record<string, any> = {};
+  
+  // 先将 storeDetail 中的所有字段都复制到 formData
+  Object.keys(storeDetail.value).forEach(key => {
+    formData[key] = storeDetail.value?.[key] ?? '';
+  });
+  
+  // 再基于 detailFields 中可编辑字段，确保有值存在
   detailFields.value.forEach(field => {
     if (field.editable) {
-      formData[field.columnName] = storeDetail.value?.[field.columnName] || '';
+      if (formData[field.columnName] === undefined || formData[field.columnName] === null) {
+        formData[field.columnName] = '';
+      }
     }
   });
+  
   editDetailForm.value = formData;
   isEditingDetail.value = true;
 }
@@ -275,12 +295,17 @@ function openTransferModal() {
     面试结果: '',
     面试日期: new Date().toISOString().split('T')[0],
     面试人: '',
-    预约培训日期: '',
+    预约培训日期: undefined,
     住宿: '',
     通勤方式: '',
     通勤时间: ''
   };
-  showTransferModal.value = true;
+  isTransferMode.value = true;
+}
+
+function cancelTransferMode() {
+  isTransferMode.value = false;
+  transferForm.value = {};
 }
 
 // 处理弹窗选择
@@ -323,7 +348,7 @@ async function handleTransfer() {
 
   if (!error) {
     message.success('转入面试成功');
-    showTransferModal.value = false;
+    cancelTransferMode();
     storeStore.clearSelection();
     await loadTree();
   }
@@ -531,7 +556,7 @@ onActivated(() => {
             <template #icon>
               <icon-mdi-arrow-right />
             </template>
-            转面试
+            面试
           </NButton>
           <NButton type="error" size="small" @click="handleDelete">
             <template #icon>
@@ -594,6 +619,97 @@ onActivated(() => {
                     v-else
                     v-model:value="batchEditForm[field.columnName]"
                     size="small"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </div>
+
+        <!-- 面试模式 -->
+        <div v-else-if="isTransferMode">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">面试 (已选择 {{ selectedGuids.length }} 人)</span>
+            <NSpace>
+              <NButton type="primary" size="small" :loading="submitting" @click="handleTransfer">确认</NButton>
+              <NButton size="small" @click="cancelTransferMode">取消</NButton>
+            </NSpace>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>住宿</td>
+                <td>
+                  <NSelect
+                    v-model:value="transferForm.住宿"
+                    :options="[
+                      { value: '住宿', label: '住宿' },
+                      { value: '不住宿', label: '不住宿' }
+                    ]"
+                    placeholder="请选择"
+                    size="small"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>通勤方式</td>
+                <td>
+                  <NInput v-model:value="transferForm.通勤方式" placeholder="请输入通勤方式" size="small" />
+                </td>
+              </tr>
+              <tr>
+                <td>通勤时间</td>
+                <td>
+                  <NInput v-model:value="transferForm.通勤时间" placeholder="请输入通勤时间" size="small" />
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  面试结果
+                  <span class="text-red-500 ml-1">*</span>
+                </td>
+                <td>
+                  <NSelect
+                    v-model:value="transferForm.面试结果"
+                    :options="options?.interviewResult || []"
+                    placeholder="请选择面试结果"
+                    size="small"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>面试日期</td>
+                <td>
+                  <NDatePicker
+                    v-model:formatted-value="transferForm.面试日期"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>面试人</td>
+                <td>
+                  <NInput v-model:value="transferForm.面试人" placeholder="请输入面试人" size="small" />
+                </td>
+              </tr>
+              <tr>
+                <td>预约培训日期</td>
+                <td>
+                  <NDatePicker
+                    v-model:formatted-value="transferForm.预约培训日期"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
                   />
                 </td>
               </tr>
@@ -666,17 +782,20 @@ onActivated(() => {
 
         <!-- 详情/编辑模式 -->
         <div v-else-if="storeDetail">
-          <div class="flex justify-end mb-2">
-            <NButton v-if="!isEditingDetail" type="primary" size="small" @click="startEditDetail">
-              <template #icon>
-                <icon-mdi-pencil />
-              </template>
-              编辑
-            </NButton>
-            <NSpace v-else>
-              <NButton type="primary" size="small" :loading="submitting" @click="saveDetailEdit">保存</NButton>
-              <NButton size="small" @click="cancelDetailEdit">取消</NButton>
-            </NSpace>
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">邀约信息</span>
+            <div>
+              <NButton v-if="!isEditingDetail" type="primary" size="small" @click="startEditDetail">
+                <template #icon>
+                  <icon-mdi-pencil />
+                </template>
+                编辑
+              </NButton>
+              <NSpace v-else>
+                <NButton type="primary" size="small" :loading="submitting" @click="saveDetailEdit">保存</NButton>
+                <NButton size="small" @click="cancelDetailEdit">取消</NButton>
+              </NSpace>
+            </div>
           </div>
           <NTable size="small" :single-line="false">
             <thead>
@@ -724,7 +843,15 @@ onActivated(() => {
                           readonly
                           @click="handlePopupSelect(addField)"
                         />
-                        <!-- 文本输入 -->
+                        <!-- 多行文本输入（工作履历） -->
+                        <NInput
+                          v-else-if="field.columnName === '工作履历'"
+                          type="textarea"
+                          v-model:value="editDetailForm[field.columnName]"
+                          size="small"
+                          :autosize="{ minRows: 2, maxRows: 10 }"
+                        />
+                        <!-- 普通文本输入 -->
                         <NInput
                           v-else
                           v-model:value="editDetailForm[field.columnName]"
@@ -740,6 +867,11 @@ onActivated(() => {
                         {{ storeDetail[field.columnName] || '-' }}
                       </NTag>
                     </template>
+                    <template v-else-if="field.columnName === '工作履历'">
+                      <span style="white-space: pre-wrap; word-break: break-all; line-height: 1.6;">
+                        {{ storeDetail[field.columnName] || '-' }}
+                      </span>
+                    </template>
                     <template v-else>
                       {{ storeDetail[field.columnName] || '-' }}
                     </template>
@@ -753,44 +885,6 @@ onActivated(() => {
         <NEmpty v-else description="请选择左侧人员查看详情或点击新增" class="py-20" />
       </div>
     </div>
-
-    <NModal v-model:show="showTransferModal" title="转入面试" preset="card" class="w-120" :mask-closable="false">
-      <NAlert type="info" class="mb-4">已选择 {{ selectedGuids.length }} 人</NAlert>
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging">
-        <NFormItem label="面试结果" required>
-          <NSelect
-            v-model:value="transferForm.面试结果"
-            :options="options?.interviewResult || []"
-            placeholder="请选择面试结果"
-          />
-        </NFormItem>
-        <NFormItem label="面试日期">
-          <NDatePicker
-            v-model:formatted-value="transferForm.面试日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-        <NFormItem label="面试人">
-          <NInput v-model:value="transferForm.面试人" placeholder="请输入面试人" />
-        </NFormItem>
-        <NFormItem label="预约培训日期">
-          <NDatePicker
-            v-model:formatted-value="transferForm.预约培训日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showTransferModal = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="handleTransfer">确认</NButton>
-        </NSpace>
-      </template>
-    </NModal>
   </div>
 </template>
 
