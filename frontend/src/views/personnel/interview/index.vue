@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { ref, onMounted, h, computed } from 'vue';
+import { ref, onMounted, h, computed, watch } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
+import { useRoute } from 'vue-router';
 import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview } from '@/service/api';
 import { useInterviewStore } from '@/store/modules/interview';
 
 const dialog = useDialog();
 const message = useMessage();
+const route = useRoute();
 const interviewStore = useInterviewStore();
+
+const functionCode = computed(() => {
+  return String(route.query.functionCode || route.meta?.functionCode || '2016');
+});
 
 const treeData = computed(() => interviewStore.treeData);
 const selectedGuids = computed(() => interviewStore.selectedGuids);
@@ -19,52 +25,69 @@ const minLeftWidth = 200;
 const maxLeftWidth = 600;
 const isResizing = ref(false);
 
-const showAddModal = ref(false);
-const showEditModal = ref(false);
-const showTransferModal = ref(false);
+const isAddingMode = ref(false);
+const isEditingDetail = ref(false);
+const isTransferMode = ref(false);
+const isSecondInterviewMode = ref(false);
 const submitting = ref(false);
 
-const addForm = ref({
-  姓名: '',
-  身份证号: '',
-  手机号码: '',
-  属地: '',
-  招聘渠道: '',
-  渠道类型: '',
-  渠道名称: '',
-  信息来源: '',
-  实习结束日期: '',
-  面试业务: '',
-  面试岗位: '',
-  面试日期: new Date().toISOString().split('T')[0],
-  面试结果: '',
-  面试人: '',
-  预约培训日期: undefined,
-  住宿: '',
-  备注说明: ''
-});
+const addFormDynamic = ref<Record<string, any>>({});
 
-const editForm = ref({
-  guid: '',
-  姓名: '',
-  手机号码: '',
-  属地: '',
-  招聘渠道: '',
-  面试日期: '' as string | null,
-  面试结果: '',
-  面试人: '',
-  预约培训日期: '' as string | null,
-  住宿: '',
-  备注说明: ''
-});
+const editDetailForm = ref<Record<string, any>>({});
 
 const transferForm = ref({
   参培信息: '',
   培训业务: '',
   培训批次: '',
   培训老师: '',
-  培训开始日期: '',
-  预计完成日期: ''
+  培训开始日期: undefined,
+  预计完成日期: undefined
+});
+
+const secondInterviewForm = ref({
+  二次面试人: '',
+  二次面试日期: new Date().toISOString().split('T')[0],
+  二次面试记录: '',
+  二次面试结果: '',
+  预约培训日期: undefined
+});
+
+const detailFields = computed(() => {
+  const fields = [
+    { columnName: 'GUID', fieldName: 'GUID', editable: false },
+    { columnName: '姓名', fieldName: '姓名', editable: true },
+    { columnName: '身份证号', fieldName: '身份证号', editable: false },
+    { columnName: '手机号码', fieldName: '手机号码', editable: true },
+    { columnName: '属地', fieldName: '属地', editable: true },
+    { columnName: '招聘渠道', fieldName: '招聘渠道', editable: true },
+    { columnName: '面试日期', fieldName: '面试日期', editable: true },
+    { columnName: '面试人', fieldName: '面试人', editable: true },
+    { columnName: '面试结果', fieldName: '面试结果', editable: true },
+    { columnName: '参培信息', fieldName: '参培信息', editable: false },
+    { columnName: '预约培训日期', fieldName: '预约培训日期', editable: true },
+    { columnName: '面试业务', fieldName: '面试业务', editable: false },
+    { columnName: '面试岗位', fieldName: '面试岗位', editable: false },
+    { columnName: '住宿', fieldName: '住宿', editable: true },
+    { columnName: '备注说明', fieldName: '备注说明', editable: true }
+  ];
+  return fields;
+});
+
+const addFields = computed(() => {
+  const fields = [
+    { columnName: '姓名', fieldName: '姓名', fieldType: '文本', editable: true, objectOptions: [] },
+    { columnName: '身份证号', fieldName: '身份证号', fieldType: '文本', editable: true, objectOptions: [] },
+    { columnName: '手机号码', fieldName: '手机号码', fieldType: '文本', editable: true, objectOptions: [] },
+    { columnName: '属地', fieldName: '属地', fieldType: '选择', editable: true, objectOptions: options.value?.region || [] },
+    { columnName: '招聘渠道', fieldName: '招聘渠道', fieldType: '选择', editable: true, objectOptions: options.value?.channel || [] },
+    { columnName: '面试日期', fieldName: '面试日期', fieldType: '日期', editable: true, objectOptions: [] },
+    { columnName: '面试人', fieldName: '面试人', fieldType: '文本', editable: true, objectOptions: [] },
+    { columnName: '面试结果', fieldName: '面试结果', fieldType: '选择', editable: true, objectOptions: options.value?.interviewResult || [] },
+    { columnName: '预约培训日期', fieldName: '预约培训日期', fieldType: '日期', editable: true, objectOptions: [] },
+    { columnName: '住宿', fieldName: '住宿', fieldType: '文本', editable: true, objectOptions: [] },
+    { columnName: '备注说明', fieldName: '备注说明', fieldType: '文本', editable: true, objectOptions: [] }
+  ];
+  return fields;
 });
 
 function startResize(e: MouseEvent) {
@@ -107,7 +130,9 @@ function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
       if (!node) continue;
       const data = node.data as Api.Interview.InterviewTreeNode;
       if (data.type === 'person' && data.guid) {
-        guids.push(data.guid);
+        if (!guids.includes(data.guid)) {
+          guids.push(data.guid);
+        }
       }
       if (node.children) {
         collectPeople(node.children);
@@ -120,7 +145,9 @@ function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
     if (node) {
       const data = node.data as Api.Interview.InterviewTreeNode;
       if (data.type === 'person' && data.guid) {
-        guids.push(data.guid);
+        if (!guids.includes(data.guid)) {
+          guids.push(data.guid);
+        }
       } else if (node.children) {
         collectPeople(node.children);
       }
@@ -147,48 +174,85 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
 }
 
 function openAddModal() {
-  addForm.value = {
-    姓名: '',
-    身份证号: '',
-    手机号码: '',
-    属地: '',
-    招聘渠道: '',
-    渠道类型: '',
-    渠道名称: '',
-    信息来源: '',
-    实习结束日期: '',
-    面试业务: '',
-    面试岗位: '',
-    面试日期: new Date().toISOString().split('T')[0],
-    面试结果: '',
-    面试人: '',
-    预约培训日期: undefined,
-    住宿: '',
-    备注说明: ''
-  };
-  showAddModal.value = true;
+  const initialForm: Record<string, any> = {};
+  addFields.value.forEach(field => {
+    if (field.fieldType === '日期') {
+      initialForm[field.columnName] = field.columnName === '预约培训日期' ? undefined : new Date().toISOString().split('T')[0];
+    } else {
+      initialForm[field.columnName] = '';
+    }
+  });
+  addFormDynamic.value = initialForm;
+  isAddingMode.value = true;
 }
 
-function openEditModal() {
+function cancelAdd() {
+  isAddingMode.value = false;
+}
+
+async function handleAdd() {
+  if (!addFormDynamic.value.姓名?.trim()) {
+    message.error('姓名不能为空');
+    return;
+  }
+
+  submitting.value = true;
+  const { error } = await fetchAddInterview(addFormDynamic.value);
+  submitting.value = false;
+
+  if (!error) {
+    message.success('新增面试信息成功');
+    isAddingMode.value = false;
+    await loadTree();
+  }
+}
+
+function startEditDetail() {
   if (!interviewDetail.value) {
     message.warning('请先选择要编辑的人员');
     return;
   }
 
-  editForm.value = {
-    guid: interviewDetail.value.GUID,
-    姓名: interviewDetail.value.姓名,
-    手机号码: interviewDetail.value.手机号码,
-    属地: interviewDetail.value.属地,
-    招聘渠道: interviewDetail.value.招聘渠道,
-    面试日期: interviewDetail.value.面试日期 || null,
-    面试结果: interviewDetail.value.面试结果,
-    面试人: interviewDetail.value.面试人,
-    预约培训日期: interviewDetail.value.预约培训日期 || null,
-    住宿: interviewDetail.value.住宿,
-    备注说明: interviewDetail.value.备注说明
-  };
-  showEditModal.value = true;
+  const form: Record<string, any> = {};
+  detailFields.value.forEach(field => {
+    form[field.columnName] = interviewDetail.value?.[field.columnName] ?? '';
+  });
+  editDetailForm.value = form;
+  isEditingDetail.value = true;
+}
+
+function cancelDetailEdit() {
+  isEditingDetail.value = false;
+}
+
+async function saveDetailEdit() {
+  if (!editDetailForm.value.姓名?.trim()) {
+    message.error('姓名不能为空');
+    return;
+  }
+
+  submitting.value = true;
+  const { error } = await fetchUpdateInterview({
+    guid: editDetailForm.value.GUID,
+    姓名: editDetailForm.value.姓名,
+    手机号码: editDetailForm.value.手机号码,
+    属地: editDetailForm.value.属地,
+    招聘渠道: editDetailForm.value.招聘渠道,
+    面试日期: editDetailForm.value.面试日期,
+    面试结果: editDetailForm.value.面试结果,
+    面试人: editDetailForm.value.面试人,
+    预约培训日期: editDetailForm.value.预约培训日期,
+    住宿: editDetailForm.value.住宿,
+    备注说明: editDetailForm.value.备注说明
+  });
+  submitting.value = false;
+
+  if (!error) {
+    message.success('修改面试信息成功');
+    isEditingDetail.value = false;
+    await loadTree();
+    await interviewStore.loadInterviewDetail(editDetailForm.value.GUID);
+  }
 }
 
 function openTransferModal() {
@@ -203,44 +267,13 @@ function openTransferModal() {
     培训批次: '',
     培训老师: '',
     培训开始日期: new Date().toISOString().split('T')[0],
-    预计完成日期: ''
+    预计完成日期: undefined
   };
-  showTransferModal.value = true;
+  isTransferMode.value = true;
 }
 
-async function handleAdd() {
-  if (!addForm.value.姓名.trim()) {
-    message.error('姓名不能为空');
-    return;
-  }
-
-  submitting.value = true;
-  const { error } = await fetchAddInterview(addForm.value);
-  submitting.value = false;
-
-  if (!error) {
-    message.success('新增面试信息成功');
-    showAddModal.value = false;
-    await loadTree();
-  }
-}
-
-async function handleEdit() {
-  if (!editForm.value.姓名.trim()) {
-    message.error('姓名不能为空');
-    return;
-  }
-
-  submitting.value = true;
-  const { error } = await fetchUpdateInterview(editForm.value);
-  submitting.value = false;
-
-  if (!error) {
-    message.success('修改面试信息成功');
-    showEditModal.value = false;
-    await loadTree();
-    await interviewStore.loadInterviewDetail(editForm.value.guid);
-  }
+function cancelTransferMode() {
+  isTransferMode.value = false;
 }
 
 async function handleTransfer() {
@@ -258,7 +291,7 @@ async function handleTransfer() {
 
   if (!error) {
     message.success('转入培训成功');
-    showTransferModal.value = false;
+    isTransferMode.value = false;
     interviewStore.clearSelection();
     await loadTree();
   }
@@ -286,6 +319,53 @@ function handleDelete() {
   });
 }
 
+function handleSecondInterview() {
+  if (selectedGuids.value.length === 0) {
+    message.warning('请选择要进行二次面试的人员');
+    return;
+  }
+
+  secondInterviewForm.value = {
+    二次面试人: '',
+    二次面试日期: new Date().toISOString().split('T')[0],
+    二次面试记录: '',
+    二次面试结果: '',
+    预约培训日期: undefined
+  };
+  isSecondInterviewMode.value = true;
+}
+
+function cancelSecondInterviewMode() {
+  isSecondInterviewMode.value = false;
+}
+
+async function handleSecondInterviewConfirm() {
+  if (!secondInterviewForm.value.二次面试结果) {
+    message.error('请选择二次面试结果');
+    return;
+  }
+
+  submitting.value = true;
+  const { error } = await fetchUpdateInterview({
+    guid: interviewDetail.value?.GUID,
+    二次面试人: secondInterviewForm.value.二次面试人,
+    二次面试日期: secondInterviewForm.value.二次面试日期,
+    二次面试记录: secondInterviewForm.value.二次面试记录,
+    二次面试结果: secondInterviewForm.value.二次面试结果,
+    预约培训日期: secondInterviewForm.value.预约培训日期
+  });
+  submitting.value = false;
+
+  if (!error) {
+    message.success('二次面试信息保存成功');
+    isSecondInterviewMode.value = false;
+    await loadTree();
+    if (interviewDetail.value?.GUID) {
+      await interviewStore.loadInterviewDetail(interviewDetail.value.GUID);
+    }
+  }
+}
+
 function renderPrefix({ option }: { option: TreeOption }) {
   const data = option.data as Api.Interview.InterviewTreeNode;
   const icons: Record<string, string> = {
@@ -311,6 +391,12 @@ onMounted(() => {
   interviewStore.loadTreeData();
   interviewStore.loadOptions();
 });
+
+watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (newValues) => {
+  if (newValues.every(v => !v) && interviewDetail.value) {
+    interviewStore.loadInterviewDetail(interviewDetail.value.GUID);
+  }
+});
 </script>
 
 <template>
@@ -319,7 +405,7 @@ onMounted(() => {
       <div class="panel-header">
         <div class="flex items-center gap-12px">
           <span class="text-lg font-600">面试人员</span>
-          <NTag type="success" size="small">2016</NTag>
+          <NTag type="success" size="small">{{ functionCode }}</NTag>
         </div>
         <NButton size="small" @click="loadTree">
           <template #icon>
@@ -361,224 +447,322 @@ onMounted(() => {
             </template>
             新增
           </NButton>
-          <NButton type="info" size="small" @click="openEditModal">
-            <template #icon>
-              <icon-mdi-pencil />
-            </template>
-            修改
-          </NButton>
-          <NButton type="warning" size="small" @click="openTransferModal">
-            <template #icon>
-              <icon-mdi-arrow-right />
-            </template>
-            转培训
-          </NButton>
           <NButton type="error" size="small" @click="handleDelete">
             <template #icon>
               <icon-mdi-delete />
             </template>
             删除
           </NButton>
+          <NButton type="info" size="small" @click="handleSecondInterview">
+            <template #icon>
+              <icon-mdi-refresh />
+            </template>
+            二次面试
+          </NButton>
+          <NButton type="warning" size="small" @click="openTransferModal">
+            <template #icon>
+              <icon-mdi-arrow-right />
+            </template>
+            培训
+          </NButton>
         </NSpace>
       </div>
       <div class="panel-content">
-        <div v-if="interviewDetail" class="space-y-4">
-          <NDescriptions bordered :column="2" size="small">
-            <NDescriptionsItem label="姓名">
-              {{ interviewDetail.姓名 }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="手机号码">
-              {{ interviewDetail.手机号码 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="身份证号">
-              {{ interviewDetail.身份证号 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="属地">
-              {{ interviewDetail.属地 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="招聘渠道">
-              {{ interviewDetail.招聘渠道 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="面试日期">
-              {{ interviewDetail.面试日期 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="面试人">
-              {{ interviewDetail.面试人 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="面试结果">
-              <NTag :type="interviewDetail.面试结果 === '通过' ? 'success' : 'default'" size="small">
-                {{ interviewDetail.面试结果 || '-' }}
-              </NTag>
-            </NDescriptionsItem>
-            <NDescriptionsItem label="参培信息">
-              {{ interviewDetail.参培信息 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="预约培训日期">
-              {{ interviewDetail.预约培训日期 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="面试业务">
-              {{ interviewDetail.面试业务 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="面试岗位">
-              {{ interviewDetail.面试岗位 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="住宿">
-              {{ interviewDetail.住宿 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="备注说明" :span="2">
-              {{ interviewDetail.备注说明 || '-' }}
-            </NDescriptionsItem>
-          </NDescriptions>
+        <!-- 新增模式 -->
+        <div v-if="isAddingMode" class="space-y-4">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">新增面试信息</span>
+            <NSpace>
+              <NButton type="primary" size="small" :loading="submitting" @click="handleAdd">保存</NButton>
+              <NButton size="small" @click="cancelAdd">取消</NButton>
+            </NSpace>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th class="w-24">是否可新增</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="field in addFields" :key="field.columnName">
+                <td>
+                  {{ field.fieldName }}
+                  <span v-if="field.required" class="text-red-500 ml-1">*</span>
+                </td>
+                <td>
+                  <NTag type="success" size="small">是</NTag>
+                </td>
+                <td>
+                  <NSelect
+                    v-if="field.objectOptions && field.objectOptions.length > 0"
+                    v-model:value="addFormDynamic[field.columnName]"
+                    :options="field.objectOptions"
+                    size="small"
+                    :clearable="true"
+                  />
+                  <NDatePicker
+                    v-else-if="field.fieldType === '日期'"
+                    v-model:formatted-value="addFormDynamic[field.columnName]"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                  <NInput
+                    v-else
+                    v-model:value="addFormDynamic[field.columnName]"
+                    size="small"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </div>
+
+        <!-- 转培训模式 -->
+        <div v-else-if="isTransferMode" class="space-y-4">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">培训 (已选择 {{ selectedGuids.length }} 人)</span>
+            <NSpace>
+              <NButton type="primary" size="small" :loading="submitting" @click="handleTransfer">确认</NButton>
+              <NButton size="small" @click="cancelTransferMode">取消</NButton>
+            </NSpace>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="font-medium">参培信息</td>
+                <td>
+                  <NSelect
+                    v-model:value="transferForm.参培信息"
+                    :options="options?.trainStatus || []"
+                    size="small"
+                    placeholder="请选择参培信息"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td class="font-medium">培训业务</td>
+                <td>
+                  <NSelect
+                    v-model:value="transferForm.培训业务"
+                    :options="options?.trainBiz || []"
+                    size="small"
+                    placeholder="请选择培训业务"
+                    clearable
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td class="font-medium">培训批次</td>
+                <td>
+                  <NInput v-model:value="transferForm.培训批次" size="small" placeholder="请输入培训批次" />
+                </td>
+              </tr>
+              <tr>
+                <td class="font-medium">培训老师</td>
+                <td>
+                  <NInput v-model:value="transferForm.培训老师" size="small" placeholder="请输入培训老师" />
+                </td>
+              </tr>
+              <tr>
+                <td class="font-medium">培训开始日期</td>
+                <td>
+                  <NDatePicker
+                    v-model:formatted-value="transferForm.培训开始日期"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td class="font-medium">预计完成日期</td>
+                <td>
+                  <NDatePicker
+                    v-model:formatted-value="transferForm.预计完成日期"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </div>
+
+        <!-- 二次面试模式 -->
+        <div v-else-if="isSecondInterviewMode" class="space-y-4">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">二次面试 (已选择 {{ selectedGuids.length }} 人)</span>
+            <NSpace>
+              <NButton type="primary" size="small" :loading="submitting" @click="handleSecondInterviewConfirm">确认</NButton>
+              <NButton size="small" @click="cancelSecondInterviewMode">取消</NButton>
+            </NSpace>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>二次面试人</td>
+                <td>
+                  <NInput v-model:value="secondInterviewForm.二次面试人" placeholder="请输入二次面试人" size="small" />
+                </td>
+              </tr>
+              <tr>
+                <td>二次面试日期</td>
+                <td>
+                  <NDatePicker
+                    v-model:formatted-value="secondInterviewForm.二次面试日期"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>二次面试记录</td>
+                <td>
+                  <NInput
+                    v-model:value="secondInterviewForm.二次面试记录"
+                    type="textarea"
+                    placeholder="请输入二次面试记录"
+                    size="small"
+                    :autosize="{ minRows: 2, maxRows: 6 }"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  二次面试结果
+                  <span class="text-red-500 ml-1">*</span>
+                </td>
+                <td>
+                  <NSelect
+                    v-model:value="secondInterviewForm.二次面试结果"
+                    :options="options?.interviewResult || []"
+                    placeholder="请选择二次面试结果"
+                    size="small"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>预约培训日期</td>
+                <td>
+                  <NDatePicker
+                    v-model:formatted-value="secondInterviewForm.预约培训日期"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </div>
+
+        <!-- 详情/编辑模式 -->
+        <div v-else-if="interviewDetail">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">面试信息</span>
+            <div>
+              <NButton
+                v-if="!isEditingDetail"
+                type="primary"
+                size="small"
+                :disabled="!interviewDetail || !interviewStore.selectedGuids.includes(String(interviewDetail.GUID))"
+                @click="startEditDetail"
+              >
+                <template #icon>
+                  <icon-mdi-pencil />
+                </template>
+                编辑
+              </NButton>
+              <NSpace v-else>
+                <NButton type="primary" size="small" :loading="submitting" @click="saveDetailEdit">保存</NButton>
+                <NButton size="small" @click="cancelDetailEdit">取消</NButton>
+              </NSpace>
+            </div>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th class="w-24">是否可修改</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="field in detailFields" :key="field.columnName">
+                <td>{{ field.fieldName }}</td>
+                <td>
+                  <NTag :type="field.editable ? 'success' : 'default'" size="small">
+                    {{ field.editable ? '是' : '否' }}
+                  </NTag>
+                </td>
+                <td>
+                  <template v-if="isEditingDetail && field.editable">
+                    <template v-for="addField in addFields" :key="addField.columnName">
+                      <template v-if="addField.columnName === field.columnName">
+                        <NSelect
+                          v-if="addField.objectOptions && addField.objectOptions.length > 0"
+                          v-model:value="editDetailForm[field.columnName]"
+                          :options="addField.objectOptions"
+                          size="small"
+                          clearable
+                        />
+                        <NDatePicker
+                          v-else-if="addField.fieldType === '日期'"
+                          v-model:formatted-value="editDetailForm[field.columnName]"
+                          value-format="yyyy-MM-dd"
+                          type="date"
+                          size="small"
+                          class="w-full"
+                        />
+                        <NInput
+                          v-else
+                          v-model:value="editDetailForm[field.columnName]"
+                          size="small"
+                        />
+                      </template>
+                    </template>
+                  </template>
+                  <template v-else>
+                    <template v-if="field.columnName === '面试结果'">
+                      <NTag :type="interviewDetail[field.columnName] === '通过' ? 'success' : 'default'" size="small">
+                        {{ interviewDetail[field.columnName] || '-' }}
+                      </NTag>
+                    </template>
+                    <template v-else>
+                      {{ interviewDetail[field.columnName] || '-' }}
+                    </template>
+                  </template>
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
         </div>
 
         <NEmpty v-else description="请选择左侧人员查看详情" class="py-20" />
       </div>
     </div>
-
-    <NModal v-model:show="showAddModal" title="新增面试信息" preset="card" class="w-150" :mask-closable="false">
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging">
-        <NFormItem label="姓名" required>
-          <NInput v-model:value="addForm.姓名" placeholder="请输入姓名" />
-        </NFormItem>
-        <NFormItem label="手机号码">
-          <NInput v-model:value="addForm.手机号码" placeholder="请输入手机号码" />
-        </NFormItem>
-        <NFormItem label="属地">
-          <NSelect v-model:value="addForm.属地" :options="options?.region || []" placeholder="请选择属地" clearable />
-        </NFormItem>
-        <NFormItem label="招聘渠道">
-          <NSelect
-            v-model:value="addForm.招聘渠道"
-            :options="options?.channel || []"
-            placeholder="请选择招聘渠道"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="面试结果">
-          <NSelect
-            v-model:value="addForm.面试结果"
-            :options="options?.interviewResult || []"
-            placeholder="请选择面试结果"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="面试日期">
-          <NDatePicker
-            v-model:formatted-value="addForm.面试日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-        <NFormItem label="预约培训日期">
-          <NDatePicker
-            v-model:formatted-value="addForm.预约培训日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showAddModal = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="handleAdd">确认</NButton>
-        </NSpace>
-      </template>
-    </NModal>
-
-    <NModal v-model:show="showEditModal" title="修改面试信息" preset="card" class="w-150" :mask-closable="false">
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging">
-        <NFormItem label="姓名" required>
-          <NInput v-model:value="editForm.姓名" placeholder="请输入姓名" />
-        </NFormItem>
-        <NFormItem label="手机号码">
-          <NInput v-model:value="editForm.手机号码" placeholder="请输入手机号码" />
-        </NFormItem>
-        <NFormItem label="属地">
-          <NSelect v-model:value="editForm.属地" :options="options?.region || []" placeholder="请选择属地" clearable />
-        </NFormItem>
-        <NFormItem label="招聘渠道">
-          <NSelect
-            v-model:value="editForm.招聘渠道"
-            :options="options?.channel || []"
-            placeholder="请选择招聘渠道"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="面试结果">
-          <NSelect
-            v-model:value="editForm.面试结果"
-            :options="options?.interviewResult || []"
-            placeholder="请选择面试结果"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="预约培训日期">
-          <NDatePicker
-            v-model:formatted-value="editForm.预约培训日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showEditModal = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="handleEdit">确认</NButton>
-        </NSpace>
-      </template>
-    </NModal>
-
-    <NModal v-model:show="showTransferModal" title="转入培训" preset="card" class="w-120" :mask-closable="false">
-      <NAlert type="info" class="mb-4">已选择 {{ selectedGuids.length }} 人</NAlert>
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging">
-        <NFormItem label="参培信息" required>
-          <NSelect
-            v-model:value="transferForm.参培信息"
-            :options="options?.trainStatus || []"
-            placeholder="请选择参培信息"
-          />
-        </NFormItem>
-        <NFormItem label="培训业务">
-          <NSelect
-            v-model:value="transferForm.培训业务"
-            :options="options?.trainBiz || []"
-            placeholder="请选择培训业务"
-            clearable
-          />
-        </NFormItem>
-        <NFormItem label="培训批次">
-          <NInput v-model:value="transferForm.培训批次" placeholder="请输入培训批次" />
-        </NFormItem>
-        <NFormItem label="培训老师">
-          <NInput v-model:value="transferForm.培训老师" placeholder="请输入培训老师" />
-        </NFormItem>
-        <NFormItem label="培训开始日期">
-          <NDatePicker
-            v-model:formatted-value="transferForm.培训开始日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-        <NFormItem label="预计完成日期">
-          <NDatePicker
-            v-model:formatted-value="transferForm.预计完成日期"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showTransferModal = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="handleTransfer">确认</NButton>
-        </NSpace>
-      </template>
-    </NModal>
   </div>
 </template>
 

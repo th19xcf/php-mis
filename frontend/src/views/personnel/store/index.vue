@@ -2,13 +2,19 @@
 import { ref, onMounted, onActivated, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
+import { useRoute } from 'vue-router';
 import { fetchAddStore, fetchUpdateStore, fetchDeleteStore, fetchTransferStore, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
 import { useStoreStore } from '@/store/modules/store';
 import type { AddField, DetailField } from '@/typings/api/workbench';
 
 const dialog = useDialog();
 const message = useMessage();
+const route = useRoute();
 const storeStore = useStoreStore();
+
+const functionCode = computed(() => {
+  return String(route.query.functionCode || route.meta?.functionCode || '2015');
+});
 
 const treeData = computed(() => storeStore.treeData);
 const selectedGuids = computed(() => storeStore.selectedGuids);
@@ -124,7 +130,7 @@ function handleExpandedKeysChange(keys: string[]) {
 
 async function openAddModal() {
   // 加载动态字段配置
-  const { data } = await fetchAddFields('2015');
+  const { data } = await fetchAddFields(functionCode.value);
   if (data?.fields) {
     storeStore.setAddFields(data.fields);
     // 初始化表单数据
@@ -172,7 +178,7 @@ async function openBatchEditModal() {
   }
 
   // 加载批量修改字段配置
-  const { data } = await fetchBatchEditFields('2015');
+  const { data } = await fetchBatchEditFields(functionCode.value);
   if (data?.fields) {
     // 初始化表单数据（使用默认值）
     const formData: Record<string, any> = {};
@@ -236,7 +242,7 @@ async function startEditDetail() {
   
   // 加载新增字段配置，用于编辑时显示控件
   if (!addFields.value || addFields.value.length === 0) {
-    const { data } = await fetchAddFields('2015');
+    const { data } = await fetchAddFields(functionCode.value);
     if (data?.fields) {
       storeStore.setAddFields(data.fields);
     }
@@ -466,7 +472,7 @@ onMounted(async () => {
   expandedKeys.value = storeStore.expandedKeys;
 
   // 加载详情字段配置
-  const { data } = await fetchDetailFields('2015');
+  const { data } = await fetchDetailFields(functionCode.value);
   if (data?.fields) {
     detailFields.value = data.fields;
   }
@@ -487,7 +493,7 @@ onActivated(() => {
       <div class="panel-header">
         <div class="flex items-center gap-12px">
           <span class="text-lg font-600">邀约人员</span>
-          <NTag type="success" size="small">2015</NTag>
+          <NTag type="success" size="small">{{ functionCode }}</NTag>
         </div>
         <NButton size="small" @click="loadTree">
           <template #icon>
@@ -552,17 +558,17 @@ onActivated(() => {
             </template>
             多条修改
           </NButton>
-          <NButton type="warning" size="small" @click="openTransferModal">
-            <template #icon>
-              <icon-mdi-arrow-right />
-            </template>
-            面试
-          </NButton>
           <NButton type="error" size="small" @click="handleDelete">
             <template #icon>
               <icon-mdi-delete />
             </template>
             删除
+          </NButton>
+          <NButton type="warning" size="small" @click="openTransferModal">
+            <template #icon>
+              <icon-mdi-arrow-right />
+            </template>
+            面试
           </NButton>
         </NSpace>
       </div>
