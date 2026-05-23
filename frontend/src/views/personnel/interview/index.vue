@@ -31,6 +31,10 @@ const isTransferMode = ref(false);
 const isSecondInterviewMode = ref(false);
 const submitting = ref(false);
 
+const searchKeyword = ref('');
+const filteredTreeData = ref<TreeOption[]>([]);
+const expandedKeys = ref<string[]>([]);
+
 const addFormDynamic = ref<Record<string, any>>({});
 
 const editDetailForm = ref<Record<string, any>>({});
@@ -380,6 +384,64 @@ function renderPrefix({ option }: { option: TreeOption }) {
   return h('span', { class: 'mr-1' }, icons[data.type] || '📄');
 }
 
+function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOption[]; expanded: string[] } {
+  const expanded: string[] = [];
+  const lowerKeyword = keyword.toLowerCase();
+
+  function filterNode(node: TreeOption): TreeOption | null {
+    const data = node.data as Api.Interview.InterviewTreeNode;
+    const label = (node.label as string) || '';
+    const match = label.toLowerCase().includes(lowerKeyword);
+
+    const filteredChildren: TreeOption[] = [];
+    if (node.children) {
+      for (const child of node.children as TreeOption[]) {
+        const filtered = filterNode(child);
+        if (filtered) {
+          filteredChildren.push(filtered);
+        }
+      }
+    }
+
+    if (match || filteredChildren.length > 0) {
+      if (filteredChildren.length > 0) {
+        expanded.push(node.key as string);
+      }
+      return {
+        ...node,
+        children: filteredChildren.length > 0 ? filteredChildren : node.children
+      };
+    }
+
+    return null;
+  }
+
+  const filtered = nodes.map(node => filterNode(node)).filter((n): n is TreeOption => n !== null);
+  return { nodes: filtered, expanded };
+}
+
+function handleSearch() {
+  if (!searchKeyword.value.trim()) {
+    filteredTreeData.value = treeData.value;
+    expandedKeys.value = [];
+    return;
+  }
+
+  const { nodes, expanded } = filterTreeData(treeData.value, searchKeyword.value);
+  filteredTreeData.value = nodes;
+  expandedKeys.value = expanded;
+}
+
+function clearSearch() {
+  searchKeyword.value = '';
+  filteredTreeData.value = treeData.value;
+  expandedKeys.value = [];
+}
+
+function handleExpandedKeysChange(keys: string[]) {
+  expandedKeys.value = keys;
+}
+
 onMounted(() => {
   const savedWidth = localStorage.getItem('interview-splitter-width');
   if (savedWidth) {
@@ -390,6 +452,14 @@ onMounted(() => {
   }
   interviewStore.loadTreeData();
   interviewStore.loadOptions();
+
+  filteredTreeData.value = treeData.value;
+});
+
+watch(treeData, (newData) => {
+  if (!searchKeyword.value.trim()) {
+    filteredTreeData.value = newData;
+  }
 });
 
 watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (newValues) => {
@@ -415,8 +485,25 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (n
         </NButton>
       </div>
       <div class="panel-content">
+        <div class="mb-2">
+          <NInput
+            v-model:value="searchKeyword"
+            placeholder="搜索人员或分类..."
+            clearable
+            @keyup.enter="handleSearch"
+            @clear="clearSearch"
+          >
+            <template #suffix>
+              <NButton text size="small" @click="handleSearch">
+                <template #icon>
+                  <icon-mdi-magnify />
+                </template>
+              </NButton>
+            </template>
+          </NInput>
+        </div>
         <NTree
-          :data="treeData"
+          :data="filteredTreeData"
           :render-prefix="renderPrefix"
           checkable
           cascade
@@ -424,11 +511,11 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (n
           block-line
           block-node
           :checked-keys="interviewStore.checkedKeys"
-          :expanded-keys="interviewStore.expandedKeys"
+          :expanded-keys="expandedKeys"
           default-expand-all
           @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
-          @update:expanded-keys="interviewStore.setExpandedKeys"
+          @update:expanded-keys="handleExpandedKeysChange"
         />
       </div>
     </div>
