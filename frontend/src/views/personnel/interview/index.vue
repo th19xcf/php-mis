@@ -3,7 +3,7 @@ import { ref, onMounted, h, computed, watch } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
-import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview } from '@/service/api';
+import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview, fetchAddFields, fetchDetailFields } from '@/service/api';
 import { useInterviewStore } from '@/store/modules/interview';
 
 const dialog = useDialog();
@@ -39,7 +39,7 @@ const addFormDynamic = ref<Record<string, any>>({});
 
 const editDetailForm = ref<Record<string, any>>({});
 
-const transferForm = ref({
+const transferForm = ref<Record<string, string | undefined>>({
   参培信息: '',
   培训业务: '',
   培训批次: '',
@@ -56,43 +56,45 @@ const secondInterviewForm = ref({
   预约培训日期: undefined
 });
 
-const detailFields = computed(() => {
-  const fields = [
-    { columnName: 'GUID', fieldName: 'GUID', editable: false },
-    { columnName: '姓名', fieldName: '姓名', editable: true },
-    { columnName: '身份证号', fieldName: '身份证号', editable: false },
-    { columnName: '手机号码', fieldName: '手机号码', editable: true },
-    { columnName: '属地', fieldName: '属地', editable: true },
-    { columnName: '招聘渠道', fieldName: '招聘渠道', editable: true },
-    { columnName: '面试日期', fieldName: '面试日期', editable: true },
-    { columnName: '面试人', fieldName: '面试人', editable: true },
-    { columnName: '面试结果', fieldName: '面试结果', editable: true },
-    { columnName: '参培信息', fieldName: '参培信息', editable: false },
-    { columnName: '预约培训日期', fieldName: '预约培训日期', editable: true },
-    { columnName: '面试业务', fieldName: '面试业务', editable: false },
-    { columnName: '面试岗位', fieldName: '面试岗位', editable: false },
-    { columnName: '住宿', fieldName: '住宿', editable: true },
-    { columnName: '备注说明', fieldName: '备注说明', editable: true }
-  ];
-  return fields;
-});
+const detailFields = ref<Array<{ columnName: string; fieldName: string; editable: boolean }>>([]);
+const addFields = ref<Array<{ columnName: string; fieldName: string; fieldType: string; editable: boolean; required: boolean; objectOptions: Array<{ value: string; label: string }> }>>([]);
 
-const addFields = computed(() => {
-  const fields = [
-    { columnName: '姓名', fieldName: '姓名', fieldType: '文本', editable: true, objectOptions: [] },
-    { columnName: '身份证号', fieldName: '身份证号', fieldType: '文本', editable: true, objectOptions: [] },
-    { columnName: '手机号码', fieldName: '手机号码', fieldType: '文本', editable: true, objectOptions: [] },
-    { columnName: '属地', fieldName: '属地', fieldType: '选择', editable: true, objectOptions: options.value?.region || [] },
-    { columnName: '招聘渠道', fieldName: '招聘渠道', fieldType: '选择', editable: true, objectOptions: options.value?.channel || [] },
-    { columnName: '面试日期', fieldName: '面试日期', fieldType: '日期', editable: true, objectOptions: [] },
-    { columnName: '面试人', fieldName: '面试人', fieldType: '文本', editable: true, objectOptions: [] },
-    { columnName: '面试结果', fieldName: '面试结果', fieldType: '选择', editable: true, objectOptions: options.value?.interviewResult || [] },
-    { columnName: '预约培训日期', fieldName: '预约培训日期', fieldType: '日期', editable: true, objectOptions: [] },
-    { columnName: '住宿', fieldName: '住宿', fieldType: '文本', editable: true, objectOptions: [] },
-    { columnName: '备注说明', fieldName: '备注说明', fieldType: '文本', editable: true, objectOptions: [] }
-  ];
-  return fields;
-});
+async function loadFields() {
+  const code = Array.isArray(functionCode.value) ? functionCode.value[0] : functionCode.value;
+  const [addResult, detailResult] = await Promise.all([
+    fetchAddFields(code),
+    fetchDetailFields(code)
+  ]);
+  
+  if (addResult.data?.fields) {
+    addFields.value = addResult.data.fields.map((field: any) => ({
+      columnName: field.columnName,
+      fieldName: field.fieldName,
+      fieldType: field.fieldType || '文本',
+      editable: field.editable !== undefined ? field.editable : true,
+      required: field.required || false,
+      objectOptions: field.objectOptions || []
+    }));
+    
+    addFields.value.forEach(field => {
+      if (field.columnName === '属地') {
+        field.objectOptions = options.value?.region || [];
+      } else if (field.columnName === '招聘渠道') {
+        field.objectOptions = options.value?.channel || [];
+      } else if (field.columnName === '面试结果') {
+        field.objectOptions = options.value?.interviewResult || [];
+      }
+    });
+  }
+  
+  if (detailResult.data?.fields) {
+    detailFields.value = detailResult.data.fields.map((field: any) => ({
+      columnName: field.columnName,
+      fieldName: field.fieldName,
+      editable: field.editable !== undefined ? field.editable : false
+    }));
+  }
+}
 
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -177,7 +179,9 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
   }
 }
 
-function openAddModal() {
+async function openAddModal() {
+  await loadFields();
+  
   const initialForm: Record<string, any> = {};
   addFields.value.forEach(field => {
     if (field.fieldType === '日期') {
@@ -195,13 +199,14 @@ function cancelAdd() {
 }
 
 async function handleAdd() {
-  if (!addFormDynamic.value.姓名?.trim()) {
-    message.error('姓名不能为空');
+  const requiredField = addFields.value.find(field => field.required && !addFormDynamic.value[field.columnName]?.trim());
+  if (requiredField) {
+    message.error(`${requiredField.fieldName}不能为空`);
     return;
   }
 
   submitting.value = true;
-  const { error } = await fetchAddInterview(addFormDynamic.value);
+  const { error } = await fetchAddInterview(addFormDynamic.value as any);
   submitting.value = false;
 
   if (!error) {
@@ -211,16 +216,35 @@ async function handleAdd() {
   }
 }
 
-function startEditDetail() {
+async function startEditDetail() {
   if (!interviewDetail.value) {
     message.warning('请先选择要编辑的人员');
     return;
   }
 
+  if (!addFields.value || addFields.value.length === 0) {
+    await loadFields();
+  }
+
   const form: Record<string, any> = {};
-  detailFields.value.forEach(field => {
-    form[field.columnName] = interviewDetail.value?.[field.columnName] ?? '';
+  
+  Object.keys(interviewDetail.value as Record<string, any>).forEach((key: string) => {
+    form[key] = (interviewDetail.value as Record<string, any>)[key] ?? '';
   });
+  
+  detailFields.value.forEach(field => {
+    if (field.editable) {
+      const addField = addFields.value.find(f => f.columnName === field.columnName);
+      if (addField?.fieldType === '日期') {
+        if (!form[field.columnName] || form[field.columnName] === '' || form[field.columnName] === '0000-00-00') {
+          form[field.columnName] = undefined;
+        }
+      } else if (form[field.columnName] === undefined || form[field.columnName] === null) {
+        form[field.columnName] = '';
+      }
+    }
+  });
+  
   editDetailForm.value = form;
   isEditingDetail.value = true;
 }
@@ -351,7 +375,7 @@ async function handleSecondInterviewConfirm() {
 
   submitting.value = true;
   const { error } = await fetchUpdateInterview({
-    guid: interviewDetail.value?.GUID,
+    guid: interviewDetail.value?.GUID || '',
     二次面试人: secondInterviewForm.value.二次面试人,
     二次面试日期: secondInterviewForm.value.二次面试日期,
     二次面试记录: secondInterviewForm.value.二次面试记录,
@@ -442,7 +466,7 @@ function handleExpandedKeysChange(keys: string[]) {
   expandedKeys.value = keys;
 }
 
-onMounted(() => {
+onMounted(async () => {
   const savedWidth = localStorage.getItem('interview-splitter-width');
   if (savedWidth) {
     const width = Number(savedWidth);
@@ -454,6 +478,8 @@ onMounted(() => {
   interviewStore.loadOptions();
 
   filteredTreeData.value = treeData.value;
+  
+  await loadFields();
 });
 
 watch(treeData, (newData) => {

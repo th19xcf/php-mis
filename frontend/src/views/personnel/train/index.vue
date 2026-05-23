@@ -8,7 +8,9 @@ import {
   fetchUpdateTrain,
   fetchBatchUpdateTrain,
   fetchDeleteTrain,
-  fetchTransferTrain
+  fetchTransferTrain,
+  fetchAddFields,
+  fetchDetailFields
 } from '@/service/api';
 
 const route = useRoute();
@@ -53,30 +55,35 @@ const transferForm = ref({
   入职次数: 1
 });
 
-const detailFields = computed(() => {
-  const fields = [
-    { columnName: 'GUID', fieldName: 'GUID', editable: false },
-    { columnName: '姓名', fieldName: '姓名', editable: false },
-    { columnName: '身份证号', fieldName: '身份证号', editable: false },
-    { columnName: '手机号码', fieldName: '手机号码', editable: false },
-    { columnName: '属地', fieldName: '属地', editable: false },
-    { columnName: '培训状态', fieldName: '培训状态', editable: false },
-    { columnName: '培训业务', fieldName: '培训业务', editable: true },
-    { columnName: '培训批次', fieldName: '培训批次', editable: true },
-    { columnName: '培训老师', fieldName: '培训老师', editable: true },
-    { columnName: '培训开始日期', fieldName: '培训开始日期', editable: true },
-    { columnName: '预计完成日期', fieldName: '预计完成日期', editable: true },
-    { columnName: '培训完成日期', fieldName: '培训完成日期', editable: false },
-    { columnName: '培训天数', fieldName: '培训天数', editable: false },
-    { columnName: '岗位类型', fieldName: '岗位类型', editable: false },
-    { columnName: '结算类型', fieldName: '结算类型', editable: false },
-    { columnName: '入职次数', fieldName: '入职次数', editable: false },
-    { columnName: '培训离开原因', fieldName: '培训离开原因', editable: false },
-    { columnName: '创建时间', fieldName: '创建时间', editable: false },
-    { columnName: '操作时间', fieldName: '操作时间', editable: false }
-  ];
-  return fields;
-});
+const detailFields = ref<Array<{ columnName: string; fieldName: string; editable: boolean }>>([]);
+const addFields = ref<Array<{ columnName: string; fieldName: string; fieldType: string; editable: boolean; required: boolean; objectOptions: Array<{ value: string; label: string }> }>>([]);
+
+async function loadFields() {
+  const code = Array.isArray(functionCode.value) ? functionCode.value[0] : functionCode.value;
+  const [addResult, detailResult] = await Promise.all([
+    fetchAddFields(code),
+    fetchDetailFields(code)
+  ]);
+  
+  if (addResult.data?.fields) {
+    addFields.value = addResult.data.fields.map((field: any) => ({
+      columnName: field.columnName,
+      fieldName: field.fieldName,
+      fieldType: field.fieldType || '文本',
+      editable: field.editable !== undefined ? field.editable : true,
+      required: field.required || false,
+      objectOptions: field.objectOptions || []
+    }));
+  }
+  
+  if (detailResult.data?.fields) {
+    detailFields.value = detailResult.data.fields.map((field: any) => ({
+      columnName: field.columnName,
+      fieldName: field.fieldName,
+      editable: field.editable !== undefined ? field.editable : false
+    }));
+  }
+}
 
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -155,16 +162,36 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
   }
 }
 
-function startEditDetail() {
+async function startEditDetail() {
   if (!trainDetail.value) {
     message.warning('请先选择人员');
     return;
   }
 
-  editDetailForm.value = {};
-  detailFields.value.forEach(field => {
-    editDetailForm.value[field.fieldName] = trainDetail.value?.[field.fieldName] || '';
+  if (!addFields.value || addFields.value.length === 0) {
+    await loadFields();
+  }
+
+  const form: Record<string, any> = {};
+  
+  Object.keys(trainDetail.value as Record<string, any>).forEach((key: string) => {
+    form[key] = (trainDetail.value as Record<string, any>)[key] ?? '';
   });
+  
+  detailFields.value.forEach(field => {
+    if (field.editable) {
+      const addField = addFields.value.find(f => f.columnName === field.columnName);
+      if (addField?.fieldType === '日期') {
+        if (!form[field.columnName] || form[field.columnName] === '' || form[field.columnName] === '0000-00-00') {
+          form[field.columnName] = undefined;
+        }
+      } else if (form[field.columnName] === undefined || form[field.columnName] === null) {
+        form[field.columnName] = '';
+      }
+    }
+  });
+  
+  editDetailForm.value = form;
   isEditingDetail.value = true;
 }
 
@@ -389,6 +416,8 @@ onMounted(async () => {
   await trainStore.loadOptions();
 
   filteredTreeData.value = treeData.value;
+  
+  await loadFields();
 });
 </script>
 

@@ -43,11 +43,18 @@ async function scrollToActiveTab() {
   if (!tabRef.value) return;
 
   const { children } = tabRef.value;
+  if (!children || children.length === 0) return;
 
   for (let i = 0; i < children.length; i += 1) {
     const child = children[i];
+    if (!child) continue;
+    if (!child.parentNode) continue;
 
-    const { value: tabId } = (child.attributes as TabNamedNodeMap)[TAB_DATA_ID];
+    const attributes = child.attributes as TabNamedNodeMap;
+    if (!attributes || !attributes[TAB_DATA_ID]) continue;
+
+    const { value: tabId } = attributes[TAB_DATA_ID];
+    if (!tabId) continue;
 
     if (tabId === tabStore.activeTabId) {
       const { left, width } = child.getBoundingClientRect();

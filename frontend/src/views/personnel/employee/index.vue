@@ -7,7 +7,9 @@ import { useEmployeeStore } from '@/store/modules/employee';
 import {
   fetchUpdateEmployee,
   fetchBatchUpdateEmployee,
-  fetchDeleteEmployee
+  fetchDeleteEmployee,
+  fetchAddFields,
+  fetchDetailFields
 } from '@/service/api';
 
 const route = useRoute();
@@ -48,38 +50,35 @@ const batchForm = ref({
   离职原因: ''
 });
 
-const detailFields = [
-  { fieldName: '姓名', columnName: '姓名', editable: false },
-  { fieldName: '工号', columnName: '工号1', editable: false },
-  { fieldName: '属地', columnName: '属地', editable: false },
-  { fieldName: '员工状态', columnName: '员工状态', editable: true },
-  { fieldName: '部门名称', columnName: '部门名称', editable: true },
-  { fieldName: '班组', columnName: '班组', editable: true },
-  { fieldName: '岗位名称', columnName: '岗位名称', editable: false },
-  { fieldName: '岗位类型', columnName: '岗位类型', editable: false },
-  { fieldName: '结算类型', columnName: '结算类型', editable: false },
-  { fieldName: '培训开始日期', columnName: '培训开始日期', editable: false },
-  { fieldName: '培训完成日期', columnName: '培训完成日期', editable: false },
-  { fieldName: '一阶段日期', columnName: '一阶段日期', editable: true },
-  { fieldName: '二阶段日期', columnName: '二阶段日期', editable: true },
-  { fieldName: '离职日期', columnName: '离职日期', editable: true },
-  { fieldName: '离职原因', columnName: '离职原因', editable: true }
-];
+const detailFields = ref<Array<{ columnName: string; fieldName: string; editable: boolean }>>([]);
+const addFields = ref<Array<{ columnName: string; fieldName: string; fieldType: string; editable: boolean; required: boolean; objectOptions: Array<{ value: string; label: string }> }>>([]);
 
-const addFields: Array<{
-  fieldName: string;
-  columnName: string;
-  fieldType: string;
-  objectOptions: Array<{ value: string; label: string }>;
-}> = [
-  { fieldName: '员工状态', columnName: '员工状态', fieldType: '选择', objectOptions: [] },
-  { fieldName: '部门名称', columnName: '部门名称', fieldType: '文本', objectOptions: [] },
-  { fieldName: '班组', columnName: '班组', fieldType: '文本', objectOptions: [] },
-  { fieldName: '一阶段日期', columnName: '一阶段日期', fieldType: '日期', objectOptions: [] },
-  { fieldName: '二阶段日期', columnName: '二阶段日期', fieldType: '日期', objectOptions: [] },
-  { fieldName: '离职日期', columnName: '离职日期', fieldType: '日期', objectOptions: [] },
-  { fieldName: '离职原因', columnName: '离职原因', fieldType: '文本', objectOptions: [] }
-];
+async function loadFields() {
+  const code = Array.isArray(functionCode.value) ? functionCode.value[0] : functionCode.value;
+  const [addResult, detailResult] = await Promise.all([
+    fetchAddFields(code),
+    fetchDetailFields(code)
+  ]);
+  
+  if (addResult.data?.fields) {
+    addFields.value = addResult.data.fields.map((field: any) => ({
+      columnName: field.columnName,
+      fieldName: field.fieldName,
+      fieldType: field.fieldType || '文本',
+      editable: field.editable !== undefined ? field.editable : true,
+      required: field.required || false,
+      objectOptions: field.objectOptions || []
+    }));
+  }
+  
+  if (detailResult.data?.fields) {
+    detailFields.value = detailResult.data.fields.map((field: any) => ({
+      columnName: field.columnName,
+      fieldName: field.fieldName,
+      editable: field.editable !== undefined ? field.editable : false
+    }));
+  }
+}
 
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -157,26 +156,36 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
   }
 }
 
-function startEditDetail() {
+async function startEditDetail() {
   if (!employeeDetail.value) {
     message.warning('请先选择要编辑的人员');
     return;
   }
+
+  if (!addFields.value || addFields.value.length === 0) {
+    await loadFields();
+  }
+
+  const form: Record<string, any> = {};
   
-  const formData: Record<string, any> = {};
   Object.keys(employeeDetail.value as Record<string, any>).forEach((key: string) => {
-    formData[key] = (employeeDetail.value as Record<string, any>)[key] ?? '';
+    form[key] = (employeeDetail.value as Record<string, any>)[key] ?? '';
   });
   
-  detailFields.forEach(field => {
+  detailFields.value.forEach(field => {
     if (field.editable) {
-      if (formData[field.columnName] === undefined || formData[field.columnName] === null) {
-        formData[field.columnName] = '';
+      const addField = addFields.value.find(f => f.columnName === field.columnName);
+      if (addField?.fieldType === '日期') {
+        if (!form[field.columnName] || form[field.columnName] === '' || form[field.columnName] === '0000-00-00') {
+          form[field.columnName] = undefined;
+        }
+      } else if (form[field.columnName] === undefined || form[field.columnName] === null) {
+        form[field.columnName] = '';
       }
     }
   });
   
-  editDetailForm.value = formData;
+  editDetailForm.value = form;
   isEditingDetail.value = true;
 }
 
@@ -358,7 +367,9 @@ onMounted(async () => {
   
   filteredTreeData.value = treeData.value;
   
-  addFields.forEach(field => {
+  await loadFields();
+  
+  addFields.value.forEach(field => {
     if (field.columnName === '员工状态') {
       field.objectOptions = options.value?.status || [];
     }
