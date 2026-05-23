@@ -42,7 +42,7 @@ class EmployeeApi extends BaseApiController
         }
 
         $sql = sprintf('
-            select 姓名,身份证号,属地,员工状态,
+            select GUID,姓名,身份证号,属地,员工状态,
                 培训开始日期,培训完成日期,
                 一阶段日期,二阶段日期,
                 岗位名称,岗位类型,结算类型,
