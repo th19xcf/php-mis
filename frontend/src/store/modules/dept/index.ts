@@ -10,6 +10,10 @@ export const useDeptStore = defineStore('dept-store', () => {
   const isLoaded = ref(false);
   const loading = ref(false);
   const expandedKeys = ref<string[]>([]);
+  const isAddingMode = ref(false);
+  const addForm = ref<Record<string, any>>({});
+  const isEditingMode = ref(false);
+  const editForm = ref<Record<string, any>>({});
 
   async function loadTreeData() {
     if (isLoaded.value) return;
@@ -47,6 +51,32 @@ export const useDeptStore = defineStore('dept-store', () => {
     expandedKeys.value = keys;
   }
 
+  function setAddingMode(value: boolean) {
+    isAddingMode.value = value;
+  }
+
+  function setAddForm(form: Record<string, any>) {
+    addForm.value = form;
+  }
+
+  function clearAddState() {
+    isAddingMode.value = false;
+    addForm.value = {};
+  }
+
+  function setEditingMode(value: boolean) {
+    isEditingMode.value = value;
+  }
+
+  function setEditForm(form: Record<string, any>) {
+    editForm.value = form;
+  }
+
+  function clearEditState() {
+    isEditingMode.value = false;
+    editForm.value = {};
+  }
+
   return {
     treeData,
     selectedGuid,
@@ -54,11 +84,21 @@ export const useDeptStore = defineStore('dept-store', () => {
     isLoaded,
     loading,
     expandedKeys,
+    isAddingMode,
+    addForm,
+    isEditingMode,
+    editForm,
     loadTreeData,
     loadDeptDetail,
     clearSelection,
     refreshTree,
-    setExpandedKeys
+    setExpandedKeys,
+    setAddingMode,
+    setAddForm,
+    clearAddState,
+    setEditingMode,
+    setEditForm,
+    clearEditState
   };
 });
 

@@ -9,18 +9,29 @@ const dialog = useDialog();
 const message = useMessage();
 const deptStore = useDeptStore();
 
-// 状态
 const treeData = computed(() => deptStore.treeData);
 const selectedGuid = computed(() => deptStore.selectedGuid);
 const deptDetail = computed(() => deptStore.deptDetail);
+const isAddingMode = computed(() => deptStore.isAddingMode);
+const isEditingMode = computed(() => deptStore.isEditingMode);
+const addForm = computed({
+  get: () => deptStore.addForm,
+  set: (val) => deptStore.setAddForm(val)
+});
+const editForm = computed({
+  get: () => deptStore.editForm,
+  set: (val) => deptStore.setEditForm(val)
+});
 
-// 左侧宽度（像素）
 const leftWidth = ref(320);
 const minLeftWidth = 200;
 const maxLeftWidth = 600;
 const isResizing = ref(false);
 
-// 开始拖动
+const submitting = ref(false);
+
+const regionOptions = ref<{ label: string; value: string }[]>([]);
+
 function startResize(e: MouseEvent) {
   isResizing.value = true;
   document.body.style.cursor = 'col-resize';
@@ -49,53 +60,22 @@ function startResize(e: MouseEvent) {
   document.addEventListener('mouseup', onMouseUp);
 }
 
-// 弹窗状态
-const showAddModal = ref(false);
-const showEditModal = ref(false);
-const submitting = ref(false);
-
-// 新增表单
-const addForm = ref({
-  parentCode: '',
-  parentName: '',
-  deptName: '',
-  leader: '',
-  region: '',
-  budgetFullName: '',
-  effectiveDate: null as string | null
-});
-
-// 编辑表单
-const editForm = ref({
-  guid: '',
-  deptName: '',
-  leader: '',
-  region: '',
-  budgetFullName: ''
-});
-
-// 属地选项
-const regionOptions = ref<{ label: string; value: string }[]>([]);
-
-// 加载部门树
 async function loadDeptTree() {
   await deptStore.refreshTree();
 }
 
-// 选择节点
 async function handleSelect(keys: string[]) {
   if (keys.length === 0) return;
   await deptStore.loadDeptDetail(keys[0]);
 }
 
-// 打开新增弹窗
 function openAddModal() {
   if (!deptDetail.value) {
     message.warning('请先选择上级部门');
     return;
   }
 
-  addForm.value = {
+  deptStore.setAddForm({
     parentCode: deptDetail.value.部门编码 || '',
     parentName: deptDetail.value.部门名称 || '',
     deptName: '',
@@ -103,34 +83,16 @@ function openAddModal() {
     region: '',
     budgetFullName: '',
     effectiveDate: new Date().toISOString().split('T')[0]
-  };
-  // 确保日期值有效，避免 DatePicker 格式化错误
-  if (!addForm.value.effectiveDate || addForm.value.effectiveDate === 'Invalid Date') {
-    addForm.value.effectiveDate = null;
-  }
-  showAddModal.value = true;
+  });
+  deptStore.setAddingMode(true);
 }
 
-// 打开编辑弹窗
-function openEditModal() {
-  if (!deptDetail.value) {
-    message.warning('请先选择要编辑的部门');
-    return;
-  }
-
-  editForm.value = {
-    guid: deptDetail.value.GUID,
-    deptName: deptDetail.value.部门名称 || '',
-    leader: deptDetail.value.负责人 || '',
-    region: deptDetail.value.属地 || '',
-    budgetFullName: deptDetail.value.预算表部门全称 || ''
-  };
-  showEditModal.value = true;
+function cancelAddMode() {
+  deptStore.clearAddState();
 }
 
-// 提交新增
-async function handleAdd() {
-  if (!addForm.value.deptName.trim()) {
+async function saveAddMode() {
+  if (!addForm.value.deptName?.trim()) {
     message.error('部门名称不能为空');
     return;
   }
@@ -148,15 +110,33 @@ async function handleAdd() {
 
   if (!error) {
     message.success('新增部门成功');
-    showAddModal.value = false;
+    deptStore.clearAddState();
     await loadDeptTree();
-    deptStore.clearSelection();
   }
 }
 
-// 提交编辑
-async function handleEdit() {
-  if (!editForm.value.deptName.trim()) {
+function startEditMode() {
+  if (!deptDetail.value) {
+    message.warning('请先选择要编辑的部门');
+    return;
+  }
+
+  deptStore.setEditForm({
+    guid: deptDetail.value.GUID,
+    deptName: deptDetail.value.部门名称 || '',
+    leader: deptDetail.value.负责人 || '',
+    region: deptDetail.value.属地 || '',
+    budgetFullName: deptDetail.value.预算表部门全称 || ''
+  });
+  deptStore.setEditingMode(true);
+}
+
+function cancelEditMode() {
+  deptStore.clearEditState();
+}
+
+async function saveEditMode() {
+  if (!editForm.value.deptName?.trim()) {
     message.error('部门名称不能为空');
     return;
   }
@@ -173,7 +153,7 @@ async function handleEdit() {
 
   if (!error) {
     message.success('修改部门信息成功');
-    showEditModal.value = false;
+    deptStore.clearEditState();
     await loadDeptTree();
     if (selectedGuid.value) {
       await deptStore.loadDeptDetail(selectedGuid.value);
@@ -181,13 +161,6 @@ async function handleEdit() {
   }
 }
 
-// 打开预算表部门全称弹窗选择
-function handleOpenBudgetFullNamePopup() {
-  // TODO: 实现部门全称选择弹窗
-  message.info('部门全称选择功能待实现');
-}
-
-// 删除部门
 function handleDelete() {
   if (!deptDetail.value) {
     message.warning('请先选择要删除的部门');
@@ -215,7 +188,6 @@ function handleDelete() {
   });
 }
 
-// 渲染树节点前缀图标
 function renderPrefix({ option }: { option: TreeOption }) {
   const node = option.data as Api.Dept.DeptTreeNode;
   const hasChildren = node.hasChildren === '有' || (option.children && option.children.length > 0);
@@ -247,7 +219,6 @@ onMounted(async () => {
 
 <template>
   <div class="dept-container">
-    <!-- 左侧树形结构 -->
     <div class="dept-panel dept-panel-left" :style="{ width: leftWidth + 'px' }">
       <div class="panel-header">
         <div class="flex items-center gap-12px">
@@ -276,12 +247,10 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 拖动条 -->
     <div class="resize-splitter" :class="{ 'is-resizing': isResizing }" @mousedown="startResize">
       <div class="resize-line" />
     </div>
 
-    <!-- 右侧详情 -->
     <div class="dept-panel dept-panel-right">
       <div class="panel-header">
         <span class="text-lg font-600">部门信息</span>
@@ -292,12 +261,6 @@ onMounted(async () => {
             </template>
             新增下级
           </NButton>
-          <NButton type="info" size="small" @click="openEditModal">
-            <template #icon>
-              <icon-mdi-pencil />
-            </template>
-            编辑
-          </NButton>
           <NButton type="error" size="small" @click="handleDelete">
             <template #icon>
               <icon-mdi-delete />
@@ -307,117 +270,204 @@ onMounted(async () => {
         </NSpace>
       </div>
       <div class="panel-content">
-        <div v-if="deptDetail" class="space-y-4">
-          <NDescriptions bordered :column="2" size="small">
-            <NDescriptionsItem label="部门编码">
-              {{ deptDetail.部门编码 }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="部门名称">
-              {{ deptDetail.部门名称 }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="部门全称" :span="2">
-              {{ deptDetail.部门全称 }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="部门级别">{{ deptDetail.部门级别 }}级</NDescriptionsItem>
-            <NDescriptionsItem label="负责人">
-              {{ deptDetail.负责人 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="上级部门编码">
-              {{ deptDetail.上级部门编码 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="有无下级">
-              <NTag :type="deptDetail.有无下级部门 === '有' ? 'success' : 'default'" size="small">
-                {{ deptDetail.有无下级部门 }}
-              </NTag>
-            </NDescriptionsItem>
-            <NDescriptionsItem label="属地">
-              {{ deptDetail.属地 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="预算表部门全称" :span="2">
-              {{ deptDetail.预算表部门全称 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="记录开始日期">
-              {{ deptDetail.记录开始日期 || '-' }}
-            </NDescriptionsItem>
-            <NDescriptionsItem label="记录结束日期">
-              {{ deptDetail.记录结束日期 || '-' }}
-            </NDescriptionsItem>
-          </NDescriptions>
+        <div v-if="isAddingMode" class="space-y-4">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">新增下级部门</span>
+            <NSpace>
+              <NButton type="primary" size="small" :loading="submitting" @click="saveAddMode">保存</NButton>
+              <NButton size="small" @click="cancelAddMode">取消</NButton>
+            </NSpace>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th class="w-24">是否可新增</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>上级部门</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>{{ addForm.parentName }}</td>
+              </tr>
+              <tr>
+                <td>
+                  部门名称
+                  <span class="text-red-500 ml-1">*</span>
+                </td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <NInput v-model:value="addForm.deptName" placeholder="请输入部门名称" size="small" />
+                </td>
+              </tr>
+              <tr>
+                <td>负责人</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <NInput v-model:value="addForm.leader" placeholder="请输入负责人" size="small" />
+                </td>
+              </tr>
+              <tr>
+                <td>属地</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <NSelect
+                    v-model:value="addForm.region"
+                    :options="regionOptions || []"
+                    placeholder="请选择属地"
+                    size="small"
+                    clearable
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>预算表全称</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <NInput v-model:value="addForm.budgetFullName" placeholder="请输入预算表部门全称" size="small" />
+                </td>
+              </tr>
+              <tr>
+                <td>生效日期</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <NDatePicker
+                    v-model:formatted-value="addForm.effectiveDate"
+                    value-format="yyyy-MM-dd"
+                    type="date"
+                    size="small"
+                    class="w-full"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </div>
+
+        <div v-else-if="deptDetail" class="space-y-4">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">部门信息</span>
+            <div>
+              <NButton
+                v-if="!isEditingMode"
+                type="primary"
+                size="small"
+                @click="startEditMode"
+              >
+                <template #icon>
+                  <icon-mdi-pencil />
+                </template>
+                编辑
+              </NButton>
+              <NSpace v-else>
+                <NButton type="primary" size="small" :loading="submitting" @click="saveEditMode">保存</NButton>
+                <NButton size="small" @click="cancelEditMode">取消</NButton>
+              </NSpace>
+            </div>
+          </div>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th class="w-24">是否可修改</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>部门编码</td>
+                <td><NTag type="default" size="small">否</NTag></td>
+                <td>{{ deptDetail.部门编码 }}</td>
+              </tr>
+              <tr>
+                <td>部门名称</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <template v-if="isEditingMode">
+                    <NInput v-model:value="editForm.deptName" placeholder="请输入部门名称" size="small" />
+                  </template>
+                  <template v-else>{{ deptDetail.部门名称 }}</template>
+                </td>
+              </tr>
+              <tr>
+                <td>部门全称</td>
+                <td><NTag type="default" size="small">否</NTag></td>
+                <td>{{ deptDetail.部门全称 }}</td>
+              </tr>
+              <tr>
+                <td>部门级别</td>
+                <td><NTag type="default" size="small">否</NTag></td>
+                <td>{{ deptDetail.部门级别 }}级</td>
+              </tr>
+              <tr>
+                <td>负责人</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <template v-if="isEditingMode">
+                    <NInput v-model:value="editForm.leader" placeholder="请输入负责人" size="small" />
+                  </template>
+                  <template v-else>{{ deptDetail.负责人 || '-' }}</template>
+                </td>
+              </tr>
+              <tr>
+                <td>上级部门编码</td>
+                <td><NTag type="default" size="small">否</NTag></td>
+                <td>{{ deptDetail.上级部门编码 || '-' }}</td>
+              </tr>
+              <tr>
+                <td>有无下级</td>
+                <td><NTag type="default" size="small">否</NTag></td>
+                <td>
+                  <NTag :type="deptDetail.有无下级部门 === '有' ? 'success' : 'default'" size="small">
+                    {{ deptDetail.有无下级部门 }}
+                  </NTag>
+                </td>
+              </tr>
+              <tr>
+                <td>属地</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <template v-if="isEditingMode">
+                    <NSelect
+                      v-model:value="editForm.region"
+                      :options="regionOptions || []"
+                      placeholder="请选择属地"
+                      size="small"
+                      clearable
+                    />
+                  </template>
+                  <template v-else>{{ deptDetail.属地 || '-' }}</template>
+                </td>
+              </tr>
+              <tr>
+                <td>预算表部门全称</td>
+                <td><NTag type="success" size="small">是</NTag></td>
+                <td>
+                  <template v-if="isEditingMode">
+                    <NInput v-model:value="editForm.budgetFullName" placeholder="请输入预算表部门全称" size="small" />
+                  </template>
+                  <template v-else>{{ deptDetail.预算表部门全称 || '-' }}</template>
+                </td>
+              </tr>
+              <tr>
+                <td>记录开始日期</td>
+                <td><NTag type="default" size="small">否</NTag></td>
+                <td>{{ deptDetail.记录开始日期 || '-' }}</td>
+              </tr>
+              <tr>
+                <td>记录结束日期</td>
+                <td><NTag type="default" size="small">否</NTag></td>
+                <td>{{ deptDetail.记录结束日期 || '-' }}</td>
+              </tr>
+            </tbody>
+          </NTable>
         </div>
 
         <NEmpty v-else description="请选择左侧部门查看详情" class="py-20" />
       </div>
     </div>
-
-    <!-- 新增弹窗 -->
-    <NModal v-model:show="showAddModal" title="新增下级部门" preset="card" class="w-120" :mask-closable="false">
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging">
-        <NFormItem label="上级部门">
-          <NInput v-model:value="addForm.parentName" disabled />
-        </NFormItem>
-        <NFormItem label="部门名称" required>
-          <NInput v-model:value="addForm.deptName" placeholder="请输入部门名称" />
-        </NFormItem>
-        <NFormItem label="负责人">
-          <NInput v-model:value="addForm.leader" placeholder="请输入负责人" />
-        </NFormItem>
-        <NFormItem label="属地">
-          <NSelect v-model:value="addForm.region" :options="regionOptions || []" placeholder="请选择属地" clearable />
-        </NFormItem>
-        <NFormItem label="预算表全称">
-          <NInput v-model:value="addForm.budgetFullName" placeholder="请输入预算表部门全称" />
-        </NFormItem>
-        <NFormItem label="生效日期">
-          <NDatePicker
-            v-model:formatted-value="addForm.effectiveDate"
-            value-format="yyyy-MM-dd"
-            type="date"
-            class="w-full"
-          />
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showAddModal = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="handleAdd">确认</NButton>
-        </NSpace>
-      </template>
-    </NModal>
-
-    <!-- 编辑弹窗 -->
-    <NModal v-model:show="showEditModal" title="编辑部门信息" preset="card" class="w-120" :mask-closable="false">
-      <NForm label-placement="left" label-width="100" require-mark-placement="right-hanging">
-        <NFormItem label="部门名称" required>
-          <NInput v-model:value="editForm.deptName" placeholder="请输入部门名称" />
-        </NFormItem>
-        <NFormItem label="负责人">
-          <NInput v-model:value="editForm.leader" placeholder="请输入负责人" />
-        </NFormItem>
-        <NFormItem label="属地">
-          <NSelect v-model:value="editForm.region" :options="regionOptions || []" placeholder="请选择属地" clearable />
-        </NFormItem>
-        <NFormItem label="预算表全称">
-          <div class="popup-select-wrapper">
-            <NInput
-              v-model:value="editForm.budgetFullName"
-              placeholder="请选择预算表部门全称"
-              readonly
-              class="popup-input"
-            >
-              <template #suffix>
-                <NButton text type="primary" @click="handleOpenBudgetFullNamePopup">选择</NButton>
-              </template>
-            </NInput>
-          </div>
-        </NFormItem>
-      </NForm>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="showEditModal = false">取消</NButton>
-          <NButton type="primary" :loading="submitting" @click="handleEdit">确认</NButton>
-        </NSpace>
-      </template>
-    </NModal>
   </div>
 </template>
 
@@ -426,7 +476,6 @@ onMounted(async () => {
   padding: 4px 0;
 }
 
-/* 容器 - 使用绝对定位确保高度 */
 .dept-container {
   position: absolute;
   top: 0;
@@ -437,7 +486,6 @@ onMounted(async () => {
   overflow: hidden;
 }
 
-/* 面板容器 */
 .dept-panel {
   position: relative;
   display: flex;
@@ -457,7 +505,6 @@ onMounted(async () => {
   flex: 1;
 }
 
-/* 面板头部 */
 .panel-header {
   display: flex;
   align-items: center;
@@ -468,7 +515,6 @@ onMounted(async () => {
   background: #fafafa;
 }
 
-/* 面板内容区域 - 可滚动 */
 .panel-content {
   flex: 1;
   overflow-y: auto;
@@ -507,7 +553,6 @@ onMounted(async () => {
   background-color: #1890ff;
 }
 
-/* 深色模式适配 - 使用 html.dark 选择器 */
 html.dark .dept-panel {
   background: rgb(24, 24, 28);
   border-color: rgba(255, 255, 255, 0.09);
@@ -537,20 +582,5 @@ html.dark .resize-line {
 html.dark .resize-splitter:hover .resize-line,
 html.dark .resize-splitter.is-resizing .resize-line {
   background-color: #40a9ff;
-}
-
-/* 弹窗选择样式 */
-.popup-select-wrapper {
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-
-.popup-input {
-  flex: 1;
-}
-
-.popup-input :deep(.n-input__suffix) {
-  padding-right: 4px;
 }
 </style>
