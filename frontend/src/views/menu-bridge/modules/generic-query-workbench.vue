@@ -516,28 +516,51 @@ const pinColumnOptions = computed(() => {
 
 const fieldColumnOptions = computed(() => {
   const columns = gridApi.value?.getColumns() ?? [];
+  const checkboxOption = { label: '选择框', value: 'ag-Grid-SelectionColumn' };
 
   if (columns.length > 0) {
-    return columns
-      .map(column => {
-        const colDef = column.getColDef();
-        const field = String(colDef.field || '');
-        const headerName = String(colDef.headerName || field);
+    const mapped = columns.map(column => {
+      const colDef = column.getColDef();
+      const colId = column.getColId();
+      const field = String(colDef.field || '');
+      const headerName = String(colDef.headerName || field);
 
+      // 对于 checkbox 选择列，使用 colId 作为 value
+      if (colId === 'ag-Grid-SelectionColumn') {
         return {
-          label: headerName,
-          value: field
+          label: '选择框',
+          value: colId
         };
-      })
-      .filter(
-        item => item.value !== '' && item.value !== 'ag-Grid-ControlsColumn' && !isGuidColumn(item.value, item.label)
-      );
+      }
+
+      return {
+        label: headerName,
+        value: field
+      };
+    });
+
+    const result = mapped.filter(
+      item => item.value === 'ag-Grid-SelectionColumn' || (item.value !== '' && item.value !== 'ag-Grid-ControlsColumn' && !isGuidColumn(item.value, item.label))
+    );
+
+    // 确保始终包含 checkbox 选项
+    const hasCheckbox = result.some(item => item.value === 'ag-Grid-SelectionColumn');
+    if (!hasCheckbox) {
+      result.unshift(checkboxOption);
+    }
+
+    return result;
   }
 
-  return (pageMeta.value?.columns || [])
+  const result = (pageMeta.value?.columns || [])
     .filter(column => column.field !== '')
     .map(column => ({ label: column.title || column.field, value: column.field }))
     .filter(item => !isGuidColumn(String(item.value), String(item.label)));
+
+  // 表格始终有 checkbox 选择列，默认添加
+  result.unshift(checkboxOption);
+
+  return result;
 });
 
 // 使用 shallowRef 存储处理后的数据，避免 Vue 深层响应式开销
