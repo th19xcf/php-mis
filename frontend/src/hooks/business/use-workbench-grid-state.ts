@@ -1,4 +1,4 @@
-import { onActivated, onDeactivated } from 'vue';
+import { onActivated, onDeactivated, onUnmounted } from 'vue';
 import type { Ref } from 'vue';
 import type { GridApi } from 'ag-grid-community';
 import { useWorkbenchStore } from '@/store/modules/workbench';
@@ -179,7 +179,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       }
     };
 
-    const finishRestore = (startTime: number) => {
+    const finishRestore = (_startTime: number) => {
       setTimeout(() => {
         options.isRestoringPage.value = false;
         options.isRestoringFilter.value = false;
@@ -461,6 +461,7 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
 
   onActivated(restoreGridStateOnActivated);
   onDeactivated(persistGridStateOnDeactivated);
+  onUnmounted(persistGridStateOnDeactivated);
 
   return {
     workbenchStore,
