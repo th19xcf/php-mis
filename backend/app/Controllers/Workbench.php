@@ -3711,6 +3711,29 @@ class Workbench extends BaseController
                 $chartItem['SQL'] = $dataSql;
             }
 
+            if (!empty($row->字段模块)) {
+                $colSql = sprintf('
+                    select 字段模块,列名,字段名,坐标轴,图形类型
+                    from def_chart_column
+                    where 字段模块="%s" and 顺序>0
+                    order by 字段模块,顺序', $row->字段模块);
+
+                $colResults = $model->select($colSql)->getResult();
+                $chartItem['字段'] = [];
+                $chartItem['字段数'] = 0;
+                
+                foreach ($colResults as $colRow) {
+                    if (!array_key_exists($colRow->字段名, $chartItem['字段'])) {
+                        $chartItem['字段'][$colRow->字段名] = [];
+                    }
+                    $chartItem['字段数']++;
+                    $chartItem['字段'][$colRow->字段名]['列名'] = $colRow->列名;
+                    $chartItem['字段'][$colRow->字段名]['字段名'] = $colRow->字段名;
+                    $chartItem['字段'][$colRow->字段名]['坐标轴'] = $colRow->坐标轴;
+                    $chartItem['字段'][$colRow->字段名]['图形类型'] = $colRow->图形类型;
+                }
+            }
+
             $chartData[] = $chartItem;
         }
 

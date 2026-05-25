@@ -224,6 +224,8 @@ onMounted(() => {
   console.log(
     `[🔄 onMounted] 组件挂载 functionCode=${functionCode}, params=${params}, 时间: ${performance.now().toFixed(1)}ms`
   );
+  // 加载保存的布局状态
+  loadLayoutState();
   checkAndLoadData();
 });
 
@@ -405,6 +407,61 @@ const chartLoading = ref(false);
 const chartData = ref<any[]>([]);
 const chartOption = ref<any>(null);
 
+// 分栏宽度调整相关状态
+const leftPanelWidth = ref(55); // 左侧面板宽度百分比
+const isResizing = ref(false);
+const workbenchContentRef = ref<HTMLDivElement | null>(null);
+
+// 开始拖动调整大小
+function startResize(e: MouseEvent) {
+  isResizing.value = true;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+
+  const startX = e.clientX;
+  const containerWidth = workbenchContentRef.value?.clientWidth || window.innerWidth;
+  const startLeftWidth = leftPanelWidth.value;
+
+  function handleMouseMove(moveEvent: MouseEvent) {
+    if (!isResizing.value) return;
+
+    const deltaX = moveEvent.clientX - startX;
+    const deltaPercent = (deltaX / containerWidth) * 100;
+    let newLeftWidth = startLeftWidth + deltaPercent;
+
+    // 限制最小和最大宽度
+    newLeftWidth = Math.max(30, Math.min(70, newLeftWidth));
+    leftPanelWidth.value = newLeftWidth;
+
+    // 触发图表重绘
+    if (chartInstance) {
+      chartInstance.resize();
+    }
+  }
+
+  function handleMouseUp() {
+    isResizing.value = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+
+    // 保存布局状态到本地存储
+    localStorage.setItem('workbench-left-panel-width', String(leftPanelWidth.value));
+  }
+
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', handleMouseUp);
+}
+
+// 加载保存的布局状态
+function loadLayoutState() {
+  const savedWidth = localStorage.getItem('workbench-left-panel-width');
+  if (savedWidth) {
+    leftPanelWidth.value = parseFloat(savedWidth);
+  }
+}
+
 // 打开图形展示弹窗
 async function handleOpenChart() {
   if (!pageMeta.value?.chartModule) {
@@ -464,35 +521,29 @@ async function handleOpenChart() {
   }
 }
 
-// 根据后端数据生成图形配置
 function generateChartOptionFromBackend(charts: any[]): any {
   if (!charts || charts.length === 0) {
     return null;
   }
 
-  // 目前只处理第一个图形
   const chart = charts[0];
   const chartData = chart['数据'] || [];
   const chartType = chart['图形类型'] || 'line';
   const chartName = chart['图形名称'] || '数据图形';
+  const fieldsConfig = chart['字段'] || {};
 
   if (chartData.length === 0) {
     return null;
   }
 
-  // 获取数据字段
-  const dataKeys = Object.keys(chartData[0]);
-  const categoryKey = dataKeys[0]; // 第一个字段作为分类轴
-  const valueKeys = dataKeys.slice(1).filter(key => {
-    const val = chartData[0][key];
-    return typeof val === 'number' || (typeof val === 'string' && !isNaN(Number(val)) && val !== '');
-  });
-
-  const xAxisData = chartData.map(item => item[categoryKey]);
-
-  // 根据图形类型生成配置
   if (chartType === 'pie') {
-    // 饼图
+    const dataKeys = Object.keys(chartData[0]);
+    const categoryKey = dataKeys[0];
+    const valueKeys = dataKeys.slice(1).filter(key => {
+      const val = chartData[0][key];
+      return typeof val === 'number' || (typeof val === 'string' && !isNaN(Number(val)) && val !== '');
+    });
+
     const pieData = chartData.map(item => ({
       name: item[categoryKey],
       value: Number(item[valueKeys[0]]) || 0
@@ -528,39 +579,102 @@ function generateChartOptionFromBackend(charts: any[]): any {
       ]
     };
   } else {
-    // 折线图或柱状图
-    const series = valueKeys.map(key => ({
-      name: key,
-      type: chartType === 'bar' ? 'bar' : 'line',
-      data: chartData.map(item => Number(item[key]) || 0),
-      smooth: chartType !== 'bar'
-    }));
+    const dem: any[] = [];
+    const yAxis: any[] = [];
+    let yLeft = false;
+    let yRight = false;
+
+    const parseValue = (val: any) => {
+      if (typeof val === 'number') {
+        return val;
+      }
+      if (typeof val === 'string') {
+        const cleanVal = val.replace(/[%，,]/g, '');
+        const num = Number(cleanVal);
+        return isNaN(num) ? 0 : num;
+      }
+      return 0;
+    };
+
+    const dataKeys = Object.keys(chartData[0]);
+    const valueKeys = dataKeys.slice(1).filter(key => {
+      const val = chartData[0][key];
+      if (typeof val === 'number') {
+        return true;
+      }
+      if (typeof val === 'string') {
+        const cleanVal = val.replace(/[%，,]/g, '');
+        return !isNaN(Number(cleanVal)) && cleanVal !== '';
+      }
+      return false;
+    });
+
+    for (const key of valueKeys) {
+      const fieldConfig = fieldsConfig[key];
+      const axisPosition = fieldConfig?.['坐标轴'] || 'Y轴（左侧）';
+      const fieldChartType = fieldConfig?.['图形类型'] || chartType;
+
+      if (axisPosition === 'Y轴（左侧）' && !yLeft) {
+        yAxis.push({ type: 'value', position: 'left' });
+        yLeft = true;
+      } else if (axisPosition === 'Y轴（右侧）' && !yRight) {
+        yAxis.push({ 
+          type: 'value', 
+          position: 'right',
+          axisLabel: { formatter: '{value}%' }
+        });
+        yRight = true;
+      }
+
+      const seriesItem: any = {
+        name: key,
+        type: fieldChartType === '柱状图' ? 'bar' : 'line',
+        data: chartData.map(item => parseValue(item[key]))
+      };
+
+      if (fieldChartType !== '柱状图') {
+        seriesItem.smooth = true;
+      }
+
+      if (yAxis.length > 1) {
+        seriesItem.yAxisIndex = axisPosition === 'Y轴（右侧）' ? 1 : 0;
+      }
+
+      dem.push(seriesItem);
+    }
 
     return {
       title: {
+        show: true,
         text: chartName,
-        left: 'center'
-      },
-      tooltip: {
-        trigger: 'axis'
+        triggerEvent: true
       },
       legend: {
-        data: valueKeys,
-        top: 30
+        bottom: 2,
+        data: valueKeys
       },
-      xAxis: {
-        type: 'category',
-        data: xAxisData,
-        name: categoryKey
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'cross' }
       },
-      yAxis: {
-        type: 'value'
+      toolbox: {
+        feature: {
+          dataview: { show: true },
+          magicType: { show: true, type: ['line', 'bar', 'stack'] },
+          restore: { show: true },
+          saveAsImage: { show: true }
+        }
       },
-      series,
+      dataset: {
+        source: chartData
+      },
+      xAxis: { type: 'category' },
+      yAxis: yAxis.length > 1 ? yAxis : yAxis[0],
+      series: dem,
       grid: {
         left: '3%',
-        right: '4%',
-        bottom: '3%',
+        right: yRight ? '12%' : '4%',
+        bottom: '10%',
         top: 80
       }
     };
@@ -571,7 +685,7 @@ function generateChartOptionFromBackend(charts: any[]): any {
 const chartRef = ref<HTMLDivElement | null>(null);
 let chartInstance: echarts.ECharts | null = null;
 
-// 监听图表弹窗显示状态，初始化图表
+// 监听图表显示状态，初始化图表
 watch(chartVisible, async (visible) => {
   if (visible && chartOption.value) {
     await nextTick();
@@ -597,6 +711,10 @@ watch(chartVisible, async (visible) => {
         initChart();
       }
     }, 200);
+  } else if (!visible && chartInstance) {
+    // 关闭图形时清理
+    chartInstance.dispose();
+    chartInstance = null;
   }
 });
 
@@ -620,19 +738,16 @@ function initChart() {
   };
   window.addEventListener('resize', resizeHandler);
 
-  // 弹窗关闭时清理
-  watch(chartVisible, (v) => {
+  // 图形关闭时清理
+  const unwatch = watch(chartVisible, (v) => {
     if (!v) {
       window.removeEventListener('resize', resizeHandler);
-      if (chartInstance) {
-        chartInstance.dispose();
-        chartInstance = null;
-      }
+      unwatch();
     }
-  }, { once: true });
+  });
 }
 
-// 监听 chartOption 变化，当弹窗已打开但数据刚加载完成时初始化图表
+// 监听 chartOption 变化，当图形区域已显示但数据刚加载完成时初始化图表
 watch(chartOption, async (option) => {
   if (option && chartVisible.value && !chartInstance) {
     await nextTick();
@@ -2286,51 +2401,103 @@ async function handleTableEditSubmit() {
       原生协议页；批量修改、备注、图形钻取、导出等深层能力建议暂时继续走“旧页回退”标签，直到对应动作接口补齐。
     </NAlert>
 
-    <NCard
-      :bordered="false"
-      :content-style="{ padding: '0' }"
-      class="grid-card rounded-12px shadow-sm workbench-grid-card"
+    <div
+      ref="workbenchContentRef"
+      class="workbench-content"
+      :class="{ 'chart-mode': chartVisible, 'resizing': isResizing }"
     >
-      <div ref="gridShellRef" class="ag-theme-shell" :class="{ 'ag-theme-shell-dynamic': props.dynamicLike }">
-        <div v-if="loading" class="grid-loading">
-          <NSpin size="large" />
-        </div>
-        <AgGridVue
-          :theme="activeGridTheme"
-          :column-defs="gridColumns"
-          :default-col-def="defaultColDef"
-          :row-height="38"
-          :header-height="40"
-          :row-data="processedRows"
-          :quick-filter-text="quickKeyword"
-          :locale-text="AG_GRID_LOCALE_CN"
-          :pagination="true"
-          :pagination-page-size="pageSize"
-          :pagination-page-size-selector="paginationPageSizeSelector"
-          :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: true }"
-          :selection-column-def="{
-            width: 37,
-            minWidth: 37,
-            resizable: false,
-            headerClass: 'selection-header-left'
-          }"
-          :row-buffer="20"
-          :suppress-column-virtualisation="false"
-          :suppress-row-virtualisation="false"
-          :animate-rows="false"
-          class="query-grid"
-          @grid-ready="handleGridReady"
-          @cell-value-changed="handleCellValueChanged"
-        />
-        <!-- 分片加载进度提示 -->
-        <div v-if="isChunkLoading && !loading" class="chunk-loading-progress">
-          <NSpin size="small" />
-          <span class="progress-text">
-            已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录...
-          </span>
+      <!-- 左侧表格区域 -->
+      <div
+        class="table-area"
+        :style="chartVisible ? { flex: `0 0 ${leftPanelWidth}%` } : {}"
+      >
+        <NCard
+          :bordered="false"
+          :content-style="{ padding: '0' }"
+          class="grid-card rounded-12px shadow-sm workbench-grid-card"
+        >
+          <div ref="gridShellRef" class="ag-theme-shell" :class="{ 'ag-theme-shell-dynamic': props.dynamicLike }">
+            <div v-if="loading" class="grid-loading">
+              <NSpin size="large" />
+            </div>
+            <AgGridVue
+              :theme="activeGridTheme"
+              :column-defs="gridColumns"
+              :default-col-def="defaultColDef"
+              :row-height="38"
+              :header-height="40"
+              :row-data="processedRows"
+              :quick-filter-text="quickKeyword"
+              :locale-text="AG_GRID_LOCALE_CN"
+              :pagination="true"
+              :pagination-page-size="pageSize"
+              :pagination-page-size-selector="paginationPageSizeSelector"
+              :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: true }"
+              :selection-column-def="{
+                width: 37,
+                minWidth: 37,
+                resizable: false,
+                headerClass: 'selection-header-left'
+              }"
+              :row-buffer="20"
+              :suppress-column-virtualisation="false"
+              :suppress-row-virtualisation="false"
+              :animate-rows="false"
+              class="query-grid"
+              @grid-ready="handleGridReady"
+              @cell-value-changed="handleCellValueChanged"
+            />
+            <!-- 分片加载进度提示 -->
+            <div v-if="isChunkLoading && !loading" class="chunk-loading-progress">
+              <NSpin size="small" />
+              <span class="progress-text">
+                已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录...
+              </span>
+            </div>
+          </div>
+        </NCard>
+      </div>
+
+      <!-- 可拖动分隔条 -->
+      <div
+        v-if="chartVisible"
+        class="resize-handle"
+        :class="{ 'active': isResizing }"
+        @mousedown="startResize"
+        title="拖动调整宽度"
+      >
+        <div class="resize-handle-line"></div>
+        <div class="resize-handle-dots">
+          <div class="resize-dot"></div>
+          <div class="resize-dot"></div>
+          <div class="resize-dot"></div>
         </div>
       </div>
-    </NCard>
+
+      <!-- 右侧图形区域 -->
+      <div
+        v-show="chartVisible"
+        class="chart-area"
+        :style="{ flex: `0 0 ${100 - leftPanelWidth}%` }"
+      >
+        <NCard
+          :bordered="false"
+          :content-style="{ padding: '0' }"
+          class="chart-card rounded-12px shadow-sm"
+        >
+          <div class="chart-header">
+            <span class="chart-title">图形展示</span>
+            <NButton size="small" @click="chartVisible = false">关闭</NButton>
+          </div>
+          <div class="chart-container">
+            <NSpin :show="chartLoading">
+              <div v-show="chartOption" ref="chartRef" class="chart-wrapper"></div>
+              <NEmpty v-if="!chartOption && !chartLoading" description="暂无图形数据" />
+            </NSpin>
+          </div>
+        </NCard>
+      </div>
+    </div>
 
     <NModal
       v-model:show="pinColumnVisible"
@@ -2486,20 +2653,7 @@ async function handleTableEditSubmit() {
       </NSpace>
     </NModal>
 
-    <!-- 图形展示弹窗 -->
-    <NModal v-model:show="chartVisible" preset="card" title="图形展示" class="w-80vw h-80vh" :mask-closable="false">
-      <div class="chart-container">
-        <NSpin :show="chartLoading">
-          <div v-show="chartOption" ref="chartRef" class="chart-wrapper"></div>
-          <NEmpty v-if="!chartOption && !chartLoading" description="暂无图形数据" />
-        </NSpin>
-      </div>
-      <template #footer>
-        <NSpace justify="end">
-          <NButton @click="chartVisible = false">关闭</NButton>
-        </NSpace>
-      </template>
-    </NModal>
+
 
     <!-- 批注弹窗 -->
     <WorkbenchComment
@@ -2992,13 +3146,136 @@ async function handleTableEditSubmit() {
   background: rgba(255, 255, 255, 0.7);
 }
 
-/* 图形展示弹窗样式 */
-.chart-container {
-  width: 100%;
-  height: 500px;
-  min-height: 400px;
+/* 左右分栏布局样式 */
+.workbench-content {
+  display: flex;
+  gap: 0;
+  height: calc(100vh - 200px);
+  min-height: 0;
+  position: relative;
+}
+
+.workbench-content.resizing {
+  user-select: none;
+}
+
+.workbench-content .table-area {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+.workbench-content.chart-mode .table-area {
+  flex: 0 0 55%;
+}
+
+.workbench-content .chart-area {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* 可拖动分隔条样式 */
+.resize-handle {
+  width: 12px;
+  min-width: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 10;
+  transition: background 0.2s ease;
+}
+
+.resize-handle:hover,
+.resize-handle.active {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.resize-handle-line {
+  width: 2px;
+  height: 100%;
+  background: #d9d9d9;
+  transition: background 0.2s ease, width 0.2s ease;
+}
+
+.resize-handle:hover .resize-handle-line,
+.resize-handle.active .resize-handle-line {
+  background: #1890ff;
+  width: 3px;
+}
+
+.resize-handle-dots {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.resize-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #bfbfbf;
+  transition: background 0.2s ease;
+}
+
+.resize-handle:hover .resize-dot,
+.resize-handle.active .resize-dot {
+  background: #1890ff;
+}
+
+/* 深色模式下的分隔条样式 */
+.system-dark .resize-handle-line {
+  background: #555;
+}
+
+.system-dark .resize-dot {
+  background: #666;
+}
+
+.system-dark .resize-handle:hover .resize-handle-line,
+.system-dark .resize-handle.active .resize-handle-line {
+  background: #4a9eff;
+}
+
+.system-dark .resize-handle:hover .resize-dot,
+.system-dark .resize-handle.active .resize-dot {
+  background: #4a9eff;
+}
+
+.chart-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--n-border-color);
+}
+
+.chart-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.chart-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
 }
 
 .chart-container .n-spin {
@@ -3024,7 +3301,7 @@ async function handleTableEditSubmit() {
 .chart-wrapper {
   width: 100%;
   flex: 1;
-  min-height: 400px;
+  min-height: 300px;
 }
 
 .system-dark .toolbar-card,
