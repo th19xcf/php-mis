@@ -1,18 +1,18 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { TreeOption } from 'naive-ui';
-import { fetchStoreTree, fetchStoreDetail, fetchStoreOptions } from '@/service/api';
+import { fetchInvitationTree, fetchInvitationDetail, fetchInvitationOptions } from '@/service/api';
 import type { AddField } from '@/typings/api/workbench';
 
-export const useStoreStore = defineStore('store-store', () => {
+export const useInvitationStore = defineStore('invitation-store', () => {
   const treeData = ref<TreeOption[]>([]);
   const checkedKeys = ref<string[]>([]);
   const selectedGuids = ref<string[]>([]);
-  const storeDetail = ref<Api.Store.StoreDetail | null>(null);
+  const invitationDetail = ref<Api.Invitation.InvitationDetail | null>(null);
   const isLoaded = ref(false);
   const loading = ref(false);
   const expandedKeys = ref<string[]>([]);
-  const options = ref<Api.Store.StoreOptions | null>(null);
+  const options = ref<Api.Invitation.InvitationOptions | null>(null);
   // 多条修改模式状态
   const isBatchEditMode = ref(false);
   const batchEditForm = ref<Record<string, any>>({});
@@ -24,7 +24,7 @@ export const useStoreStore = defineStore('store-store', () => {
 
   async function loadTreeData() {
     loading.value = true;
-    const { data, error } = await fetchStoreTree();
+    const { data, error } = await fetchInvitationTree();
     loading.value = false;
 
     if (!error && data) {
@@ -33,17 +33,17 @@ export const useStoreStore = defineStore('store-store', () => {
     }
   }
 
-  async function loadStoreDetail(guid: string) {
-    const { data } = await fetchStoreDetail(guid);
+  async function loadInvitationDetail(guid: string) {
+    const { data } = await fetchInvitationDetail(guid);
     if (data) {
-      storeDetail.value = data;
+      invitationDetail.value = data;
     }
   }
 
   async function loadOptions() {
     if (options.value) return options.value;
 
-    const { data } = await fetchStoreOptions();
+    const { data } = await fetchInvitationOptions();
     if (data) {
       options.value = data;
     }
@@ -53,7 +53,7 @@ export const useStoreStore = defineStore('store-store', () => {
   function clearSelection() {
     checkedKeys.value = [];
     selectedGuids.value = [];
-    storeDetail.value = null;
+    invitationDetail.value = null;
   }
 
   function refreshTree() {
@@ -116,7 +116,7 @@ export const useStoreStore = defineStore('store-store', () => {
     treeData,
     checkedKeys,
     selectedGuids,
-    storeDetail,
+    invitationDetail,
     isLoaded,
     loading,
     expandedKeys,
@@ -128,7 +128,7 @@ export const useStoreStore = defineStore('store-store', () => {
     addFormDynamic,
     addFields,
     loadTreeData,
-    loadStoreDetail,
+    loadInvitationDetail,
     loadOptions,
     clearSelection,
     refreshTree,
@@ -146,7 +146,7 @@ export const useStoreStore = defineStore('store-store', () => {
   };
 });
 
-function convertToTreeOptions(nodes: Api.Store.StoreTreeNode[]): TreeOption[] {
+function convertToTreeOptions(nodes: Api.Invitation.InvitationTreeNode[]): TreeOption[] {
   return nodes.map(node => ({
     key: node.id,
     label: node.value,

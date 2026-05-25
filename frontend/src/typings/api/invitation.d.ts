@@ -1,16 +1,16 @@
 declare namespace Api {
-  namespace Store {
-    interface StoreTreeNode {
+  namespace Invitation {
+    interface InvitationTreeNode {
       id: string;
       guid?: string;
       name?: string;
       value: string;
       type: string;
       num?: number;
-      items?: StoreTreeNode[];
+      items?: InvitationTreeNode[];
     }
 
-    interface StoreDetail {
+    interface InvitationDetail {
       GUID: string;
       姓名: string;
       身份证号: string;
@@ -43,7 +43,7 @@ declare namespace Api {
       操作时间: string;
     }
 
-    interface StoreAddParams {
+    interface InvitationAddParams {
       姓名: string;
       身份证号?: string;
       手机号码?: string;
@@ -68,12 +68,12 @@ declare namespace Api {
       预约面试日期?: string;
     }
 
-    interface StoreUpdateParams {
+    interface InvitationUpdateParams {
       guid: string;
       [key: string]: any;
     }
 
-    interface StoreTransferParams {
+    interface InvitationTransferParams {
       guids: string[];
       面试结果: string;
       面试日期?: string;
@@ -84,7 +84,7 @@ declare namespace Api {
       通勤时间?: string;
     }
 
-    interface StoreOptions {
+    interface InvitationOptions {
       region: Array<{ value: string; label: string }>;
       channel: Array<{ value: string; label: string }>;
       result: Array<{ value: string; label: string }>;

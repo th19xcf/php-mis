@@ -3,23 +3,23 @@ import { ref, onMounted, onActivated, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
-import { fetchAddStore, fetchUpdateStore, fetchDeleteStore, fetchTransferStore, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
-import { useStoreStore } from '@/store/modules/store';
+import { fetchAddInvitation, fetchUpdateInvitation, fetchDeleteInvitation, fetchTransferInvitation, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
+import { useInvitationStore } from '@/store/modules/invitation';
 import type { AddField, DetailField } from '@/typings/api/workbench';
 
 const dialog = useDialog();
 const message = useMessage();
 const route = useRoute();
-const storeStore = useStoreStore();
+const invitationStore = useInvitationStore();
 
 const functionCode = computed(() => {
   return String(route.query.functionCode || route.meta?.functionCode || '2015');
 });
 
-const treeData = computed(() => storeStore.treeData);
-const selectedGuids = computed(() => storeStore.selectedGuids);
-const storeDetail = computed(() => storeStore.storeDetail);
-const options = computed(() => storeStore.options);
+const treeData = computed(() => invitationStore.treeData);
+const selectedGuids = computed(() => invitationStore.selectedGuids);
+const invitationDetail = computed(() => invitationStore.invitationDetail);
+const options = computed(() => invitationStore.options);
 
 const leftWidth = ref(320);
 const minLeftWidth = 200;
@@ -31,22 +31,22 @@ const submitting = ref(false);
 const transferForm = ref<Record<string, any>>({});
 const isTransferMode = ref(false);
 // 新增模式状态从 store 获取
-const isAddingMode = computed(() => storeStore.isAddingMode);
+const isAddingMode = computed(() => invitationStore.isAddingMode);
 const addFormDynamic = computed({
-  get: () => storeStore.addFormDynamic,
-  set: (val) => storeStore.setAddFormDynamic(val)
+  get: () => invitationStore.addFormDynamic,
+  set: (val) => invitationStore.setAddFormDynamic(val)
 });
-const addFields = computed(() => storeStore.addFields);
+const addFields = computed(() => invitationStore.addFields);
 const detailFields = ref<DetailField[]>([]);
 const isEditingDetail = ref(false);
 const editDetailForm = ref<Record<string, any>>({});
 // 多条修改模式状态从 store 获取
-const isBatchEditMode = computed(() => storeStore.isBatchEditMode);
+const isBatchEditMode = computed(() => invitationStore.isBatchEditMode);
 const batchEditForm = computed({
-  get: () => storeStore.batchEditForm,
-  set: (val) => storeStore.setBatchEditForm(val)
+  get: () => invitationStore.batchEditForm,
+  set: (val) => invitationStore.setBatchEditForm(val)
 });
-const batchEditFields = computed(() => storeStore.batchEditFields);
+const batchEditFields = computed(() => invitationStore.batchEditFields);
 const searchKeyword = ref('');
 const filteredTreeData = ref<TreeOption[]>([]);
 const expandedKeys = ref<string[]>([]);
@@ -80,7 +80,7 @@ function startResize(e: MouseEvent) {
 }
 
 async function loadTree() {
-  await storeStore.refreshTree();
+  await invitationStore.refreshTree();
 }
 
 function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
@@ -90,7 +90,7 @@ function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
   // 递归遍历树，收集所有被勾选的人员节点
   function traverseAndCollect(nodes: TreeOption[]) {
     for (const node of nodes) {
-      const data = node.data as Api.Store.StoreTreeNode;
+      const data = node.data as Api.Invitation.InvitationTreeNode;
       // 如果当前节点被勾选且是人员类型
       if (checkedKeySet.has(node.key as string) && data.type === 'person' && data.guid) {
         guids.push(data.guid);
@@ -104,8 +104,8 @@ function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
 
   traverseAndCollect(treeData.value);
 
-  storeStore.setCheckedKeys(keys);
-  storeStore.setSelectedGuids(guids);
+  invitationStore.setCheckedKeys(keys);
+  invitationStore.setSelectedGuids(guids);
 }
 
 function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
@@ -114,25 +114,25 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
   const key = keys[0];
   const node = optionNodes.find(n => n?.key === key);
   if (node) {
-    const data = node.data as Api.Store.StoreTreeNode;
+    const data = node.data as Api.Invitation.InvitationTreeNode;
     if (data.type === 'person' && data.guid) {
-      storeStore.loadStoreDetail(data.guid);
+      invitationStore.loadInvitationDetail(data.guid);
     } else {
-      storeStore.storeDetail = null;
+      invitationStore.invitationDetail = null;
     }
   }
 }
 
 function handleExpandedKeysChange(keys: string[]) {
   expandedKeys.value = keys;
-  storeStore.setExpandedKeys(keys);
+  invitationStore.setExpandedKeys(keys);
 }
 
 async function openAddModal() {
   // 加载动态字段配置
   const { data } = await fetchAddFields(functionCode.value);
   if (data?.fields) {
-    storeStore.setAddFields(data.fields);
+    invitationStore.setAddFields(data.fields);
     // 初始化表单数据
     const formData: Record<string, any> = {};
     data.fields.forEach((field: AddField) => {
@@ -143,13 +143,13 @@ async function openAddModal() {
         formData[field.columnName] = field.defaultValue || '';
       }
     });
-    storeStore.setAddFormDynamic(formData);
+    invitationStore.setAddFormDynamic(formData);
   }
-  storeStore.setAddingMode(true);
+  invitationStore.setAddingMode(true);
 }
 
 function cancelAddMode() {
-  storeStore.clearAddState();
+  invitationStore.clearAddState();
 }
 
 async function saveAddMode() {
@@ -161,12 +161,12 @@ async function saveAddMode() {
   }
 
   submitting.value = true;
-  const { error } = await fetchAddStore(addFormDynamic.value);
+  const { error } = await fetchAddInvitation(addFormDynamic.value);
   submitting.value = false;
 
   if (!error) {
     message.success('新增邀约信息成功');
-    storeStore.clearAddState();
+    invitationStore.clearAddState();
     await loadTree();
   }
 }
@@ -189,14 +189,14 @@ async function openBatchEditModal() {
         formData[field.columnName] = field.defaultValue || '';
       }
     });
-    storeStore.setBatchEditFields(data.fields);
-    storeStore.setBatchEditForm(formData);
-    storeStore.setBatchEditMode(true);
+    invitationStore.setBatchEditFields(data.fields);
+    invitationStore.setBatchEditForm(formData);
+    invitationStore.setBatchEditMode(true);
   }
 }
 
 function cancelBatchEditMode() {
-  storeStore.clearBatchEditState();
+  invitationStore.clearBatchEditState();
 }
 
 async function saveBatchEditMode() {
@@ -212,7 +212,7 @@ async function saveBatchEditMode() {
   let failCount = 0;
 
   for (const guid of selectedGuids.value) {
-    const { error } = await fetchUpdateStore({
+    const { error } = await fetchUpdateInvitation({
       guid,
       ...batchEditForm.value
     });
@@ -227,7 +227,7 @@ async function saveBatchEditMode() {
 
   if (failCount === 0) {
     message.success(`成功修改 ${successCount} 条记录`);
-    storeStore.clearBatchEditState();
+    invitationStore.clearBatchEditState();
     await loadTree();
   } else {
     message.warning(`成功 ${successCount} 条，失败 ${failCount} 条`);
@@ -235,27 +235,27 @@ async function saveBatchEditMode() {
 }
 
 async function startEditDetail() {
-  if (!storeDetail.value) {
+  if (!invitationDetail.value) {
     message.warning('请先选择要编辑的人员');
     return;
   }
-  
+
   // 加载新增字段配置，用于编辑时显示控件
   if (!addFields.value || addFields.value.length === 0) {
     const { data } = await fetchAddFields(functionCode.value);
     if (data?.fields) {
-      storeStore.setAddFields(data.fields);
+      invitationStore.setAddFields(data.fields);
     }
   }
-  
+
   // 初始化编辑表单数据，保留原记录所有字段内容
   const formData: Record<string, any> = {};
-  
-  // 先将 storeDetail 中的所有字段都复制到 formData
-  Object.keys(storeDetail.value).forEach(key => {
-    formData[key] = storeDetail.value?.[key] ?? '';
+
+  // 先将 invitationDetail 中的所有字段都复制到 formData
+  Object.keys(invitationDetail.value).forEach(key => {
+    formData[key] = invitationDetail.value?.[key] ?? '';
   });
-  
+
   // 再基于 detailFields 中可编辑字段，确保有值存在
   detailFields.value.forEach(field => {
     if (field.editable) {
@@ -264,7 +264,7 @@ async function startEditDetail() {
       }
     }
   });
-  
+
   editDetailForm.value = formData;
   isEditingDetail.value = true;
 }
@@ -275,11 +275,11 @@ function cancelDetailEdit() {
 }
 
 async function saveDetailEdit() {
-  if (!storeDetail.value) return;
+  if (!invitationDetail.value) return;
 
   submitting.value = true;
-  const { error } = await fetchUpdateStore({
-    guid: storeDetail.value.GUID,
+  const { error } = await fetchUpdateInvitation({
+    guid: invitationDetail.value.GUID,
     ...editDetailForm.value
   });
   submitting.value = false;
@@ -287,7 +287,7 @@ async function saveDetailEdit() {
   if (!error) {
     message.success('修改成功');
     isEditingDetail.value = false;
-    await storeStore.loadStoreDetail(storeDetail.value.GUID);
+    await invitationStore.loadInvitationDetail(invitationDetail.value.GUID);
   }
 }
 
@@ -329,12 +329,12 @@ async function handleAdd() {
   }
 
   submitting.value = true;
-  const { error } = await fetchAddStore(addFormDynamic.value);
+  const { error } = await fetchAddInvitation(addFormDynamic.value);
   submitting.value = false;
 
   if (!error) {
     message.success('新增邀约信息成功');
-    storeStore.clearAddState();
+    invitationStore.clearAddState();
     await loadTree();
   }
 }
@@ -346,7 +346,7 @@ async function handleTransfer() {
   }
 
   submitting.value = true;
-  const { error } = await fetchTransferStore({
+  const { error } = await fetchTransferInvitation({
     guids: selectedGuids.value,
     ...transferForm.value
   });
@@ -355,7 +355,7 @@ async function handleTransfer() {
   if (!error) {
     message.success('转入面试成功');
     cancelTransferMode();
-    storeStore.clearSelection();
+    invitationStore.clearSelection();
     await loadTree();
   }
 }
@@ -372,10 +372,10 @@ function handleDelete() {
     positiveText: '确认',
     negativeText: '取消',
     onPositiveClick: async () => {
-      const { error } = await fetchDeleteStore(selectedGuids.value);
+      const { error } = await fetchDeleteInvitation(selectedGuids.value);
       if (!error) {
         message.success('删除成功');
-        storeStore.clearSelection();
+        invitationStore.clearSelection();
         await loadTree();
       }
     }
@@ -383,7 +383,7 @@ function handleDelete() {
 }
 
 function renderPrefix({ option }: { option: TreeOption }) {
-  const data = option.data as Api.Store.StoreTreeNode;
+  const data = option.data as Api.Invitation.InvitationTreeNode;
   const icons: Record<string, string> = {
     root: '👥',
     region: '🏢',
@@ -402,7 +402,7 @@ function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOpti
   const lowerKeyword = keyword.toLowerCase();
 
   function filterNode(node: TreeOption): TreeOption | null {
-    const data = node.data as Api.Store.StoreTreeNode;
+    const data = node.data as Api.Invitation.InvitationTreeNode;
     const label = (node.label as string) || '';
     const match = label.toLowerCase().includes(lowerKeyword);
 
@@ -462,14 +462,14 @@ onMounted(async () => {
       leftWidth.value = width;
     }
   }
-  await storeStore.loadTreeData();
-  storeStore.loadOptions();
+  await invitationStore.loadTreeData();
+  invitationStore.loadOptions();
 
   // 初始化过滤后的树数据
   filteredTreeData.value = treeData.value;
 
   // 从 store 恢复展开状态
-  expandedKeys.value = storeStore.expandedKeys;
+  expandedKeys.value = invitationStore.expandedKeys;
 
   // 加载详情字段配置
   const { data } = await fetchDetailFields(functionCode.value);
@@ -481,7 +481,7 @@ onMounted(async () => {
 // 组件重新激活时恢复状态（KeepAlive 缓存）
 onActivated(() => {
   // 恢复展开状态
-  expandedKeys.value = storeStore.expandedKeys;
+  expandedKeys.value = invitationStore.expandedKeys;
   // 恢复过滤后的树数据
   filteredTreeData.value = treeData.value;
 });
@@ -528,7 +528,7 @@ onActivated(() => {
           selectable
           block-line
           block-node
-          :checked-keys="storeStore.checkedKeys"
+          :checked-keys="invitationStore.checkedKeys"
           :expanded-keys="expandedKeys"
           default-expand-all
           @update:checked-keys="handleCheck"
@@ -787,15 +787,15 @@ onActivated(() => {
         </div>
 
         <!-- 详情/编辑模式 -->
-        <div v-else-if="storeDetail">
+        <div v-else-if="invitationDetail">
           <div class="flex justify-between items-center mb-2">
             <span class="text-lg font-600">邀约信息</span>
             <div>
-              <NButton 
-                v-if="!isEditingDetail" 
-                type="primary" 
-                size="small" 
-                :disabled="!storeDetail || !storeStore.selectedGuids.includes(String(storeDetail.GUID))"
+              <NButton
+                v-if="!isEditingDetail"
+                type="primary"
+                size="small"
+                :disabled="!invitationDetail || !invitationStore.selectedGuids.includes(String(invitationDetail.GUID))"
                 @click="startEditDetail"
               >
                 <template #icon>
@@ -875,17 +875,17 @@ onActivated(() => {
                   <!-- 查看模式 -->
                   <template v-else>
                     <template v-if="field.columnName === '邀约结果'">
-                      <NTag :type="storeDetail[field.columnName] === '通过' ? 'success' : 'default'" size="small">
-                        {{ storeDetail[field.columnName] || '-' }}
+                      <NTag :type="invitationDetail[field.columnName] === '通过' ? 'success' : 'default'" size="small">
+                        {{ invitationDetail[field.columnName] || '-' }}
                       </NTag>
                     </template>
                     <template v-else-if="field.columnName === '工作履历'">
                       <span style="white-space: pre-wrap; word-break: break-all; line-height: 1.6;">
-                        {{ storeDetail[field.columnName] || '-' }}
+                        {{ invitationDetail[field.columnName] || '-' }}
                       </span>
                     </template>
                     <template v-else>
-                      {{ storeDetail[field.columnName] || '-' }}
+                      {{ invitationDetail[field.columnName] || '-' }}
                     </template>
                   </template>
                 </td>
