@@ -23,7 +23,7 @@ export function useWorkbenchColumnSettings(options: UseWorkbenchColumnSettingsOp
     if (options.gridApi.value && !options.gridApi.value.isDestroyed()) {
       const visibleFields = options.gridApi.value
         .getColumnState()
-        .filter(item => item.colId !== 'ag-Grid-SelectionColumn' && item.hide !== true)
+        .filter(item => item.hide !== true)
         .map(item => String(item.colId));
 
       visibleFieldColumns.value = visibleFields;
