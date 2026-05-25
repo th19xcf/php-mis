@@ -61,6 +61,7 @@ $routes->group('workbench', static function ($routes) {
 	$routes->post('batch-update-row/(:segment)', 'Workbench::batchUpdateRow/$1');
 	$routes->post('delete-row/(:segment)', 'Workbench::deleteRow/$1');
 	$routes->post('table-edit/(:segment)', 'Workbench::tableEdit/$1');
+	$routes->get('chart/(:segment)', 'Workbench::chart/$1');
 });
 
 $routes->group('comment', static function ($routes) {
@@ -78,14 +79,14 @@ $routes->group('dept', static function ($routes) {
 	$routes->get('options', 'DeptApi::options');
 });
 
-$routes->group('store', static function ($routes) {
-	$routes->get('tree', 'StoreApi::tree');
-	$routes->get('detail/(:segment)', 'StoreApi::detail/$1');
-	$routes->post('add', 'StoreApi::add');
-	$routes->post('update', 'StoreApi::update');
-	$routes->post('delete', 'StoreApi::delete');
-	$routes->post('transfer', 'StoreApi::transfer');
-	$routes->get('options', 'StoreApi::options');
+$routes->group('invitation', static function ($routes) {
+	$routes->get('tree', 'InvitationApi::tree');
+	$routes->get('detail/(:segment)', 'InvitationApi::detail/$1');
+	$routes->post('add', 'InvitationApi::add');
+	$routes->post('update', 'InvitationApi::update');
+	$routes->post('delete', 'InvitationApi::delete');
+	$routes->post('transfer', 'InvitationApi::transfer');
+	$routes->get('options', 'InvitationApi::options');
 });
 
 $routes->group('interview', static function ($routes) {

@@ -52,6 +52,7 @@ declare namespace Api {
       queryModule: string;
       fieldModule: string;
       commentModule: string;
+      chartModule: string;
       toolbar: ToolbarMeta;
       conditions: ConditionMeta[];
       columns: ColumnMeta[];

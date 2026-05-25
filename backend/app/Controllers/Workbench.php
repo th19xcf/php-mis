@@ -557,6 +557,7 @@ class Workbench extends BaseController
             'queryModule' => $queryConfig['queryModule'],
             'fieldModule' => $queryConfig['fieldModule'],
             'commentModule' => $queryConfig['commentModule'],
+            'chartModule' => $queryConfig['chartModule'],
             'toolbar' => [
                 'comment' => $functionAuth['commentAuth'],
                 'add' => $functionAuth['addAuth'],
@@ -581,7 +582,10 @@ class Workbench extends BaseController
             'user' => $userAuth,
             'function' => $functionAuth,
             'query' => $queryConfig,
-            'columns' => $columns
+            'columns' => $columns,
+            'locationAuthzCond' => $functionAuth['locationAuthCond'],
+            'deptAuthzCond' => $functionAuth['deptAuthCond'],
+            'queryTable' => $queryConfig['queryTable']
         ];
 
         return [$context, $definition];
@@ -3549,5 +3553,197 @@ class Workbench extends BaseController
             log_message('error', '表级修改提交失败: ' . $e->getMessage());
             return $this->error('5001', '表级修改提交失败');
         }
+    }
+
+    /**
+     * 获取图形数据
+     *
+     * @param string $functionCode 功能编码
+     * @return Response
+     */
+    public function chart(string $functionCode = '')
+    {
+        try {
+            [$context, $definition] = $this->buildWorkbenchContext($functionCode);
+            $chartModule = $definition['chartModule'] ?? '';
+
+            if (empty($chartModule)) {
+                return $this->error('4001', '当前功能未配置图形模块');
+            }
+
+            $chartData = $this->getChartData($context, $chartModule);
+
+            return $this->success([
+                'charts' => $chartData
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '获取图形数据失败: ' . $e->getMessage());
+            return $this->error('5001', '获取图形数据失败');
+        }
+    }
+
+    /**
+     * 查询图形数据
+     *
+     * @param array $context 上下文信息
+     * @param string $chartModule 图形模块
+     * @return array 图形数据
+     */
+    private function getChartData(array $context, string $chartModule): array
+    {
+        $model = new Mcommon();
+        $chartData = [];
+
+        // 查询图形配置
+        $sql = sprintf('
+            select 图形模块,图形编号,图形名称,图形类型,
+                取数方式,查询表名,查询字段,属地字段,查询条件,汇总条件,排序条件,记录条数,
+                字段模块,页面布局,钻取模块,条件叠加,顺序
+            from def_chart_config
+            where 有效标识="1" and 图形模块="%s" and 顺序>0
+            order by 图形模块,图形编号,顺序',
+            $chartModule
+        );
+
+        $results = $model->select($sql)->getResult();
+
+        foreach ($results as $row) {
+            $chartItem = [
+                '图形模块' => $row->图形模块,
+                '图形编号' => $row->图形编号,
+                '图形名称' => $row->图形名称,
+                '图形类型' => $row->图形类型,
+                '取数方式' => $row->取数方式,
+                '页面布局' => $row->页面布局,
+                '字段模块' => $row->字段模块,
+                '钻取模块' => $row->钻取模块,
+                '数据' => []
+            ];
+
+            // 构建查询 SQL
+            if ($row->取数方式 === '存储过程') {
+                // 替换存储过程参数 - 查询表名包含完整的存储过程调用
+                $dataSql = $row->查询表名;
+                $dataSql = str_replace('$查询表名', sprintf('%s', $context['queryTable'] ?? ''), $dataSql);
+                // 生成 JSON 格式的字符串："[\"公司\"]"
+                $deptNameAuth = $context['user']['deptNameAuth'] ?? '';
+                $deptNameAuthJson = '"[\\"' . $deptNameAuth . '\\"]"';
+                $dataSql = str_replace('$[部门全称赋权]', $deptNameAuthJson, $dataSql);
+                // 添加 call 关键字
+                if (strpos($dataSql, 'call ') !== 0) {
+                    $dataSql = 'call ' . $dataSql;
+                }
+            } else {
+                // 构建标准查询 - 参考旧版 Frame.php 的逻辑
+                $fields = $row->查询字段 ?? '*';
+                $table = $row->查询表名;
+
+                // 构建 WHERE 条件
+                $whereParts = [];
+
+                // 添加部门授权条件
+                $deptAuthCond = $context['deptAuthzCond'] ?? '';
+                if (!empty($deptAuthCond)) {
+                    $whereParts[] = $deptAuthCond;
+                }
+
+                // 添加属地授权条件
+                $locationAuthCond = $context['locationAuthzCond'] ?? '';
+                if (!empty($row->属地字段) && !empty($locationAuthCond)) {
+                    $whereParts[] = $locationAuthCond;
+                }
+
+                // 添加配置的查询条件
+                if (!empty($row->查询条件)) {
+                    $queryCond = $row->查询条件;
+                    // 替换变量
+                    $queryCond = $this->replaceConditionVariables($queryCond, $context);
+                    $whereParts[] = $queryCond;
+                }
+
+                // 组合 WHERE 条件
+                if (count($whereParts) > 0) {
+                    $where = implode(' and ', $whereParts);
+                } else {
+                    $where = '1=1';
+                }
+
+                // 构建完整 SQL
+                $dataSql = sprintf('select %s, "%s^%s" as SID from %s where %s',
+                    $fields,
+                    $row->图形模块,
+                    $row->图形编号,
+                    $table,
+                    $where
+                );
+
+                // 添加 GROUP BY
+                if (!empty($row->汇总条件)) {
+                    $dataSql .= ' group by ' . $row->汇总条件;
+                }
+
+                // 添加 ORDER BY
+                if (!empty($row->排序条件)) {
+                    $dataSql .= ' order by ' . $row->排序条件;
+                }
+
+                // 添加 LIMIT
+                if (!empty($row->记录条数)) {
+                    $dataSql .= ' limit ' . $row->记录条数;
+                }
+            }
+
+            try {
+                $queryResult = $model->select($dataSql);
+                if ($queryResult === false) {
+                    throw new \RuntimeException('数据库查询返回 false');
+                }
+                $dataResults = $queryResult->getResult();
+                $chartItem['数据'] = $dataResults ?? [];
+                $chartItem['SQL'] = $dataSql;
+            } catch (\Throwable $e) {
+                $errorMsg = $e->getMessage();
+                log_message('error', '图形数据查询失败: ' . $errorMsg . ' SQL: ' . $dataSql);
+                $chartItem['数据'] = [];
+                $chartItem['错误'] = $errorMsg;
+                $chartItem['SQL'] = $dataSql;
+            }
+
+            $chartData[] = $chartItem;
+        }
+
+        return $chartData;
+    }
+
+    /**
+     * 替换条件变量
+     *
+     * @param string $condition 条件字符串
+     * @param array $context 上下文信息
+     * @return string 替换后的条件
+     */
+    private function replaceConditionVariables(string $condition, array $context): string
+    {
+        // 替换属地授权条件
+        if (strpos($condition, '$属地授权') !== false) {
+            $locationCond = $context['locationAuthzCond'] ?? '1=1';
+            $condition = str_replace('$属地授权', $locationCond, $condition);
+        }
+
+        // 替换部门授权条件
+        if (strpos($condition, '$部门授权') !== false) {
+            $deptCond = $context['deptAuthzCond'] ?? '1=1';
+            $condition = str_replace('$部门授权', $deptCond, $condition);
+        }
+
+        // 替换查询表名
+        if (strpos($condition, '$查询表名') !== false) {
+            $queryTable = $context['queryTable'] ?? '';
+            $condition = str_replace('$查询表名', $queryTable, $condition);
+        }
+
+        return $condition;
     }
 }

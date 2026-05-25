@@ -4,8 +4,8 @@ const loadingLocks = new Map<string, boolean>();
 </script>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef, h, onMounted, onActivated, onDeactivated, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref, shallowRef, h, onMounted, onActivated, onDeactivated, watch, nextTick } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
 import {
@@ -17,8 +17,31 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert } from 'naive-ui';
+import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty } from 'naive-ui';
 import * as XLSX from 'xlsx';
+import * as echarts from 'echarts/core';
+import { LineChart, BarChart, PieChart } from 'echarts/charts';
+import {
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+  DatasetComponent
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+
+// 注册 ECharts 组件
+echarts.use([
+  LineChart,
+  BarChart,
+  PieChart,
+  TitleComponent,
+  TooltipComponent,
+  LegendComponent,
+  GridComponent,
+  DatasetComponent,
+  CanvasRenderer
+]);
 
 import {
   fetchWorkbenchPage,
@@ -27,6 +50,7 @@ import {
   submitTableEdit,
   fetchWorkbenchDebug
 } from '@/service/api/workbench';
+import { request } from '@/service/request';
 import { useColorMark } from '@/hooks/business/use-color-mark';
 import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
 import { useWorkbenchDelete } from '@/hooks/business/use-workbench-delete';
@@ -46,6 +70,7 @@ import {
 } from './components';
 
 const router = useRouter();
+const route = useRoute();
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -370,6 +395,266 @@ const colorMarkEnabledColumns = computed(() => {
 
 // 是否有可颜色标注的列
 const hasColorMarkEnabledColumns = computed(() => colorMarkEnabledColumns.value.length > 0);
+
+// 是否有图形模块配置
+const hasChartEnabled = computed(() => !!pageMeta.value?.chartModule && pageMeta.value.chartModule !== '');
+
+// 图形展示相关状态
+const chartVisible = ref(false);
+const chartLoading = ref(false);
+const chartData = ref<any[]>([]);
+const chartOption = ref<any>(null);
+
+// 打开图形展示弹窗
+async function handleOpenChart() {
+  if (!pageMeta.value?.chartModule) {
+    const warningMsg = '当前功能未配置图形模块';
+    msg('warning', warningMsg);
+    console.warn(`[图形功能] ${warningMsg}`);
+    return;
+  }
+
+  chartVisible.value = true;
+  chartLoading.value = true;
+
+  try {
+    // 调用后端 API 获取图形数据
+    const functionCode = String(route.query.functionCode || route.meta?.functionCode || '');
+    const { data, error } = await request({
+      url: `/workbench/chart/${functionCode}`
+    });
+
+    if (error) {
+      const errorMsg = '获取图形数据失败';
+      msg('error', errorMsg);
+      console.error(`[图形功能] ${errorMsg}:`, error);
+      chartLoading.value = false;
+      return;
+    }
+
+    if (!data?.charts || data.charts.length === 0) {
+      const warningMsg = '暂无图形数据';
+      msg('warning', warningMsg);
+      console.warn(`[图形功能] ${warningMsg}`);
+      chartLoading.value = false;
+      return;
+    }
+
+    // 处理后端返回的图形数据
+    chartData.value = data.charts;
+
+    // 检查是否有错误信息
+    const firstChart = data.charts[0];
+    if (firstChart?.['错误']) {
+      const errorMsg = `图形数据查询失败: ${firstChart['错误']}`;
+      msg('error', errorMsg);
+      console.error(`[图形功能] ${errorMsg}`);
+      console.error(`[图形功能] SQL: ${firstChart['SQL']}`);
+      chartLoading.value = false;
+      return;
+    }
+
+    chartOption.value = generateChartOptionFromBackend(data.charts);
+  } catch (error) {
+    const errorMsg = '图形数据加载失败';
+    msg('error', errorMsg);
+    console.error(`[图形功能] ${errorMsg}:`, error);
+  } finally {
+    chartLoading.value = false;
+  }
+}
+
+// 根据后端数据生成图形配置
+function generateChartOptionFromBackend(charts: any[]): any {
+  if (!charts || charts.length === 0) {
+    return null;
+  }
+
+  // 目前只处理第一个图形
+  const chart = charts[0];
+  const chartData = chart['数据'] || [];
+  const chartType = chart['图形类型'] || 'line';
+  const chartName = chart['图形名称'] || '数据图形';
+
+  if (chartData.length === 0) {
+    return null;
+  }
+
+  // 获取数据字段
+  const dataKeys = Object.keys(chartData[0]);
+  const categoryKey = dataKeys[0]; // 第一个字段作为分类轴
+  const valueKeys = dataKeys.slice(1).filter(key => {
+    const val = chartData[0][key];
+    return typeof val === 'number' || (typeof val === 'string' && !isNaN(Number(val)) && val !== '');
+  });
+
+  const xAxisData = chartData.map(item => item[categoryKey]);
+
+  // 根据图形类型生成配置
+  if (chartType === 'pie') {
+    // 饼图
+    const pieData = chartData.map(item => ({
+      name: item[categoryKey],
+      value: Number(item[valueKeys[0]]) || 0
+    }));
+
+    return {
+      title: {
+        text: chartName,
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'item',
+        formatter: '{a} <br/>{b}: {c} ({d}%)'
+      },
+      legend: {
+        orient: 'vertical',
+        left: 'left'
+      },
+      series: [
+        {
+          name: chartName,
+          type: 'pie',
+          radius: '50%',
+          data: pieData,
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 10,
+              shadowOffsetX: 0,
+              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            }
+          }
+        }
+      ]
+    };
+  } else {
+    // 折线图或柱状图
+    const series = valueKeys.map(key => ({
+      name: key,
+      type: chartType === 'bar' ? 'bar' : 'line',
+      data: chartData.map(item => Number(item[key]) || 0),
+      smooth: chartType !== 'bar'
+    }));
+
+    return {
+      title: {
+        text: chartName,
+        left: 'center'
+      },
+      tooltip: {
+        trigger: 'axis'
+      },
+      legend: {
+        data: valueKeys,
+        top: 30
+      },
+      xAxis: {
+        type: 'category',
+        data: xAxisData,
+        name: categoryKey
+      },
+      yAxis: {
+        type: 'value'
+      },
+      series,
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '3%',
+        top: 80
+      }
+    };
+  }
+}
+
+// 图表相关引用和监听
+const chartRef = ref<HTMLDivElement | null>(null);
+let chartInstance: echarts.ECharts | null = null;
+
+// 监听图表弹窗显示状态，初始化图表
+watch(chartVisible, async (visible) => {
+  if (visible && chartOption.value) {
+    await nextTick();
+    // 延迟初始化，确保 DOM 已经渲染且有正确的尺寸
+    setTimeout(() => {
+      if (chartRef.value) {
+        // 检查 DOM 尺寸
+        const width = chartRef.value.clientWidth;
+        const height = chartRef.value.clientHeight;
+        console.log('[图形功能] DOM 尺寸:', { width, height });
+
+        if (width === 0 || height === 0) {
+          console.warn('[图形功能] DOM 宽高为 0，延迟重试...');
+          // 如果尺寸为 0，再延迟一段时间后重试
+          setTimeout(() => {
+            if (chartRef.value && chartRef.value.clientWidth > 0 && chartRef.value.clientHeight > 0) {
+              initChart();
+            }
+          }, 300);
+          return;
+        }
+
+        initChart();
+      }
+    }, 200);
+  }
+});
+
+// 初始化图表的函数
+function initChart() {
+  if (!chartRef.value || !chartOption.value) return;
+
+  // 销毁旧实例
+  if (chartInstance) {
+    chartInstance.dispose();
+  }
+
+  // 创建新实例
+  chartInstance = echarts.init(chartRef.value);
+  chartInstance.setOption(chartOption.value);
+  console.log('[图形功能] 图表初始化成功');
+
+  // 监听窗口大小变化
+  const resizeHandler = () => {
+    chartInstance?.resize();
+  };
+  window.addEventListener('resize', resizeHandler);
+
+  // 弹窗关闭时清理
+  watch(chartVisible, (v) => {
+    if (!v) {
+      window.removeEventListener('resize', resizeHandler);
+      if (chartInstance) {
+        chartInstance.dispose();
+        chartInstance = null;
+      }
+    }
+  }, { once: true });
+}
+
+// 监听 chartOption 变化，当弹窗已打开但数据刚加载完成时初始化图表
+watch(chartOption, async (option) => {
+  if (option && chartVisible.value && !chartInstance) {
+    await nextTick();
+    setTimeout(() => {
+      if (chartRef.value) {
+        const width = chartRef.value.clientWidth;
+        const height = chartRef.value.clientHeight;
+        console.log('[图形功能] chartOption 变化，DOM 尺寸:', { width, height });
+
+        if (width > 0 && height > 0) {
+          initChart();
+        } else {
+          setTimeout(() => {
+            if (chartRef.value && chartRef.value.clientWidth > 0 && chartRef.value.clientHeight > 0) {
+              initChart();
+            }
+          }, 300);
+        }
+      }
+    }, 100);
+  }
+});
 
 const {
   colorMarkVisible,
@@ -887,6 +1172,9 @@ async function loadPage() {
   metaTimer.end();
 
   if (pageResult.error) {
+    const errorMsg = '工作台初始化失败';
+    msg('error', errorMsg);
+    console.error(`[工作台] ${errorMsg}:`, pageResult.error);
     loading.value = false;
     return;
   }
@@ -910,6 +1198,9 @@ async function loadPage() {
   firstPageTimer.end();
 
   if (firstPageResult.error) {
+    const errorMsg = '获取数据失败';
+    msg('error', errorMsg);
+    console.error(`[工作台] ${errorMsg}:`, firstPageResult.error);
     loading.value = false;
     return;
   }
@@ -1940,6 +2231,7 @@ async function handleTableEditSubmit() {
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddComment">添加批注</NButton>
             <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
+            <NButton v-if="hasChartEnabled" @click="handleOpenChart">图形</NButton>
             <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAdd">新增</NButton>
             <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="handleOpenUpdate">
               单条修改
@@ -2192,6 +2484,21 @@ async function handleTableEditSubmit() {
           <NButton type="primary" @click="handleApplyColorMark">应用</NButton>
         </NSpace>
       </NSpace>
+    </NModal>
+
+    <!-- 图形展示弹窗 -->
+    <NModal v-model:show="chartVisible" preset="card" title="图形展示" class="w-80vw h-80vh" :mask-closable="false">
+      <div class="chart-container">
+        <NSpin :show="chartLoading">
+          <div v-show="chartOption" ref="chartRef" class="chart-wrapper"></div>
+          <NEmpty v-if="!chartOption && !chartLoading" description="暂无图形数据" />
+        </NSpin>
+      </div>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="chartVisible = false">关闭</NButton>
+        </NSpace>
+      </template>
     </NModal>
 
     <!-- 批注弹窗 -->
@@ -2683,6 +2990,41 @@ async function handleTableEditSubmit() {
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.7);
+}
+
+/* 图形展示弹窗样式 */
+.chart-container {
+  width: 100%;
+  height: 500px;
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-container .n-spin {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-container :deep(.n-spin-container) {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-container :deep(.n-spin-content) {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-wrapper {
+  width: 100%;
+  flex: 1;
+  min-height: 400px;
 }
 
 .system-dark .toolbar-card,
