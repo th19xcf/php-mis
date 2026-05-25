@@ -2,7 +2,7 @@
 
 namespace App\Controllers;
 
-class StoreApi extends BaseApiController
+class InvitationApi extends BaseApiController
 {
     public function tree()
     {
