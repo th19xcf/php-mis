@@ -154,7 +154,7 @@ function cancelAddMode() {
 
 async function saveAddMode() {
   // 验证必填字段
-  const requiredField = addFields.value.find(f => f.required && !addFormDynamic.value[f.columnName]);
+  const requiredField = addFields.value.find((f: AddField) => f.required && !addFormDynamic.value[f.columnName]);
   if (requiredField) {
     message.error(`${requiredField.fieldName}不能为空`);
     return;
@@ -257,7 +257,7 @@ async function startEditDetail() {
   });
 
   // 再基于 detailFields 中可编辑字段，确保有值存在
-  detailFields.value.forEach(field => {
+  detailFields.value.forEach((field: DetailField) => {
     if (field.editable) {
       if (formData[field.columnName] === undefined || formData[field.columnName] === null) {
         formData[field.columnName] = '';
@@ -322,7 +322,7 @@ function handlePopupSelect(field: AddField) {
 
 async function handleAdd() {
   // 验证必填字段
-  const requiredField = addFields.value.find(f => f.required && !addFormDynamic.value[f.columnName]);
+  const requiredField = addFields.value.find((f: AddField) => f.required && !addFormDynamic.value[f.columnName]);
   if (requiredField) {
     message.error(`${requiredField.fieldName}不能为空`);
     return;

@@ -5,6 +5,7 @@ import { useDialog, useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview, fetchAddFields, fetchDetailFields } from '@/service/api';
 import { useInterviewStore } from '@/store/modules/interview';
+import type { AddField, DetailField } from '@/typings/api/workbench';
 
 const dialog = useDialog();
 const message = useMessage();

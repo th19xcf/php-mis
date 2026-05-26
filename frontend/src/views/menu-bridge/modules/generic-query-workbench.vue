@@ -17,7 +17,7 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty } from 'naive-ui';
+import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty, type MessageType } from 'naive-ui';
 import * as XLSX from 'xlsx';
 import * as echarts from 'echarts/core';
 import { LineChart, BarChart, PieChart } from 'echarts/charts';
@@ -301,7 +301,7 @@ const {
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   reloadPage: () => loadPage(),
-  notify: (type, message) => msg(type, message)
+  notify: (type: MessageType, message: string) => msg(type, message)
 });
 
 const {
@@ -322,7 +322,7 @@ const {
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   getCommentModuleName: () => pageMeta.value?.commentModule || String(props.meta.functionCode || '').trim(),
-  notify: (type, message, data) => msg(type, message, data)
+  notify: (type: MessageType, message: string, data?: Record<string, any>) => msg(type, message, data)
 });
 
 // 工具栏滚动相关
@@ -544,7 +544,7 @@ function generateChartOptionFromBackend(charts: any[]): any {
       return typeof val === 'number' || (typeof val === 'string' && !isNaN(Number(val)) && val !== '');
     });
 
-    const pieData = chartData.map(item => ({
+    const pieData = (chartData as Record<string, any>[]).map((item: Record<string, any>) => ({
       name: item[categoryKey],
       value: Number(item[valueKeys[0]]) || 0
     }));
@@ -629,7 +629,7 @@ function generateChartOptionFromBackend(charts: any[]): any {
       const seriesItem: any = {
         name: key,
         type: fieldChartType === '柱状图' ? 'bar' : 'line',
-        data: chartData.map(item => parseValue(item[key]))
+        data: (chartData as Record<string, any>[]).map((item: Record<string, any>) => parseValue(item[key]))
       };
 
       if (fieldChartType !== '柱状图') {
@@ -785,7 +785,7 @@ const {
 } = useColorMark({
   colorMarkEnabledColumns,
   gridApi,
-  notify: (type, message) => msg(type, message)
+  notify: (type: MessageType, message: string) => msg(type, message)
 });
 
 const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
@@ -1086,7 +1086,7 @@ const {
     isDataLoaded.value = false;
     loadPage();
   },
-  notify: (type, message) => msg(type, message)
+  notify: (type: MessageType, message: string) => msg(type, message)
 });
 
 // 性能计时工具
@@ -1751,7 +1751,7 @@ const { deleteLoading, handleDelete } = useWorkbenchDelete({
     isDataLoaded.value = false;
     loadPage();
   },
-  notify: (type, message) => msg(type, message)
+  notify: (type: MessageType, message: string) => msg(type, message)
 });
 
 const {
@@ -1768,15 +1768,18 @@ const {
   confirmPopupSelection
 } = useWorkbenchPopupCascader({
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  onConfirmSelection: (fieldName, value) => {
+  onConfirmSelection: (fieldName: string, value: string) => {
     setEditFieldValue(fieldName, value);
   },
-  notifyError: message => {
+  notifyError: (message: string) => {
     window.$message?.error(message);
   }
 });
 // 获取字段选项
-function _getFieldOptions(field: any): Array<{ label: string; value: string }> {
+interface FieldOption {
+  objectOptions?: Array<{ label: string; value: string }>;
+}
+function _getFieldOptions(field: FieldOption): Array<{ label: string; value: string }> {
   return field.objectOptions || [];
 }
 
@@ -1931,9 +1934,14 @@ async function handleDebug() {
     console.log('\nchartSql 完整数据:');
     console.log(JSON.stringify(data.chartSql, null, 2));
     
-    if (data.chartSql && data.chartSql.length > 0) {
+    interface ChartSqlItem {
+  name?: string;
+  sql?: string;
+  error?: string;
+}
+if (data.chartSql && data.chartSql.length > 0) {
       console.log('\n图形 SQL 明细:');
-      data.chartSql.forEach((chart, index) => {
+      (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
         console.log(`\n--- 图形 ${index + 1} ---`);
         console.log('名称:', chart.name || '未命名');
         console.log('SQL:', chart.sql || '(无)');
@@ -1949,7 +1957,7 @@ async function handleDebug() {
     console.log('========================================\n');
     
     if (data.chartSql && Array.isArray(data.chartSql) && data.chartSql.length > 0) {
-      data.chartSql.forEach((chart, index) => {
+      (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
         console.log(`  图形 ${index + 1}: ${chart.name || '未命名'}`);
         console.log(`    SQL: ${chart.sql || '(无)'}`);
         if (chart.error) {
