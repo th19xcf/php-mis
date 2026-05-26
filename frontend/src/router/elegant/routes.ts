@@ -141,12 +141,12 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
-        name: 'personnel_store',
-        path: '/personnel/store',
-        component: 'view.personnel_store',
+        name: 'personnel_invitation',
+        path: '/personnel/invitation',
+        component: 'view.personnel_invitation',
         meta: {
-          title: 'personnel_store',
-          i18nKey: 'route.personnel_store'
+          title: 'personnel_invitation',
+          i18nKey: 'route.personnel_invitation'
         }
       },
       {

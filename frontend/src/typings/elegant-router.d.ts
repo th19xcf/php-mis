@@ -30,7 +30,7 @@ declare module "@elegant-router/types" {
     "personnel": "/personnel";
     "personnel_employee": "/personnel/employee";
     "personnel_interview": "/personnel/interview";
-    "personnel_store": "/personnel/store";
+    "personnel_invitation": "/personnel/invitation";
     "personnel_train": "/personnel/train";
     "system": "/system";
     "system_dept": "/system/dept";
@@ -107,7 +107,7 @@ declare module "@elegant-router/types" {
     | "permission-demo"
     | "personnel_employee"
     | "personnel_interview"
-    | "personnel_store"
+    | "personnel_invitation"
     | "personnel_train"
     | "system_dept"
     | "system_role"

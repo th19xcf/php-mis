@@ -45,7 +45,7 @@ const activeView = ref<'workbench' | 'legacy' | 'native'>('workbench');
 
 const nativeComponentMap: Record<string, any> = {
   dept: defineAsyncComponent(() => import('@/views/system/dept/index.vue')),
-  store: defineAsyncComponent(() => import('@/views/personnel/store/index.vue')),
+  store: defineAsyncComponent(() => import('@/views/personnel/invitation/index.vue')),
   interview: defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
   train: defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
   employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),

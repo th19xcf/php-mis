@@ -176,7 +176,7 @@ const routeMap: RouteMap = {
   "personnel": "/personnel",
   "personnel_employee": "/personnel/employee",
   "personnel_interview": "/personnel/interview",
-  "personnel_store": "/personnel/store",
+  "personnel_invitation": "/personnel/invitation",
   "personnel_train": "/personnel/train",
   "system": "/system",
   "system_dept": "/system/dept",
