@@ -3,8 +3,11 @@ import { ref, onMounted, h, computed, watch } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
-import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview, fetchAddFields, fetchDetailFields } from '@/service/api';
+import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview } from '@/service/api';
 import { useInterviewStore } from '@/store/modules/interview';
+import { useSplitter } from '@/hooks/business/use-splitter';
+import { useTreeCheck } from '@/hooks/business/use-tree-check';
+import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
 
 
 const dialog = useDialog();
@@ -21,10 +24,12 @@ const selectedGuids = computed(() => interviewStore.selectedGuids);
 const interviewDetail = computed(() => interviewStore.interviewDetail);
 const options = computed(() => interviewStore.options);
 
-const leftWidth = ref(320);
-const minLeftWidth = 200;
-const maxLeftWidth = 600;
-const isResizing = ref(false);
+const { leftWidth, isResizing, startResize } = useSplitter({
+  defaultWidth: 320,
+  minWidth: 200,
+  maxWidth: 600,
+  storageKey: 'interview-splitter-width'
+});
 
 const isAddingMode = ref(false);
 const isEditingDetail = ref(false);
@@ -57,112 +62,15 @@ const secondInterviewForm = ref({
   预约培训日期: undefined
 });
 
-const detailFields = ref<Array<{ columnName: string; fieldName: string; editable: boolean }>>([]);
-const addFields = ref<Array<{ columnName: string; fieldName: string; fieldType: string; editable: boolean; required: boolean; objectOptions: Array<{ value: string; label: string }> }>>([]);
+const { addFields, detailFields, loadFields } = useWorkbenchFields();
 
-async function loadFields() {
-  const code = Array.isArray(functionCode.value) ? functionCode.value[0] : functionCode.value;
-  const [addResult, detailResult] = await Promise.all([
-    fetchAddFields(code),
-    fetchDetailFields(code)
-  ]);
-  
-  if (addResult.data?.fields) {
-    addFields.value = addResult.data.fields.map((field: any) => ({
-      columnName: field.columnName,
-      fieldName: field.fieldName,
-      fieldType: field.fieldType || '文本',
-      editable: field.editable !== undefined ? field.editable : true,
-      required: field.required || false,
-      objectOptions: field.objectOptions || []
-    }));
-    
-    addFields.value.forEach(field => {
-      if (field.columnName === '属地') {
-        field.objectOptions = options.value?.region || [];
-      } else if (field.columnName === '招聘渠道') {
-        field.objectOptions = options.value?.channel || [];
-      } else if (field.columnName === '面试结果') {
-        field.objectOptions = options.value?.interviewResult || [];
-      }
-    });
-  }
-  
-  if (detailResult.data?.fields) {
-    detailFields.value = detailResult.data.fields.map((field: any) => ({
-      columnName: field.columnName,
-      fieldName: field.fieldName,
-      editable: field.editable !== undefined ? field.editable : false
-    }));
-  }
-}
-
-function startResize(e: MouseEvent) {
-  isResizing.value = true;
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
-
-  const startX = e.clientX;
-  const startWidth = leftWidth.value;
-
-  function onMouseMove(moveEvent: MouseEvent) {
-    if (!isResizing.value) return;
-    const delta = moveEvent.clientX - startX;
-    const newWidth = Math.max(minLeftWidth, Math.min(maxLeftWidth, startWidth + delta));
-    leftWidth.value = newWidth;
-  }
-
-  function onMouseUp() {
-    isResizing.value = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-    localStorage.setItem('interview-splitter-width', String(leftWidth.value));
-  }
-
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-}
+const { handleCheck } = useTreeCheck<Api.Interview.InterviewTreeNode>({
+  setCheckedKeys: interviewStore.setCheckedKeys,
+  setSelectedGuids: interviewStore.setSelectedGuids
+});
 
 async function loadTree() {
   await interviewStore.refreshTree();
-}
-
-function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
-  const guids: string[] = [];
-
-  function collectPeople(nodes: (TreeOption | null)[]) {
-    for (const node of nodes) {
-      if (!node) continue;
-      const data = node.data as Api.Interview.InterviewTreeNode;
-      if (data.type === 'person' && data.guid) {
-        if (!guids.includes(data.guid)) {
-          guids.push(data.guid);
-        }
-      }
-      if (node.children) {
-        collectPeople(node.children);
-      }
-    }
-  }
-
-  for (const key of keys) {
-    const node = optionNodes.find(n => n?.key === key);
-    if (node) {
-      const data = node.data as Api.Interview.InterviewTreeNode;
-      if (data.type === 'person' && data.guid) {
-        if (!guids.includes(data.guid)) {
-          guids.push(data.guid);
-        }
-      } else if (node.children) {
-        collectPeople(node.children);
-      }
-    }
-  }
-
-  interviewStore.setCheckedKeys(keys);
-  interviewStore.setSelectedGuids(guids);
 }
 
 function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
@@ -468,19 +376,22 @@ function handleExpandedKeysChange(keys: string[]) {
 }
 
 onMounted(async () => {
-  const savedWidth = localStorage.getItem('interview-splitter-width');
-  if (savedWidth) {
-    const width = Number(savedWidth);
-    if (!Number.isNaN(width) && width >= minLeftWidth && width <= maxLeftWidth) {
-      leftWidth.value = width;
-    }
-  }
   interviewStore.loadTreeData();
   interviewStore.loadOptions();
 
   filteredTreeData.value = treeData.value;
   
   await loadFields();
+  
+  addFields.value.forEach(field => {
+    if (field.columnName === '属地') {
+      field.objectOptions = options.value?.region || [];
+    } else if (field.columnName === '招聘渠道') {
+      field.objectOptions = options.value?.channel || [];
+    } else if (field.columnName === '面试结果') {
+      field.objectOptions = options.value?.interviewResult || [];
+    }
+  });
 });
 
 watch(treeData, (newData) => {

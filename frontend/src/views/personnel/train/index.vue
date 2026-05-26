@@ -8,10 +8,11 @@ import {
   fetchUpdateTrain,
   fetchBatchUpdateTrain,
   fetchDeleteTrain,
-  fetchTransferTrain,
-  fetchAddFields,
-  fetchDetailFields
+  fetchTransferTrain
 } from '@/service/api';
+import { useSplitter } from '@/hooks/business/use-splitter';
+import { useTreeCheck } from '@/hooks/business/use-tree-check';
+import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
 
 const route = useRoute();
 const dialog = useDialog();
@@ -25,8 +26,12 @@ const selectedGuids = computed(() => trainStore.selectedGuids);
 const trainDetail = computed(() => trainStore.trainDetail);
 const options = computed(() => trainStore.options);
 
-const leftWidth = ref(320);
-const isResizing = ref(false);
+const { leftWidth, isResizing, startResize } = useSplitter({
+  defaultWidth: 320,
+  minWidth: 200,
+  maxWidth: 600,
+  storageKey: 'train-splitter-width'
+});
 
 const isEditingDetail = ref(false);
 const isBatchMode = ref(false);
@@ -55,96 +60,15 @@ const transferForm = ref({
   入职次数: 1
 });
 
-const detailFields = ref<Array<{ columnName: string; fieldName: string; editable: boolean }>>([]);
-const addFields = ref<Array<{ columnName: string; fieldName: string; fieldType: string; editable: boolean; required: boolean; objectOptions: Array<{ value: string; label: string }> }>>([]);
+const { addFields, detailFields, loadFields } = useWorkbenchFields();
 
-async function loadFields() {
-  const code = Array.isArray(functionCode.value) ? functionCode.value[0] : functionCode.value;
-  const [addResult, detailResult] = await Promise.all([
-    fetchAddFields(code),
-    fetchDetailFields(code)
-  ]);
-  
-  if (addResult.data?.fields) {
-    addFields.value = addResult.data.fields.map((field: any) => ({
-      columnName: field.columnName,
-      fieldName: field.fieldName,
-      fieldType: field.fieldType || '文本',
-      editable: field.editable !== undefined ? field.editable : true,
-      required: field.required || false,
-      objectOptions: field.objectOptions || []
-    }));
-  }
-  
-  if (detailResult.data?.fields) {
-    detailFields.value = detailResult.data.fields.map((field: any) => ({
-      columnName: field.columnName,
-      fieldName: field.fieldName,
-      editable: field.editable !== undefined ? field.editable : false
-    }));
-  }
-}
-
-function startResize(e: MouseEvent) {
-  isResizing.value = true;
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
-  const startX = e.clientX;
-  const startWidth = leftWidth.value;
-  function onMouseMove(moveEvent: MouseEvent) {
-    if (!isResizing.value) return;
-    leftWidth.value = Math.max(200, Math.min(600, startWidth + moveEvent.clientX - startX));
-  }
-  function onMouseUp() {
-    isResizing.value = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-    localStorage.setItem('train-splitter-width', String(leftWidth.value));
-  }
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-}
+const { handleCheck } = useTreeCheck<Api.Train.TrainTreeNode>({
+  setCheckedKeys: trainStore.setCheckedKeys,
+  setSelectedGuids: trainStore.setSelectedGuids
+});
 
 async function loadTree() {
   await trainStore.refreshTree();
-}
-
-function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
-  const guids: string[] = [];
-
-  function collectPeople(nodes: (TreeOption | null)[]) {
-    for (const node of nodes) {
-      if (!node) continue;
-      const data = node.data as Api.Train.TrainTreeNode;
-      if (data.type === 'person' && data.guid) {
-        if (!guids.includes(data.guid)) {
-          guids.push(data.guid);
-        }
-      }
-      if (node.children) {
-        collectPeople(node.children);
-      }
-    }
-  }
-
-  for (const key of keys) {
-    const node = optionNodes.find(n => n?.key === key);
-    if (node) {
-      const data = node.data as Api.Train.TrainTreeNode;
-      if (data.type === 'person' && data.guid) {
-        if (!guids.includes(data.guid)) {
-          guids.push(data.guid);
-        }
-      } else if (node.children) {
-        collectPeople(node.children);
-      }
-    }
-  }
-
-  trainStore.setCheckedKeys(keys);
-  trainStore.setSelectedGuids(guids);
 }
 
 function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
@@ -405,13 +329,6 @@ watch(treeData, (newData) => {
 });
 
 onMounted(async () => {
-  const savedWidth = localStorage.getItem('train-splitter-width');
-  if (savedWidth) {
-    const width = Number(savedWidth);
-    if (!Number.isNaN(width) && width >= 200 && width <= 600) {
-      leftWidth.value = width;
-    }
-  }
   loadTree();
   await trainStore.loadOptions();
 
