@@ -59,14 +59,15 @@ class Auth extends BaseController
         $this->storeLegacySession($user, $password, $region);
         (new Mcommon())->sql_log('登录成功', '', sprintf('属地=`%s`', $region));
 
-        $token = $this->generateToken($user);
+        $accessToken = $this->jwtTokenService->generateAccessToken($user);
+        $refreshToken = $this->jwtTokenService->generateRefreshToken($user);
 
         return $this->response->setJSON([
             'code' => ApiCode::SUCCESS,
             'msg' => 'success',
             'data' => [
-                'token' => $token,
-                'refreshToken' => $token
+                'token' => $accessToken,
+                'refreshToken' => $refreshToken
             ]
         ]);
     }
@@ -163,6 +164,14 @@ class Auth extends BaseController
         try {
             $decoded = $this->jwtTokenService->decode($refreshToken);
 
+            // 验证这是一个 refresh token
+            if (!isset($decoded->type) || $decoded->type !== 'refresh') {
+                return $this->response->setJSON([
+                    'code' => ApiCode::AUTH_REFRESH_TOKEN_INVALID,
+                    'msg' => '无效的refreshToken类型'
+                ]);
+            }
+
             $tokenWorkId = isset($decoded->workId) ? trim((string) $decoded->workId) : '';
             $tokenRegion = isset($decoded->region) ? trim((string) $decoded->region) : '';
 
@@ -189,14 +198,15 @@ class Auth extends BaseController
                 ]);
             }
 
-            $newToken = $this->generateToken($user);
+            $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
+            $newRefreshToken = $this->jwtTokenService->generateRefreshToken($user);
 
             return $this->response->setJSON([
                 'code' => ApiCode::SUCCESS,
                 'msg' => 'success',
                 'data' => [
-                    'token' => $newToken,
-                    'refreshToken' => $newToken
+                    'token' => $newAccessToken,
+                    'refreshToken' => $newRefreshToken
                 ]
             ]);
         } catch (\Throwable $e) {
@@ -205,29 +215,6 @@ class Auth extends BaseController
                 'msg' => 'refreshToken无效或已过期'
             ]);
         }
-    }
-
-    /**
-     * 生成 JWT 访问令牌。
-     */
-    private function generateToken(array $user): string
-    {
-        $issuedAt = time();
-        $expireAt = $issuedAt + 3600 * 24 * 7;
-
-        $payload = [
-            'iss' => 'mis-system',
-            'aud' => 'mis-client',
-            'iat' => $issuedAt,
-            'exp' => $expireAt,
-            'userId' => $user['id'],
-            'userName' => $user['user_name'],
-            'role' => $user['role'],
-            'region' => $user['region'],
-            'workId' => $user['work_id']
-        ];
-
-        return $this->jwtTokenService->encode($payload);
     }
 
     /**
