@@ -809,79 +809,75 @@ const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
       definition.type = 'numericColumn';
     }
 
-    // 添加提示、异常和颜色标注样式处理
-    definition.cellStyle = (params: any) => {
-      const field = column.field;
-      const data = params.data || {};
-      const rowIndex = params.rowIndex;
-
-      // 优先检查是否是修改过的单元格
-      const rowId = getRowId(data, rowIndex);
-      const modifiedFields = modifiedRowsData.value.get(rowId);
-      if (modifiedFields && field in modifiedFields) {
-        // 修改过的单元格显示特殊背景色（根据主题模式）
-        if (isDarkMode.value) {
-          // Dark模式：使用深色背景，确保文字清晰可见
-          return { backgroundColor: '#856404', color: '#ffffff', border: 'none', outline: 'none', boxShadow: 'none' };
-        }
-        // Light模式：使用淡黄色背景
-        return { backgroundColor: '#fff3cd', color: '#000000', border: 'none', outline: 'none', boxShadow: 'none' };
-      }
-
-      // 优先检查颜色标注条件（用户主动设置的优先级最高）
-      if (column.colorMarkEnabled && colorMarkConfig.value) {
-        const { field1, operator, field2, style } = colorMarkConfig.value;
-        // 处理当前列是字段一或字段二的情况
-        if (field === field1 || field === field2) {
-          const val1 = Number(data[field1]);
-          const val2 = Number(data[field2]);
-          let match = false;
-          switch (operator) {
-            case '大于':
-              match = val1 > val2;
-              break;
-            case '小于':
-              match = val1 < val2;
-              break;
-            case '等于':
-              match = val1 === val2;
-              break;
-            case '大于等于':
-              match = val1 >= val2;
-              break;
-            case '小于等于':
-              match = val1 <= val2;
-              break;
-            case '不等于':
-              match = val1 !== val2;
-              break;
-          }
-          if (match) return style;
-        }
-      }
-
-      // 然后检查异常条件
-      if (column.errorCondition) {
-        const errorKey = `异常^${field}`;
-        if (data[errorKey] === '1' || data[errorKey] === 1) {
-          return parseStyleString(column.errorStyle || '');
-        }
-      }
-
-      // 最后检查提示条件
-      if (column.hintCondition) {
-        const hintKey = `提示^${field}`;
-        if (data[hintKey] === '1' || data[hintKey] === 1) {
-          return parseStyleString(column.hintStyle || '');
-        }
-      }
-
-      return null;
-    };
+    definition.cellStyle = createCellStyleHandler(column);
 
     return definition;
   });
 });
+
+function createCellStyleHandler(column: Api.Workbench.ColumnMeta) {
+  const { field, errorCondition, errorStyle, hintCondition, hintStyle, colorMarkEnabled } = column;
+  
+  return (params: any) => {
+    const data = params.data || {};
+    const rowIndex = params.rowIndex;
+
+    const rowId = getRowId(data, rowIndex);
+    const modifiedFields = modifiedRowsData.value.get(rowId);
+    if (modifiedFields && field in modifiedFields) {
+      if (isDarkMode.value) {
+        return { backgroundColor: '#856404', color: '#ffffff', border: 'none', outline: 'none', boxShadow: 'none' };
+      }
+      return { backgroundColor: '#fff3cd', color: '#000000', border: 'none', outline: 'none', boxShadow: 'none' };
+    }
+
+    if (colorMarkEnabled && colorMarkConfig.value) {
+      const { field1, operator, field2, style } = colorMarkConfig.value;
+      if (field === field1 || field === field2) {
+        const val1 = Number(data[field1]);
+        const val2 = Number(data[field2]);
+        let match = false;
+        switch (operator) {
+          case '大于':
+            match = val1 > val2;
+            break;
+          case '小于':
+            match = val1 < val2;
+            break;
+          case '等于':
+            match = val1 === val2;
+            break;
+          case '大于等于':
+            match = val1 >= val2;
+            break;
+          case '小于等于':
+            match = val1 <= val2;
+            break;
+          case '不等于':
+            match = val1 !== val2;
+            break;
+        }
+        if (match) return style;
+      }
+    }
+
+    if (errorCondition) {
+      const errorKey = `异常^${field}`;
+      if (data[errorKey] === '1' || data[errorKey] === 1) {
+        return parseStyleString(errorStyle || '');
+      }
+    }
+
+    if (hintCondition) {
+      const hintKey = `提示^${field}`;
+      if (data[hintKey] === '1' || data[hintKey] === 1) {
+        return parseStyleString(hintStyle || '');
+      }
+    }
+
+    return null;
+  };
+}
 
 const filterableFields = computed(() => {
   return (pageMeta.value?.conditions || []).filter(item => item.filterable).map(item => item.fieldKey);
@@ -963,30 +959,30 @@ const fieldColumnOptions = computed(() => {
 // 使用 shallowRef 存储处理后的数据，避免 Vue 深层响应式开销
 const processedRows = shallowRef<Api.Workbench.QueryRecord[]>([]);
 
-// 监听 serverRows 和修改的数据，更新 processedRows
-watch(
-  () => [serverRows.value, modifiedRowsData.value],
-  () => {
-    const rows = serverRows.value.map((row, index) => {
-      const rowId = getRowId(row, index);
-      if (modifiedRowsData.value.has(rowId)) {
-        return { ...row, ...modifiedRowsData.value.get(rowId) };
-      }
-      return row;
-    });
-    processedRows.value = rows;
+const lastModifiedRowIds = ref<Set<string | number>>(new Set());
 
-    // 直接更新 AG Grid 数据，不通过 Vue 响应式
+function updateProcessedRows() {
+  const rows = serverRows.value.map((row, index) => {
+    const rowId = getRowId(row, index);
+    if (modifiedRowsData.value.has(rowId)) {
+      return { ...row, ...modifiedRowsData.value.get(rowId) };
+    }
+    return row;
+  });
+  processedRows.value = rows;
+  return rows;
+}
+
+watch(
+  () => serverRows.value,
+  () => {
+    const rows = updateProcessedRows();
     const api = gridApi.value;
     if (api && !api.isDestroyed()) {
-      // 获取当前 AG Grid 中的行数
       const currentRowCount = api.getDisplayedRowCount();
-
       if (currentRowCount === 0 || rows.length <= currentRowCount) {
-        // 首次加载或数据量减少：使用 setRowData 设置全部数据
         api.setGridOption('rowData', rows);
       } else {
-        // 分片加载新增数据：使用 applyTransaction 添加新行
         const newRows = rows.slice(currentRowCount);
         if (newRows.length > 0) {
           api.applyTransaction({ add: newRows });
@@ -995,6 +991,52 @@ watch(
     }
   },
   { immediate: true, deep: false }
+);
+
+watch(
+  () => modifiedRowsData.value,
+  (newModified, oldModified) => {
+    updateProcessedRows();
+    
+    const api = gridApi.value;
+    if (!api || api.isDestroyed()) return;
+
+    const newlyModified = new Set<string | number>();
+    newModified.forEach((_, key) => newlyModified.add(key));
+    
+    const previouslyModified = new Set<string | number>();
+    oldModified?.forEach((_, key) => previouslyModified.add(key));
+
+    const updatedRowIds = new Set<string | number>();
+    newlyModified.forEach(id => {
+      if (!previouslyModified.has(id) || 
+          JSON.stringify(newModified.get(id)) !== JSON.stringify(oldModified?.get(id))) {
+        updatedRowIds.add(id);
+      }
+    });
+
+    previouslyModified.forEach(id => {
+      if (!newlyModified.has(id)) {
+        updatedRowIds.add(id);
+      }
+    });
+
+    if (updatedRowIds.size > 0) {
+      const updatedRows: Api.Workbench.QueryRecord[] = [];
+      serverRows.value.forEach((row, index) => {
+        const rowId = getRowId(row, index);
+        if (updatedRowIds.has(rowId)) {
+          const modifiedFields = newModified.get(rowId);
+          updatedRows.push(modifiedFields ? { ...row, ...modifiedFields } : row);
+        }
+      });
+
+      if (updatedRows.length > 0) {
+        api.applyTransaction({ update: updatedRows });
+      }
+    }
+  },
+  { deep: true }
 );
 
 const {
@@ -1655,10 +1697,9 @@ async function handleRefresh() {
   // 重新加载数据
   await loadPage();
 
-  // 刷新表格
-  if (gridApi.value) {
-    gridApi.value.refreshCells({ force: true });
-  }
+  // 清除修改状态以清除样式
+  tableModifiedRows.value.clear();
+  modifiedRowsData.value.clear();
 
   msg('success', '已刷新并恢复到初始状态');
 }
@@ -1669,9 +1710,6 @@ function handleReset() {
   selectedField.value = pageMeta.value?.conditions[0]?.fieldKey || '';
   selectedOperator.value = 'contains';
   selectedValue.value = '';
-
-  // 2. 清除颜色标注
-  resetColorMarkState();
 
   // 3. 显示所有字段（取消隐藏）
   visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
@@ -1716,10 +1754,10 @@ function handleReset() {
     workbenchStore.clearColumnState(resetFunctionCode, resetParams);
   }
 
-  // 7. 刷新表格以清除颜色标注样式
-  if (gridApi.value) {
-    gridApi.value.redrawRows();
-  }
+  // 清除颜色标注配置和修改状态
+  resetColorMarkState();
+  tableModifiedRows.value.clear();
+  modifiedRowsData.value.clear();
 
   // 重置提示
   useLegacyTabHint.value = false;
