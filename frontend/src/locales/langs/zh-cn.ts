@@ -234,7 +234,7 @@ const local: App.I18n.Schema = {
     system_user: '用户管理',
     system_role: '角色管理',
     personnel: '人员管理',
-    personnel_store: '邀约人员维护',
+    personnel_invitation: '邀约人员维护',
     personnel_interview: '面试人员维护',
     personnel_train: '培训人员维护',
     personnel_employee: '在职人员维护',

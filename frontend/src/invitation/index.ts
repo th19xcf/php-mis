@@ -2,7 +2,6 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { fetchInvitationTree, fetchInvitationDetail, fetchInvitationOptions } from '@/service/api';
-import type { AddField } from '@/typings/api/workbench';
 
 export const useInvitationStore = defineStore('invitation-store', () => {
   const treeData = ref<TreeOption[]>([]);
@@ -16,11 +15,11 @@ export const useInvitationStore = defineStore('invitation-store', () => {
   // 多条修改模式状态
   const isBatchEditMode = ref(false);
   const batchEditForm = ref<Record<string, any>>({});
-  const batchEditFields = ref<AddField[]>([]);
+  const batchEditFields = ref<Api.Workbench.AddField[]>([]);
   // 新增模式状态
   const isAddingMode = ref(false);
   const addFormDynamic = ref<Record<string, any>>({});
-  const addFields = ref<AddField[]>([]);
+  const addFields = ref<Api.Workbench.AddField[]>([]);
 
   async function loadTreeData() {
     loading.value = true;
@@ -84,7 +83,7 @@ export const useInvitationStore = defineStore('invitation-store', () => {
     batchEditForm.value = form;
   }
 
-  function setBatchEditFields(fields: AddField[]) {
+  function setBatchEditFields(fields: Api.Workbench.AddField[]) {
     batchEditFields.value = fields;
   }
 
@@ -102,7 +101,7 @@ export const useInvitationStore = defineStore('invitation-store', () => {
     addFormDynamic.value = form;
   }
 
-  function setAddFields(fields: AddField[]) {
+  function setAddFields(fields: Api.Workbench.AddField[]) {
     addFields.value = fields;
   }
 

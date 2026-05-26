@@ -5,7 +5,7 @@ import { useDialog, useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { fetchAddInvitation, fetchUpdateInvitation, fetchDeleteInvitation, fetchTransferInvitation, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
 import { useInvitationStore } from '@/store/modules/invitation';
-import type { AddField, DetailField } from '@/typings/api/workbench';
+
 
 const dialog = useDialog();
 const message = useMessage();
@@ -37,7 +37,7 @@ const addFormDynamic = computed({
   set: (val) => invitationStore.setAddFormDynamic(val)
 });
 const addFields = computed(() => invitationStore.addFields);
-const detailFields = ref<DetailField[]>([]);
+const detailFields = ref<Api.Workbench.DetailField[]>([]);
 const isEditingDetail = ref(false);
 const editDetailForm = ref<Record<string, any>>({});
 // 多条修改模式状态从 store 获取
@@ -135,7 +135,7 @@ async function openAddModal() {
     invitationStore.setAddFields(data.fields);
     // 初始化表单数据
     const formData: Record<string, any> = {};
-    data.fields.forEach((field: AddField) => {
+    data.fields.forEach((field: Api.Workbench.AddField) => {
       // 日期字段默认值为 null，避免 DatePicker 格式化错误
       if (field.fieldType === '日期') {
         formData[field.columnName] = field.defaultValue || null;
@@ -182,7 +182,7 @@ async function openBatchEditModal() {
   if (data?.fields) {
     // 初始化表单数据（使用默认值）
     const formData: Record<string, any> = {};
-    data.fields.forEach((field: AddField) => {
+    data.fields.forEach((field: Api.Workbench.AddField) => {
       if (field.fieldType === '日期') {
         formData[field.columnName] = field.defaultValue || null;
       } else {
@@ -257,7 +257,7 @@ async function startEditDetail() {
   });
 
   // 再基于 detailFields 中可编辑字段，确保有值存在
-  detailFields.value.forEach((field: DetailField) => {
+  detailFields.value.forEach((field: Api.Workbench.DetailField) => {
     if (field.editable) {
       if (formData[field.columnName] === undefined || formData[field.columnName] === null) {
         formData[field.columnName] = '';
@@ -315,7 +315,7 @@ function cancelTransferMode() {
 }
 
 // 处理弹窗选择
-function handlePopupSelect(field: AddField) {
+function handlePopupSelect(field: Api.Workbench.AddField) {
   // TODO: 实现弹窗选择逻辑，根据 field.objectName 打开对应弹窗
   message.info(`打开${field.fieldName}选择弹窗`);
 }

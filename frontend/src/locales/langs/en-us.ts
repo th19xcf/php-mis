@@ -238,7 +238,7 @@ const local: App.I18n.Schema = {
     system_user: 'User Management',
     system_role: 'Role Management',
     personnel: 'Personnel',
-    personnel_store: 'Store Personnel',
+    personnel_invitation: 'Invitation Personnel',
     personnel_interview: 'Interview Personnel',
     personnel_train: 'Training Personnel',
     personnel_employee: 'Employee Management',

@@ -116,3 +116,11 @@ declare namespace Env {
 interface ImportMeta {
   readonly env: Env.ImportMeta;
 }
+
+/// <reference types="vite/client" />
+
+declare module '*.vue' {
+  import type { DefineComponent } from 'vue'
+  const component: DefineComponent<{}, {}, any>
+  export default component
+}
