@@ -12,11 +12,13 @@ import {
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
+import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 
 const route = useRoute();
 const dialog = useDialog();
 const message = useMessage();
 const employeeStore = useEmployeeStore();
+const { confirmDelete, confirmBatch } = useDangerConfirm();
 
 const functionCode = computed(() => {
   return String(route.query.functionCode || route.meta?.functionCode || '');
@@ -162,6 +164,10 @@ async function handleBatch() {
     message.error('生效日期不能为空');
     return;
   }
+
+  const confirmed = await confirmBatch('修改', selectedGuids.value.length);
+  if (!confirmed) return;
+
   submitting.value = true;
   const { error } = await fetchBatchUpdateEmployee({ guids: selectedGuids.value, ...batchForm.value });
   submitting.value = false;
@@ -179,19 +185,16 @@ function handleDelete() {
     message.warning('请选择人员');
     return;
   }
-  dialog.warning({
-    title: '确认删除',
-    content: `确定删除 ${selectedGuids.value.length} 条记录？`,
-    positiveText: '确认',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      const { error } = await fetchDeleteEmployee(selectedGuids.value);
-      if (!error) {
-        message.success('删除成功');
-        employeeStore.setSelectedGuids([]);
-        employeeStore.setCheckedKeys([]);
-        await loadTree();
-      }
+
+  confirmDelete(selectedGuids.value.length, '人员').then(async (confirmed) => {
+    if (!confirmed) return;
+
+    const { error } = await fetchDeleteEmployee(selectedGuids.value);
+    if (!error) {
+      message.success('删除成功');
+      employeeStore.setSelectedGuids([]);
+      employeeStore.setCheckedKeys([]);
+      await loadTree();
     }
   });
 }

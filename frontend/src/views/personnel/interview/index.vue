@@ -8,12 +8,14 @@ import { useInterviewStore } from '@/store/modules/interview';
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
+import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 
 
 const dialog = useDialog();
 const message = useMessage();
 const route = useRoute();
 const interviewStore = useInterviewStore();
+const { confirmDelete, confirmBatch, confirmTransfer } = useDangerConfirm();
 
 const functionCode = computed(() => {
   return String(route.query.functionCode || route.meta?.functionCode || '2016');
@@ -219,6 +221,9 @@ async function handleTransfer() {
     return;
   }
 
+  const confirmed = await confirmTransfer('培训', selectedGuids.value.length, transferForm.value.参培信息);
+  if (!confirmed) return;
+
   submitting.value = true;
   const { error } = await fetchTransferInterview({
     guids: selectedGuids.value,
@@ -240,18 +245,14 @@ function handleDelete() {
     return;
   }
 
-  dialog.warning({
-    title: '确认删除',
-    content: `确定要删除选中的 ${selectedGuids.value.length} 条记录吗？`,
-    positiveText: '确认',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      const { error } = await fetchDeleteInterview(selectedGuids.value);
-      if (!error) {
-        message.success('删除成功');
-        interviewStore.clearSelection();
-        await loadTree();
-      }
+  confirmDelete(selectedGuids.value.length, '人员').then(async (confirmed) => {
+    if (!confirmed) return;
+
+    const { error } = await fetchDeleteInterview(selectedGuids.value);
+    if (!error) {
+      message.success('删除成功');
+      interviewStore.clearSelection();
+      await loadTree();
     }
   });
 }

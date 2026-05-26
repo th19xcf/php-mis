@@ -13,11 +13,13 @@ import {
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
+import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 
 const route = useRoute();
 const dialog = useDialog();
 const message = useMessage();
 const trainStore = useTrainStore();
+const { confirmDelete, confirmBatch, confirmTransfer } = useDangerConfirm();
 
 const functionCode = computed(() => route.params.code || '2035');
 
@@ -167,6 +169,9 @@ function cancelBatchMode() {
 }
 
 async function handleBatch() {
+  const confirmed = await confirmBatch('修改', selectedGuids.value.length);
+  if (!confirmed) return;
+
   submitting.value = true;
   const { error } = await fetchBatchUpdateTrain({
     guids: selectedGuids.value,
@@ -209,6 +214,9 @@ async function handleTransfer() {
     return;
   }
 
+  const confirmed = await confirmTransfer('入职', selectedGuids.value.length, transferForm.value.培训状态);
+  if (!confirmed) return;
+
   submitting.value = true;
   const { error } = await fetchTransferTrain({
     guids: selectedGuids.value,
@@ -230,18 +238,14 @@ function handleDelete() {
     return;
   }
 
-  dialog.warning({
-    title: '确认删除',
-    content: `确定要删除选中的 ${selectedGuids.value.length} 条记录吗？`,
-    positiveText: '确认',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      const { error } = await fetchDeleteTrain(selectedGuids.value);
-      if (!error) {
-        message.success('删除成功');
-        trainStore.clearSelection();
-        await loadTree();
-      }
+  confirmDelete(selectedGuids.value.length, '人员').then(async (confirmed) => {
+    if (!confirmed) return;
+
+    const { error } = await fetchDeleteTrain(selectedGuids.value);
+    if (!error) {
+      message.success('删除成功');
+      trainStore.clearSelection();
+      await loadTree();
     }
   });
 }

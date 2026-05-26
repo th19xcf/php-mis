@@ -5,12 +5,14 @@ import { useDialog, useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { fetchAddInvitation, fetchUpdateInvitation, fetchDeleteInvitation, fetchTransferInvitation, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
 import { useInvitationStore } from '@/store/modules/invitation';
+import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 
 
 const dialog = useDialog();
 const message = useMessage();
 const route = useRoute();
 const invitationStore = useInvitationStore();
+const { confirmDelete, confirmBatch, confirmTransfer } = useDangerConfirm();
 
 const functionCode = computed(() => {
   return String(route.query.functionCode || route.meta?.functionCode || '2015');
@@ -205,9 +207,11 @@ async function saveBatchEditMode() {
     return;
   }
 
+  const confirmed = await confirmBatch('修改', selectedGuids.value.length);
+  if (!confirmed) return;
+
   submitting.value = true;
 
-  // 批量更新每个选中的人员
   let successCount = 0;
   let failCount = 0;
 
@@ -345,6 +349,9 @@ async function handleTransfer() {
     return;
   }
 
+  const confirmed = await confirmTransfer('面试', selectedGuids.value.length, transferForm.value.面试结果);
+  if (!confirmed) return;
+
   submitting.value = true;
   const { error } = await fetchTransferInvitation({
     guids: selectedGuids.value,
@@ -366,18 +373,14 @@ function handleDelete() {
     return;
   }
 
-  dialog.warning({
-    title: '确认删除',
-    content: `确定要删除选中的 ${selectedGuids.value.length} 条记录吗？`,
-    positiveText: '确认',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      const { error } = await fetchDeleteInvitation(selectedGuids.value);
-      if (!error) {
-        message.success('删除成功');
-        invitationStore.clearSelection();
-        await loadTree();
-      }
+  confirmDelete(selectedGuids.value.length, '人员').then(async (confirmed) => {
+    if (!confirmed) return;
+
+    const { error } = await fetchDeleteInvitation(selectedGuids.value);
+    if (!error) {
+      message.success('删除成功');
+      invitationStore.clearSelection();
+      await loadTree();
     }
   });
 }
