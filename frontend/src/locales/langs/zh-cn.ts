@@ -327,6 +327,13 @@ const local: App.I18n.Schema = {
       btnEdit: '编辑按钮（system:user:edit）',
       btnDelete: '删除按钮（system:user:delete）',
       noButtonAuth: '当前账号没有任何按钮权限，请检查后端 buttons 回传。'
+    },
+    workbench: {
+      chartNotConfigured: '当前功能未配置图形模块',
+      chartDataError: '获取图形数据失败',
+      chartDataEmpty: '暂无图形数据',
+      chartQueryError: '图形数据查询失败: ',
+      chartLoadError: '图形数据加载失败'
     }
   },
   form: {

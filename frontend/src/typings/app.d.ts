@@ -568,6 +568,13 @@ declare namespace App {
           btnDelete: string;
           noButtonAuth: string;
         };
+        workbench: {
+          chartNotConfigured: string;
+          chartDataError: string;
+          chartDataEmpty: string;
+          chartQueryError: string;
+          chartLoadError: string;
+        };
       };
       form: {
         required: string;

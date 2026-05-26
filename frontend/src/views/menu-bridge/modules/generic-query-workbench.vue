@@ -61,6 +61,8 @@ import { useToolbarScroll } from '@/hooks/business/use-toolbar-scroll';
 import { useWorkbenchComment } from '@/hooks/business/use-workbench-comment';
 import { useWorkbenchGridState } from '@/hooks/business/use-workbench-grid-state';
 import { useThemeStore } from '@/store/modules/theme';
+import { useI18n } from 'vue-i18n';
+import { WORKBENCH_CONFIG } from '@/config/workbench';
 import {
   WorkbenchImport,
   WorkbenchComment,
@@ -99,25 +101,16 @@ const props = defineProps<{
   dynamicLike?: boolean;
 }>();
 
-const lightGridTheme = themeAlpine.withParams({
-  browserColorScheme: 'light',
-  rowBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  columnBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  rangeSelectionBorderColor: '#2196F3',
-  rangeSelectionBorderStyle: 'solid'
-});
+const { GRID_THEME } = WORKBENCH_CONFIG;
 
-const darkGridTheme = themeAlpine.withParams({
-  browserColorScheme: 'dark',
-  rowBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  columnBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  rangeSelectionBorderColor: '#64B5F6',
-  rangeSelectionBorderStyle: 'solid'
-});
+const lightGridTheme = themeAlpine.withParams(GRID_THEME.LIGHT);
+const darkGridTheme = themeAlpine.withParams(GRID_THEME.DARK);
 
 const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 const activeGridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
+
+const { t } = useI18n();
 
 const loading = ref(false);
 const pageMeta = ref<Api.Workbench.PageMeta | null>(null);
@@ -337,9 +330,10 @@ function isGridShellVisible() {
 function hasSuspiciousNarrowColumnState(columnState: any[]) {
   if (!Array.isArray(columnState) || columnState.length === 0) return false;
 
+  const { COLUMN_IDS } = WORKBENCH_CONFIG;
   const dataColumns = columnState.filter((col: any) => {
     const colId = String(col?.colId || '');
-    return colId && colId !== 'ag-Grid-SelectionColumn' && !colId.startsWith('ag-Grid-');
+    return colId && colId !== COLUMN_IDS.SELECTION && !colId.startsWith(COLUMN_IDS.PREFIX);
   });
 
   if (dataColumns.length === 0) return false;
@@ -372,7 +366,8 @@ const defaultColDef = {
  * 格式: "color:red,background-color:#f7acbc,font-weight:bold"
  */
 function parseStyleString(styleStr: string): Record<string, string> {
-  const defaultStyle = { color: 'red', fontWeight: 'bold', backgroundColor: '#f7acbc' };
+  const { DEFAULT_STYLES } = WORKBENCH_CONFIG;
+  const defaultStyle = DEFAULT_STYLES.COLOR_MARK;
   if (!styleStr) return defaultStyle;
 
   const styleObj: Record<string, string> = {};
@@ -447,7 +442,8 @@ function startResize(e: MouseEvent) {
     document.removeEventListener('mouseup', handleMouseUp);
 
     // 保存布局状态到本地存储
-    localStorage.setItem('workbench-left-panel-width', String(leftPanelWidth.value));
+    const { STORAGE_KEYS } = WORKBENCH_CONFIG;
+    localStorage.setItem(STORAGE_KEYS.LEFT_PANEL_WIDTH, String(leftPanelWidth.value));
   }
 
   document.addEventListener('mousemove', handleMouseMove);
@@ -456,7 +452,8 @@ function startResize(e: MouseEvent) {
 
 // 加载保存的布局状态
 function loadLayoutState() {
-  const savedWidth = localStorage.getItem('workbench-left-panel-width');
+  const { STORAGE_KEYS } = WORKBENCH_CONFIG;
+  const savedWidth = localStorage.getItem(STORAGE_KEYS.LEFT_PANEL_WIDTH);
   if (savedWidth) {
     leftPanelWidth.value = parseFloat(savedWidth);
   }
@@ -465,7 +462,7 @@ function loadLayoutState() {
 // 打开图形展示弹窗
 async function handleOpenChart() {
   if (!pageMeta.value?.chartModule) {
-    const warningMsg = '当前功能未配置图形模块';
+    const warningMsg = t('page.workbench.chartNotConfigured');
     msg('warning', warningMsg);
     console.warn(`[图形功能] ${warningMsg}`);
     return;
@@ -475,14 +472,13 @@ async function handleOpenChart() {
   chartLoading.value = true;
 
   try {
-    // 调用后端 API 获取图形数据
     const functionCode = String(route.query.functionCode || route.meta?.functionCode || '');
     const { data, error } = await request({
       url: `/workbench/chart/${functionCode}`
     });
 
     if (error) {
-      const errorMsg = '获取图形数据失败';
+      const errorMsg = t('page.workbench.chartDataError');
       msg('error', errorMsg);
       console.error(`[图形功能] ${errorMsg}:`, error);
       chartLoading.value = false;
@@ -490,20 +486,18 @@ async function handleOpenChart() {
     }
 
     if (!data?.charts || data.charts.length === 0) {
-      const warningMsg = '暂无图形数据';
+      const warningMsg = t('page.workbench.chartDataEmpty');
       msg('warning', warningMsg);
       console.warn(`[图形功能] ${warningMsg}`);
       chartLoading.value = false;
       return;
     }
 
-    // 处理后端返回的图形数据
     chartData.value = data.charts;
 
-    // 检查是否有错误信息
     const firstChart = data.charts[0];
     if (firstChart?.['错误']) {
-      const errorMsg = `图形数据查询失败: ${firstChart['错误']}`;
+      const errorMsg = `${t('page.workbench.chartQueryError')}${firstChart['错误']}`;
       msg('error', errorMsg);
       console.error(`[图形功能] ${errorMsg}`);
       console.error(`[图形功能] SQL: ${firstChart['SQL']}`);
@@ -513,7 +507,7 @@ async function handleOpenChart() {
 
     chartOption.value = generateChartOptionFromBackend(data.charts);
   } catch (error) {
-    const errorMsg = '图形数据加载失败';
+    const errorMsg = t('page.workbench.chartLoadError');
     msg('error', errorMsg);
     console.error(`[图形功能] ${errorMsg}:`, error);
   } finally {
@@ -526,10 +520,11 @@ function generateChartOptionFromBackend(charts: any[]): any {
     return null;
   }
 
+  const { CHART } = WORKBENCH_CONFIG;
   const chart = charts[0];
   const chartData = chart['数据'] || [];
-  const chartType = chart['图形类型'] || 'line';
-  const chartName = chart['图形名称'] || '数据图形';
+  const chartType = chart['图形类型'] || CHART.DEFAULT_TYPE;
+  const chartName = chart['图形名称'] || CHART.DEFAULT_NAME;
   const fieldsConfig = chart['字段'] || {};
 
   if (chartData.length === 0) {
@@ -609,15 +604,17 @@ function generateChartOptionFromBackend(charts: any[]): any {
       return false;
     });
 
+    const { AXIS_POSITION, CHART_TYPE } = WORKBENCH_CONFIG.CHART;
+
     for (const key of valueKeys) {
       const fieldConfig = fieldsConfig[key];
-      const axisPosition = fieldConfig?.['坐标轴'] || 'Y轴（左侧）';
+      const axisPosition = fieldConfig?.['坐标轴'] || AXIS_POSITION.LEFT;
       const fieldChartType = fieldConfig?.['图形类型'] || chartType;
 
-      if (axisPosition === 'Y轴（左侧）' && !yLeft) {
+      if (axisPosition === AXIS_POSITION.LEFT && !yLeft) {
         yAxis.push({ type: 'value', position: 'left' });
         yLeft = true;
-      } else if (axisPosition === 'Y轴（右侧）' && !yRight) {
+      } else if (axisPosition === AXIS_POSITION.RIGHT && !yRight) {
         yAxis.push({ 
           type: 'value', 
           position: 'right',
@@ -628,16 +625,16 @@ function generateChartOptionFromBackend(charts: any[]): any {
 
       const seriesItem: any = {
         name: key,
-        type: fieldChartType === '柱状图' ? 'bar' : 'line',
+        type: fieldChartType === CHART_TYPE.BAR ? 'bar' : 'line',
         data: (chartData as Record<string, any>[]).map((item: Record<string, any>) => parseValue(item[key]))
       };
 
-      if (fieldChartType !== '柱状图') {
+      if (fieldChartType !== CHART_TYPE.BAR) {
         seriesItem.smooth = true;
       }
 
       if (yAxis.length > 1) {
-        seriesItem.yAxisIndex = axisPosition === 'Y轴（右侧）' ? 1 : 0;
+        seriesItem.yAxisIndex = axisPosition === AXIS_POSITION.RIGHT ? 1 : 0;
       }
 
       dem.push(seriesItem);

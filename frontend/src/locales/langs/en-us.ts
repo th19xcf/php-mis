@@ -332,6 +332,13 @@ const local: App.I18n.Schema = {
       btnEdit: 'Edit Button (system:user:edit)',
       btnDelete: 'Delete Button (system:user:delete)',
       noButtonAuth: 'No button permission found for current account. Please check backend buttons payload.'
+    },
+    workbench: {
+      chartNotConfigured: 'Chart module not configured for current function',
+      chartDataError: 'Failed to fetch chart data',
+      chartDataEmpty: 'No chart data available',
+      chartQueryError: 'Chart data query failed: ',
+      chartLoadError: 'Failed to load chart data'
     }
   },
   form: {
