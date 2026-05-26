@@ -430,7 +430,7 @@ function startResize(e: MouseEvent) {
     let newLeftWidth = startLeftWidth + deltaPercent;
 
     // 限制最小和最大宽度
-    newLeftWidth = Math.max(30, Math.min(70, newLeftWidth));
+    newLeftWidth = Math.max(15, Math.min(70, newLeftWidth));
     leftPanelWidth.value = newLeftWidth;
 
     // 触发图表重绘
@@ -2461,17 +2461,12 @@ async function handleTableEditSubmit() {
       <!-- 可拖动分隔条 -->
       <div
         v-if="chartVisible"
-        class="resize-handle"
-        :class="{ 'active': isResizing }"
+        class="resize-splitter"
+        :class="{ 'is-resizing': isResizing }"
         @mousedown="startResize"
         title="拖动调整宽度"
       >
-        <div class="resize-handle-line"></div>
-        <div class="resize-handle-dots">
-          <div class="resize-dot"></div>
-          <div class="resize-dot"></div>
-          <div class="resize-dot"></div>
-        </div>
+        <div class="resize-line" />
       </div>
 
       <!-- 右侧图形区域 -->
@@ -2480,11 +2475,7 @@ async function handleTableEditSubmit() {
         class="chart-area"
         :style="{ flex: `0 0 ${100 - leftPanelWidth}%` }"
       >
-        <NCard
-          :bordered="false"
-          :content-style="{ padding: '0' }"
-          class="chart-card rounded-12px shadow-sm"
-        >
+        <div class="chart-panel rounded-12px shadow-sm">
           <div class="chart-header">
             <span class="chart-title">图形展示</span>
             <NButton size="small" @click="chartVisible = false">关闭</NButton>
@@ -2495,7 +2486,7 @@ async function handleTableEditSubmit() {
               <NEmpty v-if="!chartOption && !chartLoading" description="暂无图形数据" />
             </NSpin>
           </div>
-        </NCard>
+        </div>
       </div>
     </div>
 
@@ -3176,93 +3167,79 @@ async function handleTableEditSubmit() {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  padding-right: 12px;
 }
 
-/* 可拖动分隔条样式 */
-.resize-handle {
-  width: 12px;
-  min-width: 12px;
+/* 可拖动分隔条样式 - 与2015版本保持一致 */
+.resize-splitter {
+  width: 8px;
+  cursor: col-resize;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: col-resize;
-  background: transparent;
-  position: relative;
-  z-index: 10;
-  transition: background 0.2s ease;
+  transition: background-color 0.2s;
+  flex-shrink: 0;
 }
 
-.resize-handle:hover,
-.resize-handle.active {
-  background: rgba(128, 128, 128, 0.1);
+.resize-splitter:hover {
+  background-color: rgba(0, 0, 0, 0.04);
 }
 
-.resize-handle-line {
+.resize-splitter.is-resizing {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.resize-line {
   width: 2px;
-  height: 100%;
-  background: #d9d9d9;
-  transition: background 0.2s ease, width 0.2s ease;
+  height: 24px;
+  border-radius: 1px;
+  background-color: #d9d9d9;
+  transition: background-color 0.2s;
 }
 
-.resize-handle:hover .resize-handle-line,
-.resize-handle.active .resize-handle-line {
-  background: #1890ff;
-  width: 3px;
-}
-
-.resize-handle-dots {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  pointer-events: none;
-}
-
-.resize-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #bfbfbf;
-  transition: background 0.2s ease;
-}
-
-.resize-handle:hover .resize-dot,
-.resize-handle.active .resize-dot {
-  background: #1890ff;
+.resize-splitter:hover .resize-line,
+.resize-splitter.is-resizing .resize-line {
+  background-color: #1890ff;
 }
 
 /* 深色模式下的分隔条样式 */
-.system-dark .resize-handle-line {
-  background: #555;
+.system-dark .resize-splitter:hover {
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
-.system-dark .resize-dot {
-  background: #666;
+.system-dark .resize-splitter.is-resizing {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
-.system-dark .resize-handle:hover .resize-handle-line,
-.system-dark .resize-handle.active .resize-handle-line {
-  background: #4a9eff;
+.system-dark .resize-line {
+  background-color: #555;
 }
 
-.system-dark .resize-handle:hover .resize-dot,
-.system-dark .resize-handle.active .resize-dot {
-  background: #4a9eff;
+.system-dark .resize-splitter:hover .resize-line,
+.system-dark .resize-splitter.is-resizing .resize-line {
+  background-color: #40a9ff;
 }
 
-.chart-card {
+.chart-panel {
   height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #e8e8e8;
+  overflow: hidden;
 }
 
 .chart-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--n-border-color);
+  padding: 0 16px;
+  height: 40px;
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
+  background: #fafafa;
 }
 
 .chart-title {
@@ -3307,6 +3284,16 @@ async function handleTableEditSubmit() {
 .system-dark .toolbar-card,
 .system-dark .grid-card {
   background: var(--wb-dark-bg);
+}
+
+.system-dark .chart-panel {
+  background: var(--wb-dark-bg);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.system-dark .chart-header {
+  background: rgb(36, 36, 40);
+  border-color: rgba(255, 255, 255, 0.09);
 }
 
 .pin-column-modal-dark .pin-column-select-panel {
