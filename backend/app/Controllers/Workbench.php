@@ -349,6 +349,11 @@ class Workbench extends BaseController
             $functionAuth = $context['function'];
             $userAuth = $context['user'];
             $columns = $context['columns'];
+            
+            // 调试日志
+            log_message('debug', '[调试] functionCode: ' . $functionCode);
+            log_message('debug', '[调试] definition chartModule: ' . ($definition['chartModule'] ?? '未定义'));
+            log_message('debug', '[调试] context chartModule: ' . ($context['chartModule'] ?? '未定义'));
 
             $fetchAll = filter_var($payload['all'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $current = max(1, (int) ($payload['current'] ?? 1));
@@ -478,6 +483,96 @@ class Workbench extends BaseController
                 );
             }
 
+            // 获取图形 SQL 信息
+            $chartSql = [];
+            $chartModule = $definition['chartModule'] ?? '';
+            $chartQuerySql = ''; // 存储查询 SQL
+            
+            // 调试日志
+            log_message('debug', '[调试] chartModule: ' . $chartModule);
+            log_message('debug', '[调试] context keys: ' . implode(', ', array_keys($context)));
+            
+            if (!empty($chartModule)) {
+                try {
+                    $chartQuerySql = sprintf(
+                        'select 图形模块,图形编号,图形名称,图形类型,
+                            取数方式,查询表名,查询字段,属地字段,查询条件,汇总条件,排序条件,记录条数
+                        from def_chart_config
+                        where 有效标识="1" and 图形模块="%s" and 顺序>0
+                        order by 图形模块,图形编号,顺序',
+                        $chartModule
+                    );
+                    log_message('debug', '[调试] 查询SQL: ' . $chartQuerySql);
+                    
+                    $queryResult = $this->common->select($chartQuerySql);
+                    $chartConfigs = $queryResult->getResult();
+                    
+                    log_message('debug', '[调试] 查询结果数量: ' . count($chartConfigs));
+                    
+                    // 调试：输出第一条记录的字段
+                    if (count($chartConfigs) > 0) {
+                        $firstConfig = $chartConfigs[0];
+                        log_message('debug', '[调试] 第一条记录 - 图形编号: ' . ($firstConfig->图形编号 ?? 'null'));
+                        log_message('debug', '[调试] 第一条记录 - 取数方式: ' . ($firstConfig->取数方式 ?? 'null'));
+                        log_message('debug', '[调试] 第一条记录 - 查询表名: ' . ($firstConfig->查询表名 ?? 'null'));
+                    } else {
+                        log_message('debug', '[调试] chartConfigs 为空数组，尝试使用 getRowArray()');
+                        $rowArray = $queryResult->getRowArray();
+                        log_message('debug', '[调试] getRowArray 结果: ' . json_encode($rowArray));
+                    }
+                    
+                    foreach ($chartConfigs as $chartConfig) {
+                        $chartItem = [
+                            'name' => $chartConfig->图形名称,
+                            'sql' => '',
+                            'error' => ''
+                        ];
+                        
+                        try {
+                            $fetchMethod = $chartConfig->取数方式 ?? '';
+                            $queryTable = $chartConfig->查询表名 ?? '';
+                            $queryFields = $chartConfig->查询字段 ?? '';
+                            $queryCond = $chartConfig->查询条件 ?? '';
+                            $queryGroup = $chartConfig->汇总条件 ?? '';
+                            $queryOrder = $chartConfig->排序条件 ?? '';
+                            $queryLimit = $chartConfig->记录条数 ?? '';
+                            
+                            // 构建图形数据 SQL
+                            if ($fetchMethod === '存储过程') {
+                                $dataSql = $queryTable;
+                            } elseif (!empty($queryTable)) {
+                                $fields = !empty($queryFields) ? $queryFields : '*';
+                                $dataSql = sprintf('select %s from %s', $fields, $queryTable);
+                                if (!empty($queryCond)) {
+                                    $dataSql .= sprintf(' where %s', $queryCond);
+                                }
+                                if (!empty($queryGroup)) {
+                                    $dataSql .= sprintf(' group by %s', $queryGroup);
+                                }
+                                if (!empty($queryOrder)) {
+                                    $dataSql .= sprintf(' order by %s', $queryOrder);
+                                }
+                                if (!empty($queryLimit) && is_numeric($queryLimit)) {
+                                    $dataSql .= sprintf(' limit %d', (int) $queryLimit);
+                                }
+                            } else {
+                                $dataSql = '';
+                            }
+                            
+                            $chartItem['sql'] = $dataSql;
+                        } catch (\Throwable $e) {
+                            $chartItem['error'] = $e->getMessage();
+                        }
+                        
+                        $chartSql[] = $chartItem;
+                    }
+                } catch (\Throwable $e) {
+                    log_message('error', '获取图形SQL失败: ' . $e->getMessage());
+                    log_message('error', '异常堆栈: ' . $e->getTraceAsString());
+                    log_message('error', '查询SQL: ' . $chartQuerySql);
+                }
+            }
+
             return $this->success([
                 'functionCode' => $functionCode,
                 'queryTable' => $queryConfig['queryTable'],
@@ -489,6 +584,9 @@ class Workbench extends BaseController
                 'whereParts' => $whereParts,
                 'countSql' => $countSql ?? null,
                 'querySql' => $querySql,
+                'chartModule' => $chartModule,
+                'chartQuerySql' => $chartQuerySql,
+                'chartSql' => $chartSql,
                 'userAuth' => [
                     'companyId' => $userAuth['companyId'],
                     'userWorkId' => $userAuth['userWorkId'],
@@ -515,7 +613,9 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            return $this->error('5003', '获取调试信息失败');
+            log_message('error', '获取调试信息失败: ' . $e->getMessage());
+            log_message('error', '错误堆栈: ' . $e->getTraceAsString());
+            return $this->error('5003', '获取调试信息失败: ' . $e->getMessage());
         }
     }
 

@@ -1913,6 +1913,53 @@ async function handleDebug() {
     console.log('\n📋 字段映射:');
     console.table(data.columns);
 
+    // 输出图形相关 SQL
+    console.log('\n📈 图形 SQL:');
+    console.log('chartModule:', data.chartModule);
+    console.log('chartSql:', JSON.stringify(data.chartSql, null, 2));
+    
+    // 输出图形配置信息到控制台
+    console.log('\n========================================');
+    console.log('📈 图形配置信息');
+    console.log('========================================');
+    console.log('chartModule:', data.chartModule);
+    console.log('\n查询 SQL:');
+    console.log(data.chartQuerySql || '(无)');
+    console.log('\nchartSql 数组长度:', data.chartSql?.length || 0);
+    
+    // 输出完整的 chartSql 数据结构
+    console.log('\nchartSql 完整数据:');
+    console.log(JSON.stringify(data.chartSql, null, 2));
+    
+    if (data.chartSql && data.chartSql.length > 0) {
+      console.log('\n图形 SQL 明细:');
+      data.chartSql.forEach((chart, index) => {
+        console.log(`\n--- 图形 ${index + 1} ---`);
+        console.log('名称:', chart.name || '未命名');
+        console.log('SQL:', chart.sql || '(无)');
+        if (chart.error) {
+          console.log('错误:', chart.error);
+        }
+      });
+    } else {
+      console.log('\n❌ 未查询到图形配置');
+      console.log('请检查 def_chart_config 表中是否存在图形模块:', data.chartModule);
+      console.log('或者检查表中是否有顺序>0 的有效记录');
+    }
+    console.log('========================================\n');
+    
+    if (data.chartSql && Array.isArray(data.chartSql) && data.chartSql.length > 0) {
+      data.chartSql.forEach((chart, index) => {
+        console.log(`  图形 ${index + 1}: ${chart.name || '未命名'}`);
+        console.log(`    SQL: ${chart.sql || '(无)'}`);
+        if (chart.error) {
+          console.log(`    错误: ${chart.error}`);
+        }
+      });
+    } else {
+      console.log('  (无图形配置或chartModule为空)');
+    }
+
     console.groupEnd();
 
     msg('success', '调试信息已输出到控制台');
