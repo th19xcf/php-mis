@@ -3,6 +3,11 @@ export const WORKBENCH_CONFIG = {
     LEFT_PANEL_WIDTH: 'workbench-left-panel-width',
   },
   
+  PAGINATION: {
+    CHUNK_SIZE: 1000,
+    PAGE_SIZE_OPTIONS: [500, 1000, 2000]
+  },
+  
   GRID_THEME: {
     LIGHT: {
       browserColorScheme: 'light' as const,
