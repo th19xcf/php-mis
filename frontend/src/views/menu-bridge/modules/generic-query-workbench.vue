@@ -93,6 +93,14 @@ function isGuidColumn(field: string, label: string) {
 
 function msg(type: 'success' | 'error' | 'warning' | 'info', message: string, _data?: unknown) {
   window.$message?.[type](message);
+  const colors: Record<string, string> = {
+    success: '\x1b[32m',
+    error: '\x1b[31m',
+    warning: '\x1b[33m',
+    info: '\x1b[34m'
+  };
+  const reset = '\x1b[0m';
+  console.log(`${colors[type]}[${type.toUpperCase()}]${reset} ${message}`);
 }
 
 const props = defineProps<{
@@ -1808,6 +1816,7 @@ const {
   },
   notifyError: (message: string) => {
     window.$message?.error(message);
+    console.log('\x1b[31m[ERROR]\x1b[0m', message);
   }
 });
 // 获取字段选项
