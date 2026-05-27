@@ -79,7 +79,14 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
   }
 }
 
-.toolbar-card,
+.toolbar-card {
+  background: #ffffff;
+
+  .system-dark & {
+    background: var(--wb-dark-bg);
+  }
+}
+
 .grid-card {
   background: #ffffff;
   border: 1px solid $wb-border-light;

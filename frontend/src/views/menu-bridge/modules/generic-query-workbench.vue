@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
 // 模块级加载锁，防止同一 functionCode 被多个组件实例重复加载
 const loadingLocks = new Map<string, boolean>();
 </script>
@@ -1289,7 +1289,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     <NCard
       :bordered="false"
       :content-style="{ padding: '8px 10px' }"
-      class="toolbar-card mb-6px rounded-12px shadow-sm"
+      class="toolbar-card mb-2px rounded-12px shadow-sm"
     >
       <div class="flex items-center gap-12px">
         <!-- 左侧按钮区域 - 可横向滚动 -->

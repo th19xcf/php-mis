@@ -27,7 +27,7 @@ const tabStore = useTabStore();
       :is="Component"
       v-if="appStore.reloadFlag && String(route.path || '').startsWith('/dynamic-menu/')"
       :key="route.fullPath"
-      :class="{ 'p-16px': showPadding }"
+      :class="{ 'px-16px pb-16px': showPadding }"
       class="flex-grow bg-layout transition-300"
     />
 
@@ -36,7 +36,7 @@ const tabStore = useTabStore();
         :is="Component"
         v-if="appStore.reloadFlag"
         :key="tabStore.getTabIdByRoute(route)"
-        :class="{ 'p-16px': showPadding }"
+        :class="{ 'px-16px pb-16px': showPadding }"
         class="flex-grow bg-layout transition-300"
       />
     </KeepAlive>
