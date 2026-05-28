@@ -959,6 +959,21 @@ async function handleDebug() {
     console.log('\n📋 字段映射:');
     console.table(data.columns);
 
+    // 获取图表配置信息以获取图形名称
+    let chartNames: string[] = [];
+    if (data.chartModule) {
+      try {
+        const chartResponse = await request({
+          url: `/workbench/chart/${functionCode}`
+        });
+        if (chartResponse.data?.charts && chartResponse.data.charts.length > 0) {
+          chartNames = chartResponse.data.charts.map((chart: any) => chart['图形名称'] || `图形 ${chartNames.length + 1}`);
+        }
+      } catch (chartError) {
+        console.log('获取图表配置失败:', chartError);
+      }
+    }
+
     // 输出图形相关 SQL
     console.log('\n📈 图形 SQL:');
     console.log('chartModule:', data.chartModule);
@@ -1001,6 +1016,7 @@ async function handleDebug() {
     
     interface ChartSqlItem {
   name?: string;
+  '图形名称'?: string;
   sql?: string;
   error?: string;
 }
@@ -1008,7 +1024,7 @@ if (data.chartSql && data.chartSql.length > 0) {
       console.log('\n图形 SQL 明细:');
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
         console.log(`\n--- 图形 ${index + 1} ---`);
-        console.log('名称:', chart.name || '未命名');
+        console.log('名称:', chart['图形名称'] || chart.name || chartNames[index] || '未命名');
         console.log('SQL:', chart.sql ? replacePlaceholders(chart.sql) : '(无)');
         if (chart.error) {
           console.log('错误:', chart.error);
@@ -1023,7 +1039,7 @@ if (data.chartSql && data.chartSql.length > 0) {
     
     if (data.chartSql && Array.isArray(data.chartSql) && data.chartSql.length > 0) {
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
-        console.log(`  图形 ${index + 1}: ${chart.name || '未命名'}`);
+        console.log(`  图形 ${index + 1}: ${chart['图形名称'] || chart.name || chartNames[index] || '未命名'}`);
         console.log(`    SQL: ${chart.sql ? replacePlaceholders(chart.sql) : '(无)'}`);
         if (chart.error) {
           console.log(`    错误: ${chart.error}`);

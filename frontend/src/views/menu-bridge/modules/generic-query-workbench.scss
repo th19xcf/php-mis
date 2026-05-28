@@ -942,4 +942,80 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
     border-color: #4ea4f3 !important;
     background-color: #2f7fc5 !important;
   }
+
+  :deep(.query-grid .ag-filter-body-wrapper) {
+    background-color: var(--wb-dark-bg);
+    color: var(--wb-grid-text);
+  }
+
+  :deep(.query-grid .ag-filter-condition) {
+    background-color: var(--wb-dark-bg);
+    color: var(--wb-grid-text);
+  }
+
+  :deep(.query-grid .ag-filter-select) {
+    background-color: $wb-dark-surface;
+    border-color: #43576b;
+    color: var(--wb-grid-text);
+  }
+
+  :deep(.query-grid .ag-filter-filter) {
+    background-color: $wb-dark-surface;
+    border-color: #43576b;
+    color: var(--wb-grid-text);
+  }
+
+  :deep(.query-grid .ag-filter-apply-panel) {
+    background-color: var(--wb-dark-bg);
+    border-top-color: $wb-dark-border;
+  }
+
+  :deep(.query-grid .ag-mini-filter) {
+    background-color: $wb-dark-surface;
+    border-color: #43576b;
+    color: var(--wb-grid-text);
+  }
+
+  :deep(.query-grid .ag-set-filter-list) {
+    background-color: var(--wb-dark-bg);
+  }
+
+  :deep(.query-grid .ag-popup) {
+    background-color: var(--wb-dark-bg);
+  }
+
+  :deep(.query-grid .ag-menu) {
+    background-color: var(--wb-dark-bg);
+  }
+
+  :deep(.query-grid .ag-overlay) {
+    background-color: var(--wb-dark-bg);
+  }
+
+  :deep(.query-grid .ag-list) {
+    background-color: var(--wb-dark-bg);
+  }
+
+  :deep(.query-grid .ag-list-item) {
+    background-color: var(--wb-dark-bg);
+    color: var(--wb-grid-text);
+
+    &:hover {
+      background-color: rgba(122, 167, 214, 0.18);
+    }
+  }
+
+  :deep(.query-grid .ag-menu-option) {
+    background-color: var(--wb-dark-bg);
+    color: var(--wb-grid-text);
+
+    &:hover {
+      background-color: rgba(122, 167, 214, 0.18);
+    }
+  }
+
+  :deep(.query-grid .ag-tab) {
+    background-color: var(--wb-dark-bg);
+    color: var(--wb-grid-text);
+  }
 }
