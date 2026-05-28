@@ -307,7 +307,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       loadedParams.value = params;
       isDataLoaded.value = true;
       step1Timer.end();
-      logger('debug', `步骤1完成: pageMeta=${pageMeta.value?.pageName || 'null'}, total=${total.value}`);
+      logger('debug', `步骤1完成: pageMeta=${pageMeta.value?.title || 'null'}, total=${total.value}`);
 
       const step2Timer = createTimer('  [缓存-2] 恢复 UI 状态');
       logger('info', `步骤2: 恢复 UI 状态`);
@@ -422,7 +422,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     pageSize.value = PAGE_SIZE_OPTIONS[0];
     selectedField.value = data.meta.conditions[0]?.fieldKey || '';
     selectedValue.value = '';
-    logger('debug', `页面元数据: pageName=${data.meta.pageName}, conditionsCount=${data.meta.conditions?.length || 0}`);
+    logger('debug', `页面元数据: pageName=${data.meta.title}, conditionsCount=${data.meta.conditions?.length || 0}`);
 
     logger('info', `步骤2: 获取第一页数据`);
     const firstPageTimer = createTimer('获取第一页数据');

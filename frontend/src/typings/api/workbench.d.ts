@@ -253,6 +253,14 @@ declare namespace Api {
         查询名: string;
         字段名: string;
       }>;
+      chartModule?: string;
+      chartSql?: Array<{
+        name?: string;
+        '图形名称'?: string;
+        sql?: string;
+        error?: string;
+      }>;
+      chartQuerySql?: string;
     }
   }
 }

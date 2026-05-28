@@ -89,7 +89,7 @@ async function startEditDetail() {
   }
 
   if (!addFields.value || addFields.value.length === 0) {
-    await loadFields();
+    await loadFields(functionCode.value);
   }
 
   const form: Record<string, any> = {};
@@ -287,7 +287,7 @@ onMounted(async () => {
   
   filteredTreeData.value = treeData.value;
   
-  await loadFields();
+  await loadFields(functionCode.value);
   
   addFields.value.forEach(field => {
     if (field.columnName === '员工状态') {

@@ -10,6 +10,30 @@ interface WorkbenchMetaLike {
   params?: string;
 }
 
+export interface WorkbenchStore {
+  getCache: (functionCode: string, params: string) => any;
+  setCache: (functionCode: string, params: string, data: Partial<any>) => void;
+  clearCache: (functionCode: string, params: string) => void;
+  getFilterModel: (functionCode: string, params: string) => any;
+  setFilterModel: (functionCode: string, params: string, filterModel: any) => void;
+  clearFilterModel: (functionCode: string, params: string) => void;
+  getColumnState: (functionCode: string, params: string) => any;
+  setColumnState: (functionCode: string, params: string, columnState: any) => void;
+  clearColumnState: (functionCode: string, params: string) => void;
+  getPage: (functionCode: string, params: string) => number;
+  setPage: (functionCode: string, params: string, currentPage: number) => void;
+  getPageSize: (functionCode: string, params: string) => number;
+  setPageSize: (functionCode: string, params: string, currentPageSize: number) => void;
+  getSelectedRows: (functionCode: string, params: string) => any[];
+  setSelectedRows: (functionCode: string, params: string, selectedRows: any[]) => void;
+  getVisibleColumns: (functionCode: string, params: string) => string[];
+  setVisibleColumns: (functionCode: string, params: string, visibleColumns: string[]) => void;
+  getPinColumns: (functionCode: string, params: string) => string[];
+  setPinColumns: (functionCode: string, params: string, pinColumns: string[]) => void;
+  getUIState: (functionCode: string, params: string) => any;
+  setUIState: (functionCode: string, params: string, uiState: any) => void;
+}
+
 interface WorkbenchGridStateOptions {
   getMeta: () => WorkbenchMetaLike;
   getCacheScopeKey: () => string;
@@ -313,9 +337,15 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     const visibleCols = allColumns
       .filter(col => {
         const colDef = col.getColDef();
-        return !colDef.hide && colDef.field;
+        const colId = col.getColId();
+        // 包括有 field 的列，以及 checkbox 选择列
+        return !colDef.hide && (colDef.field || colId === 'ag-Grid-SelectionColumn');
       })
-      .map(col => col.getColDef().field as string)
+      .map(col => {
+        const colDef = col.getColDef();
+        // 对于 checkbox 列使用 colId，否则使用 field
+        return (colDef.field || col.getColId()) as string;
+      })
       .filter((field): field is string => field !== undefined);
     workbenchStore.setVisibleColumns(functionCode, params, visibleCols);
   }
@@ -399,9 +429,13 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
           const visibleCols = allColumns
             .filter(col => {
               const colDef = col.getColDef();
-              return !colDef.hide && colDef.field;
+              const colId = col.getColId();
+              return !colDef.hide && (colDef.field || colId === 'ag-Grid-SelectionColumn');
             })
-            .map(col => col.getColDef().field as string)
+            .map(col => {
+              const colDef = col.getColDef();
+              return (colDef.field || col.getColId()) as string;
+            })
             .filter((field): field is string => field !== undefined);
           workbenchStore.setVisibleColumns(capturedFunctionCode, capturedParams, visibleCols);
         }

@@ -95,7 +95,7 @@ async function startEditDetail() {
   }
 
   if (!addFields.value || addFields.value.length === 0) {
-    await loadFields();
+    await loadFields(String(functionCode.value));
   }
 
   const form: Record<string, any> = {};
@@ -338,7 +338,7 @@ onMounted(async () => {
 
   filteredTreeData.value = treeData.value;
   
-  await loadFields();
+  await loadFields(String(functionCode.value));
 });
 </script>
 

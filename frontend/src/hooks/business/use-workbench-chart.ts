@@ -1,5 +1,4 @@
-import { ref, watch, nextTick, shallowRef } from 'vue';
-import type { Ref } from 'vue';
+import { ref, watch, nextTick } from 'vue';
 import * as echarts from 'echarts/core';
 import { LineChart, BarChart, PieChart } from 'echarts/charts';
 import {

@@ -91,7 +91,7 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
 }
 
 async function openAddModal() {
-  await loadFields();
+  await loadFields(functionCode.value);
   
   const initialForm: Record<string, any> = {};
   addFields.value.forEach(field => {
@@ -134,7 +134,7 @@ async function startEditDetail() {
   }
 
   if (!addFields.value || addFields.value.length === 0) {
-    await loadFields();
+    await loadFields(functionCode.value);
   }
 
   const form: Record<string, any> = {};
@@ -227,7 +227,12 @@ async function handleTransfer() {
   submitting.value = true;
   const { error } = await fetchTransferInterview({
     guids: selectedGuids.value,
-    ...transferForm.value
+    参培信息: transferForm.value.参培信息!,
+    培训业务: transferForm.value.培训业务,
+    培训批次: transferForm.value.培训批次,
+    培训老师: transferForm.value.培训老师,
+    培训开始日期: transferForm.value.培训开始日期,
+    预计完成日期: transferForm.value.预计完成日期
   });
   submitting.value = false;
 
@@ -382,7 +387,7 @@ onMounted(async () => {
 
   filteredTreeData.value = treeData.value;
   
-  await loadFields();
+  await loadFields(functionCode.value);
   
   addFields.value.forEach(field => {
     if (field.columnName === '属地') {

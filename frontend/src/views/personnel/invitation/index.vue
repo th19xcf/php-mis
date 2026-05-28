@@ -156,14 +156,14 @@ function cancelAddMode() {
 
 async function saveAddMode() {
   // 验证必填字段
-  const requiredField = addFields.value.find((f: AddField) => f.required && !addFormDynamic.value[f.columnName]);
+  const requiredField = addFields.value.find((f: Api.Workbench.AddField) => f.required && !addFormDynamic.value[f.columnName]);
   if (requiredField) {
     message.error(`${requiredField.fieldName}不能为空`);
     return;
   }
 
   submitting.value = true;
-  const { error } = await fetchAddInvitation(addFormDynamic.value);
+  const { error } = await fetchAddInvitation(addFormDynamic.value as Api.Invitation.InvitationAddParams);
   submitting.value = false;
 
   if (!error) {
@@ -326,14 +326,14 @@ function handlePopupSelect(field: Api.Workbench.AddField) {
 
 async function handleAdd() {
   // 验证必填字段
-  const requiredField = addFields.value.find((f: AddField) => f.required && !addFormDynamic.value[f.columnName]);
+  const requiredField = addFields.value.find((f: Api.Workbench.AddField) => f.required && !addFormDynamic.value[f.columnName]);
   if (requiredField) {
     message.error(`${requiredField.fieldName}不能为空`);
     return;
   }
 
   submitting.value = true;
-  const { error } = await fetchAddInvitation(addFormDynamic.value);
+  const { error } = await fetchAddInvitation(addFormDynamic.value as Api.Invitation.InvitationAddParams);
   submitting.value = false;
 
   if (!error) {
@@ -355,7 +355,13 @@ async function handleTransfer() {
   submitting.value = true;
   const { error } = await fetchTransferInvitation({
     guids: selectedGuids.value,
-    ...transferForm.value
+    面试结果: transferForm.value.面试结果!,
+    面试日期: transferForm.value.面试日期,
+    面试人: transferForm.value.面试人,
+    预约培训日期: transferForm.value.预约培训日期,
+    住宿: transferForm.value.住宿,
+    通勤方式: transferForm.value.通勤方式,
+    通勤时间: transferForm.value.通勤时间
   });
   submitting.value = false;
 

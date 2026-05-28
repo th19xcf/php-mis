@@ -26,6 +26,7 @@ declare namespace Api {
       培训离开日期: string;
       培训离开原因: string;
       培训天数: string;
+      [key: string]: any;
     }
 
     interface TrainUpdateParams {

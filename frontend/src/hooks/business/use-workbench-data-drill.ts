@@ -104,7 +104,7 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
   }
 
   async function showDrillOptionsDialog(optionsList: Api.Workbench.DrillOption[], selectedRow: Api.Workbench.QueryRecord) {
-    const options = optionsList.map((opt: Api.Workbench.DrillOption, index: number) => ({
+    const drillOptions = optionsList.map((opt: Api.Workbench.DrillOption, index: number) => ({
       label: opt.label,
       value: `${opt.functionCode}_${index}`,
       functionCode: opt.functionCode,
@@ -116,10 +116,10 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
       raw: opt
     }));
 
-    const selectedOption = ref<(typeof options)[0] | null>(options[0] || null);
-    const drillSelectedValue = ref<string>(options[0]?.value || '');
+    const selectedOption = ref<(typeof drillOptions)[0] | null>(drillOptions[0] || null);
+    const drillSelectedValue = ref<string>(drillOptions[0]?.value || '');
 
-    const handleDrillConfirm = (selectedOpt: (typeof options)[0]) => {
+    const handleDrillConfirm = (selectedOpt: (typeof drillOptions)[0]) => {
       logger('info', `开始钻取确认, functionCode=${selectedOpt.functionCode}`);
       
       const drillItem = selectedOpt.raw;
@@ -178,7 +178,7 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
 
     const handleRadioClick = (value: string) => {
       drillSelectedValue.value = value;
-      selectedOption.value = options.find((opt: any) => opt.value === value) || null;
+      selectedOption.value = drillOptions.find((opt: any) => opt.value === value) || null;
     };
 
     const renderDrillDialogContent = () => {
@@ -194,7 +194,7 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
           },
           {
             default: () =>
-              options.map((opt: any) =>
+              drillOptions.map((opt: any) =>
                 h(
                   NRadio,
                   {

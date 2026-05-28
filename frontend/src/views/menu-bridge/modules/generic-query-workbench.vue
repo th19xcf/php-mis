@@ -17,7 +17,7 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty, type MessageType } from 'naive-ui';
+import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty } from 'naive-ui';
 import * as XLSX from 'xlsx';
 
 import {
@@ -65,6 +65,7 @@ interface MenuBridgeMeta {
 
 type ConditionOperator = 'contains' | 'equals' | 'startsWith';
 type QueryFilter = NonNullable<Api.Workbench.QueryPayload['filters']>[number];
+type NotifyType = 'success' | 'error' | 'warning' | 'info';
 
 function isGuidColumn(field: string, label: string) {
   return field.trim().toUpperCase() === 'GUID' || label.trim().toUpperCase() === 'GUID';
@@ -173,7 +174,7 @@ const {
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   reloadPage: () => loadPage(),
-  notify: (type: MessageType, message: string) => msg(type, message)
+  notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
 const {
@@ -194,7 +195,7 @@ const {
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   getCommentModuleName: () => pageMeta.value?.commentModule || String(props.meta.functionCode || '').trim(),
-  notify: (type: MessageType, message: string, data?: Record<string, any>) => msg(type, message, data)
+  notify: (type: NotifyType, message: string, data?: unknown) => msg(type, message, data)
 });
 
 // 工具栏滚动相关
@@ -319,7 +320,7 @@ const {
 } = useColorMark({
   colorMarkEnabledColumns,
   gridApi,
-  notify: (type: MessageType, message: string) => msg(type, message)
+  notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
 
@@ -463,7 +464,7 @@ const {
   functionCode,
   params,
   workbenchStore,
-  notify: (type: MessageType, message: string) => msg(type, message),
+  notify: (type: NotifyType, message: string) => msg(type, message),
   checkScrollPosition,
   pageMeta,
   serverRows,
@@ -526,7 +527,7 @@ const {
     isDataLoaded.value = false;
     loadPage();
   },
-  notify: (type: MessageType, message: string) => msg(type, message)
+  notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
 const {
@@ -538,7 +539,7 @@ const {
   resizeChart: chartResize
 } = useWorkbenchChart({
   getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
-  notify: (type: MessageType, message: string) => msg(type, message)
+  notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
 const {
@@ -558,7 +559,7 @@ const {
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   getParams: () => String(props.meta.params || '').trim(),
   workbenchStore,
-  notify: (type: MessageType, message: string) => msg(type, message),
+  notify: (type: NotifyType, message: string) => msg(type, message),
   loadPage,
   serverRows,
   pageMeta,
@@ -793,7 +794,7 @@ const { deleteLoading, handleDelete } = useWorkbenchDelete({
     isDataLoaded.value = false;
     loadPage();
   },
-  notify: (type: MessageType, message: string) => msg(type, message)
+  notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
 const {
@@ -1460,7 +1461,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
               :animate-rows="false"
               class="query-grid"
               @grid-ready="handleGridReady"
-              @cell-value-changed="(e) => handleCellValueChanged(e, hasTableEditAuth)"
+              @cell-value-changed="(e: any) => handleCellValueChanged(e, hasTableEditAuth)"
             />
             <!-- 分片加载进度提示 -->
             <div v-if="isChunkLoading && !loading" class="chunk-loading-progress">

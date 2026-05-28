@@ -41,6 +41,7 @@ declare namespace Api {
       开始操作时间: string;
       结束操作时间: string;
       操作时间: string;
+      [key: string]: any;
     }
 
     interface InvitationAddParams {

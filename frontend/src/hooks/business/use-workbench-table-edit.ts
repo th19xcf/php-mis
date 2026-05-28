@@ -1,5 +1,5 @@
 import { ref, computed, watch, shallowRef } from 'vue';
-import type { Ref, ComputedRef } from 'vue';
+import type { Ref } from 'vue';
 import type { GridApi, ColDef } from 'ag-grid-community';
 
 import { submitTableEdit } from '@/service/api/workbench';
@@ -14,7 +14,7 @@ interface UseWorkbenchTableEditOptions {
   notify: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void;
   loadPage: () => void;
   serverRows: Ref<Api.Workbench.QueryRecord[]>;
-  pageMeta: ComputedRef<Api.Workbench.PageMeta | null>;
+  pageMeta: Ref<Api.Workbench.PageMeta | null>;
   colorMarkConfig: Ref<any>;
   isDarkMode: Ref<boolean>;
 }
