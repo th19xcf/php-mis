@@ -962,7 +962,29 @@ async function handleDebug() {
     // 输出图形相关 SQL
     console.log('\n📈 图形 SQL:');
     console.log('chartModule:', data.chartModule);
-    console.log('chartSql:', JSON.stringify(data.chartSql, null, 2));
+    
+    // 将占位符替换为真实值
+    const replacePlaceholders = (sql: string): string => {
+      let result = sql;
+      // 原始 SQL 中已经有引号包裹，直接替换即可
+      result = result.replace(/\$查询表名/g, data.queryTable);
+      // 部门全称_ 参数类型是 JSON，需要转换为 JSON 数组字符串格式（带引号包裹）
+      const deptNameAuth = Array.isArray(data.userAuth.deptNameAuth) ? data.userAuth.deptNameAuth : (data.userAuth.deptNameAuth ? [data.userAuth.deptNameAuth] : []);
+      const deptNameJson = JSON.stringify(deptNameAuth).replace(/"/g, '\\"');
+      result = result.replace(/\$\[部门全称赋权\]/g, `"${deptNameJson}"`);
+      return result;
+    };
+    
+    // 输出替换后的 chartSql
+    if (data.chartSql && Array.isArray(data.chartSql)) {
+      const replacedChartSql = data.chartSql.map((chart: any) => ({
+        ...chart,
+        sql: chart.sql ? replacePlaceholders(chart.sql) : chart.sql
+      }));
+      console.log('chartSql (已替换占位符):', JSON.stringify(replacedChartSql, null, 2));
+    } else {
+      console.log('chartSql:', JSON.stringify(data.chartSql, null, 2));
+    }
     
     // 输出图形配置信息到控制台
     console.log('\n========================================');
@@ -987,7 +1009,7 @@ if (data.chartSql && data.chartSql.length > 0) {
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
         console.log(`\n--- 图形 ${index + 1} ---`);
         console.log('名称:', chart.name || '未命名');
-        console.log('SQL:', chart.sql || '(无)');
+        console.log('SQL:', chart.sql ? replacePlaceholders(chart.sql) : '(无)');
         if (chart.error) {
           console.log('错误:', chart.error);
         }
@@ -1002,7 +1024,7 @@ if (data.chartSql && data.chartSql.length > 0) {
     if (data.chartSql && Array.isArray(data.chartSql) && data.chartSql.length > 0) {
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
         console.log(`  图形 ${index + 1}: ${chart.name || '未命名'}`);
-        console.log(`    SQL: ${chart.sql || '(无)'}`);
+        console.log(`    SQL: ${chart.sql ? replacePlaceholders(chart.sql) : '(无)'}`);
         if (chart.error) {
           console.log(`    错误: ${chart.error}`);
         }
@@ -1718,4 +1740,4 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   </div>
 </template>
 
-<style lang="scss" scoped>@import './generic-query-workbench.scss';</style>
+<style lang="scss" scoped>@use './generic-query-workbench.scss';</style>
