@@ -1,4 +1,4 @@
-import { ref, watch, nextTick } from 'vue';
+import { ref, watch, nextTick, computed } from 'vue';
 import * as echarts from 'echarts/core';
 import { LineChart, BarChart, PieChart } from 'echarts/charts';
 import {
@@ -12,6 +12,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import type { ECharts } from 'echarts/core';
 import { request } from '@/service/request';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
+import { useThemeStore } from '@/store/modules/theme/index';
 
 echarts.use([
   LineChart,
@@ -30,7 +31,21 @@ interface UseWorkbenchChartOptions {
   notify: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void;
 }
 
-function generateChartOptionFromBackend(charts: any[]): any {
+const darkThemeColors = {
+  backgroundColor: 'transparent',
+  textColor: '#e0e0e0',
+  axisLineColor: '#43576b',
+  splitLineColor: 'rgba(255, 255, 255, 0.05)'
+};
+
+const lightThemeColors = {
+  backgroundColor: '#ffffff',
+  textColor: '#000000',
+  axisLineColor: '#9ca3af',
+  splitLineColor: '#e5e7eb'
+};
+
+function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any {
   if (!charts || charts.length === 0) {
     return null;
   }
@@ -41,6 +56,7 @@ function generateChartOptionFromBackend(charts: any[]): any {
   const chartType = chart['图形类型'] || CHART.DEFAULT_TYPE;
   const chartName = chart['图形名称'] || CHART.DEFAULT_NAME;
   const fieldsConfig = chart['字段'] || {};
+  const themeColors = isDarkMode ? darkThemeColors : lightThemeColors;
 
   if (chartData.length === 0) {
     return null;
@@ -60,9 +76,13 @@ function generateChartOptionFromBackend(charts: any[]): any {
     }));
 
     return {
+      backgroundColor: themeColors.backgroundColor,
       title: {
         text: chartName,
-        left: 'center'
+        left: 'center',
+        textStyle: {
+          color: themeColors.textColor
+        }
       },
       tooltip: {
         trigger: 'item',
@@ -70,7 +90,10 @@ function generateChartOptionFromBackend(charts: any[]): any {
       },
       legend: {
         orient: 'vertical',
-        left: 'left'
+        left: 'left',
+        textStyle: {
+          color: themeColors.textColor
+        }
       },
       series: [
         {
@@ -156,14 +179,21 @@ function generateChartOptionFromBackend(charts: any[]): any {
     }
 
     return {
+      backgroundColor: themeColors.backgroundColor,
       title: {
         show: true,
         text: chartName,
-        triggerEvent: true
+        triggerEvent: true,
+        textStyle: {
+          color: themeColors.textColor
+        }
       },
       legend: {
         bottom: 2,
-        data: valueKeys
+        data: valueKeys,
+        textStyle: {
+          color: themeColors.textColor
+        }
       },
       tooltip: {
         trigger: 'axis',
@@ -180,8 +210,53 @@ function generateChartOptionFromBackend(charts: any[]): any {
       dataset: {
         source: chartData
       },
-      xAxis: { type: 'category' },
-      yAxis: yAxis.length > 1 ? yAxis : yAxis[0],
+      xAxis: { 
+        type: 'category',
+        axisLine: {
+          lineStyle: {
+            color: themeColors.axisLineColor
+          }
+        },
+        axisLabel: {
+          color: themeColors.textColor
+        },
+        splitLine: {
+          lineStyle: {
+            color: themeColors.splitLineColor
+          }
+        }
+      },
+      yAxis: yAxis.length > 1 ? yAxis.map((axis: any) => ({
+        ...axis,
+        axisLine: {
+          lineStyle: {
+            color: themeColors.axisLineColor
+          }
+        },
+        axisLabel: {
+          color: themeColors.textColor
+        },
+        splitLine: {
+          lineStyle: {
+            color: themeColors.splitLineColor
+          }
+        }
+      })) : {
+        ...yAxis[0],
+        axisLine: {
+          lineStyle: {
+            color: themeColors.axisLineColor
+          }
+        },
+        axisLabel: {
+          color: themeColors.textColor
+        },
+        splitLine: {
+          lineStyle: {
+            color: themeColors.splitLineColor
+          }
+        }
+      },
       series: dem,
       grid: {
         left: '3%',
@@ -200,6 +275,9 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
   const chartOption = ref<any>(null);
   const chartRef = ref<HTMLDivElement | null>(null);
   let chartInstance: ECharts | null = null;
+
+  const themeStore = useThemeStore();
+  const isDarkMode = computed(() => themeStore.darkMode);
 
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
@@ -270,7 +348,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       }
 
       logger('info', `生成图表配置`);
-      chartOption.value = generateChartOptionFromBackend(data.charts);
+      chartOption.value = generateChartOptionFromBackend(data.charts, isDarkMode.value);
       logger('info', `图表配置生成成功`);
       logger('info', `========== handleOpenChart 结束（成功）==========`);
     } catch (error) {
@@ -297,7 +375,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       chartInstance.dispose();
     }
 
-    logger('info', `初始化 ECharts 实例`);
+    logger('info', `初始化 ECharts 实例，darkMode: ${isDarkMode.value}`);
     chartInstance = echarts.init(chartRef.value);
     chartInstance.setOption(chartOption.value);
     logger('info', `图表初始化成功`);

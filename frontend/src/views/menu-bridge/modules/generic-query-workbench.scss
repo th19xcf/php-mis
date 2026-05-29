@@ -521,11 +521,15 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
   min-height: 0;
-  @include wb-card-base;
+  background: #ffffff;
+  border: 1px solid $wb-border-light;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   overflow: hidden;
 
   .system-dark & {
-    @include wb-dark-card-base;
+    background: var(--wb-dark-bg);
+    border-color: rgba(255, 255, 255, 0.09);
   }
 }
 
