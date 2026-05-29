@@ -33,16 +33,24 @@ interface UseWorkbenchChartOptions {
 
 const darkThemeColors = {
   backgroundColor: 'transparent',
-  textColor: '#e0e0e0',
-  axisLineColor: '#43576b',
-  splitLineColor: 'rgba(255, 255, 255, 0.05)'
+  textColor: '#e5e7eb',
+  axisLineColor: '#4b5563',
+  splitLineColor: 'rgba(255, 255, 255, 0.08)',
+  legendTextColor: '#d1d5db',
+  tooltipBgColor: 'rgba(31, 41, 55, 0.95)',
+  tooltipTextColor: '#e5e7eb',
+  tooltipBorderColor: '#4b5563'
 };
 
 const lightThemeColors = {
   backgroundColor: '#ffffff',
-  textColor: '#000000',
-  axisLineColor: '#9ca3af',
-  splitLineColor: '#e5e7eb'
+  textColor: '#1f2937',
+  axisLineColor: '#6b7280',
+  splitLineColor: '#d1d5db',
+  legendTextColor: '#374151',
+  tooltipBgColor: '#ffffff',
+  tooltipTextColor: '#1f2937',
+  tooltipBorderColor: '#e5e7eb'
 };
 
 function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any {
@@ -92,7 +100,7 @@ function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any
         orient: 'vertical',
         left: 'left',
         textStyle: {
-          color: themeColors.textColor
+          color: themeColors.legendTextColor || themeColors.textColor
         }
       },
       series: [
@@ -192,12 +200,18 @@ function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any
         bottom: 2,
         data: valueKeys,
         textStyle: {
-          color: themeColors.textColor
+          color: themeColors.legendTextColor || themeColors.textColor
         }
       },
       tooltip: {
         trigger: 'axis',
-        axisPointer: { type: 'cross' }
+        axisPointer: { type: 'cross' },
+        backgroundColor: themeColors.tooltipBgColor || 'rgba(255, 255, 255, 0.95)',
+        textStyle: {
+          color: themeColors.tooltipTextColor || '#1f2937'
+        },
+        borderColor: themeColors.tooltipBorderColor || '#e5e7eb',
+        borderWidth: 1
       },
       toolbox: {
         feature: {
@@ -454,6 +468,22 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
   function resizeChart() {
     chartInstance?.resize();
   }
+
+  watch(isDarkMode, async (darkMode) => {
+    logger('info', `主题变化: ${darkMode ? 'dark' : 'light'}`);
+    
+    if (chartVisible.value && chartData.value.length > 0) {
+      logger('info', `重新生成图表配置以适配主题`);
+      const newOption = generateChartOptionFromBackend(chartData.value, darkMode);
+      
+      if (chartInstance) {
+        logger('info', `更新现有图表实例`);
+        chartInstance.setOption(newOption, true);
+      } else {
+        chartOption.value = newOption;
+      }
+    }
+  });
 
   return {
     chartVisible,
