@@ -9,6 +9,7 @@ use App\Models\Mcommon;
 use App\Services\Workbench\ChartService;
 use App\Services\Workbench\DrillService;
 use App\Services\Workbench\QueryService;
+use App\Services\Workbench\EditService;
 
 class Workbench extends BaseController
 {
@@ -18,6 +19,7 @@ class Workbench extends BaseController
     private ChartService $chartService;
     private DrillService $drillService;
     private QueryService $queryService;
+    private EditService $editService;
 
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
@@ -28,6 +30,7 @@ class Workbench extends BaseController
         $this->chartService = new ChartService();
         $this->drillService = new DrillService();
         $this->queryService = new QueryService();
+        $this->editService = new EditService();
     }
 
     public function page(string $functionCode = '')
@@ -1761,93 +1764,12 @@ class Workbench extends BaseController
     public function addFields(string $functionCode = '')
     {
         try {
-            // 从 session 获取字段模块
             $session = \Config\Services::session();
             $fieldModule = $session->get($functionCode . '-field_module');
 
-            if (empty($fieldModule)) {
-                // 查询字段模块 - 使用与 buildWorkbenchContext 相同的方式
-                $sql = sprintf(
-                    'select 字段模块 from def_query_config where 查询模块 in (
-                        select 模块名称 from def_function where 有效标识="1" and 功能编码=%s
-                    )',
-                    $this->quote($functionCode)
-                );
-                $result = $this->common->select($sql);
-                if ($result !== false) {
-                    $row = $result->getRowArray();
-                    $fieldModule = $row['字段模块'] ?? '';
-                }
-            }
+            $result = $this->editService->getAddFields($functionCode, $fieldModule);
 
-            if (empty($fieldModule)) {
-                return $this->success(['fields' => []]);
-            }
-
-            // 查询可新增的字段 - 使用 view_function 视图，与旧版 Frame.php 保持一致
-            // view_function 视图使用 "列顺序" 字段（不是"顺序"）
-            $sql = sprintf(
-                'select
-                    列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 可新增, 列顺序
-                from view_function
-                where 功能编码=%s and 列顺序>0 and 可新增="1"
-                group by 列名
-                order by 列顺序',
-                $this->quote($functionCode)
-            );
-
-            $result = $this->common->select($sql);
-            if ($result === false) {
-                return $this->success(['fields' => []]);
-            }
-
-            $columns = $result->getResultArray();
-            $fields = [];
-
-            foreach ($columns as $col) {
-                $field = [
-                    'columnName' => $col['列名'],
-                    'fieldName' => $col['字段名'],
-                    'fieldType' => $col['列类型'] ?? '字符',
-                    'required' => ($col['不可为空'] ?? '0') === '1',
-                    'defaultValue' => $col['缺省值'] ?? '',
-                    'objectName' => '',
-                    'editable' => true
-                ];
-
-                // 处理系统变量默认值
-                if ($field['defaultValue'] === '$当日日期') {
-                    $field['defaultValue'] = date('Y-m-d');
-                } elseif ($field['defaultValue'] === '$时间戳') {
-                    $field['defaultValue'] = date('Y-m-d H:i:s');
-                } elseif ($field['defaultValue'] === '$工号') {
-                    $field['defaultValue'] = $session->get('user_workid') ?? '';
-                } elseif ($field['defaultValue'] === '$属地') {
-                    $field['defaultValue'] = $session->get('user_location') ?? '';
-                }
-
-                // 处理赋值类型
-                $赋值类型 = $col['赋值类型'] ?? '';
-                $对象 = $col['对象'] ?? '';
-                
-                // 如果赋值类型包含"固定值"，则查询对象选项
-                if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
-                    $field['objectName'] = $对象;
-                    $field['objectOptions'] = $this->getObjectOptions($对象);
-                }
-                
-                // 如果赋值类型是"弹窗"，则标记为弹窗类型
-                if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
-                    $field['inputType'] = 'popup';
-                    $field['objectName'] = $对象;
-                } else {
-                    $field['inputType'] = 'text';
-                }
-
-                $fields[] = $field;
-            }
-
-            return $this->success(['fields' => $fields]);
+            return $this->success($result);
         } catch (\Throwable $e) {
             log_message('error', '获取新增字段配置失败: ' . $e->getMessage());
             return $this->error('5001', '获取新增字段配置失败');
@@ -2021,68 +1943,32 @@ class Workbench extends BaseController
     {
         try {
             $request = $this->request->getJSON(true) ?? [];
-
-            // 从 session 获取必要信息
             $session = \Config\Services::session();
-            $dataTable = $session->get($functionCode . '-data_table');
-            $dataModel = $session->get($functionCode . '-data_model');
-            $beforeInsert = $session->get($functionCode . '-before_insert');
-            $afterInsert = $session->get($functionCode . '-after_insert');
-            $primaryKey = $session->get($functionCode . '-primary_key');
 
-            // 如果 session 中没有，从数据库查询
-            if (empty($dataTable)) {
-                $sql = sprintf(
-                    'select 数据表名, 数据模式, 新增前处理模块, 新增后处理模块, 主键字段
-                    from def_query_config
-                    where 查询模块 in (
-                        select 模块名称 from def_function where 功能编码="%s"
-                    )',
-                    $functionCode
-                );
-                $result = $this->common->select($sql);
-                if ($result !== false) {
-                    $row = $result->getRowArray();
-                    $dataTable = $row['数据表名'] ?? '';
-                    $dataModel = $row['数据模式'] ?? '0';
-                    $beforeInsert = $row['新增前处理模块'] ?? '';
-                    $afterInsert = $row['新增后处理模块'] ?? '';
-                    $primaryKey = $row['主键字段'] ?? '';
-                }
-            }
+            $config = $this->editService->getDataTableConfig($functionCode, $session);
 
-            if (empty($dataTable)) {
+            if (empty($config['dataTable'])) {
                 return $this->error('5001', '新增失败：未找到数据表配置');
             }
 
-            // 执行新增前处理
-            if (!empty($beforeInsert)) {
-                $spSql = sprintf('call %s("新增前", "")', $beforeInsert);
-                $this->common->select($spSql);
-            }
+            $this->editService->executeBeforeInsert($config['beforeInsert']);
 
-            // 根据数据模式执行不同的新增逻辑
             $num = 0;
-            switch ($dataModel) {
+            switch ($config['dataModel']) {
                 case '0':
-                    $num = $this->addRowMode0($dataTable, $request);
+                    $num = $this->editService->addRowMode0($config['dataTable'], $request);
                     break;
                 case '1':
-                    $num = $this->addRowMode1($dataTable, $request, $session->get('user_workid') ?? 'system');
+                    $num = $this->editService->addRowMode1($config['dataTable'], $request, $session->get('user_workid') ?? 'system');
                     break;
                 case '2':
-                    $num = $this->addRowMode2($dataTable, $request, $session->get('user_workid') ?? 'system');
+                    $num = $this->editService->addRowMode2($config['dataTable'], $request, $session->get('user_workid') ?? 'system');
                     break;
                 default:
-                    return $this->error('5001', sprintf('新增失败,数据模式[-%s-]错误', $dataModel));
+                    return $this->error('5001', sprintf('新增失败,数据模式[-%s-]错误', $config['dataModel']));
             }
 
-            // 执行新增后处理
-            if (!empty($afterInsert) && !empty($primaryKey)) {
-                $keyStr = $this->buildWhereFromData($request, $primaryKey);
-                $spSql = sprintf('call %s("新增", "%s")', $afterInsert, $keyStr);
-                $this->common->select($spSql);
-            }
+            $this->editService->executeAfterInsert($config['afterInsert'], $config['primaryKey'], $request);
 
             return $this->success([
                 'success' => true,
