@@ -867,8 +867,8 @@ onActivated(() => {
                         <!-- 多行文本输入（工作履历） -->
                         <NInput
                           v-else-if="field.columnName === '工作履历'"
-                          type="textarea"
                           v-model:value="editDetailForm[field.columnName]"
+                          type="textarea"
                           size="small"
                           :autosize="{ minRows: 2, maxRows: 10 }"
                         />

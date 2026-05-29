@@ -1,10 +1,10 @@
 <script lang="ts">
 // 模块级加载锁，防止同一 functionCode 被多个组件实例重复加载
-const loadingLocks = new Map<string, boolean>();
+const _loadingLocks = new Map<string, boolean>();
 </script>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef, h, onMounted, onActivated, onDeactivated, watch, nextTick } from 'vue';
+import { computed, ref, shallowRef, h, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -12,7 +12,7 @@ import {
   AllCommunityModule,
   ModuleRegistry,
   themeAlpine,
-  type ColDef,
+  type _ColDef,
   type GridApi,
   type GridReadyEvent
 } from 'ag-grid-community';
@@ -21,7 +21,7 @@ import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput
 import * as XLSX from 'xlsx';
 
 import {
-  fetchWorkbenchPage,
+  _fetchWorkbenchPage,
   fetchWorkbenchPageData,
   fetchWorkbenchDrill,
   fetchWorkbenchDebug
@@ -98,7 +98,7 @@ const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 const activeGridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
 
-const { t } = useI18n();
+const { t: _t } = useI18n();
 
 const PAGE_SIZE_OPTIONS = [500, 1000, 2000] as const;
 const paginationPageSizeSelector = [...PAGE_SIZE_OPTIONS];
@@ -298,7 +298,7 @@ function startResize(e: MouseEvent) {
 }
 
 // 加载保存的布局状态
-function loadLayoutState() {
+function _loadLayoutState() {
   const { STORAGE_KEYS } = WORKBENCH_CONFIG;
   const savedWidth = localStorage.getItem(STORAGE_KEYS.LEFT_PANEL_WIDTH);
   if (savedWidth) {
@@ -545,15 +545,15 @@ const {
 const {
   tableModifiedRows,
   modifiedRowsData,
-  originalRowsData,
+  _originalRowsData,
   hasTableModifications,
-  isRestoringCellValue,
+  _isRestoringCellValue,
   processedRows,
   gridColumns,
   handleCellValueChanged,
   handleTableEditSubmit,
-  clearModifications,
-  getRowId
+  _clearModifications,
+  _getRowId
 } = useWorkbenchTableEdit({
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
@@ -568,7 +568,7 @@ const {
 });
 
 // 性能计时工具
-function createTimer(label: string) {
+function _createTimer(label: string) {
   const start = performance.now();
   return {
     end: () => {
@@ -584,14 +584,14 @@ function createTimer(label: string) {
 /**
  * 使用分页 API 获取所有数据（用于导出等需要全量数据的场景）
  */
-async function fetchAllRows(functionCode: string, filters: QueryFilter[], drillConditionSql?: string) {
+async function fetchAllRows(fnCode: string, filters: QueryFilter[], drillConditionSql?: string) {
   const allRows: Api.Workbench.QueryRecord[] = [];
   let current = 1;
   const size = 5000; // 每页 5000 条
   let hasMore = true;
 
   while (hasMore) {
-    const result = await fetchWorkbenchPageData(functionCode, {
+    const result = await fetchWorkbenchPageData(fnCode, {
       current,
       size,
       fetchTotal: current === 1, // 只有第一页需要总数
@@ -617,8 +617,8 @@ async function fetchAllRows(functionCode: string, filters: QueryFilter[], drillC
 }
 
 async function queryPage() {
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) {
+  const fnCode = String(props.meta.functionCode || '').trim();
+  if (!fnCode) {
     return;
   }
 
@@ -634,7 +634,7 @@ async function queryPage() {
       : [];
 
   loading.value = true;
-  const allRows = await fetchAllRows(functionCode, filters);
+  const allRows = await fetchAllRows(fnCode, filters);
   if (!allRows) {
     loading.value = false;
     return;
@@ -647,12 +647,12 @@ async function queryPage() {
 }
 
 async function handleRefresh() {
-  const functionCode = String(props.meta.functionCode || '').trim();
-  const params = String(props.meta.params || '').trim();
+  const fnCode = String(props.meta.functionCode || '').trim();
+  const fnParams = String(props.meta.params || '').trim();
 
   // 清除 store 缓存，强制重新加载
-  if (functionCode) {
-    workbenchStore.clearCache(functionCode, params);
+  if (fnCode) {
+    workbenchStore.clearCache(fnCode, fnParams);
   }
 
   // 重置所有查询条件到初始状态
@@ -886,9 +886,9 @@ function handleExport() {
   XLSX.utils.book_append_sheet(wb, ws, '数据');
 
   // 生成文件名
-  const functionCode = props.meta?.functionCode || 'export';
+  const fnCode = props.meta?.functionCode || 'export';
   const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-  const filename = `${functionCode}_${timestamp}.xlsx`;
+  const filename = `${fnCode}_${timestamp}.xlsx`;
 
   // 下载文件
   XLSX.writeFile(wb, filename);
@@ -897,8 +897,8 @@ function handleExport() {
 }
 
 async function handleDebug() {
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) {
+  const fnCode = String(props.meta.functionCode || '').trim();
+  if (!fnCode) {
     msg('error', '功能编码不能为空');
     return;
   }
@@ -909,7 +909,7 @@ async function handleDebug() {
       filters: []
     };
 
-    const { data, error } = await fetchWorkbenchDebug(functionCode, payload);
+    const { data, error } = await fetchWorkbenchDebug(fnCode, payload);
 
     if (error) {
       msg('error', '获取调试信息失败');
@@ -965,7 +965,7 @@ async function handleDebug() {
     if (data.chartModule) {
       try {
         const chartResponse = await request({
-          url: `/workbench/chart/${functionCode}`
+          url: `/workbench/chart/${fnCode}`
         });
         if (chartResponse.data?.charts && chartResponse.data.charts.length > 0) {
           chartNames = chartResponse.data.charts.map((chart: any) => chart['图形名称'] || `图形 ${chartNames.length + 1}`);
@@ -1071,8 +1071,8 @@ function handleDataDrill() {
     return;
   }
 
-  const functionCode = String(props.meta.functionCode || '').trim();
-  if (!functionCode) {
+  const fnCode = String(props.meta.functionCode || '').trim();
+  if (!fnCode) {
     msg('error', '功能编码不能为空');
     return;
   }
@@ -1080,7 +1080,7 @@ function handleDataDrill() {
   const selectedRow = selectedRows[0];
 
   loading.value = true;
-  fetchWorkbenchDrill(functionCode, {})
+  fetchWorkbenchDrill(fnCode, {})
     .then(({ data, error }) => {
       loading.value = false;
       if (error) {
@@ -1257,11 +1257,11 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   gridApi.value = event.api;
   visibleFieldColumns.value = fieldColumnOptions.value.map(item => String(item.value));
 
-  const functionCode = String(props.meta.functionCode || '').trim();
-  const params = String(props.meta.params || '').trim();
+  const fnCode = String(props.meta.functionCode || '').trim();
+  const fnParams = String(props.meta.params || '').trim();
 
   // 恢复筛选条件
-  const cachedFilterModel = workbenchStore.getFilterModel(functionCode, params);
+  const cachedFilterModel = workbenchStore.getFilterModel(fnCode, fnParams);
   if (cachedFilterModel) {
     setTimeout(() => {
       if (gridApi.value && !gridApi.value.isDestroyed()) {
@@ -1271,14 +1271,14 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   }
 
   // 恢复列状态（包括排序、列宽、列顺序、固定列等）
-  const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
+  const cachedColumnState = workbenchStore.getColumnState(fnCode, fnParams);
   if (cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0) {
     setTimeout(() => {
       if (gridApi.value && !gridApi.value.isDestroyed()) {
         isRestoringColumnState.value = true;
 
         // 合并固定列信息
-        const cachedPinColumns = workbenchStore.getPinColumns(functionCode, params);
+        const cachedPinColumns = workbenchStore.getPinColumns(fnCode, fnParams);
         const pinColumnsArray = Array.from(cachedPinColumns);
         const mergedColumnState = cachedColumnState.map((col: any) => {
           if (pinColumnsArray.includes(col.colId)) {
@@ -1290,7 +1290,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
         gridApi.value.applyColumnState({ state: mergedColumnState, applyOrder: true });
 
         // 恢复可见列
-        const cachedVisibleColumns = workbenchStore.getVisibleColumns(functionCode, params);
+        const cachedVisibleColumns = workbenchStore.getVisibleColumns(fnCode, fnParams);
         if (cachedVisibleColumns.length > 0) {
           visibleFieldColumns.value = cachedVisibleColumns;
         }
@@ -1479,8 +1479,8 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
         v-if="chartVisible"
         class="resize-splitter"
         :class="{ 'is-resizing': isResizing }"
-        @mousedown="startResize"
         title="拖动调整宽度"
+        @mousedown="startResize"
       >
         <div class="resize-line" />
       </div>
