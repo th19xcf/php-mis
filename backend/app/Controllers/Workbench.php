@@ -3731,6 +3731,7 @@ class Workbench extends BaseController
                 $deptNameAuth = $context['user']['deptNameAuth'] ?? '';
                 $deptNameAuthJson = '"[\\"' . $deptNameAuth . '\\"]"';
                 $dataSql = str_replace('$[部门全称赋权]', $deptNameAuthJson, $dataSql);
+
                 // 添加 call 关键字
                 if (strpos($dataSql, 'call ') !== 0) {
                     $dataSql = 'call ' . $dataSql;
@@ -3803,6 +3804,11 @@ class Workbench extends BaseController
                 $dataResults = $queryResult->getResult();
                 $chartItem['数据'] = $dataResults ?? [];
                 $chartItem['SQL'] = $dataSql;
+
+                // 存储过程返回的结果中包含图形名称，需要从结果中读取
+                if ($row->取数方式 === '存储过程' && !empty($dataResults) && isset($dataResults[0]->图形名称)) {
+                    $chartItem['图形名称'] = $dataResults[0]->图形名称;
+                }
             } catch (\Throwable $e) {
                 $errorMsg = $e->getMessage();
                 log_message('error', '图形数据查询失败: ' . $errorMsg . ' SQL: ' . $dataSql);
