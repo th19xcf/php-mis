@@ -6,12 +6,16 @@ use App\Constants\ApiCode;
 use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
+use App\Services\Workbench\ChartService;
+use App\Services\Workbench\DrillService;
 
 class Workbench extends BaseController
 {
     private Mcommon $common;
     private SessionUserContext $userContext;
     private AuthorizationService $authorizationService;
+    private ChartService $chartService;
+    private DrillService $drillService;
 
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
@@ -19,6 +23,8 @@ class Workbench extends BaseController
         $this->common = new Mcommon();
         $this->userContext = new SessionUserContext();
         $this->authorizationService = new AuthorizationService();
+        $this->chartService = new ChartService();
+        $this->drillService = new DrillService();
     }
 
     public function page(string $functionCode = '')
@@ -1362,7 +1368,7 @@ class Workbench extends BaseController
                 $debugInfo['drillModuleFallback'] = 'used queryModule as drillModule';
             }
             
-            $drillOptions = $this->getDrillOptions($context, $payload, $drillModule);
+            $drillOptions = $this->drillService->getDrillOptions($context, $payload, $drillModule);
 
             return $this->success([
                 'options' => $drillOptions,
@@ -1373,53 +1379,6 @@ class Workbench extends BaseController
         } catch (\Throwable $e) {
             return $this->error('5003', '工作台钻取失败: ' . $e->getMessage());
         }
-    }
-
-    private function getDrillOptions(array $context, array $payload, string $drillModule): array
-    {
-        $functionAuth = $context['function'];
-        $userAuth = $context['user'];
-
-        if (empty($drillModule)) {
-            return [];
-        }
-
-        $sql = sprintf(
-            'select
-                钻取模块,页面选项,t1.功能编码,钻取字段,钻取条件,
-                if(t2.二级菜单 is null,"",if(t1.标签副名称="",t2.二级菜单,concat(t2.二级菜单,"-",t1.标签副名称))) as 标签名称,
-                t2.功能模块,
-                ifnull(t2.一级菜单,"") as menu1,
-                ifnull(t2.二级菜单,"") as menu2
-            from def_drill_config as t1
-            left join def_function as t2 on t1.功能编码=t2.功能编码
-            where 钻取模块=%s
-            order by 顺序,convert(页面选项 using gbk)',
-            $this->quote($drillModule)
-        );
-
-        $results = $this->common->select($sql)->getResultArray();
-        $options = [];
-
-        foreach ($results as $row) {
-            $functionCode = (string) ($row['功能编码'] ?? '');
-            if (empty($functionCode)) {
-                continue;
-            }
-
-            $options[] = [
-                'label' => (string) ($row['页面选项'] ?? $row['标签名称'] ?? ''),
-                'value' => $functionCode,
-                'functionCode' => $functionCode,
-                'module' => (string) ($row['功能模块'] ?? ''),
-                'drillFields' => (string) ($row['钻取字段'] ?? ''),
-                'drillCondition' => (string) ($row['钻取条件'] ?? ''),
-                'menu1' => (string) ($row['menu1'] ?? ''),
-                'menu2' => (string) ($row['menu2'] ?? '')
-            ];
-        }
-
-        return $options;
     }
 
     public function importColumns(string $functionCode = '')
@@ -3671,7 +3630,7 @@ class Workbench extends BaseController
                 return $this->error('4001', '当前功能未配置图形模块');
             }
 
-            $chartData = $this->getChartData($context, $chartModule);
+            $chartData = $this->chartService->getChartData($context, $chartModule);
 
             return $this->success([
                 'charts' => $chartData
@@ -3679,171 +3638,9 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            log_message('error', '获取图形数据失败: ' . $e->getMessage());
+            log_message('error', '获取图形数据失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return $this->error('5001', '获取图形数据失败');
         }
-    }
-
-    /**
-     * 查询图形数据
-     *
-     * @param array $context 上下文信息
-     * @param string $chartModule 图形模块
-     * @return array 图形数据
-     */
-    private function getChartData(array $context, string $chartModule): array
-    {
-        $model = new Mcommon();
-        $chartData = [];
-
-        // 查询图形配置
-        $sql = sprintf('
-            select 图形模块,图形编号,图形名称,图形类型,
-                取数方式,查询表名,查询字段,属地字段,查询条件,汇总条件,排序条件,记录条数,
-                字段模块,页面布局,钻取模块,条件叠加,顺序
-            from def_chart_config
-            where 有效标识="1" and 图形模块="%s" and 顺序>0
-            order by 图形模块,图形编号,顺序',
-            $chartModule
-        );
-
-        $results = $model->select($sql)->getResult();
-
-        foreach ($results as $row) {
-            $chartItem = [
-                '图形模块' => $row->图形模块,
-                '图形编号' => $row->图形编号,
-                '图形名称' => $row->图形名称,
-                '图形类型' => $row->图形类型,
-                '取数方式' => $row->取数方式,
-                '页面布局' => $row->页面布局,
-                '字段模块' => $row->字段模块,
-                '钻取模块' => $row->钻取模块,
-                '数据' => []
-            ];
-
-            // 构建查询 SQL
-            if ($row->取数方式 === '存储过程') {
-                // 替换存储过程参数 - 查询表名包含完整的存储过程调用
-                $dataSql = $row->查询表名;
-                $dataSql = str_replace('$查询表名', sprintf('%s', $context['queryTable'] ?? ''), $dataSql);
-                // 生成 JSON 格式的字符串："[\"公司\"]"
-                $deptNameAuth = $context['user']['deptNameAuth'] ?? '';
-                $deptNameAuthJson = '"[\\"' . $deptNameAuth . '\\"]"';
-                $dataSql = str_replace('$[部门全称赋权]', $deptNameAuthJson, $dataSql);
-
-                // 添加 call 关键字
-                if (strpos($dataSql, 'call ') !== 0) {
-                    $dataSql = 'call ' . $dataSql;
-                }
-            } else {
-                // 构建标准查询 - 参考旧版 Frame.php 的逻辑
-                $fields = $row->查询字段 ?? '*';
-                $table = $row->查询表名;
-
-                // 构建 WHERE 条件
-                $whereParts = [];
-
-                // 添加部门授权条件
-                $deptAuthCond = $context['deptAuthzCond'] ?? '';
-                if (!empty($deptAuthCond)) {
-                    $whereParts[] = $deptAuthCond;
-                }
-
-                // 添加属地授权条件
-                $locationAuthCond = $context['locationAuthzCond'] ?? '';
-                if (!empty($row->属地字段) && !empty($locationAuthCond)) {
-                    $whereParts[] = $locationAuthCond;
-                }
-
-                // 添加配置的查询条件
-                if (!empty($row->查询条件)) {
-                    $queryCond = $row->查询条件;
-                    // 替换变量
-                    $queryCond = $this->replaceConditionVariables($queryCond, $context);
-                    $whereParts[] = $queryCond;
-                }
-
-                // 组合 WHERE 条件
-                if (count($whereParts) > 0) {
-                    $where = implode(' and ', $whereParts);
-                } else {
-                    $where = '1=1';
-                }
-
-                // 构建完整 SQL
-                $dataSql = sprintf('select %s, "%s^%s" as SID from %s where %s',
-                    $fields,
-                    $row->图形模块,
-                    $row->图形编号,
-                    $table,
-                    $where
-                );
-
-                // 添加 GROUP BY
-                if (!empty($row->汇总条件)) {
-                    $dataSql .= ' group by ' . $row->汇总条件;
-                }
-
-                // 添加 ORDER BY
-                if (!empty($row->排序条件)) {
-                    $dataSql .= ' order by ' . $row->排序条件;
-                }
-
-                // 添加 LIMIT
-                if (!empty($row->记录条数)) {
-                    $dataSql .= ' limit ' . $row->记录条数;
-                }
-            }
-
-            try {
-                $queryResult = $model->select($dataSql);
-                if ($queryResult === false) {
-                    throw new \RuntimeException('数据库查询返回 false');
-                }
-                $dataResults = $queryResult->getResult();
-                $chartItem['数据'] = $dataResults ?? [];
-                $chartItem['SQL'] = $dataSql;
-
-                // 存储过程返回的结果中包含图形名称，需要从结果中读取
-                if ($row->取数方式 === '存储过程' && !empty($dataResults) && isset($dataResults[0]->图形名称)) {
-                    $chartItem['图形名称'] = $dataResults[0]->图形名称;
-                }
-            } catch (\Throwable $e) {
-                $errorMsg = $e->getMessage();
-                log_message('error', '图形数据查询失败: ' . $errorMsg . ' SQL: ' . $dataSql);
-                $chartItem['数据'] = [];
-                $chartItem['错误'] = $errorMsg;
-                $chartItem['SQL'] = $dataSql;
-            }
-
-            if (!empty($row->字段模块)) {
-                $colSql = sprintf('
-                    select 字段模块,列名,字段名,坐标轴,图形类型
-                    from def_chart_column
-                    where 字段模块="%s" and 顺序>0
-                    order by 字段模块,顺序', $row->字段模块);
-
-                $colResults = $model->select($colSql)->getResult();
-                $chartItem['字段'] = [];
-                $chartItem['字段数'] = 0;
-                
-                foreach ($colResults as $colRow) {
-                    if (!array_key_exists($colRow->字段名, $chartItem['字段'])) {
-                        $chartItem['字段'][$colRow->字段名] = [];
-                    }
-                    $chartItem['字段数']++;
-                    $chartItem['字段'][$colRow->字段名]['列名'] = $colRow->列名;
-                    $chartItem['字段'][$colRow->字段名]['字段名'] = $colRow->字段名;
-                    $chartItem['字段'][$colRow->字段名]['坐标轴'] = $colRow->坐标轴;
-                    $chartItem['字段'][$colRow->字段名]['图形类型'] = $colRow->图形类型;
-                }
-            }
-
-            $chartData[] = $chartItem;
-        }
-
-        return $chartData;
     }
 
     /**
