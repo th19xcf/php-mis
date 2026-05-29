@@ -58,7 +58,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
   const hasTableModifications = computed(() => tableModifiedRows.value.size > 0);
 
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
-    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [TABLE-EDIT] [${method.toUpperCase()}]`;
     
     if (data !== undefined) {

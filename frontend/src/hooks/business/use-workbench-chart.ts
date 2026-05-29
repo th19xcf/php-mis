@@ -294,7 +294,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
   const isDarkMode = computed(() => themeStore.darkMode);
 
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
-    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [CHART] [${method.toUpperCase()}]`;
     
     if (data !== undefined) {

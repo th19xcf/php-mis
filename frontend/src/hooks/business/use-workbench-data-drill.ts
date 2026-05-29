@@ -20,7 +20,7 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
   const router = useRouter();
 
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
-    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [DATA-DRILL] [${method.toUpperCase()}]`;
     
     if (data !== undefined) {

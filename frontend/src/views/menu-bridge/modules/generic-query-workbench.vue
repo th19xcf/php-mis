@@ -12,7 +12,7 @@ import {
   AllCommunityModule,
   ModuleRegistry,
   themeAlpine,
-  type _ColDef,
+  type ColDef as _ColDef,
   type GridApi,
   type GridReadyEvent
 } from 'ag-grid-community';
@@ -21,7 +21,7 @@ import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput
 import * as XLSX from 'xlsx';
 
 import {
-  _fetchWorkbenchPage,
+  fetchWorkbenchPage as _fetchWorkbenchPage,
   fetchWorkbenchPageData,
   fetchWorkbenchDrill,
   fetchWorkbenchDebug
@@ -40,7 +40,6 @@ import { useWorkbenchChart } from '@/hooks/business/use-workbench-chart';
 import { useWorkbenchTableEdit } from '@/hooks/business/use-workbench-table-edit';
 import { useWorkbenchDataLoader } from '@/hooks/business/use-workbench-data-loader';
 import { useThemeStore } from '@/store/modules/theme';
-import { useI18n } from 'vue-i18n';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import {
   WorkbenchImport,
@@ -98,7 +97,7 @@ const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 const activeGridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
 
-const { t: _t } = useI18n();
+
 
 const PAGE_SIZE_OPTIONS = [500, 1000, 2000] as const;
 const paginationPageSizeSelector = [...PAGE_SIZE_OPTIONS];
@@ -545,15 +544,11 @@ const {
 const {
   tableModifiedRows,
   modifiedRowsData,
-  _originalRowsData,
   hasTableModifications,
-  _isRestoringCellValue,
   processedRows,
   gridColumns,
   handleCellValueChanged,
-  handleTableEditSubmit,
-  _clearModifications,
-  _getRowId
+  handleTableEditSubmit
 } = useWorkbenchTableEdit({
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
