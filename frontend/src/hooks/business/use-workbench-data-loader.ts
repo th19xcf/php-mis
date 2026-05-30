@@ -410,6 +410,16 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     if (pageResult.error) {
       const errorMsg = '工作台初始化失败';
       logger('error', `${errorMsg}:`, pageResult.error);
+      // 输出详细错误信息
+      const error = pageResult.error;
+      logger('error', `错误类型: ${error.constructor.name}`);
+      logger('error', `错误消息: ${error.message}`);
+      if (error.code) {
+        logger('error', `错误码: ${error.code}`);
+      }
+      if (error.response?.data) {
+        logger('error', `后端响应: ${JSON.stringify(error.response.data)}`);
+      }
       options.notify('error', errorMsg);
       loading.value = false;
       logger('info', `========== loadPage 结束（元数据获取失败）==========`);

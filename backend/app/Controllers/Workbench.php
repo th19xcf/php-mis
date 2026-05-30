@@ -42,16 +42,20 @@ class Workbench extends BaseController
     public function page(string $functionCode = '')
     {
         try {
+            log_message('debug', '[Workbench::page] 开始处理，functionCode: ' . $functionCode);
             [$context, $definition] = $this->contextService->buildWorkbenchContext($functionCode);
+            log_message('debug', '[Workbench::page] 上下文构建成功');
 
             // 只返回元数据，不查询数据，由前端单独请求数据
             return $this->success([
                 'meta' => $definition
             ]);
         } catch (\RuntimeException $e) {
+            log_message('error', '[Workbench::page] RuntimeException: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            return $this->error('5001', '工作台初始化失败');
+            log_message('error', '[Workbench::page] Throwable: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
+            return $this->error('5001', $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')');
         }
     }
 

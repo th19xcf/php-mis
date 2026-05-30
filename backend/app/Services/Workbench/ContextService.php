@@ -36,15 +36,28 @@ class ContextService
             throw new \RuntimeException('功能编码不能为空');
         }
 
+        log_message('debug', '[ContextService] 步骤1: requireLogin');
         $user = $this->userContext->requireLogin();
         $companyId = $user['companyId'];
         $userWorkId = $user['workId'];
         $userPassword = $user['password'];
+        log_message('debug', '[ContextService] 步骤1完成: companyId=' . $companyId . ', userWorkId=' . $userWorkId);
 
+        log_message('debug', '[ContextService] 步骤2: loadUserAuthorization');
         $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $userPassword);
+        log_message('debug', '[ContextService] 步骤2完成');
+
+        log_message('debug', '[ContextService] 步骤3: loadFunctionAuthorization');
         $functionAuth = $this->loadFunctionAuthorization($functionCode, $userAuth);
+        log_message('debug', '[ContextService] 步骤3完成');
+
+        log_message('debug', '[ContextService] 步骤4: loadQueryConfig');
         $queryConfig = $this->loadQueryConfig($functionCode, $userAuth['roleCodesRaw']);
+        log_message('debug', '[ContextService] 步骤4完成');
+
+        log_message('debug', '[ContextService] 步骤5: loadColumns');
         $columns = $this->loadColumns($functionCode);
+        log_message('debug', '[ContextService] 步骤5完成: columns count=' . count($columns));
 
         if (!$queryConfig) {
             throw new \RuntimeException('功能未配置查询模块');
@@ -106,6 +119,7 @@ class ContextService
      */
     private function loadUserAuthorization(string $companyId, string $userWorkId, string $userPassword): array
     {
+        log_message('debug', '[loadUserAuthorization] 开始执行 SQL 查询');
         $sql = sprintf(
             'select 
                 员工编号,姓名,工号,t1.角色组,
@@ -148,7 +162,7 @@ class ContextService
 
         $roleCodes = $this->splitCsv((string) ($row['角色编码'] ?? ''));
 
-        return [
+        $result = [
             'companyId' => $companyId,
             'userWorkId' => $userWorkId,
             'userPassword' => $userPassword,
@@ -164,6 +178,8 @@ class ContextService
             'debugAuth' => ($userPassword === $userWorkId . $userWorkId) || (string) ($row['调试赋权'] ?? '0') === '1',
             'upkeepAuth' => ($userPassword === $userWorkId . $userWorkId) || (string) ($row['维护赋权'] ?? '0') === '1'
         ];
+        log_message('debug', '[loadUserAuthorization] 完成, roleCodes count=' . count($roleCodes));
+        return $result;
     }
 
     /**
@@ -175,6 +191,7 @@ class ContextService
             throw new \RuntimeException('用户未配置角色');
         }
 
+        log_message('debug', '[loadFunctionAuthorization] 开始执行 SQL 查询, functionCode=' . $functionCode);
         $sql = sprintf(
             'select 
                 t1.功能赋权,
@@ -232,7 +249,7 @@ class ContextService
             $locationAuth = sprintf('(%s)', $locationAuth);
         }
 
-        return [
+        $result = [
             'menu1' => (string) ($row['一级菜单'] ?? ''),
             'menu2' => (string) ($row['二级菜单'] ?? ''),
             'module' => (string) ($row['功能模块'] ?? ''),
@@ -249,6 +266,8 @@ class ContextService
             'deptAuthCond' => $deptAuthCond,
             'locationAuthCond' => $locationAuth
         ];
+        log_message('debug', '[loadFunctionAuthorization] 完成');
+        return $result;
     }
 
     /**
@@ -256,6 +275,7 @@ class ContextService
      */
     private function loadQueryConfig(string $functionCode, string $userRole): array
     {
+        log_message('debug', '[loadQueryConfig] 开始执行 SQL 查询, functionCode=' . $functionCode);
         $sql = sprintf(
             'select 
                 查询模块,模块类型,字段模块,钻取模块,
@@ -282,7 +302,7 @@ class ContextService
             $queryWhere = str_replace('$角色', $userRole, $queryWhere);
         }
 
-        return [
+        $result = [
             'queryModule' => (string) ($row['查询模块'] ?? ''),
             'drillModule' => (string) ($row['钻取模块'] ?? ''),
             'mode' => (string) ($row['模块类型'] ?? '数据查询'),
@@ -300,6 +320,8 @@ class ContextService
             'chartModule' => (string) ($row['图形模块'] ?? ''),
             'gridStyle' => (string) (($row['表样式'] ?? '') === '' ? '表样式_A' : $row['表样式'])
         ];
+        log_message('debug', '[loadQueryConfig] 完成');
+        return $result;
     }
 
     /**
@@ -307,6 +329,7 @@ class ContextService
      */
     private function loadColumns(string $functionCode): array
     {
+        log_message('debug', '[loadColumns] 开始执行 SQL 查询, functionCode=' . $functionCode);
         $sql = sprintf(
             'select 功能编码,字段模块,部门编码字段,部门全称字段,
                 工号字段,属地字段,
@@ -322,7 +345,9 @@ class ContextService
             $this->quote($functionCode)
         );
 
-        return $this->model->select($sql)->getResultArray();
+        $result = $this->model->select($sql)->getResultArray();
+        log_message('debug', '[loadColumns] 完成, 返回 ' . count($result) . ' 行');
+        return $result;
     }
 
     /**
@@ -425,17 +450,48 @@ class ContextService
     private function buildFunctionDeptNameAuth(string $functionCode, array $functionRow, array $userAuth): string
     {
         $field = (string) ($functionRow['部门全称字段'] ?? '');
-        if ($field === '') {
+        if ($field === '' || $userAuth['roleCodesQuoted'] === '') {
             return '';
         }
 
-        $deptNameAuth = $userAuth['deptNameAuth'];
-        if (empty($deptNameAuth)) {
-            return '';
+        $roleDeptNameAuth = $this->loadRoleDeptNameAuth($functionCode, $userAuth['roleCodesQuoted']);
+
+        $resolvedAuth = $this->authorizationService->resolveDeptName(
+            $userAuth['deptNameAuth'],
+            $roleDeptNameAuth,
+            $userAuth['employeeDeptName']
+        );
+
+        return $this->authorizationService->buildDeptNameCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
+    }
+
+    private function loadRoleDeptNameAuth(string $functionCode, string $roleCodesQuoted): string
+    {
+        $sql = sprintf(
+            'select substring_index(substring_index(全称赋权,",",t2.GUID+1),",",-1) as 部门全称赋权
+            from
+            (
+                select GUID,replace(replace(部门全称赋权,"，",",")," ","") as 全称赋权
+                from view_role
+                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
+            ) as t1
+            inner join def_GUID as t2 on t2.GUID<(length(全称赋权)-length(replace(全称赋权,",",""))+1)
+            group by 部门全称赋权
+            order by 部门全称赋权',
+            $roleCodesQuoted,
+            $this->quote($functionCode)
+        );
+
+        $results = $this->model->select($sql)->getResultArray();
+        $values = [];
+        foreach ($results as $row) {
+            $value = trim((string) ($row['部门全称赋权'] ?? ''));
+            if ($value !== '') {
+                $values[] = $value;
+            }
         }
 
-        $conditions = array_map(fn($name) => sprintf('%s="%s"', $field, addslashes($name)), $deptNameAuth);
-        return implode(' or ', $conditions);
+        return implode(',', array_values(array_unique($values)));
     }
 
     /**
@@ -444,17 +500,62 @@ class ContextService
     private function buildFunctionLocationAuth(string $functionCode, array $functionRow, array $userAuth, string $deptCodeAuth, string $deptNameAuth): string
     {
         $field = (string) ($functionRow['属地字段'] ?? '');
-        if ($field === '') {
+        if ($field === '' || $userAuth['roleCodesQuoted'] === '') {
             return '';
         }
 
-        $locationAuth = $userAuth['locationAuth'];
-        if (empty($locationAuth)) {
+        if ($deptCodeAuth !== '' || $deptNameAuth !== '') {
             return '';
         }
 
-        $conditions = array_map(fn($loc) => sprintf('%s="%s"', $field, addslashes($loc)), $locationAuth);
-        return implode(' or ', $conditions);
+        $roleLocationAuth = $this->loadRoleLocationAuth($functionCode, $userAuth['roleCodesQuoted']);
+
+        $resolvedAuth = $this->authorizationService->resolve(
+            $userAuth['locationAuth'],
+            $roleLocationAuth,
+            $userAuth['employeeRegion']
+        );
+
+        $this->storeLocationAuthToSession($functionCode, $resolvedAuth);
+
+        return $this->authorizationService->buildCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
+    }
+
+    private function loadRoleLocationAuth(string $functionCode, string $roleCodesQuoted): string
+    {
+        $sql = sprintf(
+            'select substring_index(substring_index(角色表属地,",",t2.GUID+1),",",-1) as 属地赋权
+            from
+            (
+                select GUID,replace(replace(属地赋权,"，",",")," ","") as 角色表属地
+                from view_role
+                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
+            ) as t1
+            inner join def_GUID as t2 on t2.GUID<(length(角色表属地)-length(replace(角色表属地,",",""))+1)
+            group by 属地赋权
+            order by 属地赋权',
+            $roleCodesQuoted,
+            $this->quote($functionCode)
+        );
+
+        $results = $this->model->select($sql)->getResultArray();
+        $values = [];
+        foreach ($results as $row) {
+            $value = trim((string) ($row['属地赋权'] ?? ''));
+            if ($value !== '') {
+                $values[] = $value;
+            }
+        }
+
+        return implode(',', array_values(array_unique($values)));
+    }
+
+    private function storeLocationAuthToSession(string $functionCode, string $resolvedAuth): void
+    {
+        $session = \Config\Services::session();
+        $session->set([
+            $functionCode . '-location_authz_resolved' => $resolvedAuth
+        ]);
     }
 
     /**
