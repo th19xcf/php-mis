@@ -2006,6 +2006,58 @@ class Workbench extends BaseController
     /**
      * 根据数据和主键构建 where 条件
      */
+    private function loadQueryConfig(string $functionCode, string $userRole): array
+    {
+        $sql = sprintf(
+            'select 
+                查询模块,模块类型,字段模块,钻取模块,
+                查询表名,数据表名,数据模式,
+                查询条件,汇总条件,排序条件,初始条数,
+                数据整理模块,备注模块,导入模块,图形模块,表样式
+            from def_query_config
+            where 查询模块 in 
+                (
+                    select 模块名称 
+                    from def_function
+                    where 有效标识="1" and 功能编码=%s
+                )',
+            $this->quote($functionCode)
+        );
+
+        $result = $this->common->select($sql);
+        if ($result === false) {
+            return [];
+        }
+        $row = $result->getRowArray();
+        if (!$row) {
+            return [];
+        }
+
+        $queryWhere = (string) ($row['查询条件'] ?? '');
+        if ($queryWhere !== '' && strpos($queryWhere, '$角色') !== false) {
+            $queryWhere = str_replace('$角色', $userRole, $queryWhere);
+        }
+
+        return [
+            'queryModule' => (string) ($row['查询模块'] ?? ''),
+            'drillModule' => (string) ($row['钻取模块'] ?? ''),
+            'mode' => (string) ($row['模块类型'] ?? '数据查询'),
+            'fieldModule' => (string) ($row['字段模块'] ?? ''),
+            'queryTable' => (string) ($row['查询表名'] ?? ''),
+            'dataTable' => (string) ($row['数据表名'] ?? ''),
+            'dataModel' => (string) ($row['数据模式'] ?? ''),
+            'queryWhere' => $queryWhere,
+            'queryGroup' => (string) ($row['汇总条件'] ?? ''),
+            'queryOrder' => (string) ($row['排序条件'] ?? ''),
+            'resultCount' => (int) ($row['初始条数'] ?? 0),
+            'commentModule' => (string) ($row['备注模块'] ?? ''),
+            'importModule' => (string) ($row['导入模块'] ?? ''),
+            'upkeepModule' => (string) ($row['数据整理模块'] ?? ''),
+            'chartModule' => (string) ($row['图形模块'] ?? ''),
+            'gridStyle' => (string) (($row['表样式'] ?? '') === '' ? '表样式_A' : $row['表样式'])
+        ];
+    }
+
     private function buildWhereFromData(array $data, string $primaryKey): string
     {
         $keys = explode(';', $primaryKey);
@@ -2391,6 +2443,7 @@ class Workbench extends BaseController
     public function tableEdit(string $functionCode = '')
     {
         try {
+            log_message('info', '[tableEdit] 开始处理，functionCode=' . $functionCode);
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
                 throw new \RuntimeException('功能编码不能为空');
@@ -2398,6 +2451,7 @@ class Workbench extends BaseController
 
             // 获取请求数据（修改后的行数据数组）
             $rows = $this->request->getJSON(true) ?? [];
+            log_message('info', '[tableEdit] 收到修改数据，行数=' . count($rows));
             if (empty($rows)) {
                 return $this->error('5001', '没有要提交的修改数据');
             }
@@ -2407,17 +2461,23 @@ class Workbench extends BaseController
             $userWorkid = $session->get('user_workid') ?? 'system';
 
             // 获取查询配置
+            log_message('debug', '[tableEdit] 开始加载查询配置');
             $queryConfig = $this->loadQueryConfig($functionCode, '');
+            log_message('debug', '[tableEdit] 查询配置加载结果: ' . json_encode($queryConfig, JSON_UNESCAPED_UNICODE));
             if (!$queryConfig || $queryConfig['dataTable'] === '') {
+                log_message('error', '[tableEdit] 未找到数据表配置，queryConfig=' . json_encode($queryConfig));
                 return $this->error('5001', '修改失败：未找到数据表配置');
             }
 
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'];
+            log_message('info', '[tableEdit] 数据表=' . $dataTable . ', 数据模式=' . $dataModel);
 
             // 获取主键字段
             $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            log_message('info', '[tableEdit] 主键字段=' . $primaryKey);
             if (empty($primaryKey)) {
+                log_message('error', '[tableEdit] 未找到主键字段');
                 return $this->error('5001', '修改失败：未找到主键字段');
             }
 
@@ -2426,9 +2486,13 @@ class Workbench extends BaseController
             switch ($dataModel) {
                 case '0':
                     // 模式0：直接更新每条记录
-                    foreach ($rows as $row) {
+                    log_message('info', '[tableEdit] 开始模式0更新');
+                    foreach ($rows as $index => $row) {
+                        log_message('debug', '[tableEdit] 处理第' . ($index + 1) . '条记录: ' . json_encode($row));
                         $where = $this->buildWhereFromData($row, $primaryKey);
+                        log_message('debug', '[tableEdit] WHERE条件=' . $where);
                         if (empty($where)) {
+                            log_message('warn', '[tableEdit] WHERE条件为空，跳过');
                             continue;
                         }
 
@@ -2440,7 +2504,9 @@ class Workbench extends BaseController
                             }
                         }
 
+                        log_message('debug', '[tableEdit] 更新字段=' . implode(', ', $updates));
                         if (empty($updates)) {
+                            log_message('warn', '[tableEdit] 没有需要更新的字段，跳过');
                             continue;
                         }
 
@@ -2450,28 +2516,39 @@ class Workbench extends BaseController
                             implode(', ', $updates),
                             $where
                         );
+                        log_message('debug', '[tableEdit] 执行SQL: ' . $sqlUpdate);
                         $this->common->sql_log('表级修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
-                        $num += $this->common->exec($sqlUpdate);
+                        $affected = $this->common->exec($sqlUpdate);
+                        log_message('info', '[tableEdit] 第' . ($index + 1) . '条记录更新影响行数=' . $affected);
+                        $num += $affected;
                     }
                     break;
 
                 case '1':
                 case '2':
                     // 模式1/2：标记修改（每条记录都添加新版本）
-                    foreach ($rows as $row) {
+                    log_message('info', '[tableEdit] 开始模式' . $dataModel . '更新');
+                    foreach ($rows as $index => $row) {
+                        log_message('debug', '[tableEdit] 处理第' . ($index + 1) . '条记录: ' . json_encode($row));
                         $where = $this->buildWhereFromData($row, $primaryKey);
+                        log_message('debug', '[tableEdit] WHERE条件=' . $where);
                         if (empty($where)) {
+                            log_message('warn', '[tableEdit] WHERE条件为空，跳过');
                             continue;
                         }
 
                         // 先获取原始记录
                         $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where);
+                        log_message('debug', '[tableEdit] 查询原始记录SQL: ' . $sqlSelect);
                         $result = $this->common->select($sqlSelect);
                         if ($result === false) {
+                            log_message('error', '[tableEdit] 查询原始记录失败');
                             continue;
                         }
                         $originalRow = $result->getRowArray();
+                        log_message('debug', '[tableEdit] 原始记录: ' . json_encode($originalRow));
                         if (empty($originalRow)) {
+                            log_message('warn', '[tableEdit] 原始记录为空，跳过');
                             continue;
                         }
 
@@ -2484,6 +2561,7 @@ class Workbench extends BaseController
                             date('Y-m-d H:i:s'),
                             $where
                         );
+                        log_message('debug', '[tableEdit] 更新旧记录SQL: ' . $sqlUpdateOld);
                         $this->common->sql_log('表级修改[1-旧]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
                         $this->common->exec($sqlUpdateOld);
 
@@ -2530,25 +2608,32 @@ class Workbench extends BaseController
                             implode(', ', $fields),
                             implode(', ', $values)
                         );
+                        log_message('debug', '[tableEdit] 插入新记录SQL: ' . $sqlInsert);
                         $this->common->sql_log('表级修改[1-新]', $functionCode, sprintf('表名=`%s`', $dataTable));
-                        $num += $this->common->exec($sqlInsert);
+                        $affected = $this->common->exec($sqlInsert);
+                        log_message('info', '[tableEdit] 第' . ($index + 1) . '条记录插入影响行数=' . $affected);
+                        $num += $affected;
                     }
                     break;
 
                 default:
+                    log_message('error', '[tableEdit] 未知的数据模式: ' . $dataModel);
                     return $this->error('5001', sprintf('修改失败,数据模式[-%s-]错误', $dataModel));
             }
 
+            log_message('info', '[tableEdit] 完成，共修改' . $num . '条记录');
             return $this->success([
                 'success' => true,
                 'message' => sprintf('表级修改提交成功,修改了 %d 条记录', $num),
                 'updatedCount' => $num
             ]);
         } catch (\RuntimeException $e) {
+            log_message('error', '[tableEdit] 运行时异常: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            log_message('error', '表级修改提交失败: ' . $e->getMessage());
-            return $this->error('5001', '表级修改提交失败');
+            log_message('error', '[tableEdit] 表级修改提交失败: ' . $e->getMessage());
+            log_message('error', '[tableEdit] 异常堆栈: ' . $e->getTraceAsString());
+            return $this->error('5001', '表级修改提交失败: ' . $e->getMessage());
         }
     }
 

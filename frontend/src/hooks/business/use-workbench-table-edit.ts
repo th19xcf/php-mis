@@ -290,16 +290,22 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
   );
 
   async function handleTableEditSubmit() {
+    logger('info', '========== handleTableEditSubmit 开始 ==========');
+
     if (tableModifiedRows.value.size === 0) {
+      logger('warn', '没有需要提交的修改');
       options.notify('warning', '没有需要提交的修改');
       return;
     }
 
     const functionCode = options.getFunctionCode();
     if (!functionCode) {
+      logger('warn', '功能编码不能为空');
       options.notify('error', '功能编码不能为空');
       return;
     }
+
+    logger('info', `功能编码: ${functionCode}`);
 
     const modifiedData: Api.Workbench.QueryRecord[] = [];
     tableModifiedRows.value.forEach(rowId => {
@@ -323,19 +329,29 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
       }
     });
 
+    logger('info', `要提交的记录数: ${modifiedData.length}`);
+    logger('debug', '提交的数据:', modifiedData);
+
     if (modifiedData.length === 0) {
+      logger('warn', '没有需要提交的修改');
       options.notify('warning', '没有需要提交的修改');
       return;
     }
 
     try {
+      logger('info', '开始调用表级修改提交 API...');
       const { data, error } = await submitTableEdit(functionCode, modifiedData);
+
       if (error) {
+        logger('error', '表级修改提交失败 - API 错误:', error);
         options.notify('error', error.message || '表级修改提交失败');
         return;
       }
 
+      logger('info', 'API 返回数据:', data);
+
       if (data?.success) {
+        logger('info', '表级修改提交成功');
         options.notify('success', data.message || '表级修改提交成功');
         tableModifiedRows.value.clear();
         modifiedRowsData.value.clear();
@@ -344,11 +360,15 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
         options.workbenchStore.clearCache(functionCode, params);
         options.loadPage();
       } else {
+        logger('error', '表级修改提交失败 - 业务错误:', data?.message);
         options.notify('error', data?.message || '表级修改提交失败');
       }
     } catch (e: any) {
+      logger('error', '表级修改提交失败 - 异常:', e);
       options.notify('error', e.message || '表级修改提交失败');
     }
+
+    logger('info', '========== handleTableEditSubmit 结束 ==========');
   }
 
   function clearModifications() {
