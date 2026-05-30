@@ -166,10 +166,14 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       return;
     }
 
+    console.log(`[进度] 开始后台加载数据: 总数=${totalRecords.toLocaleString()}, 已加载=${firstChunkSize.toLocaleString()}, 剩余=${remainingCount.toLocaleString()}`);
+
     const PAGE_SIZE = 5000;
     const CONCURRENT_REQUESTS = Math.max(3, Math.min(6, Math.ceil(remainingCount / PAGE_SIZE / 4)));
 
     const chunksNeeded = Math.ceil(remainingCount / PAGE_SIZE);
+    console.log(`[进度] 分片策略: 每片${PAGE_SIZE}条, 并发${CONCURRENT_REQUESTS}个请求, 共${chunksNeeded}个分片`);
+
     const totalOffsets = Array.from({ length: chunksNeeded }, (_, i) => firstChunkSize + i * PAGE_SIZE);
     let nextChunkIndex = 0;
     let activeRequests = 0;
@@ -221,6 +225,8 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
               const records = result.data.records;
               loadedRows += records.length;
               loadedCount.value = firstChunkSize + loadedRows;
+              const progress = ((loadedCount.value / totalRecords) * 100).toFixed(1);
+              console.log(`[进度] 已加载 ${loadedCount.value.toLocaleString()} / ${totalRecords.toLocaleString()} 条记录 (${progress}%)`);
               chunkRecordsMap.set(offset, records);
               mergeReadyPages();
             })
@@ -228,7 +234,8 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
               activeRequests -= 1;
 
               if (nextChunkIndex >= totalOffsets.length && activeRequests === 0) {
-                console.log('[性能] 后台加载完成，总数据量:', firstChunkSize + loadedRows, '期望:', totalRecords);
+                const finalCount = firstChunkSize + loadedRows;
+                console.log(`[进度] ✅ 后台加载完成: 总数据量=${finalCount.toLocaleString()}, 期望=${totalRecords.toLocaleString()}, 是否匹配=${finalCount === totalRecords ? '是' : '否'}`);
                 workbenchStore.setCache(functionCode, params, {
                   pageMeta: meta,
                   serverRows: serverRows.value,

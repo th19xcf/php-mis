@@ -1483,7 +1483,8 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <div v-if="isChunkLoading && !loading" class="chunk-loading-progress">
               <NSpin size="small" />
               <span class="progress-text">
-                已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录...
+                已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录
+                ({{ ((loadedCount / totalCount) * 100).toFixed(1) }}%)
               </span>
             </div>
           </div>

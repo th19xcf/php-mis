@@ -103,6 +103,32 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
   @include wb-scrollbar-hide;
 }
 
+.chunk-loading-progress {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(24, 144, 255, 0.95);
+  color: white;
+  border-radius: 20px;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+  font-size: 13px;
+  font-weight: 500;
+
+  .system-dark & {
+    background: rgba(24, 144, 255, 0.95);
+  }
+
+  .progress-text {
+    white-space: nowrap;
+  }
+}
+
 .scroll-arrow {
   flex-shrink: 0;
   color: var(--n-text-color);
