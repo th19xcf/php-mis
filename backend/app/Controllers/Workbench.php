@@ -2485,89 +2485,176 @@ class Workbench extends BaseController
             $num = 0;
             switch ($dataModel) {
                 case '0':
-                    // 模式0：直接更新每条记录
-                    log_message('info', '[tableEdit] 开始模式0更新');
+                    // 模式0：直接更新（批量优化）
+                    log_message('info', '[tableEdit] 开始模式0更新，记录数=' . count($rows));
+                    
+                    // 按更新字段分组进行批量更新
+                    $updateGroups = [];
                     foreach ($rows as $index => $row) {
                         log_message('debug', '[tableEdit] 处理第' . ($index + 1) . '条记录: ' . json_encode($row));
-                        $where = $this->buildWhereFromData($row, $primaryKey);
-                        log_message('debug', '[tableEdit] WHERE条件=' . $where);
-                        if (empty($where)) {
-                            log_message('warn', '[tableEdit] WHERE条件为空，跳过');
-                            continue;
-                        }
-
-                        // 构建更新字段（排除主键）
-                        $updates = [];
+                        
+                        // 收集更新字段
+                        $updateFields = [];
                         foreach ($row as $key => $value) {
                             if ($key !== $primaryKey && !in_array($key, ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识', '有效标识', '记录开始日期', '记录结束日期'])) {
-                                $updates[] = sprintf('`%s` = "%s"', $key, addslashes($value));
+                                $updateFields[] = $key;
                             }
                         }
-
-                        log_message('debug', '[tableEdit] 更新字段=' . implode(', ', $updates));
-                        if (empty($updates)) {
-                            log_message('warn', '[tableEdit] 没有需要更新的字段，跳过');
+                        
+                        if (empty($updateFields)) {
+                            log_message('warn', '[tableEdit] 第' . ($index + 1) . '条记录没有需要更新的字段，跳过');
                             continue;
                         }
-
-                        $sqlUpdate = sprintf(
-                            'UPDATE %s SET %s WHERE %s',
-                            $dataTable,
-                            implode(', ', $updates),
-                            $where
-                        );
-                        log_message('debug', '[tableEdit] 执行SQL: ' . $sqlUpdate);
-                        $this->common->sql_log('表级修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
-                        $affected = $this->common->exec($sqlUpdate);
-                        log_message('info', '[tableEdit] 第' . ($index + 1) . '条记录更新影响行数=' . $affected);
-                        $num += $affected;
+                        
+                        // 按相同的更新字段分组
+                        sort($updateFields);
+                        $groupKey = implode('|', $updateFields);
+                        
+                        if (!isset($updateGroups[$groupKey])) {
+                            $updateGroups[$groupKey] = [
+                                'fields' => $updateFields,
+                                'rows' => []
+                            ];
+                        }
+                        $updateGroups[$groupKey]['rows'][] = $row;
+                    }
+                    
+                    log_message('info', '[tableEdit] 分组完成，共' . count($updateGroups) . '个更新组');
+                    
+                    // 对每个组进行批量更新
+                    foreach ($updateGroups as $groupKey => $group) {
+                        $updateFields = $group['fields'];
+                        $groupRows = $group['rows'];
+                        
+                        if (count($groupRows) === 1) {
+                            // 单条记录，使用原方式
+                            $row = $groupRows[0];
+                            $where = $this->buildWhereFromData($row, $primaryKey);
+                            if (empty($where)) continue;
+                            
+                            $updates = [];
+                            foreach ($row as $key => $value) {
+                                if ($key !== $primaryKey && !in_array($key, ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识', '有效标识', '记录开始日期', '记录结束日期'])) {
+                                    $updates[] = sprintf('`%s` = "%s"', $key, addslashes($value));
+                                }
+                            }
+                            
+                            $sqlUpdate = sprintf('UPDATE %s SET %s WHERE %s', $dataTable, implode(', ', $updates), $where);
+                            log_message('debug', '[tableEdit] 单条更新SQL: ' . $sqlUpdate);
+                            $this->common->sql_log('表级修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
+                            $affected = $this->common->exec($sqlUpdate);
+                            $num += $affected;
+                        } else {
+                            // 多条记录，使用 CASE WHEN 批量更新
+                            log_message('info', '[tableEdit] 开始批量更新，组内记录数=' . count($groupRows));
+                            
+                            $caseStatements = [];
+                            $primaryKeyValues = [];
+                            
+                            foreach ($updateFields as $field) {
+                                $caseParts = [];
+                                foreach ($groupRows as $row) {
+                                    $pkValue = addslashes($row[$primaryKey]);
+                                    $fieldValue = addslashes($row[$field]);
+                                    $caseParts[] = sprintf('WHEN `%s` = "%s" THEN "%s"', $primaryKey, $pkValue, $fieldValue);
+                                    $primaryKeyValues[] = $pkValue;
+                                }
+                                $caseStatements[] = sprintf('`%s` = CASE %s ELSE `%s` END', $field, implode(' ', $caseParts), $field);
+                            }
+                            
+                            $primaryKeyValues = array_unique($primaryKeyValues);
+                            $whereIn = sprintf('`%s` IN ("%s")', $primaryKey, implode('","', $primaryKeyValues));
+                            
+                            $sqlUpdate = sprintf(
+                                'UPDATE %s SET %s WHERE %s',
+                                $dataTable,
+                                implode(', ', $caseStatements),
+                                $whereIn
+                            );
+                            
+                            log_message('debug', '[tableEdit] 批量更新SQL: ' . $sqlUpdate);
+                            $this->common->sql_log('表级修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`,批量数=%d', $dataTable, $primaryKey, count($groupRows)));
+                            
+                            $affected = $this->common->exec($sqlUpdate);
+                            log_message('info', '[tableEdit] 批量更新影响行数=' . $affected);
+                            $num += $affected;
+                        }
                     }
                     break;
 
                 case '1':
                 case '2':
-                    // 模式1/2：标记修改（每条记录都添加新版本）
-                    log_message('info', '[tableEdit] 开始模式' . $dataModel . '更新');
+                    // 模式1/2：标记修改（批量优化）
+                    log_message('info', '[tableEdit] 开始模式' . $dataModel . '更新，记录数=' . count($rows));
+                    
+                    // 收集所有主键值
+                    $primaryKeyValues = [];
+                    $validRows = [];
                     foreach ($rows as $index => $row) {
-                        log_message('debug', '[tableEdit] 处理第' . ($index + 1) . '条记录: ' . json_encode($row));
                         $where = $this->buildWhereFromData($row, $primaryKey);
-                        log_message('debug', '[tableEdit] WHERE条件=' . $where);
                         if (empty($where)) {
-                            log_message('warn', '[tableEdit] WHERE条件为空，跳过');
+                            log_message('warn', '[tableEdit] 第' . ($index + 1) . '条记录WHERE条件为空，跳过');
                             continue;
                         }
-
-                        // 先获取原始记录
-                        $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where);
-                        log_message('debug', '[tableEdit] 查询原始记录SQL: ' . $sqlSelect);
-                        $result = $this->common->select($sqlSelect);
-                        if ($result === false) {
-                            log_message('error', '[tableEdit] 查询原始记录失败');
+                        $primaryKeyValues[] = addslashes($row[$primaryKey]);
+                        $validRows[] = $row;
+                    }
+                    
+                    if (empty($validRows)) {
+                        log_message('warn', '[tableEdit] 没有有效的记录需要修改');
+                        break;
+                    }
+                    
+                    log_message('info', '[tableEdit] 有效记录数=' . count($validRows));
+                    
+                    // 1. 批量查询所有原始记录
+                    $whereIn = sprintf('`%s` IN ("%s")', $primaryKey, implode('","', $primaryKeyValues));
+                    $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $whereIn);
+                    log_message('debug', '[tableEdit] 批量查询原始记录SQL: ' . $sqlSelect);
+                    $result = $this->common->select($sqlSelect);
+                    
+                    if ($result === false) {
+                        log_message('error', '[tableEdit] 批量查询原始记录失败');
+                        break;
+                    }
+                    
+                    $originalRows = [];
+                    $resultArray = $result->getResultArray();
+                    foreach ($resultArray as $row) {
+                        $originalRows[$row[$primaryKey]] = $row;
+                    }
+                    
+                    log_message('info', '[tableEdit] 成功获取原始记录数=' . count($originalRows));
+                    
+                    // 2. 批量更新旧记录为无效
+                    $sqlUpdateOld = sprintf(
+                        'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
+                        $dataTable,
+                        $userWorkid,
+                        date('Y-m-d H:i:s'),
+                        date('Y-m-d H:i:s'),
+                        $whereIn
+                    );
+                    log_message('debug', '[tableEdit] 批量更新旧记录SQL: ' . $sqlUpdateOld);
+                    $this->common->sql_log('表级修改[1-旧]', $functionCode, sprintf('表名=`%s`,批量数=%d', $dataTable, count($validRows)));
+                    $this->common->exec($sqlUpdateOld);
+                    
+                    // 3. 批量插入新记录
+                    $insertFields = [];
+                    $insertValuesList = [];
+                    $firstRow = true;
+                    
+                    foreach ($validRows as $row) {
+                        $pkValue = $row[$primaryKey];
+                        if (!isset($originalRows[$pkValue])) {
+                            log_message('warn', '[tableEdit] 找不到原始记录，主键=' . $pkValue);
                             continue;
                         }
-                        $originalRow = $result->getRowArray();
-                        log_message('debug', '[tableEdit] 原始记录: ' . json_encode($originalRow));
-                        if (empty($originalRow)) {
-                            log_message('warn', '[tableEdit] 原始记录为空，跳过');
-                            continue;
-                        }
-
-                        // 更新原始记录为无效
-                        $sqlUpdateOld = sprintf(
-                            'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
-                            $dataTable,
-                            $userWorkid,
-                            date('Y-m-d H:i:s'),
-                            date('Y-m-d H:i:s'),
-                            $where
-                        );
-                        log_message('debug', '[tableEdit] 更新旧记录SQL: ' . $sqlUpdateOld);
-                        $this->common->sql_log('表级修改[1-旧]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
-                        $this->common->exec($sqlUpdateOld);
-
-                        // 插入新记录
+                        
+                        $originalRow = $originalRows[$pkValue];
                         $fields = [];
                         $values = [];
+                        
                         foreach ($originalRow as $key => $val) {
                             // 使用修改后的值，如果没有修改则使用原值
                             if (isset($row[$key]) && !in_array($key, ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识', '有效标识', '记录开始日期', '记录结束日期'])) {
@@ -2578,7 +2665,7 @@ class Workbench extends BaseController
                                 $values[] = sprintf('"%s"', addslashes($val));
                             }
                         }
-
+                        
                         // 更新操作字段
                         $fields[] = '`操作记录`';
                         $values[] = '"新增"';
@@ -2594,24 +2681,33 @@ class Workbench extends BaseController
                         $values[] = '"0"';
                         $fields[] = '`有效标识`';
                         $values[] = '"1"';
-
+                        
                         if ($dataModel === '2') {
                             $fields[] = '`记录开始日期`';
                             $values[] = sprintf('"%s"', date('Y-m-d'));
                             $fields[] = '`记录结束日期`';
                             $values[] = '"9999-12-31"';
                         }
-
+                        
+                        if ($firstRow) {
+                            $insertFields = $fields;
+                            $firstRow = false;
+                        }
+                        
+                        $insertValuesList[] = '(' . implode(', ', $values) . ')';
+                    }
+                    
+                    if (!empty($insertValuesList)) {
                         $sqlInsert = sprintf(
-                            'INSERT INTO %s (%s) VALUES (%s)',
+                            'INSERT INTO %s (%s) VALUES %s',
                             $dataTable,
-                            implode(', ', $fields),
-                            implode(', ', $values)
+                            implode(', ', $insertFields),
+                            implode(', ', $insertValuesList)
                         );
-                        log_message('debug', '[tableEdit] 插入新记录SQL: ' . $sqlInsert);
-                        $this->common->sql_log('表级修改[1-新]', $functionCode, sprintf('表名=`%s`', $dataTable));
+                        log_message('debug', '[tableEdit] 批量插入新记录SQL: ' . $sqlInsert);
+                        $this->common->sql_log('表级修改[1-新]', $functionCode, sprintf('表名=`%s`,批量数=%d', $dataTable, count($insertValuesList)));
                         $affected = $this->common->exec($sqlInsert);
-                        log_message('info', '[tableEdit] 第' . ($index + 1) . '条记录插入影响行数=' . $affected);
+                        log_message('info', '[tableEdit] 批量插入影响行数=' . $affected);
                         $num += $affected;
                     }
                     break;
