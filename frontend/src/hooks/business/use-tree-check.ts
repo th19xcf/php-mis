@@ -10,9 +10,7 @@ export interface TreeCheckStore {
   setSelectedGuids: (guids: string[]) => void;
 }
 
-export function useTreeCheck<T extends TreeNodeData = TreeNodeData>(
-  store: TreeCheckStore
-) {
+export function useTreeCheck<T extends TreeNodeData = TreeNodeData>(store: TreeCheckStore) {
   function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
     const guids: string[] = [];
 

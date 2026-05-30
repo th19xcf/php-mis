@@ -1,10 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import {
-  fetchEmployeeTree,
-  fetchEmployeeDetail,
-  fetchEmployeeOptions
-} from '@/service/api';
+import { fetchEmployeeTree, fetchEmployeeDetail, fetchEmployeeOptions } from '@/service/api';
 import type { TreeOption } from 'naive-ui';
 
 export const useEmployeeStore = defineStore('employee', () => {

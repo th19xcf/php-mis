@@ -22,7 +22,7 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [DATA-DRILL] [${method.toUpperCase()}]`;
-    
+
     if (data !== undefined) {
       console.log(`${prefix} ${message}`, data);
     } else {
@@ -32,15 +32,15 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
 
   async function handleDataDrill() {
     logger('info', `========== handleDataDrill 开始 ==========`);
-    
+
     const selectedRows = options.gridApi.value?.getSelectedRows() || [];
-    
+
     if (selectedRows.length === 0) {
       logger('warn', '未选择任何记录');
       options.notify('warning', '请先选择要钻取的记录');
       return;
     }
-    
+
     if (selectedRows.length > 1) {
       logger('warn', `选择了 ${selectedRows.length} 条记录，超过限制`);
       options.notify('warning', '只能选择 1 条记录');
@@ -103,7 +103,10 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
     }
   }
 
-  async function showDrillOptionsDialog(optionsList: Api.Workbench.DrillOption[], selectedRow: Api.Workbench.QueryRecord) {
+  async function showDrillOptionsDialog(
+    optionsList: Api.Workbench.DrillOption[],
+    selectedRow: Api.Workbench.QueryRecord
+  ) {
     const drillOptions = optionsList.map((opt: Api.Workbench.DrillOption, index: number) => ({
       label: opt.label,
       value: `${opt.functionCode}_${index}`,
@@ -121,7 +124,7 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
 
     const handleDrillConfirm = (selectedOpt: (typeof drillOptions)[0]) => {
       logger('info', `开始钻取确认, functionCode=${selectedOpt.functionCode}`);
-      
+
       const drillItem = selectedOpt.raw;
       const drillFieldsStr = drillItem.drillFields || '';
       const sendObj: Record<string, any> = {};
@@ -161,7 +164,10 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
       const targetMenu1 = drillItem.menu1 || '';
       const targetMenu2 = drillItem.menu2 || '';
 
-      logger('info', `跳转参数: functionCode=${targetFunctionCode}, module=${targetModule}, menu1=${targetMenu1}, menu2=${targetMenu2}`);
+      logger(
+        'info',
+        `跳转参数: functionCode=${targetFunctionCode}, module=${targetModule}, menu1=${targetMenu1}, menu2=${targetMenu2}`
+      );
       logger('debug', `钻取参数:`, sendObj);
 
       router.push({

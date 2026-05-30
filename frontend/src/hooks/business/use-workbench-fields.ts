@@ -27,17 +27,11 @@ export function useWorkbenchFields() {
   const addFields = ref<AddField[]>([]);
   const detailFields = ref<DetailField[]>([]);
 
-  async function loadFields(
-    functionCode: string | string[],
-    additionalOptions?: WorkbenchFieldOptions
-  ) {
+  async function loadFields(functionCode: string | string[], additionalOptions?: WorkbenchFieldOptions) {
     const code = Array.isArray(functionCode) ? functionCode[0] : functionCode;
-    
-    const [addResult, detailResult] = await Promise.all([
-      fetchAddFields(code),
-      fetchDetailFields(code)
-    ]);
-    
+
+    const [addResult, detailResult] = await Promise.all([fetchAddFields(code), fetchDetailFields(code)]);
+
     if (addResult.data?.fields) {
       addFields.value = addResult.data.fields.map((field: any) => ({
         columnName: field.columnName,
@@ -48,7 +42,7 @@ export function useWorkbenchFields() {
         objectOptions: field.objectOptions || [],
         defaultValue: field.defaultValue
       }));
-      
+
       if (additionalOptions) {
         addFields.value.forEach(field => {
           if (additionalOptions.region && field.columnName === '属地') {
@@ -63,7 +57,7 @@ export function useWorkbenchFields() {
         });
       }
     }
-    
+
     if (detailResult.data?.fields) {
       detailFields.value = detailResult.data.fields.map((field: any) => ({
         columnName: field.columnName,

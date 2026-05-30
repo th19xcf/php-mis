@@ -256,7 +256,7 @@ declare namespace Api {
       chartModule?: string;
       chartSql?: Array<{
         name?: string;
-        '图形名称'?: string;
+        图形名称?: string;
         sql?: string;
         error?: string;
       }>;

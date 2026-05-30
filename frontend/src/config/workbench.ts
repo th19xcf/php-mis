@@ -1,13 +1,13 @@
 export const WORKBENCH_CONFIG = {
   STORAGE_KEYS: {
-    LEFT_PANEL_WIDTH: 'workbench-left-panel-width',
+    LEFT_PANEL_WIDTH: 'workbench-left-panel-width'
   },
-  
+
   PAGINATION: {
     CHUNK_SIZE: 1000,
     PAGE_SIZE_OPTIONS: [500, 1000, 2000]
   },
-  
+
   GRID_THEME: {
     LIGHT: {
       browserColorScheme: 'light' as const,
@@ -24,7 +24,7 @@ export const WORKBENCH_CONFIG = {
       rangeSelectionBorderStyle: 'solid' as const
     }
   },
-  
+
   DEFAULT_STYLES: {
     COLOR_MARK: {
       color: 'red',
@@ -32,7 +32,7 @@ export const WORKBENCH_CONFIG = {
       backgroundColor: '#f7acbc'
     }
   },
-  
+
   CHART: {
     DEFAULT_TYPE: 'line',
     DEFAULT_NAME: '数据图形',
@@ -46,7 +46,7 @@ export const WORKBENCH_CONFIG = {
       PIE: '饼图'
     }
   },
-  
+
   COLUMN_IDS: {
     SELECTION: 'ag-Grid-SelectionColumn',
     PREFIX: 'ag-Grid-'

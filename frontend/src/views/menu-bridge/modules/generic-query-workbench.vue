@@ -17,7 +17,19 @@ import {
   type GridReadyEvent
 } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import { NButton, NRadio, NRadioGroup, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty } from 'naive-ui';
+import {
+  NButton,
+  NRadio,
+  NRadioGroup,
+  NForm,
+  NFormItem,
+  NSelect,
+  NModal,
+  NInput,
+  NSpin,
+  NAlert,
+  NEmpty
+} from 'naive-ui';
 import * as XLSX from 'xlsx';
 
 import {
@@ -96,8 +108,6 @@ const darkGridTheme = themeAlpine.withParams(GRID_THEME.DARK);
 const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 const activeGridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
-
-
 
 const PAGE_SIZE_OPTIONS = [500, 1000, 2000] as const;
 const paginationPageSizeSelector = [...PAGE_SIZE_OPTIONS];
@@ -322,8 +332,6 @@ const {
   notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
-
-
 const filterableFields = computed(() => {
   return (pageMeta.value?.conditions || []).filter(item => item.filterable).map(item => item.fieldKey);
 });
@@ -378,7 +386,9 @@ const fieldColumnOptions = computed(() => {
     });
 
     const result = mapped.filter(
-      item => item.value === 'ag-Grid-SelectionColumn' || (item.value !== '' && item.value !== 'ag-Grid-ControlsColumn' && !isGuidColumn(item.value, item.label))
+      item =>
+        item.value === 'ag-Grid-SelectionColumn' ||
+        (item.value !== '' && item.value !== 'ag-Grid-ControlsColumn' && !isGuidColumn(item.value, item.label))
     );
 
     // 确保始终包含 checkbox 选项
@@ -400,8 +410,6 @@ const fieldColumnOptions = computed(() => {
 
   return result;
 });
-
-
 
 const {
   fieldColumnVisible,
@@ -573,8 +581,6 @@ function _createTimer(label: string) {
     }
   };
 }
-
-
 
 /**
  * 使用分页 API 获取所有数据（用于导出等需要全量数据的场景）
@@ -940,10 +946,23 @@ async function handleDebug() {
     console.log('\n👤 用户权限:');
     console.log('  - 公司ID:', data.userAuth.companyId);
     console.log('  - 工号:', data.userAuth.userWorkId);
-    console.log('  - 角色编码:', Array.isArray(data.userAuth.roleCodes) ? data.userAuth.roleCodes.join(', ') : (data.userAuth.roleCodes || '(无)'));
+    console.log(
+      '  - 角色编码:',
+      Array.isArray(data.userAuth.roleCodes) ? data.userAuth.roleCodes.join(', ') : data.userAuth.roleCodes || '(无)'
+    );
     console.log('  - 属地赋权:', data.userAuth.locationAuth);
-    console.log('  - 部门编码赋权:', Array.isArray(data.userAuth.deptCodeAuth) ? data.userAuth.deptCodeAuth.join(', ') : (data.userAuth.deptCodeAuth || '(无)'));
-    console.log('  - 部门全称赋权:', Array.isArray(data.userAuth.deptNameAuth) ? data.userAuth.deptNameAuth.join(', ') : (data.userAuth.deptNameAuth || '(无)'));
+    console.log(
+      '  - 部门编码赋权:',
+      Array.isArray(data.userAuth.deptCodeAuth)
+        ? data.userAuth.deptCodeAuth.join(', ')
+        : data.userAuth.deptCodeAuth || '(无)'
+    );
+    console.log(
+      '  - 部门全称赋权:',
+      Array.isArray(data.userAuth.deptNameAuth)
+        ? data.userAuth.deptNameAuth.join(', ')
+        : data.userAuth.deptNameAuth || '(无)'
+    );
     console.log('  - 调试权限:', data.userAuth.debugAuth ? '有' : '无');
 
     console.log('\n⚙️ 功能权限:');
@@ -963,7 +982,9 @@ async function handleDebug() {
           url: `/workbench/chart/${fnCode}`
         });
         if (chartResponse.data?.charts && chartResponse.data.charts.length > 0) {
-          chartNames = chartResponse.data.charts.map((chart: any) => chart['图形名称'] || `图形 ${chartNames.length + 1}`);
+          chartNames = chartResponse.data.charts.map(
+            (chart: any) => chart['图形名称'] || `图形 ${chartNames.length + 1}`
+          );
         }
       } catch (chartError) {
         console.log('获取图表配置失败:', chartError);
@@ -973,19 +994,23 @@ async function handleDebug() {
     // 输出图形相关 SQL
     console.log('\n📈 图形 SQL:');
     console.log('chartModule:', data.chartModule);
-    
+
     // 将占位符替换为真实值
     const replacePlaceholders = (sql: string): string => {
       let result = sql;
       // 原始 SQL 中已经有引号包裹，直接替换即可
       result = result.replace(/\$查询表名/g, data.queryTable);
       // 部门全称_ 参数类型是 JSON，需要转换为 JSON 数组字符串格式（带引号包裹）
-      const deptNameAuth = Array.isArray(data.userAuth.deptNameAuth) ? data.userAuth.deptNameAuth : (data.userAuth.deptNameAuth ? [data.userAuth.deptNameAuth] : []);
+      const deptNameAuth = Array.isArray(data.userAuth.deptNameAuth)
+        ? data.userAuth.deptNameAuth
+        : data.userAuth.deptNameAuth
+          ? [data.userAuth.deptNameAuth]
+          : [];
       const deptNameJson = JSON.stringify(deptNameAuth).replace(/"/g, '\\"');
       result = result.replace(/\$\[部门全称赋权\]/g, `"${deptNameJson}"`);
       return result;
     };
-    
+
     // 输出替换后的 chartSql
     if (data.chartSql && Array.isArray(data.chartSql)) {
       const replacedChartSql = data.chartSql.map((chart: any) => ({
@@ -996,7 +1021,7 @@ async function handleDebug() {
     } else {
       console.log('chartSql:', JSON.stringify(data.chartSql, null, 2));
     }
-    
+
     // 输出图形配置信息到控制台
     console.log('\n========================================');
     console.log('📈 图形配置信息');
@@ -1005,18 +1030,18 @@ async function handleDebug() {
     console.log('\n查询 SQL:');
     console.log(data.chartQuerySql || '(无)');
     console.log('\nchartSql 数组长度:', data.chartSql?.length || 0);
-    
+
     // 输出完整的 chartSql 数据结构
     console.log('\nchartSql 完整数据:');
     console.log(JSON.stringify(data.chartSql, null, 2));
-    
+
     interface ChartSqlItem {
-  name?: string;
-  '图形名称'?: string;
-  sql?: string;
-  error?: string;
-}
-if (data.chartSql && data.chartSql.length > 0) {
+      name?: string;
+      图形名称?: string;
+      sql?: string;
+      error?: string;
+    }
+    if (data.chartSql && data.chartSql.length > 0) {
       console.log('\n图形 SQL 明细:');
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
         console.log(`\n--- 图形 ${index + 1} ---`);
@@ -1032,7 +1057,7 @@ if (data.chartSql && data.chartSql.length > 0) {
       console.log('或者检查表中是否有顺序>0 的有效记录');
     }
     console.log('========================================\n');
-    
+
     if (data.chartSql && Array.isArray(data.chartSql) && data.chartSql.length > 0) {
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
         console.log(`  图形 ${index + 1}: ${chart['图形名称'] || chart.name || chartNames[index] || '未命名'}`);
@@ -1315,7 +1340,6 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
   registerGridPersistenceListeners();
 }
-
 </script>
 
 <template>
@@ -1415,13 +1439,10 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     <div
       ref="workbenchContentRef"
       class="workbench-content"
-      :class="{ 'chart-mode': chartVisible, 'resizing': isResizing }"
+      :class="{ 'chart-mode': chartVisible, resizing: isResizing }"
     >
       <!-- 左侧表格区域 -->
-      <div
-        class="table-area"
-        :style="chartVisible ? { flex: `0 0 ${leftPanelWidth}%` } : {}"
-      >
+      <div class="table-area" :style="chartVisible ? { flex: `0 0 ${leftPanelWidth}%` } : {}">
         <NCard
           :bordered="false"
           :content-style="{ padding: '0' }"
@@ -1481,11 +1502,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       </div>
 
       <!-- 右侧图形区域 -->
-      <div
-        v-show="chartVisible"
-        class="chart-area"
-        :style="{ flex: `0 0 ${100 - leftPanelWidth}%` }"
-      >
+      <div v-show="chartVisible" class="chart-area" :style="{ flex: `0 0 ${100 - leftPanelWidth}%` }">
         <div class="chart-panel rounded-12px shadow-sm">
           <div class="chart-header">
             <span class="chart-title">图形展示</span>
@@ -1655,8 +1672,6 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       </NSpace>
     </NModal>
 
-
-
     <!-- 批注弹窗 -->
     <WorkbenchComment
       v-model:add-visible="addCommentVisible"
@@ -1752,4 +1767,6 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   </div>
 </template>
 
-<style lang="scss" scoped>@use './generic-query-workbench.scss';</style>
+<style lang="scss" scoped>
+@use './generic-query-workbench.scss';
+</style>

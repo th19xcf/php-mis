@@ -13,7 +13,7 @@ interface UseWorkbenchDataLoaderOptions {
   workbenchStore: WorkbenchStore;
   notify: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void;
   checkScrollPosition: () => void;
-  
+
   // 外部传入的状态
   pageMeta: Ref<Api.Workbench.PageMeta | null>;
   serverRows: Ref<Api.Workbench.QueryRecord[]>;
@@ -87,7 +87,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [DATA-LOADER] [${method.toUpperCase()}]`;
-    
+
     if (data !== undefined) {
       console.log(`${prefix} ${message}`, data);
     } else {
@@ -284,10 +284,13 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
     const cached = workbenchStore.getCache(functionCode, params);
     const isCacheComplete = cached && cached.isDataLoaded && cached.serverRows.length === cached.total;
-    
+
     logger('info', `缓存检查结果: 命中=${!!cached}, 完整=${isCacheComplete}`);
     if (cached) {
-      logger('debug', `缓存数据: total=${cached.total}, serverRows.length=${cached.serverRows?.length || 0}, isDataLoaded=${cached.isDataLoaded}`);
+      logger(
+        'debug',
+        `缓存数据: total=${cached.total}, serverRows.length=${cached.serverRows?.length || 0}, isDataLoaded=${cached.isDataLoaded}`
+      );
     }
 
     if (isCacheComplete) {
@@ -459,7 +462,10 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     const firstPageData = firstPageResult.data;
     total.value = firstPageData.total;
     totalCount.value = firstPageData.total;
-    logger('info', `获取数据成功: total=${firstPageData.total}, records.length=${firstPageData.records.length}, hasMore=${firstPageData.hasMore}`);
+    logger(
+      'info',
+      `获取数据成功: total=${firstPageData.total}, records.length=${firstPageData.records.length}, hasMore=${firstPageData.hasMore}`
+    );
 
     logger('info', `步骤3: 首屏渲染`);
     const renderTimer = createTimer('首屏渲染');
@@ -590,7 +596,10 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       !isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value;
     logger('info', `是否需要加载: ${shouldLoad}`);
     if (!shouldLoad) {
-      logger('debug', `原因: isDataLoaded=${isDataLoaded.value}, loadedFunctionCode="${loadedFunctionCode.value}", loadedParams="${loadedParams.value}"`);
+      logger(
+        'debug',
+        `原因: isDataLoaded=${isDataLoaded.value}, loadedFunctionCode="${loadedFunctionCode.value}", loadedParams="${loadedParams.value}"`
+      );
     }
 
     if (shouldLoad) {

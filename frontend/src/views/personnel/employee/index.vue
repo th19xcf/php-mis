@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted, h } from 'vue';
 import { useRoute } from 'vue-router';
 import type { TreeOption } from 'naive-ui';
-import { useDialog, useMessage } from 'naive-ui';
+import { useMessage } from 'naive-ui';
 import { useEmployeeStore } from '@/store/modules/employee';
 import {
   fetchUpdateEmployee,
@@ -15,7 +15,6 @@ import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
 import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 
 const route = useRoute();
-const dialog = useDialog();
 const message = useMessage();
 const employeeStore = useEmployeeStore();
 const { confirmDelete, confirmBatch } = useDangerConfirm();
@@ -216,7 +215,6 @@ function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOpti
   const lowerKeyword = keyword.toLowerCase();
 
   function filterNode(node: TreeOption): TreeOption | null {
-    const data = node.data as Api.Employee.EmployeeTreeNode;
     const label = (node.label as string) || '';
     const match = label.toLowerCase().includes(lowerKeyword);
 

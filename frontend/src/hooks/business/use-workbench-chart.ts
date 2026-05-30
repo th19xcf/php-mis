@@ -1,13 +1,7 @@
 import { ref, watch, nextTick, computed } from 'vue';
 import * as echarts from 'echarts/core';
 import { LineChart, BarChart, PieChart } from 'echarts/charts';
-import {
-  TitleComponent,
-  TooltipComponent,
-  LegendComponent,
-  GridComponent,
-  DatasetComponent
-} from 'echarts/components';
+import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, DatasetComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { ECharts } from 'echarts/core';
 import { request } from '@/service/request';
@@ -161,8 +155,8 @@ function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any
         yAxis.push({ type: 'value', position: 'left' });
         yLeft = true;
       } else if (axisPosition === AXIS_POSITION.RIGHT && !yRight) {
-        yAxis.push({ 
-          type: 'value', 
+        yAxis.push({
+          type: 'value',
           position: 'right',
           axisLabel: { formatter: '{value}%' }
         });
@@ -224,7 +218,7 @@ function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any
       dataset: {
         source: chartData
       },
-      xAxis: { 
+      xAxis: {
         type: 'category',
         axisLine: {
           lineStyle: {
@@ -240,37 +234,40 @@ function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any
           }
         }
       },
-      yAxis: yAxis.length > 1 ? yAxis.map((axis: any) => ({
-        ...axis,
-        axisLine: {
-          lineStyle: {
-            color: themeColors.axisLineColor
-          }
-        },
-        axisLabel: {
-          color: themeColors.textColor
-        },
-        splitLine: {
-          lineStyle: {
-            color: themeColors.splitLineColor
-          }
-        }
-      })) : {
-        ...yAxis[0],
-        axisLine: {
-          lineStyle: {
-            color: themeColors.axisLineColor
-          }
-        },
-        axisLabel: {
-          color: themeColors.textColor
-        },
-        splitLine: {
-          lineStyle: {
-            color: themeColors.splitLineColor
-          }
-        }
-      },
+      yAxis:
+        yAxis.length > 1
+          ? yAxis.map((axis: any) => ({
+              ...axis,
+              axisLine: {
+                lineStyle: {
+                  color: themeColors.axisLineColor
+                }
+              },
+              axisLabel: {
+                color: themeColors.textColor
+              },
+              splitLine: {
+                lineStyle: {
+                  color: themeColors.splitLineColor
+                }
+              }
+            }))
+          : {
+              ...yAxis[0],
+              axisLine: {
+                lineStyle: {
+                  color: themeColors.axisLineColor
+                }
+              },
+              axisLabel: {
+                color: themeColors.textColor
+              },
+              splitLine: {
+                lineStyle: {
+                  color: themeColors.splitLineColor
+                }
+              }
+            },
       series: dem,
       grid: {
         left: '3%',
@@ -296,7 +293,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [CHART] [${method.toUpperCase()}]`;
-    
+
     if (data !== undefined) {
       console.log(`${prefix} ${message}`, data);
     } else {
@@ -306,7 +303,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
 
   async function handleOpenChart(pageMeta: Api.Workbench.PageMeta | null) {
     logger('info', `========== handleOpenChart 开始 ==========`);
-    
+
     if (!pageMeta?.chartModule) {
       const warningMsg = '图形功能未配置';
       logger('warn', warningMsg);
@@ -324,7 +321,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       const functionCode = options.getFunctionCode();
       logger('info', `functionCode: "${functionCode}"`);
       logger('info', `发起请求: /workbench/chart/${functionCode}`);
-      
+
       const { data, error } = await request({
         url: `/workbench/chart/${functionCode}`
       });
@@ -378,7 +375,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
 
   function initChart() {
     logger('info', `========== initChart 开始 ==========`);
-    
+
     if (!chartRef.value || !chartOption.value) {
       logger('warn', `chartRef 或 chartOption 为空，跳过初始化`);
       return;
@@ -400,20 +397,20 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     window.addEventListener('resize', resizeHandler);
     logger('debug', `注册窗口 resize 事件监听`);
 
-    const unwatch = watch(chartVisible, (v) => {
+    const unwatch = watch(chartVisible, v => {
       if (!v) {
         window.removeEventListener('resize', resizeHandler);
         unwatch();
         logger('debug', `移除窗口 resize 事件监听`);
       }
     });
-    
+
     logger('info', `========== initChart 结束 ==========`);
   }
 
-  watch(chartVisible, async (visible) => {
+  watch(chartVisible, async visible => {
     logger('info', `chartVisible 变化: ${visible}`);
-    
+
     if (visible && chartOption.value) {
       logger('info', `开始初始化图表`);
       await nextTick();
@@ -442,7 +439,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     }
   });
 
-  watch(chartOption, async (option) => {
+  watch(chartOption, async option => {
     if (option && chartVisible.value && !chartInstance) {
       await nextTick();
       setTimeout(() => {
@@ -469,13 +466,13 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     chartInstance?.resize();
   }
 
-  watch(isDarkMode, async (darkMode) => {
+  watch(isDarkMode, async darkMode => {
     logger('info', `主题变化: ${darkMode ? 'dark' : 'light'}`);
-    
+
     if (chartVisible.value && chartData.value.length > 0) {
       logger('info', `重新生成图表配置以适配主题`);
       const newOption = generateChartOptionFromBackend(chartData.value, darkMode);
-      
+
       if (chartInstance) {
         logger('info', `更新现有图表实例`);
         chartInstance.setOption(newOption, true);

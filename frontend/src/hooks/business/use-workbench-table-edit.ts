@@ -60,7 +60,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [TABLE-EDIT] [${method.toUpperCase()}]`;
-    
+
     if (data !== undefined) {
       console.log(`${prefix} ${message}`, data);
     } else {
@@ -170,7 +170,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
 
   function handleCellValueChanged(event: any, hasTableEditAuth: boolean) {
     logger('info', `========== handleCellValueChanged 开始 ==========`);
-    
+
     if (isRestoringCellValue.value) {
       logger('debug', '正在恢复单元格值，跳过本次修改');
       return;
@@ -194,7 +194,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
     const rowData = event.data;
     const rowIndex = event.rowIndex;
     const rowId = getRowId(rowData, rowIndex);
-    
+
     logger('info', `行ID: ${rowId}, 字段: ${event.colDef.field}`);
     logger('info', `值变化: ${event.oldValue} -> ${event.newValue}`);
 
@@ -219,21 +219,21 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
       tableModifiedRows.value.clear();
       modifiedRowsData.value.clear();
       originalRowsData.value.clear();
-      
+
       const rows = updateProcessedRows();
       const api = options.gridApi.value;
       if (api && !api.isDestroyed()) {
         setTimeout(() => {
-        const currentRowCount = api.getDisplayedRowCount();
-        if (currentRowCount === 0 || rows.length <= currentRowCount) {
-          api.setGridOption('rowData', rows);
-        } else {
-          const newRows = rows.slice(currentRowCount);
-          if (newRows.length > 0) {
-            api.applyTransaction({ add: newRows });
+          const currentRowCount = api.getDisplayedRowCount();
+          if (currentRowCount === 0 || rows.length <= currentRowCount) {
+            api.setGridOption('rowData', rows);
+          } else {
+            const newRows = rows.slice(currentRowCount);
+            if (newRows.length > 0) {
+              api.applyTransaction({ add: newRows });
+            }
           }
-        }
-      }, 0);
+        }, 0);
       }
     },
     { immediate: true, deep: false }
@@ -243,20 +243,22 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
     () => modifiedRowsData.value,
     (newModified, oldModified) => {
       updateProcessedRows();
-      
+
       const api = options.gridApi.value;
       if (!api || api.isDestroyed()) return;
 
       const newlyModified = new Set<string | number>();
       newModified.forEach((_, key) => newlyModified.add(key));
-      
+
       const previouslyModified = new Set<string | number>();
       oldModified?.forEach((_, key) => previouslyModified.add(key));
 
       const updatedRowIds = new Set<string | number>();
       newlyModified.forEach(id => {
-        if (!previouslyModified.has(id) || 
-            JSON.stringify(newModified.get(id)) !== JSON.stringify(oldModified?.get(id))) {
+        if (
+          !previouslyModified.has(id) ||
+          JSON.stringify(newModified.get(id)) !== JSON.stringify(oldModified?.get(id))
+        ) {
           updatedRowIds.add(id);
         }
       });

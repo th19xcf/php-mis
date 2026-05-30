@@ -26,15 +26,16 @@ export function useDangerConfirm() {
   const isConfirming = ref(false);
   const inputValue = ref('');
 
-  const dangerStyles: Record<DangerLevel, { type: 'warning' | 'error' | 'info'; size: 'small' | 'medium' | 'large' }> = {
-    low: { type: 'info', size: 'small' },
-    medium: { type: 'warning', size: 'small' },
-    high: { type: 'warning', size: 'medium' },
-    critical: { type: 'error', size: 'large' }
-  };
+  const dangerStyles: Record<DangerLevel, { type: 'warning' | 'error' | 'info'; size: 'small' | 'medium' | 'large' }> =
+    {
+      low: { type: 'info', size: 'small' },
+      medium: { type: 'warning', size: 'small' },
+      high: { type: 'warning', size: 'medium' },
+      critical: { type: 'error', size: 'large' }
+    };
 
   function confirm(options: DangerConfirmOptions): Promise<boolean> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const {
         title,
         content,
@@ -53,20 +54,22 @@ export function useDangerConfirm() {
 
       const contentEl = () => {
         const children: any[] = [
-          h(NAlert, {
-            type: dangerStyle.type,
-            title: '危险操作警告',
-            closable: false,
-            style: { marginBottom: '16px' }
-          }, () => content)
+          h(
+            NAlert,
+            {
+              type: dangerStyle.type,
+              title: '危险操作警告',
+              closable: false,
+              style: { marginBottom: '16px' }
+            },
+            () => content
+          )
         ];
 
         if (requireInput) {
           children.push(
             h('div', { style: { marginTop: '16px' } }, [
-              h('div', { style: { marginBottom: '8px' } }, [
-                h(NText, { depth: 3 }, () => inputPlaceholder)
-              ]),
+              h('div', { style: { marginBottom: '8px' } }, [h(NText, { depth: 3 }, () => inputPlaceholder)]),
               h(NInput, {
                 value: inputValue.value,
                 'onUpdate:value': (val: string) => {
@@ -128,7 +131,7 @@ export function useDangerConfirm() {
       cancelText: '取消',
       requireInput: count > 5,
       inputPlaceholder: '请输入"确认删除"以继续',
-      inputValidator: (value) => value === '确认删除'
+      inputValidator: value => value === '确认删除'
     });
   }
 
@@ -141,7 +144,7 @@ export function useDangerConfirm() {
       cancelText: '取消',
       requireInput: count > 20,
       inputPlaceholder: `请输入"确认${action}"以继续`,
-      inputValidator: (value) => value === `确认${action}`
+      inputValidator: value => value === `确认${action}`
     });
   }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, h, computed, watch } from 'vue';
 import type { TreeOption } from 'naive-ui';
-import { useDialog, useMessage } from 'naive-ui';
+import { useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview } from '@/service/api';
 import { useInterviewStore } from '@/store/modules/interview';
@@ -11,11 +11,10 @@ import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
 import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 
 
-const dialog = useDialog();
 const message = useMessage();
 const route = useRoute();
 const interviewStore = useInterviewStore();
-const { confirmDelete, confirmBatch, confirmTransfer } = useDangerConfirm();
+const { confirmDelete, confirmTransfer } = useDangerConfirm();
 
 const functionCode = computed(() => {
   return String(route.query.functionCode || route.meta?.functionCode || '2016');
@@ -328,7 +327,6 @@ function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOpti
   const lowerKeyword = keyword.toLowerCase();
 
   function filterNode(node: TreeOption): TreeOption | null {
-    const data = node.data as Api.Interview.InterviewTreeNode;
     const label = (node.label as string) || '';
     const match = label.toLowerCase().includes(lowerKeyword);
 

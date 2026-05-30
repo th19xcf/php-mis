@@ -16,11 +16,11 @@ const isAddingMode = computed(() => deptStore.isAddingMode);
 const isEditingMode = computed(() => deptStore.isEditingMode);
 const addForm = computed({
   get: () => deptStore.addForm,
-  set: (val) => deptStore.setAddForm(val)
+  set: val => deptStore.setAddForm(val)
 });
 const editForm = computed({
   get: () => deptStore.editForm,
-  set: (val) => deptStore.setEditForm(val)
+  set: val => deptStore.setEditForm(val)
 });
 
 const leftWidth = ref(320);
@@ -350,12 +350,7 @@ onMounted(async () => {
           <div class="flex justify-between items-center mb-2">
             <span class="text-lg font-600">部门信息</span>
             <div>
-              <NButton
-                v-if="!isEditingMode"
-                type="primary"
-                size="small"
-                @click="startEditMode"
-              >
+              <NButton v-if="!isEditingMode" type="primary" size="small" @click="startEditMode">
                 <template #icon>
                   <icon-mdi-pencil />
                 </template>

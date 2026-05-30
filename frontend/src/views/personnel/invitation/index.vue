@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onActivated, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
-import { useDialog, useMessage } from 'naive-ui';
+import { useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { fetchAddInvitation, fetchUpdateInvitation, fetchDeleteInvitation, fetchTransferInvitation, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
 import { useInvitationStore } from '@/store/modules/invitation';
 import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 
 
-const dialog = useDialog();
 const message = useMessage();
 const route = useRoute();
 const invitationStore = useInvitationStore();
@@ -28,7 +27,6 @@ const minLeftWidth = 200;
 const maxLeftWidth = 600;
 const isResizing = ref(false);
 
-const showTransferModal = ref(false);
 const submitting = ref(false);
 const transferForm = ref<Record<string, any>>({});
 const isTransferMode = ref(false);
@@ -85,7 +83,7 @@ async function loadTree() {
   await invitationStore.refreshTree();
 }
 
-function handleCheck(keys: string[], optionNodes: (TreeOption | null)[]) {
+function handleCheck(keys: string[], _optionNodes: (TreeOption | null)[]) {
   const guids: string[] = [];
   const checkedKeySet = new Set(keys);
 
@@ -324,7 +322,7 @@ function handlePopupSelect(field: Api.Workbench.AddField) {
   message.info(`打开${field.fieldName}选择弹窗`);
 }
 
-async function handleAdd() {
+async function _handleAdd() {
   // 验证必填字段
   const requiredField = addFields.value.find((f: Api.Workbench.AddField) => f.required && !addFormDynamic.value[f.columnName]);
   if (requiredField) {
@@ -411,7 +409,6 @@ function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOpti
   const lowerKeyword = keyword.toLowerCase();
 
   function filterNode(node: TreeOption): TreeOption | null {
-    const data = node.data as Api.Invitation.InvitationTreeNode;
     const label = (node.label as string) || '';
     const match = label.toLowerCase().includes(lowerKeyword);
 

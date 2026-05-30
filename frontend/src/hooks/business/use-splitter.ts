@@ -8,12 +8,7 @@ export interface SplitterOptions {
 }
 
 export function useSplitter(options: SplitterOptions = {}) {
-  const {
-    defaultWidth = 320,
-    minWidth = 200,
-    maxWidth = 600,
-    storageKey
-  } = options;
+  const { defaultWidth = 320, minWidth = 200, maxWidth = 600, storageKey } = options;
 
   const leftWidth = ref(defaultWidth);
   const isResizing = ref(false);
@@ -42,7 +37,7 @@ export function useSplitter(options: SplitterOptions = {}) {
       document.body.style.userSelect = '';
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      
+
       if (storageKey) {
         localStorage.setItem(storageKey, String(leftWidth.value));
       }
