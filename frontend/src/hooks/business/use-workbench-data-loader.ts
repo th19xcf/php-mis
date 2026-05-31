@@ -166,7 +166,9 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       return;
     }
 
-    console.log(`[进度] 开始后台加载数据: 总数=${totalRecords.toLocaleString()}, 已加载=${firstChunkSize.toLocaleString()}, 剩余=${remainingCount.toLocaleString()}`);
+    console.log(
+      `[进度] 开始后台加载数据: 总数=${totalRecords.toLocaleString()}, 已加载=${firstChunkSize.toLocaleString()}, 剩余=${remainingCount.toLocaleString()}`
+    );
 
     const PAGE_SIZE = 5000;
     const CONCURRENT_REQUESTS = Math.max(3, Math.min(6, Math.ceil(remainingCount / PAGE_SIZE / 4)));
@@ -226,7 +228,9 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
               loadedRows += records.length;
               loadedCount.value = firstChunkSize + loadedRows;
               const progress = ((loadedCount.value / totalRecords) * 100).toFixed(1);
-              console.log(`[进度] 已加载 ${loadedCount.value.toLocaleString()} / ${totalRecords.toLocaleString()} 条记录 (${progress}%)`);
+              console.log(
+                `[进度] 已加载 ${loadedCount.value.toLocaleString()} / ${totalRecords.toLocaleString()} 条记录 (${progress}%)`
+              );
               chunkRecordsMap.set(offset, records);
               mergeReadyPages();
             })
@@ -235,7 +239,9 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
               if (nextChunkIndex >= totalOffsets.length && activeRequests === 0) {
                 const finalCount = firstChunkSize + loadedRows;
-                console.log(`[进度] ✅ 后台加载完成: 总数据量=${finalCount.toLocaleString()}, 期望=${totalRecords.toLocaleString()}, 是否匹配=${finalCount === totalRecords ? '是' : '否'}`);
+                console.log(
+                  `[进度] ✅ 后台加载完成: 总数据量=${finalCount.toLocaleString()}, 期望=${totalRecords.toLocaleString()}, 是否匹配=${finalCount === totalRecords ? '是' : '否'}`
+                );
                 workbenchStore.setCache(functionCode, params, {
                   pageMeta: meta,
                   serverRows: serverRows.value,
