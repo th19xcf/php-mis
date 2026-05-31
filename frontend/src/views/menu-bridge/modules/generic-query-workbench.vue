@@ -1346,7 +1346,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
   <div class="generic-query-workbench" :class="{ 'system-dark': isDarkMode }">
     <NCard
       :bordered="false"
-      :content-style="{ padding: '8px 10px' }"
+      :content-style="{ padding: '1px 10px' }"
       class="toolbar-card mb-2px rounded-12px shadow-sm"
     >
       <div class="flex items-center gap-12px">

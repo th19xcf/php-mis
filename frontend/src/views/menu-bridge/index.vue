@@ -124,7 +124,7 @@ function handleIframeLoad() {
 
 <template>
   <div class="menu-bridge-page" :class="{ 'system-dark': isDarkMode }">
-    <NCard :bordered="false" :content-style="{ padding: '8px 8px 6px' }" class="bridge-card rounded-16px shadow-sm">
+    <NCard :bordered="false" :content-style="{ padding: '1px 8px 6px' }" class="bridge-card rounded-16px shadow-sm">
       <NAlert v-if="!legacyUrl && !isNativeFunction" type="warning" class="mb-16px">
         当前菜单缺少 module 或 functionCode 配置，无法生成功能页地址。请补齐 def_function 中的 功能模块、功能编码、参数
         配置。
