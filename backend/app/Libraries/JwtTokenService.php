@@ -32,6 +32,14 @@ class JwtTokenService
     }
 
     /**
+     * 生成唯一的 JTI (JWT ID)
+     */
+    public function generateJti(): string
+    {
+        return bin2hex(random_bytes(16));
+    }
+
+    /**
      * 生成访问令牌 (Access Token)
      * 有效期较短，用于日常 API 访问
      */
@@ -45,6 +53,7 @@ class JwtTokenService
             'aud' => 'mis-client',
             'iat' => $issuedAt,
             'exp' => $expireAt,
+            'jti' => $this->generateJti(),
             'type' => 'access',
             'userId' => $user['id'],
             'userName' => $user['user_name'],
@@ -70,6 +79,7 @@ class JwtTokenService
             'aud' => 'mis-client',
             'iat' => $issuedAt,
             'exp' => $expireAt,
+            'jti' => $this->generateJti(),
             'type' => 'refresh',
             'userId' => $user['id'],
             'userName' => $user['user_name'],
@@ -79,5 +89,18 @@ class JwtTokenService
         ];
 
         return $this->encode($payload);
+    }
+
+    /**
+     * 从 Token 中提取 JTI
+     */
+    public function extractJti(string $token): ?string
+    {
+        try {
+            $decoded = $this->decode($token);
+            return $decoded->jti ?? null;
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 }

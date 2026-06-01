@@ -40,6 +40,22 @@ export function fetchRefreshToken(refreshToken: string) {
 }
 
 /**
+ * Logout
+ * Invalidate current access token and refresh token
+ *
+ * @param refreshToken Refresh token (optional, will invalidate if provided)
+ */
+export function fetchLogout(refreshToken?: string) {
+  return request<{ logoutSuccess: boolean; message: string }>({
+    url: '/auth/logout',
+    method: 'post',
+    data: {
+      ...(refreshToken && { refreshToken })
+    }
+  });
+}
+
+/**
  * return custom backend error
  *
  * @param code error code

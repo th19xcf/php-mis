@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Constants\ApiCode;
 use App\Libraries\JwtTokenService;
 use App\Libraries\AuthorizationService;
+use App\Libraries\TokenBlacklistService;
 use App\Models\AuthModel;
 use App\Models\Mcommon;
 
@@ -12,6 +13,7 @@ class Auth extends BaseController
 {
     private AuthModel $authModel;
     private JwtTokenService $jwtTokenService;
+    private TokenBlacklistService $tokenBlacklistService;
 
     /**
      * 初始化认证控制器并装载认证模型。
@@ -20,6 +22,7 @@ class Auth extends BaseController
     {
         $this->authModel = new AuthModel();
         $this->jwtTokenService = new JwtTokenService();
+        $this->tokenBlacklistService = new TokenBlacklistService();
     }
 
     /**
@@ -201,6 +204,10 @@ class Auth extends BaseController
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
             $newRefreshToken = $this->jwtTokenService->generateRefreshToken($user);
 
+            // Refresh Token 旋转：使旧的 refreshToken 失效，防止被盗用
+            $this->tokenBlacklistService->addToBlacklist($refreshToken, 'refresh');
+            log_message('info', '[RefreshToken] 已旋转 Refresh Token，旧 Token 已失效');
+
             return $this->response->setJSON([
                 'code' => ApiCode::SUCCESS,
                 'msg' => 'success',
@@ -215,6 +222,54 @@ class Auth extends BaseController
                 'msg' => 'refreshToken无效或已过期'
             ]);
         }
+    }
+
+    /**
+     * 用户主动登出，使当前 Token 失效
+     * 
+     * 请求方式: POST
+     * 请求头: Authorization: Bearer {accessToken}
+     * 请求体: { "refreshToken": "{refreshToken}" } (可选)
+     */
+    public function logout()
+    {
+        $accessToken = $this->jwtTokenService->extractBearerToken($this->request->getHeaderLine('Authorization'));
+        $payload = $this->request->getJSON(true) ?? [];
+        $refreshToken = (string) ($payload['refreshToken'] ?? '');
+
+        $logoutSuccess = false;
+
+        if ($accessToken) {
+            if ($this->tokenBlacklistService->addToBlacklist($accessToken, 'access')) {
+                $logoutSuccess = true;
+                log_message('info', '[Logout] Access Token 已失效: ' . substr($accessToken, 0, 50) . '...');
+            }
+        }
+
+        if ($refreshToken) {
+            if ($this->tokenBlacklistService->addToBlacklist($refreshToken, 'refresh')) {
+                $logoutSuccess = true;
+                log_message('info', '[Logout] Refresh Token 已失效');
+            }
+        }
+
+        if (!$accessToken && !$refreshToken) {
+            return $this->response->setJSON([
+                'code' => ApiCode::AUTH_UNAUTHORIZED,
+                'msg' => '未提供有效的Token'
+            ]);
+        }
+
+        (new Mcommon())->sql_log('用户登出', '', 'Token已失效');
+
+        return $this->response->setJSON([
+            'code' => ApiCode::SUCCESS,
+            'msg' => 'success',
+            'data' => [
+                'logoutSuccess' => $logoutSuccess,
+                'message' => $logoutSuccess ? '已成功登出' : '登出处理完成'
+            ]
+        ]);
     }
 
     /**
