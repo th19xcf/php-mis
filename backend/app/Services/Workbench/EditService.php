@@ -24,66 +24,79 @@ class EditService
      * @param string $fieldModule 字段模块
      * @return array 字段配置
      */
-    public function getAddFields(string $functionCode, string $fieldModule): array
+    public function getAddFields(string $functionCode, ?string $fieldModule): array
     {
-        if (empty($fieldModule)) {
-            $fieldModule = $this->getFieldModule($functionCode);
-        }
-
-        if (empty($fieldModule)) {
-            return ['fields' => []];
-        }
-
-        $sql = sprintf(
-            'select
-                列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 可新增, 列顺序
-            from view_function
-            where 功能编码=%s and 列顺序>0 and 可新增="1"
-            group by 列名
-            order by 列顺序',
-            $this->quote($functionCode)
-        );
-
-        $result = $this->model->select($sql);
-        if ($result === false) {
-            return ['fields' => []];
-        }
-
-        $columns = $result->getResultArray();
-        $fields = [];
-
-        foreach ($columns as $col) {
-            $field = [
-                'columnName' => $col['列名'],
-                'fieldName' => $col['字段名'],
-                'fieldType' => $col['列类型'] ?? '字符',
-                'required' => ($col['不可为空'] ?? '0') === '1',
-                'defaultValue' => $col['缺省值'] ?? '',
-                'objectName' => '',
-                'editable' => true
-            ];
-
-            $field['defaultValue'] = $this->processSystemDefaultValue($field['defaultValue']);
-
-            $赋值类型 = $col['赋值类型'] ?? '';
-            $对象 = $col['对象'] ?? '';
-
-            if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
-                $field['objectName'] = $对象;
-                $field['objectOptions'] = $this->getObjectOptions($对象);
+        try {
+            if (empty($fieldModule)) {
+                $fieldModule = $this->getFieldModule($functionCode);
             }
 
-            if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
-                $field['inputType'] = 'popup';
-                $field['objectName'] = $对象;
-            } else {
-                $field['inputType'] = 'text';
+            log_message('info', "getAddFields: functionCode={$functionCode}, fieldModule={$fieldModule}");
+
+            if (empty($fieldModule)) {
+                log_message('warning', "getAddFields: fieldModule is empty for functionCode={$functionCode}");
+                return ['fields' => []];
             }
 
-            $fields[] = $field;
-        }
+            $sql = sprintf(
+                'select
+                    列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 可新增, 列顺序
+                from view_function
+                where 功能编码=%s and 列顺序>0 and 可新增="1"
+                group by 列名
+                order by 列顺序',
+                $this->quote($functionCode)
+            );
 
-        return ['fields' => $fields];
+            log_message('info', "getAddFields SQL: {$sql}");
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                log_message('error', "getAddFields: query failed for functionCode={$functionCode}");
+                return ['fields' => []];
+            }
+
+            $columns = $result->getResultArray();
+            log_message('info', "getAddFields: found " . count($columns) . " columns");
+
+            $fields = [];
+
+            foreach ($columns as $col) {
+                $field = [
+                    'columnName' => $col['列名'],
+                    'fieldName' => $col['字段名'],
+                    'fieldType' => $col['列类型'] ?? '字符',
+                    'required' => ($col['不可为空'] ?? '0') === '1',
+                    'defaultValue' => $col['缺省值'] ?? '',
+                    'objectName' => '',
+                    'editable' => true
+                ];
+
+                $field['defaultValue'] = $this->processSystemDefaultValue($field['defaultValue']);
+
+                $赋值类型 = $col['赋值类型'] ?? '';
+                $对象 = $col['对象'] ?? '';
+
+                if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
+                    $field['objectName'] = $对象;
+                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                }
+
+                if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
+                    $field['inputType'] = 'popup';
+                    $field['objectName'] = $对象;
+                } else {
+                    $field['inputType'] = 'text';
+                }
+
+                $fields[] = $field;
+            }
+
+            return ['fields' => $fields];
+        } catch (\Throwable $e) {
+            log_message('error', "getAddFields exception: " . $e->getMessage() . "\n" . $e->getTraceAsString());
+            throw $e;
+        }
     }
 
     /**
@@ -142,22 +155,34 @@ class EditService
      */
     public function getObjectOptions(string $objectName): array
     {
-        $sql = sprintf(
-            'select 对象编码, 对象名称, 对象值 from def_object where 对象名称=%s and 有效标识="1" order by 对象编码',
-            $this->quote($objectName)
-        );
+        try {
+            $session = \Config\Services::session();
+            $userLocation = $session->get('user_location') ?? '';
 
-        $result = $this->model->select($sql);
-        if ($result === false) {
+            $sql = sprintf(
+                'select 对象值 from def_object where 对象名称=%s and (属地="" or locate(属地, %s))',
+                $this->quote($objectName),
+                $this->quote($userLocation)
+            );
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return [];
+            }
+
+            $options = [];
+            $rows = $result->getResultArray();
+            foreach ($rows as $row) {
+                $options[] = [
+                    'label' => $row['对象值'],
+                    'value' => $row['对象值']
+                ];
+            }
+
+            return $options;
+        } catch (\Throwable $e) {
             return [];
         }
-
-        return array_map(function ($row) {
-            return [
-                'label' => $row['对象编码'],
-                'value' => $row['对象值']
-            ];
-        }, $result->getResultArray());
     }
 
     /**

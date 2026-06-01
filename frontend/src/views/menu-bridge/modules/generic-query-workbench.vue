@@ -84,14 +84,25 @@ function isGuidColumn(field: string, label: string) {
 
 function msg(type: 'success' | 'error' | 'warning' | 'info', message: string, _data?: unknown) {
   window.$message?.[type](message);
-  const colors: Record<string, string> = {
-    success: '\x1b[32m',
-    error: '\x1b[31m',
-    warning: '\x1b[33m',
-    info: '\x1b[34m'
-  };
-  const reset = '\x1b[0m';
-  console.log(`${colors[type]}[${type.toUpperCase()}]${reset} ${message}`);
+
+  const prefix = `[${type.toUpperCase()}]`;
+
+  switch (type) {
+    case 'error':
+      console.error(prefix, message);
+      break;
+    case 'warning':
+      console.warn(prefix, message);
+      break;
+    case 'success':
+      console.log(`%c${prefix}%c ${message}`, 'color: #52c41a; font-weight: bold;', '');
+      break;
+    case 'info':
+      console.info(prefix, message);
+      break;
+    default:
+      console.log(prefix, message);
+  }
 }
 
 const props = defineProps<{
@@ -1483,8 +1494,9 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             <div v-if="isChunkLoading && !loading" class="chunk-loading-progress">
               <NSpin size="small" />
               <span class="progress-text">
-                已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录
-                ({{ ((loadedCount / totalCount) * 100).toFixed(1) }}%)
+                已加载 {{ loadedCount.toLocaleString() }} / {{ totalCount.toLocaleString() }} 条记录 ({{
+                  ((loadedCount / totalCount) * 100).toFixed(1)
+                }}%)
               </span>
             </div>
           </div>

@@ -1236,12 +1236,25 @@ class Workbench extends BaseController
             $session = \Config\Services::session();
             $fieldModule = $session->get($functionCode . '-field_module');
 
+            log_message('info', "[addFields] 开始处理 - 功能编码: {$functionCode}, 字段模块: " . ($fieldModule ?: '未设置'));
+
             $result = $this->editService->getAddFields($functionCode, $fieldModule);
+
+            log_message('info', "[addFields] 处理成功 - 功能编码: {$functionCode}, 返回字段数: " . count($result['fields'] ?? []));
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '获取新增字段配置失败: ' . $e->getMessage());
-            return $this->error('5001', '获取新增字段配置失败');
+            log_message('error', '[addFields] 获取新增字段配置失败 - 功能编码: ' . $functionCode);
+            log_message('error', '[addFields] 异常信息: ' . $e->getMessage());
+            log_message('error', '[addFields] 异常位置: ' . $e->getFile() . ':' . $e->getLine());
+            log_message('error', '[addFields] 堆栈跟踪: ' . $e->getTraceAsString());
+            
+            // 开发环境返回详细错误信息
+            $errorMsg = ENVIRONMENT === 'development' 
+                ? $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')'
+                : '获取新增字段配置失败';
+            
+            return $this->error('5001', $errorMsg);
         }
     }
 

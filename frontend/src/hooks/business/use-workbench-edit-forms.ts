@@ -90,12 +90,14 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       const functionCode = options.getFunctionCode();
       if (!functionCode) {
         addError.value = '功能编码不能为空';
+        options.notify('error', addError.value);
         return;
       }
 
       const { data, error } = await fetchAddFields(functionCode);
       if (error) {
         addError.value = '获取新增字段配置失败';
+        options.notify('error', addError.value);
         return;
       }
 
@@ -109,6 +111,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       });
     } catch {
       addError.value = '获取新增字段配置失败';
+      options.notify('error', addError.value);
     } finally {
       addLoading.value = false;
     }
@@ -123,26 +126,31 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       const functionCode = options.getFunctionCode();
       if (!functionCode) {
         addError.value = '功能编码不能为空';
+        options.notify('error', addError.value);
         return;
       }
 
       const { data, error } = await addRow(functionCode, addFormData.value);
       if (error) {
         addError.value = error.message || '新增失败';
+        options.notify('error', addError.value);
         return;
       }
 
       if (data.success) {
         addSuccess.value = data.message || '新增成功';
+        options.notify('success', addSuccess.value);
         setTimeout(() => {
           addVisible.value = false;
           options.refreshAfterMutation();
         }, 1500);
       } else {
         addError.value = data.message || '新增失败';
+        options.notify('error', addError.value);
       }
     } catch (e: any) {
       addError.value = e.message || '新增失败';
+      options.notify('error', addError.value);
     } finally {
       addLoading.value = false;
     }
@@ -179,6 +187,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       const { data, error } = await fetchUpdateFields(functionCode, keyValues);
       if (error) {
         updateError.value = error.message || '获取修改信息失败';
+        options.notify('error', updateError.value);
         return;
       }
 
@@ -189,9 +198,11 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
         }
       } else {
         updateError.value = '未获取到字段配置';
+        options.notify('error', updateError.value);
       }
     } catch (e: any) {
       updateError.value = e.message || '获取修改信息失败';
+      options.notify('error', updateError.value);
     } finally {
       updateLoading.value = false;
     }
@@ -206,32 +217,38 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       const functionCode = options.getFunctionCode();
       if (!functionCode) {
         updateError.value = '功能编码不能为空';
+        options.notify('error', updateError.value);
         return;
       }
 
       const keyValues = getSelectedKeyValues(options.gridApi.value, 'single');
       if (!keyValues) {
         updateError.value = '未选择要修改的记录';
+        options.notify('error', updateError.value);
         return;
       }
 
       const { data, error } = await updateRow(functionCode, keyValues, updateFormData.value);
       if (error) {
         updateError.value = error.message || '修改失败';
+        options.notify('error', updateError.value);
         return;
       }
 
       if (data.success) {
         updateSuccess.value = data.message || '修改成功';
+        options.notify('success', updateSuccess.value);
         setTimeout(() => {
           updateVisible.value = false;
           options.refreshAfterMutation();
         }, 1500);
       } else {
         updateError.value = data.message || '修改失败';
+        options.notify('error', updateError.value);
       }
     } catch (e: any) {
       updateError.value = e.message || '修改失败';
+      options.notify('error', updateError.value);
     } finally {
       updateLoading.value = false;
     }
@@ -261,6 +278,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       const { data, error } = await fetchUpdateFields(functionCode, keyValues);
       if (error) {
         batchUpdateError.value = error.message || '获取修改信息失败';
+        options.notify('error', batchUpdateError.value);
         return;
       }
 
@@ -268,9 +286,11 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
         batchUpdateFormFields.value = normalizeFields(data.fields);
       } else {
         batchUpdateError.value = '未获取到字段配置';
+        options.notify('error', batchUpdateError.value);
       }
     } catch (e: any) {
       batchUpdateError.value = e.message || '获取修改信息失败';
+      options.notify('error', batchUpdateError.value);
     } finally {
       batchUpdateLoading.value = false;
     }
@@ -285,32 +305,38 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       const functionCode = options.getFunctionCode();
       if (!functionCode) {
         batchUpdateError.value = '功能编码不能为空';
+        options.notify('error', batchUpdateError.value);
         return;
       }
 
       const keyValues = getSelectedKeyValues(options.gridApi.value, 'multiple');
       if (!keyValues) {
         batchUpdateError.value = '未选择要修改的记录';
+        options.notify('error', batchUpdateError.value);
         return;
       }
 
       const { data, error } = await batchUpdateRow(functionCode, keyValues, batchUpdateFormData.value);
       if (error) {
         batchUpdateError.value = error.message || '批量修改失败';
+        options.notify('error', batchUpdateError.value);
         return;
       }
 
       if (data.success) {
         batchUpdateSuccess.value = data.message || '批量修改成功';
+        options.notify('success', batchUpdateSuccess.value);
         setTimeout(() => {
           batchUpdateVisible.value = false;
           options.refreshAfterMutation();
         }, 1500);
       } else {
         batchUpdateError.value = data.message || '批量修改失败';
+        options.notify('error', batchUpdateError.value);
       }
     } catch (e: any) {
       batchUpdateError.value = e.message || '批量修改失败';
+      options.notify('error', batchUpdateError.value);
     } finally {
       batchUpdateLoading.value = false;
     }
