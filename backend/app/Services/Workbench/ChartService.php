@@ -37,23 +37,85 @@ class ChartService
                 $dataSql = $this->buildChartQuerySql($row, $context);
                 $dataResults = $this->executeChartQuery($dataSql);
 
-                $chartItem['数据'] = $dataResults ?? [];
                 $chartItem['SQL'] = $dataSql;
 
                 $this->updateChartNameFromResults($chartItem, $row, $dataResults);
+                
+                $chartData = array_merge($chartData, $this->createChartsByCode($chartItem, $dataResults ?? [], $row));
             } catch (\Throwable $e) {
                 $errorMsg = $e->getMessage();
                 log_message('error', '图形数据查询失败: ' . $errorMsg . ' SQL: ' . ($dataSql ?? 'N/A'));
                 $chartItem['数据'] = [];
                 $chartItem['错误'] = $errorMsg;
                 $chartItem['SQL'] = $dataSql ?? '';
+                $chartData[] = $chartItem;
             }
-
-            $this->addChartColumnConfigs($chartItem, $row);
-            $chartData[] = $chartItem;
         }
 
         return $chartData;
+    }
+
+    /**
+     * 根据数据中的图形编号创建多个图表
+     *
+     * @param array $baseChartItem 基础图表配置
+     * @param array $dataResults 查询结果
+     * @param object $row 配置行数据
+     * @return array 多个图表配置
+     */
+    private function createChartsByCode(array $baseChartItem, array $dataResults, object $row): array
+    {
+        if (empty($dataResults)) {
+            $baseChartItem['数据'] = [];
+            $this->addChartColumnConfigs($baseChartItem, $row);
+            return [$baseChartItem];
+        }
+
+        $chartCodes = [];
+        
+        foreach ($dataResults as $item) {
+            $itemObj = (object) $item;
+            
+            if (isset($itemObj->图形编号)) {
+                $chartCodes[$itemObj->图形编号] = true;
+            } elseif (isset($itemObj->SID)) {
+                $sidParts = explode('^', $itemObj->SID);
+                if (isset($sidParts[1])) {
+                    $chartCodes[$sidParts[1]] = true;
+                }
+            }
+        }
+
+        if (empty($chartCodes)) {
+            $baseChartItem['数据'] = $dataResults;
+            $this->addChartColumnConfigs($baseChartItem, $row);
+            return [$baseChartItem];
+        }
+
+        $charts = [];
+        foreach (array_keys($chartCodes) as $chartCode) {
+            $newChart = $baseChartItem;
+            $newChart['图形编号'] = (string) $chartCode;
+            
+            $newChart['数据'] = [];
+            foreach ($dataResults as $item) {
+                $itemObj = (object) $item;
+                
+                if (isset($itemObj->图形编号) && $itemObj->图形编号 == $chartCode) {
+                    $newChart['数据'][] = $item;
+                } elseif (isset($itemObj->SID)) {
+                    $sidParts = explode('^', $itemObj->SID);
+                    if (isset($sidParts[1]) && $sidParts[1] == $chartCode) {
+                        $newChart['数据'][] = $item;
+                    }
+                }
+            }
+            
+            $this->addChartColumnConfigs($newChart, $row);
+            $charts[] = $newChart;
+        }
+
+        return $charts;
     }
 
     /**

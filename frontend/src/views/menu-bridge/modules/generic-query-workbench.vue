@@ -551,8 +551,8 @@ const {
 const {
   chartVisible,
   chartLoading,
-  chartOption,
-  chartRef,
+  chartOptions,
+  setChartRef,
   handleOpenChart,
   resizeChart: chartResize
 } = useWorkbenchChart({
@@ -1523,8 +1523,15 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           </div>
           <div class="chart-container">
             <NSpin :show="chartLoading">
-              <div v-show="chartOption" ref="chartRef" class="chart-wrapper"></div>
-              <NEmpty v-if="!chartOption && !chartLoading" description="暂无图形数据" />
+              <template v-if="chartOptions.length > 0">
+                <div
+                  v-for="(option, index) in chartOptions"
+                  :key="index"
+                  :ref="el => setChartRef(el as HTMLDivElement, index)"
+                  :class="['chart-wrapper', option.chartLayout || 'box_1-1-1']"
+                ></div>
+              </template>
+              <NEmpty v-else-if="!chartLoading" description="暂无图形数据" />
             </NSpin>
           </div>
         </div>

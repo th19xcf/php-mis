@@ -47,13 +47,8 @@ const lightThemeColors = {
   tooltipBorderColor: '#e5e7eb'
 };
 
-function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any {
-  if (!charts || charts.length === 0) {
-    return null;
-  }
-
+function generateChartOption(chart: any, isDarkMode: boolean): any {
   const { CHART } = WORKBENCH_CONFIG;
-  const chart = charts[0];
   const chartData = chart['数据'] || [];
   const chartType = chart['图形类型'] || CHART.DEFAULT_TYPE;
   const chartName = chart['图形名称'] || CHART.DEFAULT_NAME;
@@ -279,13 +274,37 @@ function generateChartOptionFromBackend(charts: any[], isDarkMode: boolean): any
   }
 }
 
+function generateChartOptionsFromBackend(charts: any[], isDarkMode: boolean): any[] {
+  if (!charts || charts.length === 0) {
+    return [];
+  }
+
+  const options: any[] = [];
+  for (const chart of charts) {
+    if (chart['错误']) {
+      options.push({ error: chart['错误'], SQL: chart['SQL'] });
+    } else {
+      const option = generateChartOption(chart, isDarkMode);
+      if (option) {
+        options.push({
+          ...option,
+          chartLayout: chart['页面布局'] || 'box_1-1-1',
+          chartCode: chart['图形编号'] || ''
+        });
+      }
+    }
+  }
+  return options;
+}
+
 export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
   const chartVisible = ref(false);
   const chartLoading = ref(false);
   const chartData = ref<any[]>([]);
-  const chartOption = ref<any>(null);
-  const chartRef = ref<HTMLDivElement | null>(null);
-  let chartInstance: ECharts | null = null;
+  const chartOptions = ref<any[]>([]);
+  const chartRefs = ref<HTMLDivElement[]>([]);
+  const chartInstances = ref<ECharts[]>([]);
+  const resizeHandlers = ref<(() => void)[]>([]);
 
   const themeStore = useThemeStore();
   const isDarkMode = computed(() => themeStore.darkMode);
@@ -299,6 +318,20 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     } else {
       console.log(`${prefix} ${message}`);
     }
+  }
+
+  function disposeAllCharts() {
+    chartInstances.value.forEach((instance, index) => {
+      if (instance) {
+        instance.dispose();
+        chartInstances.value[index] = null;
+      }
+    });
+    chartInstances.value = [];
+    resizeHandlers.value.forEach(handler => {
+      window.removeEventListener('resize', handler);
+    });
+    resizeHandlers.value = [];
   }
 
   async function handleOpenChart(pageMeta: Api.Workbench.PageMeta | null) {
@@ -347,11 +380,11 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       chartData.value = data.charts;
       logger('info', `获取到 ${data.charts.length} 个图形配置`);
 
-      const firstChart = data.charts[0];
-      if (firstChart?.['错误']) {
-        const errorMsg = `图形查询错误: ${firstChart['错误']}`;
+      const errorCharts = data.charts.filter((chart: any) => chart['错误']);
+      if (errorCharts.length > 0) {
+        const errorMsg = `图形查询错误: ${errorCharts[0]['错误']}`;
         logger('error', errorMsg);
-        logger('error', `SQL: ${firstChart['SQL']}`);
+        logger('error', `SQL: ${errorCharts[0]['SQL']}`);
         options.notify('error', errorMsg);
         chartLoading.value = false;
         logger('info', `========== handleOpenChart 结束（查询错误）==========`);
@@ -359,8 +392,8 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       }
 
       logger('info', `生成图表配置`);
-      chartOption.value = generateChartOptionFromBackend(data.charts, isDarkMode.value);
-      logger('info', `图表配置生成成功`);
+      chartOptions.value = generateChartOptionsFromBackend(data.charts, isDarkMode.value);
+      logger('info', `图表配置生成成功，共 ${chartOptions.value.length} 个图表`);
       logger('info', `========== handleOpenChart 结束（成功）==========`);
     } catch (error) {
       const errorMsg = '加载图形失败';
@@ -373,97 +406,97 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     }
   }
 
-  function initChart() {
-    logger('info', `========== initChart 开始 ==========`);
+  function initCharts() {
+    logger('info', `========== initCharts 开始 ==========`);
 
-    if (!chartRef.value || !chartOption.value) {
-      logger('warn', `chartRef 或 chartOption 为空，跳过初始化`);
+    if (chartRefs.value.length === 0 || chartOptions.value.length === 0) {
+      logger('warn', `chartRefs 或 chartOptions 为空，跳过初始化`);
       return;
     }
 
-    if (chartInstance) {
-      logger('debug', `销毁旧的图表实例`);
-      chartInstance.dispose();
-    }
+    disposeAllCharts();
 
-    logger('info', `初始化 ECharts 实例，darkMode: ${isDarkMode.value}`);
-    chartInstance = echarts.init(chartRef.value);
-    chartInstance.setOption(chartOption.value);
-    logger('info', `图表初始化成功`);
-
-    const resizeHandler = () => {
-      chartInstance?.resize();
-    };
-    window.addEventListener('resize', resizeHandler);
-    logger('debug', `注册窗口 resize 事件监听`);
-
-    const unwatch = watch(chartVisible, v => {
-      if (!v) {
-        window.removeEventListener('resize', resizeHandler);
-        unwatch();
-        logger('debug', `移除窗口 resize 事件监听`);
+    chartRefs.value.forEach((chartRef, index) => {
+      if (!chartRef) {
+        logger('warn', `图表容器 ${index} 为空`);
+        return;
       }
+
+      const option = chartOptions.value[index];
+      if (!option || option.error) {
+        logger('warn', `图表配置 ${index} 为空或有错误`);
+        return;
+      }
+
+      logger('info', `初始化图表 ${index + 1}，布局: ${option.chartLayout || 'box_1-1-1'}`);
+      const chartInstance = echarts.init(chartRef);
+      chartInstance.setOption(option);
+      chartInstances.value[index] = chartInstance;
+
+      const resizeHandler = () => {
+        chartInstance?.resize();
+      };
+      window.addEventListener('resize', resizeHandler);
+      resizeHandlers.value[index] = resizeHandler;
     });
 
-    logger('info', `========== initChart 结束 ==========`);
+    logger('info', `========== initCharts 结束 ==========`);
+  }
+
+  function setChartRef(el: HTMLDivElement | null, index: number) {
+    if (el) {
+      chartRefs.value[index] = el;
+    }
   }
 
   watch(chartVisible, async visible => {
     logger('info', `chartVisible 变化: ${visible}`);
 
-    if (visible && chartOption.value) {
+    if (visible && chartOptions.value.length > 0) {
       logger('info', `开始初始化图表`);
       await nextTick();
       setTimeout(() => {
-        if (chartRef.value) {
-          const width = chartRef.value.clientWidth;
-          const height = chartRef.value.clientHeight;
-          logger('info', `DOM 尺寸: { width: ${width}, height: ${height} }`);
-
-          if (width === 0 || height === 0) {
-            logger('warn', `DOM 宽高为 0，延迟 300ms 重试...`);
-            setTimeout(() => {
-              if (chartRef.value && chartRef.value.clientWidth > 0 && chartRef.value.clientHeight > 0) {
-                initChart();
-              }
-            }, 300);
-            return;
-          }
-
-          initChart();
+        const hasValidRefs = chartRefs.value.some(ref => ref && ref.clientWidth > 0 && ref.clientHeight > 0);
+        if (hasValidRefs) {
+          initCharts();
+        } else {
+          logger('warn', `DOM 尺寸无效，延迟 300ms 重试...`);
+          setTimeout(() => {
+            const hasValidRefs = chartRefs.value.some(ref => ref && ref.clientWidth > 0 && ref.clientHeight > 0);
+            if (hasValidRefs) {
+              initCharts();
+            }
+          }, 300);
         }
       }, 200);
-    } else if (!visible && chartInstance) {
-      chartInstance.dispose();
-      chartInstance = null;
+    } else if (!visible) {
+      disposeAllCharts();
     }
   });
 
-  watch(chartOption, async option => {
-    if (option && chartVisible.value && !chartInstance) {
+  watch(chartOptions, async options => {
+    if (options.length > 0 && chartVisible.value && chartInstances.value.length === 0) {
       await nextTick();
       setTimeout(() => {
-        if (chartRef.value) {
-          const width = chartRef.value.clientWidth;
-          const height = chartRef.value.clientHeight;
-          console.log('[图形功能] chartOption 变化，DOM 尺寸:', { width, height });
-
-          if (width > 0 && height > 0) {
-            initChart();
-          } else {
-            setTimeout(() => {
-              if (chartRef.value && chartRef.value.clientWidth > 0 && chartRef.value.clientHeight > 0) {
-                initChart();
-              }
-            }, 300);
-          }
+        const hasValidRefs = chartRefs.value.some(ref => ref && ref.clientWidth > 0 && ref.clientHeight > 0);
+        if (hasValidRefs) {
+          initCharts();
+        } else {
+          setTimeout(() => {
+            const hasValidRefs = chartRefs.value.some(ref => ref && ref.clientWidth > 0 && ref.clientHeight > 0);
+            if (hasValidRefs) {
+              initCharts();
+            }
+          }, 300);
         }
       }, 100);
     }
   });
 
   function resizeChart() {
-    chartInstance?.resize();
+    chartInstances.value.forEach(instance => {
+      instance?.resize();
+    });
   }
 
   watch(isDarkMode, async darkMode => {
@@ -471,13 +504,17 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
 
     if (chartVisible.value && chartData.value.length > 0) {
       logger('info', `重新生成图表配置以适配主题`);
-      const newOption = generateChartOptionFromBackend(chartData.value, darkMode);
+      const newOptions = generateChartOptionsFromBackend(chartData.value, darkMode);
 
-      if (chartInstance) {
+      if (chartInstances.value.length > 0) {
         logger('info', `更新现有图表实例`);
-        chartInstance.setOption(newOption, true);
+        newOptions.forEach((option, index) => {
+          if (option && !option.error && chartInstances.value[index]) {
+            chartInstances.value[index].setOption(option, true);
+          }
+        });
       } else {
-        chartOption.value = newOption;
+        chartOptions.value = newOptions;
       }
     }
   });
@@ -486,8 +523,8 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     chartVisible,
     chartLoading,
     chartData,
-    chartOption,
-    chartRef,
+    chartOptions,
+    setChartRef,
     handleOpenChart,
     resizeChart
   };

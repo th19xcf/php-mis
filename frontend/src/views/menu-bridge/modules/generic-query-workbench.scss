@@ -583,14 +583,17 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
 .chart-container {
   flex: 1;
   min-height: 0;
+  max-height: calc(100vh - 200px);
   display: flex;
   flex-direction: column;
   padding: 12px;
+  overflow-y: auto;
 
   .n-spin {
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-height: 0;
   }
 
   :deep(.n-spin-container) {
@@ -598,6 +601,7 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-height: 0;
   }
 
   :deep(.n-spin-content) {
@@ -605,13 +609,39 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-height: 0;
   }
 }
 
 .chart-wrapper {
   width: 100%;
-  flex: 1;
+  flex-shrink: 0;
   min-height: 300px;
+  margin: 4px 0;
+  box-sizing: border-box;
+  background-color: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+
+  &.box_1-1-1 {
+    width: calc(100% - 8px);
+    height: 510px;
+  }
+
+  &.box_2-1-1 {
+    width: calc(100% - 8px);
+    height: 255px;
+  }
+
+  &.box_2-1-2 {
+    width: calc(100% - 8px);
+    height: 255px;
+  }
+
+  &.box_2-1-3 {
+    width: calc(100% - 8px);
+    height: 255px;
+  }
 }
 
 .pin-column-modal-dark {
