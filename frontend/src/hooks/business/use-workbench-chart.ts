@@ -267,10 +267,11 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
             },
       series: dem,
       grid: {
-        left: '3%',
-        right: yRight ? '12%' : '4%',
+        left: '2%',
+        right: yRight ? '2%' : '2%',
         bottom: '10%',
-        top: 80
+        top: 80,
+        containLabel: true
       }
     };
   }
@@ -300,8 +301,7 @@ function generateChartOptionsFromBackend(charts: any[], isDarkMode: boolean): an
 }
 
 export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
-  const functionCode = options.getFunctionCode();
-  const cacheKey = functionCode;
+  const cacheKey = options.getFunctionCode();
 
   const cached = _chartStateCache.get(cacheKey);
   const chartVisible = ref(cached?.visible ?? false);
@@ -335,11 +335,15 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     }
   }
 
-  watch([chartOptions, chartData], () => {
-    if (chartVisible.value && chartOptions.value.length > 0) {
-      saveToCache();
-    }
-  }, { deep: true });
+  watch(
+    [chartOptions, chartData],
+    () => {
+      if (chartVisible.value && chartOptions.value.length > 0) {
+        saveToCache();
+      }
+    },
+    { deep: true }
+  );
 
   onMounted(() => {
     logger('info', `========== useWorkbenchChart onMounted ==========`);
@@ -581,12 +585,18 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
 
   onActivated(() => {
     logger('info', `========== onActivated ==========`);
-    logger('info', `chartVisible: ${chartVisible.value}, chartOptions: ${chartOptions.value.length}, instances: ${chartInstances.value.length}, refs: ${chartRefs.value.filter(r => r).length}`);
+    logger(
+      'info',
+      `chartVisible: ${chartVisible.value}, chartOptions: ${chartOptions.value.length}, instances: ${chartInstances.value.length}, refs: ${chartRefs.value.filter(r => r).length}`
+    );
 
     if (chartVisible.value && chartOptions.value.length > 0) {
       const tryResize = (retryCount: number) => {
         const validRefs = chartRefs.value.filter(el => el && el.clientWidth > 0 && el.clientHeight > 0);
-        logger('debug', `onActivated resize 重试 ${retryCount}, validRefs: ${validRefs.length}, instances: ${chartInstances.value.length}`);
+        logger(
+          'debug',
+          `onActivated resize 重试 ${retryCount}, validRefs: ${validRefs.length}, instances: ${chartInstances.value.length}`
+        );
 
         if (validRefs.length >= chartOptions.value.length) {
           if (chartInstances.value.length > 0) {
