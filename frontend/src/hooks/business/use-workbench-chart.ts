@@ -129,17 +129,31 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
     };
 
     const dataKeys = Object.keys(chartData[0]);
-    const valueKeys = dataKeys.slice(1).filter(key => {
-      const val = chartData[0][key];
-      if (typeof val === 'number') {
-        return true;
-      }
-      if (typeof val === 'string') {
-        const cleanVal = val.replace(/[%，,]/g, '');
-        return !isNaN(Number(cleanVal)) && cleanVal !== '';
-      }
-      return false;
-    });
+    const categoryKey =
+      dataKeys.find(key => {
+        const val = chartData[0][key];
+        if (typeof val === 'string') {
+          const cleanVal = val.replace(/[%，,]/g, '');
+          return isNaN(Number(cleanVal)) || cleanVal === '';
+        }
+        return false;
+      }) || dataKeys[0];
+
+    const valueKeys = dataKeys
+      .filter(key => key !== categoryKey)
+      .filter(key => {
+        const val = chartData[0][key];
+        if (typeof val === 'number') {
+          return true;
+        }
+        if (typeof val === 'string') {
+          const cleanVal = val.replace(/[%，,]/g, '');
+          return !isNaN(Number(cleanVal)) && cleanVal !== '';
+        }
+        return false;
+      });
+
+    const xAxisData = (chartData as Record<string, any>[]).map(item => item[categoryKey]);
 
     const { AXIS_POSITION, CHART_TYPE } = WORKBENCH_CONFIG.CHART;
 
@@ -217,6 +231,7 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
       },
       xAxis: {
         type: 'category',
+        data: xAxisData,
         axisLine: {
           lineStyle: {
             color: themeColors.axisLineColor
