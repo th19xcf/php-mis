@@ -96,21 +96,28 @@ class ChartService
         foreach (array_keys($chartCodes) as $chartCode) {
             $newChart = $baseChartItem;
             $newChart['图形编号'] = (string) $chartCode;
-            
+
             $newChart['数据'] = [];
+            $matchedItems = [];
             foreach ($dataResults as $item) {
                 $itemObj = (object) $item;
-                
+
                 if (isset($itemObj->图形编号) && $itemObj->图形编号 == $chartCode) {
                     $newChart['数据'][] = $item;
+                    $matchedItems[] = $itemObj;
                 } elseif (isset($itemObj->SID)) {
                     $sidParts = explode('^', $itemObj->SID);
                     if (isset($sidParts[1]) && $sidParts[1] == $chartCode) {
                         $newChart['数据'][] = $item;
+                        $matchedItems[] = $itemObj;
                     }
                 }
             }
-            
+
+            if (!empty($matchedItems) && isset($matchedItems[0]->图形名称)) {
+                $newChart['图形名称'] = $matchedItems[0]->图形名称;
+            }
+
             $this->addChartColumnConfigs($newChart, $row);
             $charts[] = $newChart;
         }
