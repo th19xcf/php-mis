@@ -4,7 +4,7 @@ const _loadingLocks = new Map<string, boolean>();
 </script>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef, h, watch } from 'vue';
+import { computed, ref, shallowRef, h, watch, onMounted, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -326,6 +326,10 @@ function _loadLayoutState() {
   }
 }
 
+onMounted(() => {
+  _loadLayoutState();
+});
+
 const {
   colorMarkVisible,
   colorMarkField1,
@@ -558,6 +562,12 @@ const {
 } = useWorkbenchChart({
   getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
   notify: (type: NotifyType, message: string) => msg(type, message)
+});
+
+watch(leftPanelWidth, () => {
+  if (chartVisible.value) {
+    nextTick(() => chartResize());
+  }
 });
 
 const {
@@ -1528,7 +1538,8 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
                   v-for="(option, index) in chartOptions"
                   :key="index"
                   :ref="el => setChartRef(el as HTMLDivElement, index)"
-                  :class="['chart-wrapper', option.chartLayout || 'box_1-1-1']"
+                  class="chart-wrapper"
+                  :class="[option.chartLayout || 'box_1-1-1']"
                 ></div>
               </template>
               <NEmpty v-else-if="!chartLoading" description="暂无图形数据" />

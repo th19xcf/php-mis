@@ -1,4 +1,4 @@
-import { ref, watch, nextTick, computed } from 'vue';
+import { ref, watch, nextTick, computed, onActivated, onDeactivated, onMounted } from 'vue';
 import * as echarts from 'echarts/core';
 import { LineChart, BarChart, PieChart } from 'echarts/charts';
 import { TitleComponent, TooltipComponent, LegendComponent, GridComponent, DatasetComponent } from 'echarts/components';
@@ -7,6 +7,8 @@ import type { ECharts } from 'echarts/core';
 import { request } from '@/service/request';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import { useThemeStore } from '@/store/modules/theme/index';
+
+const _chartStateCache = new Map<string, { visible: boolean; options: any[]; data: any[] }>();
 
 echarts.use([
   LineChart,
@@ -298,16 +300,29 @@ function generateChartOptionsFromBackend(charts: any[], isDarkMode: boolean): an
 }
 
 export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
-  const chartVisible = ref(false);
+  const functionCode = options.getFunctionCode();
+  const cacheKey = functionCode;
+
+  const cached = _chartStateCache.get(cacheKey);
+  const chartVisible = ref(cached?.visible ?? false);
   const chartLoading = ref(false);
-  const chartData = ref<any[]>([]);
-  const chartOptions = ref<any[]>([]);
+  const chartData = ref<any[]>(cached?.data ?? []);
+  const chartOptions = ref<any[]>(cached?.options ?? []);
   const chartRefs = ref<HTMLDivElement[]>([]);
   const chartInstances = ref<ECharts[]>([]);
   const resizeHandlers = ref<(() => void)[]>([]);
+  const resizeObservers = ref<ResizeObserver[]>([]);
 
   const themeStore = useThemeStore();
   const isDarkMode = computed(() => themeStore.darkMode);
+
+  function saveToCache() {
+    _chartStateCache.set(cacheKey, {
+      visible: chartVisible.value,
+      options: chartOptions.value,
+      data: chartData.value
+    });
+  }
 
   function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
@@ -320,11 +335,45 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     }
   }
 
+  watch([chartOptions, chartData], () => {
+    if (chartVisible.value && chartOptions.value.length > 0) {
+      saveToCache();
+    }
+  }, { deep: true });
+
+  onMounted(() => {
+    logger('info', `========== useWorkbenchChart onMounted ==========`);
+    logger('info', `恢复状态: chartVisible=${chartVisible.value}, chartOptions=${chartOptions.value.length}`);
+
+    if (chartVisible.value && chartOptions.value.length > 0) {
+      nextTick(() => {
+        setTimeout(() => {
+          const hasValidRefs = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
+          if (hasValidRefs) {
+            logger('info', `onMounted: 检测到缓存图表状态，自动重新初始化`);
+            initCharts();
+          } else {
+            logger('warn', `onMounted: DOM 尺寸无效，延迟重试`);
+            let retryCount = 10;
+            const tryInit = () => {
+              const valid = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
+              if (valid) {
+                initCharts();
+              } else if (retryCount-- > 0) {
+                requestAnimationFrame(() => setTimeout(tryInit, 200));
+              }
+            };
+            tryInit();
+          }
+        }, 200);
+      });
+    }
+  });
+
   function disposeAllCharts() {
-    chartInstances.value.forEach((instance, index) => {
+    chartInstances.value.forEach(instance => {
       if (instance) {
         instance.dispose();
-        chartInstances.value[index] = null;
       }
     });
     chartInstances.value = [];
@@ -332,6 +381,10 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       window.removeEventListener('resize', handler);
     });
     resizeHandlers.value = [];
+    resizeObservers.value.forEach(observer => {
+      observer.disconnect();
+    });
+    resizeObservers.value = [];
   }
 
   async function handleOpenChart(pageMeta: Api.Workbench.PageMeta | null) {
@@ -348,6 +401,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     logger('info', `chartModule: ${pageMeta.chartModule}`);
     chartVisible.value = true;
     chartLoading.value = true;
+    saveToCache();
     logger('debug', `设置 chartVisible=true, chartLoading=true`);
 
     try {
@@ -438,6 +492,12 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       };
       window.addEventListener('resize', resizeHandler);
       resizeHandlers.value[index] = resizeHandler;
+
+      const resizeObserver = new ResizeObserver(() => {
+        chartInstance?.resize();
+      });
+      resizeObserver.observe(chartRef);
+      resizeObservers.value[index] = resizeObserver;
     });
 
     logger('info', `========== initCharts 结束 ==========`);
@@ -456,14 +516,14 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       logger('info', `开始初始化图表`);
       await nextTick();
       setTimeout(() => {
-        const hasValidRefs = chartRefs.value.some(ref => ref && ref.clientWidth > 0 && ref.clientHeight > 0);
+        const hasValidRefs = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
         if (hasValidRefs) {
           initCharts();
         } else {
           logger('warn', `DOM 尺寸无效，延迟 300ms 重试...`);
           setTimeout(() => {
-            const hasValidRefs = chartRefs.value.some(ref => ref && ref.clientWidth > 0 && ref.clientHeight > 0);
-            if (hasValidRefs) {
+            const validRefs = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
+            if (validRefs) {
               initCharts();
             }
           }, 300);
@@ -474,22 +534,22 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     }
   });
 
-  watch(chartOptions, async options => {
-    if (options.length > 0 && chartVisible.value && chartInstances.value.length === 0) {
+  watch(chartOptions, async chartOpts => {
+    if (chartOpts.length > 0 && chartVisible.value && chartInstances.value.length === 0) {
       await nextTick();
       setTimeout(() => {
-        const hasValidRefs = chartRefs.value.some(ref => ref && ref.clientWidth > 0 && ref.clientHeight > 0);
+        const hasValidRefs = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
         if (hasValidRefs) {
           initCharts();
         } else {
           setTimeout(() => {
-            const hasValidRefs = chartRefs.value.some(ref => ref && ref.clientWidth > 0 && ref.clientHeight > 0);
-            if (hasValidRefs) {
+            const validRefs = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
+            if (validRefs) {
               initCharts();
             }
           }, 300);
         }
-      }, 100);
+      }, 200);
     }
   });
 
@@ -517,6 +577,63 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
         chartOptions.value = newOptions;
       }
     }
+  });
+
+  onActivated(() => {
+    logger('info', `========== onActivated ==========`);
+    logger('info', `chartVisible: ${chartVisible.value}, chartOptions: ${chartOptions.value.length}, instances: ${chartInstances.value.length}, refs: ${chartRefs.value.filter(r => r).length}`);
+
+    if (chartVisible.value && chartOptions.value.length > 0) {
+      const tryResize = (retryCount: number) => {
+        const validRefs = chartRefs.value.filter(el => el && el.clientWidth > 0 && el.clientHeight > 0);
+        logger('debug', `onActivated resize 重试 ${retryCount}, validRefs: ${validRefs.length}, instances: ${chartInstances.value.length}`);
+
+        if (validRefs.length >= chartOptions.value.length) {
+          if (chartInstances.value.length > 0) {
+            chartInstances.value.forEach((instance, index) => {
+              if (instance && validRefs[index]) {
+                logger('info', `重新渲染图表 ${index}`);
+                const option = chartOptions.value[index];
+                if (option) {
+                  instance.setOption(option, true);
+                  instance.resize();
+                }
+              }
+            });
+          } else {
+            chartRefs.value.forEach((chartRef, index) => {
+              if (!chartRef) return;
+              const option = chartOptions.value[index];
+              if (!option || option.error) return;
+
+              logger('info', `onActivated 创建新图表 ${index}`);
+              const chartInstance = echarts.init(chartRef);
+              chartInstance.setOption(option);
+              chartInstances.value[index] = chartInstance;
+
+              const resizeHandler = () => chartInstance?.resize();
+              window.addEventListener('resize', resizeHandler);
+              resizeHandlers.value[index] = resizeHandler;
+
+              const observer = new ResizeObserver(() => chartInstance?.resize());
+              observer.observe(chartRef);
+              resizeObservers.value[index] = observer;
+            });
+          }
+        } else if (retryCount > 0) {
+          requestAnimationFrame(() => {
+            setTimeout(() => tryResize(retryCount - 1), 200);
+          });
+        } else {
+          logger('warn', `onActivated: 重试结束仍无法初始化`);
+        }
+      };
+      tryResize(15);
+    }
+  });
+
+  onDeactivated(() => {
+    logger('info', `========== onDeactivated ==========`);
   });
 
   return {
