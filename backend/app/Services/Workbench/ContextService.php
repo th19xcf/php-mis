@@ -398,7 +398,11 @@ class ContextService
                 'hidden' => false,
                 'editable' => in_array((string) ($column['可修改'] ?? '0'), ['1', '2'], true),
                 'required' => (string) ($column['不可为空'] ?? '0') === '1',
-                'sortable' => true
+                'sortable' => true,
+                'hintCondition' => (string) ($column['提示条件'] ?? ''),
+                'hintStyle' => (string) ($column['提示样式设置'] ?? ''),
+                'errorCondition' => (string) ($column['异常条件'] ?? ''),
+                'errorStyle' => (string) ($column['异常样式设置'] ?? '')
             ];
         }
 
