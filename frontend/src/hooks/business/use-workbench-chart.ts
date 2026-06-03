@@ -218,14 +218,32 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
         }
       },
       tooltip: {
+        show: true,
         trigger: 'axis',
-        axisPointer: { type: 'cross' },
+        axisPointer: { 
+          type: 'cross',
+          crossStyle: {
+            color: '#999'
+          }
+        },
         backgroundColor: themeColors.tooltipBgColor || 'rgba(255, 255, 255, 0.95)',
         textStyle: {
           color: themeColors.tooltipTextColor || '#1f2937'
         },
         borderColor: themeColors.tooltipBorderColor || '#e5e7eb',
-        borderWidth: 1
+        borderWidth: 1,
+        padding: [10, 15],
+        formatter: function(params: any) {
+          let result = `<div style="font-weight: bold; margin-bottom: 8px;">${params[0].axisValue}</div>`;
+          params.forEach((item: any) => {
+            result += `<div style="display: flex; justify-content: space-between; margin: 4px 0;">
+              <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${item.color}; margin-right: 8px;"></span>
+              <span style="flex: 1;">${item.seriesName}</span>
+              <span style="margin-left: 16px; font-weight: bold;">${item.value}</span>
+            </div>`;
+          });
+          return result;
+        }
       },
       toolbox: {
         feature: {
