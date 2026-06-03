@@ -313,9 +313,14 @@ function generateChartOptionsFromBackend(charts: any[], isDarkMode: boolean): an
     } else {
       const option = generateChartOption(chart, isDarkMode);
       if (option) {
+        // 确保布局名称有 box_ 前缀
+        let layout = chart['页面布局'] || 'box_1-1-1';
+        if (!layout.startsWith('box_')) {
+          layout = 'box_' + layout;
+        }
         options.push({
           ...option,
-          chartLayout: chart['页面布局'] || 'box_1-1-1',
+          chartLayout: layout,
           chartCode: chart['图形编号'] || ''
         });
       }
@@ -476,6 +481,23 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       logger('info', `生成图表配置`);
       chartOptions.value = generateChartOptionsFromBackend(data.charts, isDarkMode.value);
       logger('info', `图表配置生成成功，共 ${chartOptions.value.length} 个图表`);
+      
+      // 延迟初始化图表，确保 DOM 已更新且容器有正确尺寸
+      await nextTick();
+      let retryCount = 20;
+      const tryInit = () => {
+        const hasValidRefs = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
+        if (hasValidRefs) {
+          initCharts();
+        } else if (retryCount-- > 0) {
+          logger('warn', `DOM 尺寸无效，延迟 200ms 重试... 剩余重试次数: ${retryCount}`);
+          setTimeout(tryInit, 200);
+        } else {
+          logger('error', `DOM 尺寸始终无效，放弃初始化`);
+        }
+      };
+      tryInit();
+      
       logger('info', `========== handleOpenChart 结束（成功）==========`);
     } catch (error) {
       const errorMsg = '加载图形失败';
@@ -514,6 +536,11 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       const chartInstance = echarts.init(chartRef);
       chartInstance.setOption(option);
       chartInstances.value[index] = chartInstance;
+      
+      // 延迟调用 resize，确保容器尺寸正确
+      setTimeout(() => {
+        chartInstance?.resize();
+      }, 100);
 
       const resizeHandler = () => {
         chartInstance?.resize();
