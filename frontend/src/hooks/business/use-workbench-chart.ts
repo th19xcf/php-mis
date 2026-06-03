@@ -139,9 +139,18 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
         return false;
       }) || dataKeys[0];
 
+    // 获取配置的字段名列表
+    const configuredFieldNames = Object.keys(fieldsConfig);
+    
     const valueKeys = dataKeys
       .filter(key => key !== categoryKey)
+      .filter(key => key !== '图形编号')
       .filter(key => {
+        // 如果有字段配置，只显示配置中的字段
+        if (configuredFieldNames.length > 0) {
+          return configuredFieldNames.includes(key);
+        }
+        // 如果没有字段配置，按原来的逻辑处理
         const val = chartData[0][key];
         if (typeof val === 'number') {
           return true;
