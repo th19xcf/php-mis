@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onActivated, h, computed } from 'vue';
+import { ref, onMounted, onActivated, h, computed, watch } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
@@ -459,6 +459,17 @@ function clearSearch() {
   filteredTreeData.value = treeData.value;
   expandedKeys.value = [];
 }
+
+watch(searchKeyword, (newValue) => {
+  if (!newValue.trim()) {
+    filteredTreeData.value = treeData.value;
+    expandedKeys.value = [];
+  } else {
+    const { nodes, expanded } = filterTreeData(treeData.value, newValue);
+    filteredTreeData.value = nodes;
+    expandedKeys.value = expanded;
+  }
+});
 
 onMounted(async () => {
   const savedWidth = localStorage.getItem('store-splitter-width');

@@ -314,6 +314,17 @@ function clearSearch() {
   expandedKeys.value = [];
 }
 
+watch(searchKeyword, (newValue) => {
+  if (!newValue.trim()) {
+    filteredTreeData.value = treeData.value;
+    expandedKeys.value = [];
+  } else {
+    const { nodes, expanded } = filterTreeData(treeData.value, newValue);
+    filteredTreeData.value = nodes;
+    expandedKeys.value = expanded;
+  }
+});
+
 function handleExpandedKeysChange(keys: string[]) {
   expandedKeys.value = keys;
 }
