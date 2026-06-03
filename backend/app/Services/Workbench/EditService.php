@@ -260,6 +260,38 @@ class EditService
     }
 
     /**
+     * 执行更新前处理
+     *
+     * @param string $beforeUpdate 前处理模块
+     * @param string $primaryKey 主键字段
+     * @param array $data 数据
+     */
+    public function executeBeforeUpdate(string $beforeUpdate, string $primaryKey, array $data): void
+    {
+        if (!empty($beforeUpdate) && !empty($primaryKey)) {
+            $keyStr = $this->buildWhereFromData($data, $primaryKey);
+            $spSql = sprintf('call %s("更新前", "%s")', $beforeUpdate, $keyStr);
+            $this->model->select($spSql);
+        }
+    }
+
+    /**
+     * 执行更新后处理
+     *
+     * @param string $afterUpdate 后处理模块
+     * @param string $primaryKey 主键字段
+     * @param array $data 数据
+     */
+    public function executeAfterUpdate(string $afterUpdate, string $primaryKey, array $data): void
+    {
+        if (!empty($afterUpdate) && !empty($primaryKey)) {
+            $keyStr = $this->buildWhereFromData($data, $primaryKey);
+            $spSql = sprintf('call %s("更新", "%s")', $afterUpdate, $keyStr);
+            $this->model->select($spSql);
+        }
+    }
+
+    /**
      * 根据数据构建 WHERE 条件
      *
      * @param array $data 数据

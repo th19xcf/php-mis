@@ -2026,6 +2026,8 @@ class Workbench extends BaseController
                 查询模块,模块类型,字段模块,钻取模块,
                 查询表名,数据表名,数据模式,
                 查询条件,汇总条件,排序条件,初始条数,
+                新增前处理模块,新增后处理模块,
+                更新前处理模块,更新后处理模块,
                 数据整理模块,备注模块,导入模块,图形模块,表样式
             from def_query_config
             where 查询模块 in 
@@ -2063,6 +2065,10 @@ class Workbench extends BaseController
             'queryGroup' => (string) ($row['汇总条件'] ?? ''),
             'queryOrder' => (string) ($row['排序条件'] ?? ''),
             'resultCount' => (int) ($row['初始条数'] ?? 0),
+            'beforeInsert' => (string) ($row['新增前处理模块'] ?? ''),
+            'afterInsert' => (string) ($row['新增后处理模块'] ?? ''),
+            'beforeUpdate' => (string) ($row['更新前处理模块'] ?? ''),
+            'afterUpdate' => (string) ($row['更新后处理模块'] ?? ''),
             'commentModule' => (string) ($row['备注模块'] ?? ''),
             'importModule' => (string) ($row['导入模块'] ?? ''),
             'upkeepModule' => (string) ($row['数据整理模块'] ?? ''),
