@@ -279,6 +279,9 @@ const leftPanelWidth = ref(55); // 左侧面板宽度百分比
 const isResizing = ref(false);
 const workbenchContentRef = ref<HTMLDivElement | null>(null);
 
+// 图表最大化状态
+const chartMaximized = ref(false);
+
 // 开始拖动调整大小
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -1460,10 +1463,10 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     <div
       ref="workbenchContentRef"
       class="workbench-content"
-      :class="{ 'chart-mode': chartVisible, resizing: isResizing }"
+      :class="{ 'chart-mode': chartVisible && !chartMaximized, resizing: isResizing }"
     >
       <!-- 左侧表格区域 -->
-      <div class="table-area" :style="chartVisible ? { flex: `0 0 ${leftPanelWidth}%` } : {}">
+      <div v-show="!chartMaximized" class="table-area" :style="chartVisible && !chartMaximized ? { flex: `0 0 ${leftPanelWidth}%` } : {}">
         <NCard
           :bordered="false"
           :content-style="{ padding: '0' }"
@@ -1515,7 +1518,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
 
       <!-- 可拖动分隔条 -->
       <div
-        v-if="chartVisible"
+        v-if="chartVisible && !chartMaximized"
         class="resize-splitter"
         :class="{ 'is-resizing': isResizing }"
         title="拖动调整宽度"
@@ -1525,11 +1528,16 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       </div>
 
       <!-- 右侧图形区域 -->
-      <div v-show="chartVisible" class="chart-area" :style="{ flex: `0 0 ${100 - leftPanelWidth}%` }">
+      <div v-show="chartVisible" class="chart-area" :style="{ flex: chartMaximized ? '1' : `0 0 ${100 - leftPanelWidth}%` }">
         <div class="chart-panel rounded-12px shadow-sm">
           <div class="chart-header">
             <span class="chart-title">图形展示</span>
-            <NButton size="small" @click="chartVisible = false">关闭</NButton>
+            <div class="flex flex-row gap-8px">
+              <NButton size="small" type="default" @click="chartMaximized = !chartMaximized">
+                {{ chartMaximized ? '恢复' : '扩大' }}
+              </NButton>
+              <NButton size="small" @click="() => { chartMaximized = false; chartVisible = false; }">关闭</NButton>
+            </div>
           </div>
           <div class="chart-container">
             <NSpin :show="chartLoading">
