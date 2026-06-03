@@ -1508,6 +1508,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
           <div ref="gridShellRef" class="ag-theme-shell" :class="{ 'ag-theme-shell-dynamic': props.dynamicLike }">
             <div v-if="loading" class="grid-loading">
               <NSpin size="large" />
+              <span class="loading-text">正在加载数据，请稍候...</span>
             </div>
             <AgGridVue
               :theme="activeGridTheme"
@@ -1532,6 +1533,8 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
               :suppress-column-virtualisation="false"
               :suppress-row-virtualisation="false"
               :animate-rows="false"
+              overlay-no-rows-template="<span style='padding: 20px; display: block; text-align: center;'>无数据</span>"
+              overlay-loading-template="<span style='padding: 20px; display: block; text-align: center;'>正在加载数据，请稍候...</span>"
               class="query-grid"
               @grid-ready="handleGridReady"
               @cell-value-changed="(e: any) => handleCellValueChanged(e, hasTableEditAuth)"

@@ -48,6 +48,6 @@ export const AG_GRID_LOCALE_CN = {
   csvExport: '导出 CSV',
   excelExport: '导出 Excel',
   // 其他
-  noRowsToShow: '暂无数据'
+  noRowsToShow: '无数据'
   // ...可根据需要补充更多 key
 };
