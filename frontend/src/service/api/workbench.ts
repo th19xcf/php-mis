@@ -165,3 +165,14 @@ export function fetchWorkbenchDebug(functionCode: string, data: Api.Workbench.Qu
     data
   });
 }
+
+// 执行数据整理
+export function executeUpkeep(functionCode: string) {
+  return request<{
+    success: boolean;
+    message: string;
+  }>({
+    url: `/workbench/upkeep/${encodeURIComponent(functionCode)}`,
+    method: 'post'
+  });
+}

@@ -62,6 +62,7 @@ $routes->group('workbench', static function ($routes) {
 	$routes->post('batch-update-row/(:segment)', 'Workbench::batchUpdateRow/$1');
 	$routes->post('delete-row/(:segment)', 'Workbench::deleteRow/$1');
 	$routes->post('table-edit/(:segment)', 'Workbench::tableEdit/$1');
+	$routes->post('upkeep/(:segment)', 'Workbench::upkeep/$1');
 	$routes->get('chart/(:segment)', 'Workbench::chart/$1');
 });
 

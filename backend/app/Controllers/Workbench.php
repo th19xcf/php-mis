@@ -2810,4 +2810,39 @@ class Workbench extends BaseController
 
         return $condition;
     }
+
+    /**
+     * 执行数据整理
+     */
+    public function upkeep(string $functionCode = '')
+    {
+        try {
+            [$context] = $this->contextService->buildWorkbenchContext($functionCode);
+            
+            $queryConfig = $context['query'];
+            $dataUpkeep = $queryConfig['upkeepModule'] ?? '';
+            
+            if (empty($dataUpkeep)) {
+                return $this->error('5001', '未配置数据整理模块');
+            }
+            
+            $model = new Mcommon();
+            $model->select(sprintf('call %s', $dataUpkeep));
+            
+            return $this->success([
+                'success' => true,
+                'message' => '数据整理执行成功'
+            ]);
+        } catch (\RuntimeException $e) {
+            $msg = $e->getMessage();
+            if (strpos($msg, '登录态已失效') !== false || strpos($msg, '未配置角色') !== false || strpos($msg, '无该功能访问权限') !== false) {
+                return $this->error(ApiCode::AUTH_UNAUTHORIZED, $msg);
+            }
+            log_message('error', '执行数据整理失败: ' . $msg);
+            return $this->error('5001', '执行数据整理失败: ' . $msg);
+        } catch (\Throwable $e) {
+            log_message('error', '执行数据整理失败: ' . $e->getMessage());
+            return $this->error('5001', '执行数据整理失败: ' . $e->getMessage());
+        }
+    }
 }

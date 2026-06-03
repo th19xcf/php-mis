@@ -36,7 +36,8 @@ import {
   fetchWorkbenchPage as _fetchWorkbenchPage,
   fetchWorkbenchPageData,
   fetchWorkbenchDrill,
-  fetchWorkbenchDebug
+  fetchWorkbenchDebug,
+  executeUpkeep
 } from '@/service/api/workbench';
 import { request } from '@/service/request';
 import { useColorMark } from '@/hooks/business/use-color-mark';
@@ -1103,6 +1104,37 @@ async function handleDebug() {
   }
 }
 
+async function handleUpkeep() {
+  const fnCode = String(props.meta.functionCode || '').trim();
+  if (!fnCode) {
+    msg('error', '功能编码不能为空');
+    return;
+  }
+
+  try {
+    loading.value = true;
+    const { data, error } = await executeUpkeep(fnCode);
+    loading.value = false;
+
+    if (error) {
+      msg('error', '执行数据整理失败', error);
+      return;
+    }
+
+    if (data?.success) {
+      msg('success', data.message || '数据整理执行成功');
+      // 执行成功后刷新数据
+      await loadPage();
+    } else {
+      msg('error', data?.message || '执行数据整理失败');
+    }
+  } catch (err) {
+    loading.value = false;
+    msg('error', '执行数据整理失败');
+    console.error('数据整理执行错误:', err);
+  }
+}
+
 function handleDataDrill() {
   // 参考旧版 Vgrid_aggrid.php，必须先选择 1 条记录
   const selectedRows = gridApi.value?.getSelectedRows() || [];
@@ -1421,6 +1453,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
             >
               表级修改提交
             </NButton>
+            <NButton v-if="pageMeta?.toolbar.upkeep" @click="handleUpkeep">数据整理</NButton>
             <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
             <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
             <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="handleDebug">
