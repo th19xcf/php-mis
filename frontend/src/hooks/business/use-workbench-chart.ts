@@ -376,14 +376,15 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
 
   onMounted(() => {
     logger('info', `========== useWorkbenchChart onMounted ==========`);
-    logger('info', `恢复状态: chartVisible=${chartVisible.value}, chartOptions=${chartOptions.value.length}`);
+    logger('info', `恢复状态: chartVisible=${chartVisible.value}, chartOptions=${chartOptions.value.length}, chartData=${chartData.value.length}`);
 
-    if (chartVisible.value && chartOptions.value.length > 0) {
+    // 只有当 chartVisible、chartOptions 和 chartData 都有有效值时，才重新初始化
+    if (chartVisible.value && chartOptions.value.length > 0 && chartData.value.length > 0) {
       nextTick(() => {
         setTimeout(() => {
           const hasValidRefs = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
           if (hasValidRefs) {
-            logger('info', `onMounted: 检测到缓存图表状态，自动重新初始化`);
+            logger('info', `onMounted: 检测到完整缓存图表状态，自动重新初始化`);
             initCharts();
           } else {
             logger('warn', `onMounted: DOM 尺寸无效，延迟重试`);
@@ -400,6 +401,14 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
           }
         }, 200);
       });
+    } else {
+      logger('info', `onMounted: 缓存数据不完整，不重新初始化图表`);
+      // 如果缓存数据不完整，确保关闭图表显示
+      if (chartVisible.value) {
+        chartVisible.value = false;
+        saveToCache();
+        logger('info', `onMounted: 强制关闭 chartVisible`);
+      }
     }
   });
 
@@ -586,6 +595,10 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       }, 200);
     } else if (!visible) {
       disposeAllCharts();
+      // 关闭图形时，清除缓存的数据和选项，避免切换标签页后重新显示
+      chartData.value = [];
+      chartOptions.value = [];
+      saveToCache();
     }
   });
 
