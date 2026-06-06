@@ -89,6 +89,9 @@ declare namespace Api {
       drillCondition?: string;
       menu1?: string;
       menu2?: string;
+      /** 图表钻取选项扩展字段（来自 def_chart_drill_config） */
+      chartModule?: string;
+      drillOption?: string;
     }
 
     interface DrillData {

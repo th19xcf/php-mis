@@ -25,6 +25,18 @@ function normalizeFields(fields: any[]) {
   }));
 }
 
+/**
+ * 从请求错误中提取可读的提示信息
+ * 优先取后端业务返回的 msg 字段；若无则回退到 AxiosError.message；再无则使用默认提示
+ */
+function extractErrorMessage(error: any, fallback: string): string {
+  const backendMsg = error?.response?.data?.msg;
+  if (typeof backendMsg === 'string' && backendMsg.trim() !== '') {
+    return backendMsg;
+  }
+  return error?.message || fallback;
+}
+
 function getSelectedKeyValues(
   gridApi: GridApi<Api.Workbench.QueryRecord> | null,
   mode: 'single' | 'multiple'
@@ -132,7 +144,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
 
       const { data, error } = await addRow(functionCode, addFormData.value);
       if (error) {
-        addError.value = error.message || '新增失败';
+        addError.value = extractErrorMessage(error, '新增失败');
         options.notify('error', addError.value);
         return;
       }
@@ -149,7 +161,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
         options.notify('error', addError.value);
       }
     } catch (e: any) {
-      addError.value = e.message || '新增失败';
+      addError.value = extractErrorMessage(e, '新增失败');
       options.notify('error', addError.value);
     } finally {
       addLoading.value = false;
@@ -230,7 +242,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
 
       const { data, error } = await updateRow(functionCode, keyValues, updateFormData.value);
       if (error) {
-        updateError.value = error.message || '修改失败';
+        updateError.value = extractErrorMessage(error, '修改失败');
         options.notify('error', updateError.value);
         return;
       }
@@ -247,7 +259,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
         options.notify('error', updateError.value);
       }
     } catch (e: any) {
-      updateError.value = e.message || '修改失败';
+      updateError.value = extractErrorMessage(e, '修改失败');
       options.notify('error', updateError.value);
     } finally {
       updateLoading.value = false;
@@ -318,7 +330,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
 
       const { data, error } = await batchUpdateRow(functionCode, keyValues, batchUpdateFormData.value);
       if (error) {
-        batchUpdateError.value = error.message || '批量修改失败';
+        batchUpdateError.value = extractErrorMessage(error, '批量修改失败');
         options.notify('error', batchUpdateError.value);
         return;
       }
@@ -335,7 +347,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
         options.notify('error', batchUpdateError.value);
       }
     } catch (e: any) {
-      batchUpdateError.value = e.message || '批量修改失败';
+      batchUpdateError.value = extractErrorMessage(e, '批量修改失败');
       options.notify('error', batchUpdateError.value);
     } finally {
       batchUpdateLoading.value = false;

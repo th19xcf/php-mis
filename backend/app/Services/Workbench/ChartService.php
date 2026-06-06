@@ -18,6 +18,69 @@ class ChartService
     }
 
     /**
+     * SQL 字符串转义（单引号包裹）
+     */
+    private function quote(string $value): string
+    {
+        return "'" . addslashes($value) . "'";
+    }
+
+    /**
+     * 加载图表自身的钻取选项（参考旧版 Frame.php::get_chart_data 中 def_chart_drill_config 查询逻辑）
+     *
+     * 与 DrillService.getDrillOptions() 的区别：
+     *  - DrillService 取自 def_drill_config，匹配的是"功能编码 → 钻取模块"页面级配置
+     *  - 本方法取自 def_chart_drill_config，匹配的是"图形模块 → 钻取模块"图表级配置
+     *  - 旧版 Vgrid_aggrid.php 的 chart_drill 对话框使用的就是图表级配置
+     *
+     * @param string $drillModule 图表的钻取模块（def_chart_config.钻取模块）
+     * @return array
+     */
+    public function loadChartDrillOptions(string $drillModule): array
+    {
+        if ($drillModule === '') {
+            log_message('info', '[ChartDrill] 钻取模块为空，跳过加载钻取选项');
+            return [];
+        }
+
+        $sql = sprintf(
+            'select 钻取模块, 钻取选项, 钻取字段, 钻取条件, 图形模块
+             from def_chart_drill_config
+             where 顺序>0 and 钻取模块=%s
+             order by 钻取模块, 顺序',
+            $this->quote($drillModule)
+        );
+
+        $results = $this->model->select($sql)->getResultArray() ?? [];
+        log_message('info', sprintf(
+            '[ChartDrill] 钻取模块=%s, def_chart_drill_config 返回 %d 行',
+            $drillModule, count($results)
+        ));
+        $options = [];
+
+        foreach ($results as $row) {
+            $option = (string) ($row['钻取选项'] ?? '');
+            $chartModule = (string) ($row['图形模块'] ?? '');
+            $module = (string) ($row['钻取模块'] ?? '');
+            if ($option === '') {
+                continue;
+            }
+            $options[] = [
+                'label' => $option,
+                'value' => $option . '^' . $chartModule . '^' . $module,
+                'functionCode' => $module,
+                'module' => $module,
+                'chartModule' => $chartModule,
+                'drillOption' => $option,
+                'drillFields' => (string) ($row['钻取字段'] ?? ''),
+                'drillCondition' => (string) ($row['钻取条件'] ?? '')
+            ];
+        }
+
+        return $options;
+    }
+
+    /**
      * 获取图表数据
      *
      * @param array $context 上下文信息
@@ -33,6 +96,9 @@ class ChartService
         foreach ($results as $row) {
             $chartItem = $this->buildChartItem($row);
 
+            // 加载图表自身的钻取选项（与旧版 Vgrid_aggrid.php chart_drill 对话框数据来源一致）
+            $chartItem['钻取选项'] = $this->loadChartDrillOptions((string) ($row->钻取模块 ?? ''));
+
             try {
                 $dataSql = $this->buildChartQuerySql($row, $context);
                 $dataResults = $this->executeChartQuery($dataSql);
@@ -40,7 +106,7 @@ class ChartService
                 $chartItem['SQL'] = $dataSql;
 
                 $this->updateChartNameFromResults($chartItem, $row, $dataResults);
-                
+
                 $chartData = array_merge($chartData, $this->createChartsByCode($chartItem, $dataResults ?? [], $row));
             } catch (\Throwable $e) {
                 $errorMsg = $e->getMessage();

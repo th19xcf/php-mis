@@ -176,3 +176,30 @@ export function executeUpkeep(functionCode: string) {
     method: 'post'
   });
 }
+
+/**
+ * 图形钻取
+ * @param functionCode 功能编码
+ * @param payload 钻取参数 [ { 钻取级别 }, { 钻取选项 }, { ...数据点 } ]
+ */
+export function fetchWorkbenchChartDrill(functionCode: string, payload: any[]) {
+  return request<{
+    charts: any[];
+    drillLevel: number;
+    message: string;
+  }>({
+    url: `/workbench/chart-drill/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data: payload
+  });
+}
+
+/**
+ * 重置图形钻取状态
+ */
+export function resetWorkbenchChartDrill(functionCode: string) {
+  return request<{ message: string }>({
+    url: `/workbench/chart-drill-reset/${encodeURIComponent(functionCode)}`,
+    method: 'post'
+  });
+}

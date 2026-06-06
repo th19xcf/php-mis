@@ -7,6 +7,7 @@ use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 use App\Services\Workbench\ChartService;
+use App\Services\Workbench\ChartDrillService;
 use App\Services\Workbench\DrillService;
 use App\Services\Workbench\QueryService;
 use App\Services\Workbench\EditService;
@@ -19,6 +20,7 @@ class Workbench extends BaseController
     private SessionUserContext $userContext;
     private AuthorizationService $authorizationService;
     private ChartService $chartService;
+    private ChartDrillService $chartDrillService;
     private DrillService $drillService;
     private QueryService $queryService;
     private EditService $editService;
@@ -32,6 +34,7 @@ class Workbench extends BaseController
         $this->userContext = new SessionUserContext();
         $this->authorizationService = new AuthorizationService();
         $this->chartService = new ChartService();
+        $this->chartDrillService = new ChartDrillService();
         $this->drillService = new DrillService();
         $this->queryService = new QueryService();
         $this->editService = new EditService();
@@ -1458,7 +1461,11 @@ class Workbench extends BaseController
             ]);
         } catch (\Throwable $e) {
             log_message('error', '新增记录失败: ' . $e->getMessage());
-            return $this->error('5001', '新增失败');
+            log_message('error', '新增记录堆栈: ' . $e->getTraceAsString());
+            $errorMsg = ENVIRONMENT === 'development'
+                ? sprintf('新增失败: %s', $e->getMessage())
+                : '新增失败';
+            return $this->error('5001', $errorMsg);
         }
     }
 
@@ -2778,6 +2785,73 @@ class Workbench extends BaseController
         } catch (\Throwable $e) {
             log_message('error', '获取图形数据失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return $this->error('5001', '获取图形数据失败');
+        }
+    }
+
+    /**
+     * 图形钻取
+     *
+     * 前端在用户点击图表数据点时调用，携带当前钻取级别、钻取选项及数据点上下文。
+     * 后端根据 def_chart_drill_config 配置生成下一级钻取图形数据。
+     *
+     * @param string $functionCode 功能编码
+     * @return Response
+     */
+    public function chartDrill(string $functionCode = '')
+    {
+        try {
+            $payload = $this->request->getJSON(true) ?? [];
+
+            // 1. 钻取级别（payload[0]['钻取级别']），用于前后端状态同步
+            $drillLevel = isset($payload[0]['钻取级别']) ? (int) $payload[0]['钻取级别'] : 0;
+
+            // 2. 执行钻取
+            $charts = $this->chartDrillService->performChartDrill($functionCode, $payload);
+
+            return $this->success([
+                'charts' => $charts,
+                'drillLevel' => $drillLevel + 1,
+                'message' => '钻取成功'
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '图形钻取失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            return $this->error('5004', '图形钻取失败: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 退出图形钻取，重置钻取状态
+     *
+     * @param string $functionCode 功能编码
+     * @return Response
+     */
+    public function chartDrillReset(string $functionCode = '')
+    {
+        try {
+            $session = \Config\Services::session();
+            $menuId = $session->get('menu_id') ?: $functionCode;
+
+            // 清理 session 中的所有钻取状态
+            $session->remove($menuId . '-chart_drill_arr');
+
+            // 清理以当前 menuId 为前缀的钻取条件/标题
+            $sessionData = $_SESSION ?? [];
+            foreach (array_keys($sessionData) as $key) {
+                if (strpos((string) $key, (string) $menuId) === 0
+                    && (strpos((string) $key, '-chart_drill_cond_str') !== false
+                        || strpos((string) $key, '-chart_drill_title_str') !== false)) {
+                    $session->remove($key);
+                }
+            }
+
+            return $this->success([
+                'message' => '已退出钻取'
+            ]);
+        } catch (\Throwable $e) {
+            log_message('error', '重置图形钻取失败: ' . $e->getMessage());
+            return $this->error('5005', '重置图形钻取失败');
         }
     }
 

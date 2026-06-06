@@ -64,6 +64,8 @@ $routes->group('workbench', static function ($routes) {
 	$routes->post('table-edit/(:segment)', 'Workbench::tableEdit/$1');
 	$routes->post('upkeep/(:segment)', 'Workbench::upkeep/$1');
 	$routes->get('chart/(:segment)', 'Workbench::chart/$1');
+	$routes->post('chart-drill/(:segment)', 'Workbench::chartDrill/$1');
+	$routes->post('chart-drill-reset/(:segment)', 'Workbench::chartDrillReset/$1');
 });
 
 $routes->group('comment', static function ($routes) {

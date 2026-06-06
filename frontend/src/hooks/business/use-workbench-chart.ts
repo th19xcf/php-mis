@@ -25,6 +25,10 @@ echarts.use([
 interface UseWorkbenchChartOptions {
   getFunctionCode: () => string;
   notify: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void;
+  /** 可选：图表点击事件回调（用于图形钻取） */
+  onChartClick?: (params: any) => void;
+  /** 可选：钻取状态下用于查找钻取选项的接口 */
+  getDrillOptionsForChart?: (sid: string) => Api.Workbench.DrillOption[] | null;
 }
 
 const darkThemeColors = {
@@ -71,7 +75,9 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
 
     const pieData = (chartData as Record<string, any>[]).map((item: Record<string, any>) => ({
       name: item[categoryKey],
-      value: Number(item[valueKeys[0]]) || 0
+      value: Number(item[valueKeys[0]]) || 0,
+      // 保留后端返回的所有原始字段（含 SID），用于图形钻取
+      ...item
     }));
 
     return {
@@ -141,7 +147,7 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
 
     // 获取配置的字段名列表
     const configuredFieldNames = Object.keys(fieldsConfig);
-    
+
     const valueKeys = dataKeys
       .filter(key => key !== categoryKey)
       .filter(key => key !== '图形编号')
@@ -186,7 +192,12 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
       const seriesItem: any = {
         name: key,
         type: fieldChartType === CHART_TYPE.BAR ? 'bar' : 'line',
-        data: (chartData as Record<string, any>[]).map((item: Record<string, any>) => parseValue(item[key]))
+        // 使用对象数组而非纯数值，以保留 SID 等原始字段供图形钻取
+        data: (chartData as Record<string, any>[]).map((item: Record<string, any>) => ({
+          ...item,
+          // 显式覆盖 value 为标准化后的数值，避免字符串带逗号等情况
+          value: parseValue(item[key])
+        }))
       };
 
       if (fieldChartType !== CHART_TYPE.BAR) {
@@ -220,7 +231,7 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
       tooltip: {
         show: true,
         trigger: 'axis',
-        axisPointer: { 
+        axisPointer: {
           type: 'cross',
           crossStyle: {
             color: '#999'
@@ -233,7 +244,7 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
         borderColor: themeColors.tooltipBorderColor || '#e5e7eb',
         borderWidth: 1,
         padding: [10, 15],
-        formatter: function(params: any) {
+        formatter: function (params: any) {
           let result = `<div style="font-weight: bold; margin-bottom: 8px;">${params[0].axisValue}</div>`;
           params.forEach((item: any) => {
             result += `<div style="display: flex; justify-content: space-between; margin: 4px 0;">
@@ -339,12 +350,66 @@ function generateChartOptionsFromBackend(charts: any[], isDarkMode: boolean): an
         options.push({
           ...option,
           chartLayout: layout,
-          chartCode: chart['图形编号'] || ''
+          chartCode: chart['图形编号'] || '',
+          chartModule: chart['图形模块'] || '',
+          drillModule: chart['钻取模块'] || ''
         });
       }
     }
   }
   return options;
+}
+
+/**
+ * 构建"按图表标识(SID)索引的钻取选项"映射
+ * 用于前端图形钻取：根据用户点击的数据点 SID 找到该图表可用的钻取选项
+ *
+ * @param charts 来自后端的原始 charts 数组
+ * @param getDrillOptions 钻取选项获取函数（按钻取模块查找）
+ * @returns Record<SID, DrillOption[]>
+ */
+export function buildChartDrillOptionMap(
+  charts: any[],
+  getDrillOptions: (drillModule: string) => Promise<Api.Workbench.DrillOption[] | null>
+): Record<string, Api.Workbench.DrillOption[]> {
+  const map: Record<string, Api.Workbench.DrillOption[]> = {};
+
+  if (!charts || charts.length === 0) {
+    return map;
+  }
+
+  // 收集所有图表的钻取模块（去重）
+  const moduleToSid: Record<string, Set<string>> = {};
+  for (const chart of charts) {
+    const module = chart['钻取模块'];
+    const code = chart['图形编号'];
+    const moduleCode = chart['图形模块'];
+    if (!module || !code || !moduleCode) continue;
+    const sid = `${moduleCode}^${code}`;
+    if (!moduleToSid[module]) {
+      moduleToSid[module] = new Set();
+    }
+    moduleToSid[module].add(sid);
+  }
+
+  // 同步加载所有钻取选项
+  const promises: Promise<void>[] = [];
+  for (const [module, sids] of Object.entries(moduleToSid)) {
+    promises.push(
+      (async () => {
+        const opts = await getDrillOptions(module);
+        if (opts && opts.length > 0) {
+          for (const sid of sids) {
+            map[sid] = opts;
+          }
+        }
+      })()
+    );
+  }
+
+  // 注意：该函数在调用方应配合 await 一起使用；
+  // 但为兼容同步调用场景，返回空 map 并通过 attachDrillOptions 异步填充
+  return map;
 }
 
 export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
@@ -394,7 +459,10 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
 
   onMounted(() => {
     logger('info', `========== useWorkbenchChart onMounted ==========`);
-    logger('info', `恢复状态: chartVisible=${chartVisible.value}, chartOptions=${chartOptions.value.length}, chartData=${chartData.value.length}`);
+    logger(
+      'info',
+      `恢复状态: chartVisible=${chartVisible.value}, chartOptions=${chartOptions.value.length}, chartData=${chartData.value.length}`
+    );
 
     // 只有当 chartVisible、chartOptions 和 chartData 都有有效值时，才重新初始化
     if (chartVisible.value && chartOptions.value.length > 0 && chartData.value.length > 0) {
@@ -445,6 +513,23 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       observer.disconnect();
     });
     resizeObservers.value = [];
+  }
+
+  /**
+   * 安全调用 ECharts 实例的 resize
+   * - 避免在实例已 dispose 后调用导致 [ECharts] Instance ... has been disposed 警告
+   * - 用于 setTimeout / window resize / ResizeObserver 异步回调
+   */
+  function safeResize(instance: ECharts | null | undefined): void {
+    if (!instance) return;
+    try {
+      if (typeof instance.isDisposed === 'function' && instance.isDisposed()) {
+        return;
+      }
+      instance.resize();
+    } catch (e) {
+      logger('warn', `safeResize 异常（实例可能已被销毁）:`, e);
+    }
   }
 
   async function handleOpenChart(pageMeta: Api.Workbench.PageMeta | null) {
@@ -508,7 +593,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       logger('info', `生成图表配置`);
       chartOptions.value = generateChartOptionsFromBackend(data.charts, isDarkMode.value);
       logger('info', `图表配置生成成功，共 ${chartOptions.value.length} 个图表`);
-      
+
       // 延迟初始化图表，确保 DOM 已更新且容器有正确尺寸
       await nextTick();
       let retryCount = 20;
@@ -524,7 +609,7 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
         }
       };
       tryInit();
-      
+
       logger('info', `========== handleOpenChart 结束（成功）==========`);
     } catch (error) {
       const errorMsg = '加载图形失败';
@@ -555,7 +640,13 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
 
       const option = chartOptions.value[index];
       if (!option || option.error) {
-        logger('warn', `图表配置 ${index} 为空或有错误`);
+        const errMsg = option?.error
+          ? `错误=${option.error}`
+          : 'option 为 undefined（chartOptions 长度 < chartRefs 长度，可能为 drill 后布局切换）';
+        logger('warn', `图表配置 ${index} ${errMsg}`);
+        if (option?.error) {
+          logger('warn', `图表配置 ${index} 完整内容:`, option);
+        }
         return;
       }
 
@@ -563,20 +654,34 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       const chartInstance = echarts.init(chartRef);
       chartInstance.setOption(option);
       chartInstances.value[index] = chartInstance;
-      
+
+      // 绑定图表点击事件 - 用于图形钻取
+      if (options.onChartClick) {
+        chartInstance.on('click', params => {
+          logger('debug', `图表点击事件触发, chartIndex=${index}`);
+          try {
+            options.onChartClick?.(params);
+          } catch (e) {
+            logger('error', `图表点击回调异常:`, e);
+          }
+        });
+      }
+
       // 延迟调用 resize，确保容器尺寸正确
+      // 注意：setTimeout 内仍可能引用已 dispose 的实例（例如用户快速钻取时
+      // disposeAllCharts 发生在 setTimeout 触发之前），必须用 isDisposed() 兜底
       setTimeout(() => {
-        chartInstance?.resize();
+        safeResize(chartInstance);
       }, 100);
 
       const resizeHandler = () => {
-        chartInstance?.resize();
+        safeResize(chartInstance);
       };
       window.addEventListener('resize', resizeHandler);
       resizeHandlers.value[index] = resizeHandler;
 
       const resizeObserver = new ResizeObserver(() => {
-        chartInstance?.resize();
+        safeResize(chartInstance);
       });
       resizeObserver.observe(chartRef);
       resizeObservers.value[index] = resizeObserver;
@@ -703,11 +808,11 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
               chartInstance.setOption(option);
               chartInstances.value[index] = chartInstance;
 
-              const resizeHandler = () => chartInstance?.resize();
+              const resizeHandler = () => safeResize(chartInstance);
               window.addEventListener('resize', resizeHandler);
               resizeHandlers.value[index] = resizeHandler;
 
-              const observer = new ResizeObserver(() => chartInstance?.resize());
+              const observer = new ResizeObserver(() => safeResize(chartInstance));
               observer.observe(chartRef);
               resizeObservers.value[index] = observer;
             });
@@ -728,6 +833,56 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     logger('info', `========== onDeactivated ==========`);
   });
 
+  /**
+   * 钻取后用新的图表数据替换当前图表
+   * 由 useWorkbenchChartDrill 在收到后端钻取响应后调用
+   */
+  async function reloadChartsFromDrill(charts: any[]) {
+    logger('info', `========== reloadChartsFromDrill 开始 ==========`);
+    logger('info', `收到 ${charts.length} 个钻取图表`);
+
+    if (!charts || charts.length === 0) {
+      logger('warn', `钻取图表数据为空`);
+      return;
+    }
+
+    // 先把旧图表实例全部销毁并清空 refs，避免重渲染时残留
+    disposeAllCharts();
+    chartRefs.value = [];
+    chartInstances.value = [];
+    resizeHandlers.value = [];
+    resizeObservers.value.forEach(o => o.disconnect());
+    resizeObservers.value = [];
+
+    // 更新图表数据
+    chartData.value = charts;
+    chartOptions.value = generateChartOptionsFromBackend(charts, isDarkMode.value);
+
+    logger('info', `钻取图表配置生成完成, 共 ${chartOptions.value.length} 个`);
+
+    // 等待 DOM 更新后重新初始化
+    await nextTick();
+    setTimeout(() => {
+      const hasValidRefs = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
+      if (hasValidRefs) {
+        initCharts();
+      } else {
+        let retryCount = 10;
+        const tryInit = () => {
+          const valid = chartRefs.value.some(el => el && el.clientWidth > 0 && el.clientHeight > 0);
+          if (valid) {
+            initCharts();
+          } else if (retryCount-- > 0) {
+            requestAnimationFrame(() => setTimeout(tryInit, 200));
+          }
+        };
+        tryInit();
+      }
+    }, 200);
+
+    logger('info', `========== reloadChartsFromDrill 结束 ==========`);
+  }
+
   return {
     chartVisible,
     chartLoading,
@@ -735,6 +890,8 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
     chartOptions,
     setChartRef,
     handleOpenChart,
-    resizeChart
+    resizeChart,
+    /** 钻取后用新图表数据重新渲染 */
+    reloadChartsFromDrill
   };
 }

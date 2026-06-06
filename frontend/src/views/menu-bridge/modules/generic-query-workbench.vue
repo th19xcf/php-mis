@@ -50,6 +50,7 @@ import { useToolbarScroll } from '@/hooks/business/use-toolbar-scroll';
 import { useWorkbenchComment } from '@/hooks/business/use-workbench-comment';
 import { useWorkbenchGridState } from '@/hooks/business/use-workbench-grid-state';
 import { useWorkbenchChart } from '@/hooks/business/use-workbench-chart';
+import { useWorkbenchChartDrill } from '@/hooks/business/use-workbench-chart-drill';
 import { useWorkbenchTableEdit } from '@/hooks/business/use-workbench-table-edit';
 import { useWorkbenchDataLoader } from '@/hooks/business/use-workbench-data-loader';
 import { useThemeStore } from '@/store/modules/theme';
@@ -556,17 +557,189 @@ const {
   notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
+// 钻取选项缓存：按功能编码缓存，钻取图形对话框使用 /workbench/drill 接口（页面级）
+// 图形钻取对话框直接使用 chart.钻取选项（图表级，来自 def_chart_drill_config），无需缓存
+const drillOptionsCache = ref<Api.Workbench.DrillOption[] | null>(null);
+let drillOptionsLoadPromise: Promise<Api.Workbench.DrillOption[] | null> | null = null;
+
+/**
+ * 加载当前功能编码下的钻取选项（页面级，参考旧版 Frame.php 中 def_drill_config.钻取模块 过滤逻辑）
+ * 同一 functionCode 多次调用复用同一份缓存与同一份进行中的 Promise
+ */
+async function loadDrillOptions(force = false): Promise<Api.Workbench.DrillOption[] | null> {
+  if (!force && drillOptionsCache.value !== null) {
+    return drillOptionsCache.value;
+  }
+  if (drillOptionsLoadPromise) {
+    return drillOptionsLoadPromise;
+  }
+
+  const currentFunctionCode = String(route.query.functionCode || route.meta?.functionCode || '');
+  if (!currentFunctionCode) {
+    return null;
+  }
+
+  drillOptionsLoadPromise = (async () => {
+    try {
+      const { data, error } = await fetchWorkbenchDrill(currentFunctionCode, {});
+      if (error || !data) {
+        drillOptionsCache.value = null;
+        return null;
+      }
+      const opts = (data.options as Api.Workbench.DrillOption[]) || [];
+      drillOptionsCache.value = opts;
+      return opts;
+    } catch {
+      drillOptionsCache.value = null;
+      return null;
+    } finally {
+      drillOptionsLoadPromise = null;
+    }
+  })();
+
+  return drillOptionsLoadPromise;
+}
+
+/**
+ * 取得指定图表的钻取选项（图表级，来自 def_chart_drill_config）
+ * 这是 Vgrid_aggrid.php 中 chart_drill 对话框使用的数据源
+ *
+ * 重要：dataItem.图形模块（逻辑模块，如 "公司_101"）与 chart.图形模块（SQL/SP 模块名，如 "sp_..."）
+ * 是不同的字段；SP 在产数据点时会用自己的逻辑模块写 图形模块 和 SID。
+ * 所以查找时优先按 图形编号 匹配，再用 图形模块 做兜底校验。
+ */
+function getChartOwnDrillOptions(sid: string): Api.Workbench.DrillOption[] | null {
+  if (!sid) return null;
+  const [chartModule, chartCode] = sid.split('^');
+  if (!chartCode) return null;
+
+  // 1) 优先：dataItem.图形模块 + 图形编号 同时匹配
+  let chart = chartData.value.find(
+    (c: any) => c['图形模块'] === chartModule && c['图形编号'] === chartCode
+  );
+
+  // 2) 兜底：仅按 图形编号 匹配（解决 dataItem.图形模块 与 chart.图形模块 不一致的情况）
+  if (!chart) {
+    chart = chartData.value.find((c: any) => c['图形编号'] === chartCode);
+  }
+
+  if (!chart) {
+    console.warn(
+      `[CHART-DRILL] 未找到图表: SID=${sid} 解析 图形模块=${chartModule} 图形编号=${chartCode}, chartData.length=${chartData.value.length}`
+    );
+    console.warn(
+      `[CHART-DRILL] chartData 图形模块列表: ${chartData.value.map((c: any) => c['图形模块']).join(', ')}`
+    );
+    return null;
+  }
+
+  const opts = (chart['钻取选项'] as Api.Workbench.DrillOption[]) || [];
+  console.info(
+    `[CHART-DRILL] 图表 图形模块=${chart['图形模块']} 图形编号=${chart['图形编号']} 钻取模块=${chart['钻取模块'] ?? '<空>'} 钻取选项数=${opts.length}`
+  );
+  if (opts.length === 0) {
+    console.info(`[CHART-DRILL] 图表字段列表: ${Object.keys(chart).join(', ')}`);
+  }
+  return opts.length > 0 ? opts : null;
+}
+
 const {
   chartVisible,
   chartLoading,
+  chartData,
   chartOptions,
   setChartRef,
   handleOpenChart,
-  resizeChart: chartResize
+  resizeChart: chartResize,
+  reloadChartsFromDrill
 } = useWorkbenchChart({
   getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify: (type: NotifyType, message: string) => msg(type, message),
+  onChartClick: (clickParams: any) => {
+    // 图表点击事件转发给图形钻取 hook
+    if (drillLevel.value >= 1) {
+      // 钻取状态下点击，提示用户先返回
+      msg('info', '当前为钻取结果，如需继续钻取请先点击"初始图形"');
+      return;
+    }
+    handleChartClick(clickParams);
+  }
 });
+
+const {
+  drillLevel,
+  isDrilled,
+  handleChartClick,
+  resetDrill
+} = useWorkbenchChartDrill({
+  getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
+  getDrillOptionsForChart: (sid: string) => {
+    // 图形钻取对话框使用图表自身的钻取选项（chart.钻取选项，源自 def_chart_drill_config）
+    // 与旧版 Vgrid_aggrid.php::chart_drill 中的 chart_data[chartModule][chartCode]['钻取模块'] 等价
+    const ownOpts = getChartOwnDrillOptions(sid);
+    if (ownOpts) {
+      return ownOpts;
+    }
+    // 兜底：若图表未携带钻取选项，则使用页面级钻取选项（来自 def_drill_config）
+    if (drillOptionsCache.value === null && !drillOptionsLoadPromise) {
+      void loadDrillOptions();
+    }
+    return drillOptionsCache.value;
+  },
+  notify: (type: NotifyType, message: string) => msg(type, message),
+  loading: ref(false), // 图形钻取 loading 与其他操作解耦
+  onDrillChartsUpdated: async (charts: any[]) => {
+    // 用钻取结果重新渲染图表
+    await reloadChartsFromDrill(charts);
+  },
+  isDarkMode,
+  regenerateOptionsFromCharts: (charts: any[]) => {
+    // 实际重新渲染由 useWorkbenchChart 内部完成
+    void charts;
+  }
+});
+
+// 页面级钻取选项预热（兜底场景使用）
+watch(
+  chartData,
+  async data => {
+    if (!data || data.length === 0) return;
+    // 仅在图表未配置图表级钻取选项时预热页面级选项
+    const hasOwnOptions = data.some((c: any) => Array.isArray(c['钻取选项']) && c['钻取选项'].length > 0);
+    if (!hasOwnOptions) {
+      await loadDrillOptions();
+    }
+  },
+  { immediate: true }
+);
+
+// 切换功能编码时清空旧缓存
+watch(
+  () => String(route.query.functionCode || route.meta?.functionCode || ''),
+  (newCode, oldCode) => {
+    if (newCode !== oldCode) {
+      drillOptionsCache.value = null;
+      drillOptionsLoadPromise = null;
+    }
+  }
+);
+
+/** 钻取后重新加载图表数据 */
+// 注：图表重新渲染由 useWorkbenchChart 内部的 reloadChartsFromDrill 处理
+// 实际调用在 useWorkbenchChartDrill 的 onDrillChartsUpdated 回调中
+
+/**
+ * 重置图形钻取：先清空后端 session 中的钻取状态，再重新加载初始图形
+ */
+async function handleResetDrill() {
+  if (isDrilled.value) {
+    await resetDrill();
+  }
+  // 重新打开图形以加载初始数据
+  if (pageMeta.value) {
+    await handleOpenChart(pageMeta.value);
+  }
+}
 
 watch(leftPanelWidth, () => {
   if (chartVisible.value) {
@@ -1063,6 +1236,7 @@ async function handleDebug() {
     interface ChartSqlItem {
       name?: string;
       图形名称?: string;
+      图形编号?: string;
       sql?: string;
       error?: string;
     }
@@ -1074,6 +1248,53 @@ async function handleDebug() {
         console.log('SQL:', chart.sql ? replacePlaceholders(chart.sql) : '(无)');
         if (chart.error) {
           console.log('错误:', chart.error);
+        }
+      });
+
+      // 输出每个图形的钻取信息（来源：def_chart_drill_config）
+      console.log('\n图形钻取配置明细:');
+      let chartFullList: any[] = [];
+      try {
+        const drillChartResponse = await request({
+          url: `/workbench/chart/${fnCode}`
+        });
+        chartFullList = drillChartResponse.data?.charts || [];
+      } catch (e) {
+        console.log('  重新获取图形数据失败:', e);
+      }
+      (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
+        const matched = chartFullList.find(
+          (c: any) =>
+            c['图形名称'] === (chart['图形名称'] || chart.name) ||
+            c['图形编号'] === chart['图形编号']
+        ) || chartFullList[index] || {};
+        const drillModule = matched['钻取模块'] ?? '<空>';
+        const drillOptions = Array.isArray(matched['钻取选项'])
+          ? matched['钻取选项']
+          : [];
+
+        console.log(`\n  --- 图形 ${index + 1}: ${chart['图形名称'] || chart.name || chartNames[index] || '未命名'} ---`);
+        console.log(`    图形模块: ${matched['图形模块'] ?? '<空>'}`);
+        console.log(`    图形编号: ${matched['图形编号'] ?? '<空>'}`);
+        console.log(`    钻取模块 (def_chart_config): ${drillModule}`);
+        console.log(`    钻取选项数 (def_chart_drill_config): ${drillOptions.length}`);
+
+        if (drillOptions.length === 0) {
+          if (drillModule === '<空>') {
+            console.log('    ⚠️ def_chart_config.钻取模块 为空，未发起 def_chart_drill_config 查询');
+          } else {
+            console.log(`    ⚠️ def_chart_drill_config 中无 钻取模块=${drillModule} 且 顺序>0 的记录`);
+          }
+        } else {
+          console.table(
+            drillOptions.map((o: any) => ({
+              钻取选项: o.label,
+              图形模块: o.chartModule,
+              钻取模块: o.module,
+              钻取字段: o.drillFields || '(无)',
+              钻取条件: o.drillCondition || '(无)'
+            }))
+          );
         }
       });
     } else {
@@ -1499,7 +1720,11 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       :class="{ 'chart-mode': chartVisible && !chartMaximized, resizing: isResizing }"
     >
       <!-- 左侧表格区域 -->
-      <div v-show="!chartMaximized" class="table-area" :style="chartVisible && !chartMaximized ? { flex: `0 0 ${leftPanelWidth}%` } : {}">
+      <div
+        v-show="!chartMaximized"
+        class="table-area"
+        :style="chartVisible && !chartMaximized ? { flex: `0 0 ${leftPanelWidth}%` } : {}"
+      >
         <NCard
           :bordered="false"
           :content-style="{ padding: '0' }"
@@ -1564,15 +1789,48 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       </div>
 
       <!-- 右侧图形区域 -->
-      <div v-show="chartVisible" class="chart-area" :style="{ flex: chartMaximized ? '1' : `0 0 ${100 - leftPanelWidth}%` }">
+      <div
+        v-show="chartVisible"
+        class="chart-area"
+        :style="{ flex: chartMaximized ? '1' : `0 0 ${100 - leftPanelWidth}%` }"
+      >
         <div class="chart-panel rounded-12px shadow-sm">
           <div class="chart-header">
-            <span class="chart-title">图形展示</span>
+            <span class="chart-title">
+              图形展示
+              <span v-if="isDrilled" class="drill-badge">钻取第 {{ drillLevel }} 级</span>
+            </span>
             <div class="flex flex-row gap-8px">
+              <NButton
+                v-if="isDrilled"
+                size="small"
+                type="primary"
+                @click="handleResetDrill"
+              >
+                初始图形
+              </NButton>
+              <NButton
+                v-else
+                size="small"
+                type="default"
+                @click="handleOpenChart(pageMeta)"
+              >
+                刷新
+              </NButton>
               <NButton size="small" type="default" @click="chartMaximized = !chartMaximized">
                 {{ chartMaximized ? '恢复' : '扩大' }}
               </NButton>
-              <NButton size="small" @click="() => { chartMaximized = false; chartVisible = false; }">关闭</NButton>
+              <NButton
+                size="small"
+                @click="
+                  () => {
+                    chartMaximized = false;
+                    chartVisible = false;
+                  }
+                "
+              >
+                关闭
+              </NButton>
             </div>
           </div>
           <div class="chart-container">
@@ -1811,6 +2069,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       :success="addSuccess"
       :form-fields="addFormFields"
       :form-data="addFormData"
+      @update:form-data="addFormData = $event"
       @confirm="confirmAdd"
       @open-popup="handleOpenPopup"
     />
@@ -1823,6 +2082,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       :success="updateSuccess"
       :form-fields="updateFormFields"
       :form-data="updateFormData"
+      @update:form-data="updateFormData = $event"
       @confirm="confirmUpdate"
       @open-popup="handleOpenPopup"
     />
@@ -1836,6 +2096,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
       :form-fields="batchUpdateFormFields"
       :form-data="batchUpdateFormData"
       is-batch
+      @update:form-data="batchUpdateFormData = $event"
       @confirm="confirmBatchUpdate"
       @open-popup="handleOpenPopup"
     />

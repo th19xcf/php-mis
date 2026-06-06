@@ -24,6 +24,35 @@ class Mcommon extends Model
         return $db->query($sql);
     }
 
+    /**
+     * 执行带参数绑定的 SQL（INSERT / UPDATE / DELETE）
+     *
+     * CodeIgniter 的 Query Builder 会把数组中的标量依次替换到 SQL 中的 ? 占位符。
+     * 注意：调用方需要使用 ? 占位符；此处兼容历史代码中遗留的 %s 占位符。
+     *
+     * @param string $sql SQL 语句
+     * @param array  $bindings 绑定的参数数组
+     * @return object|\CodeIgniter\Database\BaseResult
+     */
+    public function query(string $sql, array $bindings = [])
+    {
+        $db = $this->getDb();
+        // 将历史遗留的 %s 占位符规范化为 ?，由驱动层完成安全绑定
+        $normalized = preg_replace('/%s/', '?', $sql);
+        return $db->query($normalized, $bindings);
+    }
+
+    /**
+     * 返回上一次通过 query() / modify() 执行的 SQL 所影响的行数。
+     *
+     * 由于 Model 基类的 affectedRows() 会走 __call() 触发 Query Builder，
+     * 而本类的写操作走的是原始 query()，需要直接从底层连接获取受影响行数。
+     */
+    public function affectedRows(): int
+    {
+        return (int) $this->getDb()->affectedRows();
+    }
+
     public function modify(string $sql): int
     {
         $db = $this->getDb();
