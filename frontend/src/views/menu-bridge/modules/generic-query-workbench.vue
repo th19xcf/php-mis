@@ -614,9 +614,7 @@ function getChartOwnDrillOptions(sid: string): Api.Workbench.DrillOption[] | nul
   if (!chartCode) return null;
 
   // 1) 优先：dataItem.图形模块 + 图形编号 同时匹配
-  let chart = chartData.value.find(
-    (c: any) => c['图形模块'] === chartModule && c['图形编号'] === chartCode
-  );
+  let chart = chartData.value.find((c: any) => c['图形模块'] === chartModule && c['图形编号'] === chartCode);
 
   // 2) 兜底：仅按 图形编号 匹配（解决 dataItem.图形模块 与 chart.图形模块 不一致的情况）
   if (!chart) {
@@ -627,9 +625,7 @@ function getChartOwnDrillOptions(sid: string): Api.Workbench.DrillOption[] | nul
     console.warn(
       `[CHART-DRILL] 未找到图表: SID=${sid} 解析 图形模块=${chartModule} 图形编号=${chartCode}, chartData.length=${chartData.value.length}`
     );
-    console.warn(
-      `[CHART-DRILL] chartData 图形模块列表: ${chartData.value.map((c: any) => c['图形模块']).join(', ')}`
-    );
+    console.warn(`[CHART-DRILL] chartData 图形模块列表: ${chartData.value.map((c: any) => c['图形模块']).join(', ')}`);
     return null;
   }
 
@@ -666,12 +662,7 @@ const {
   }
 });
 
-const {
-  drillLevel,
-  isDrilled,
-  handleChartClick,
-  resetDrill
-} = useWorkbenchChartDrill({
+const { drillLevel, isDrilled, handleChartClick, resetDrill } = useWorkbenchChartDrill({
   getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
   getDrillOptionsForChart: (sid: string) => {
     // 图形钻取对话框使用图表自身的钻取选项（chart.钻取选项，源自 def_chart_drill_config）
@@ -1263,17 +1254,18 @@ async function handleDebug() {
         console.log('  重新获取图形数据失败:', e);
       }
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
-        const matched = chartFullList.find(
-          (c: any) =>
-            c['图形名称'] === (chart['图形名称'] || chart.name) ||
-            c['图形编号'] === chart['图形编号']
-        ) || chartFullList[index] || {};
+        const matched =
+          chartFullList.find(
+            (c: any) => c['图形名称'] === (chart['图形名称'] || chart.name) || c['图形编号'] === chart['图形编号']
+          ) ||
+          chartFullList[index] ||
+          {};
         const drillModule = matched['钻取模块'] ?? '<空>';
-        const drillOptions = Array.isArray(matched['钻取选项'])
-          ? matched['钻取选项']
-          : [];
+        const drillOptions = Array.isArray(matched['钻取选项']) ? matched['钻取选项'] : [];
 
-        console.log(`\n  --- 图形 ${index + 1}: ${chart['图形名称'] || chart.name || chartNames[index] || '未命名'} ---`);
+        console.log(
+          `\n  --- 图形 ${index + 1}: ${chart['图形名称'] || chart.name || chartNames[index] || '未命名'} ---`
+        );
         console.log(`    图形模块: ${matched['图形模块'] ?? '<空>'}`);
         console.log(`    图形编号: ${matched['图形编号'] ?? '<空>'}`);
         console.log(`    钻取模块 (def_chart_config): ${drillModule}`);
@@ -1323,6 +1315,179 @@ async function handleDebug() {
     msg('error', '获取调试信息失败');
     console.error('调试信息获取错误:', err);
   }
+}
+
+/**
+ * 图形区调试：在控制台输出当前图形数据（初始图形 / 钻取图形）的相关信息
+ *  - 输出每个图形的：图形模块 / 图形编号 / 名称 / SQL / 错误 / 钻取选项
+ *  - 输出 ECharts DOM 信息（容器尺寸）
+ *  - 调后端 /workbench/debug 拉取后端 session 快照，对比输出
+ *  - 与全局 handleDebug 互补：handleDebug 走 debug 接口取后端配置快照；
+ *    本方法走前端运行时状态 + 后端 session 状态，便于排查钻取链路问题
+ */
+async function handleChartDebug() {
+  const fnCode = String(props.meta.functionCode || '').trim();
+  const charts = chartData.value || [];
+  const currentRoute = route;
+
+  console.group(`📈 图形调试 - functionCode=${fnCode} | 钻取级别=${drillLevel.value} (${isDrilled.value ? '钻取' : '初始'})`);
+
+  // 1. 路由与上下文
+  console.log('🧭 路由上下文:');
+  console.log('  - 路径:', currentRoute.path);
+  console.log('  - 名称:', String(currentRoute.name || ''));
+  console.log('  - query:', JSON.parse(JSON.stringify(currentRoute.query || {})));
+  console.log('  - meta.functionCode:', String(currentRoute.meta?.functionCode || ''));
+  //console.log('  - props.meta:', JSON.parse(JSON.stringify(props.meta || {})));
+
+  // 2. 页面 meta 完整信息
+  console.log('\n📋 页面 pageMeta（来自后端 /workbench/page）:');
+  console.log('  - chartModule:', pageMeta.value?.chartModule || '<空>');
+  console.log('  - queryModule:', pageMeta.value?.queryModule || '<空>');
+  console.log('  - fieldModule:', pageMeta.value?.fieldModule || '<空>');
+  console.log('  - commentModule:', pageMeta.value?.commentModule || '<空>');
+  console.log('  - mode:', pageMeta.value?.mode || '<空>');
+  console.log('  - supportsStoredProcedure:', pageMeta.value?.supportsStoredProcedure);
+  console.log('  - toolbar:', JSON.parse(JSON.stringify(pageMeta.value?.toolbar || {})));
+  //console.log('  - 完整 pageMeta:', JSON.parse(JSON.stringify(pageMeta.value || {})));
+
+  // 3. 钻取状态 + 工具栏权限
+  console.log('\n🔍 钻取状态:');
+  console.log('  - drillLevel:', drillLevel.value);
+  console.log('  - isDrilled:', isDrilled.value);
+  console.log('  - chartVisible:', chartVisible.value);
+  console.log('  - chartLoading:', chartLoading.value);
+  console.log('  - chartMaximized:', chartMaximized.value);
+
+  if (charts.length === 0) {
+    console.log('\n⚠️ 当前未加载任何图形（请先点击"图形"按钮打开）');
+    console.groupEnd();
+    msg('warning', '当前未加载图形数据');
+    return;
+  }
+
+  // 4. chartData 详细
+  console.log(`\n📊 chartData 明细（${charts.length} 项）:`);
+  charts.forEach((chart: any, index: number) => {
+    const chartModule = chart['图形模块'] ?? '<空>';
+    const chartCode = chart['图形编号'] ?? '<空>';
+    const chartName = chart['图形名称'] ?? '<空>';
+    const fetchMode = chart['取数方式'] ?? '<空>';
+    const sql = chart['SQL'] ?? '';
+    const error = chart['错误'];
+    const dataRows = Array.isArray(chart['数据']) ? chart['数据'] : [];
+    const drillOptions = Array.isArray(chart['钻取选项']) ? chart['钻取选项'] : [];
+
+    console.group(`📊 图形 ${index + 1}: ${chartName} [${chartModule}^${chartCode}]`);
+    console.log('基础信息:');
+    console.log('  - 图形模块:', chartModule);
+    console.log('  - 图形编号:', chartCode);
+    console.log('  - 图形名称:', chartName);
+    console.log('  - 取数方式:', fetchMode);
+    console.log('  - 钻取模块:', chart['钻取模块'] ?? '<空>');
+    console.log('  - 字段模块:', chart['字段模块'] ?? '<空>');
+    console.log('  - 页面布局:', chart['页面布局'] ?? '<空>');
+    console.log('  - 图形类型:', chart['图形类型'] ?? '<空>');
+    console.log('  - SID 模板:', chart['SID'] ?? '<空>');
+    console.log('  - 数据条数:', dataRows.length);
+
+    if (sql) {
+      console.log('SQL:');
+      console.log(sql);
+    } else {
+      console.log('SQL: (空)');
+    }
+    if (error) {
+      console.log('❌ 错误:', error);
+    }
+    if (dataRows.length > 0) {
+      console.log('数据条数:', dataRows.length);
+    } else {
+      console.log('数据: (空)');
+    }
+
+    if (drillOptions.length === 0) {
+      console.log('⚠️ 钻取选项: 无');
+    } else {
+      console.log(`钻取选项数: ${drillOptions.length}`);
+      console.log('钻取选项完整列表:');
+      console.table(
+        drillOptions.map((o: any) => ({
+          钻取选项: o.label ?? o['钻取选项'] ?? '<空>',
+          图形模块: o.chartModule ?? o['图形模块'] ?? '<空>',
+          钻取模块: o.module ?? o['钻取模块'] ?? o.functionCode ?? '<空>',
+          钻取字段: o.drillFields ?? o['钻取字段'] ?? '(无)',
+          钻取条件: o.drillCondition ?? o['钻取条件'] ?? '(无)',
+          value: o.value ?? '<空>'
+        }))
+      );
+    }
+    console.groupEnd();
+  });
+
+  // 5. 后端调试快照（拉取 /workbench/debug）
+  console.log('\n🛰️ 拉取后端调试快照 /workbench/debug ...');
+  try {
+    const payload: Api.Workbench.QueryPayload = { all: true, filters: [] };
+    const { data, error } = await fetchWorkbenchDebug(fnCode, payload);
+    if (error || !data) {
+      console.log('  ❌ 拉取失败:', error);
+    } else {
+      console.log('  ✅ 后端 pageMeta 快照:');
+      console.log('    - functionCode:', data.functionCode);
+      console.log('    - queryTable:', data.queryTable);
+      console.log('    - chartModule:', data.chartModule);
+      console.log('    - chartQuerySql:', data.chartQuerySql);
+      console.log('    - chartSql 长度:', data.chartSql?.length || 0);
+      console.log('    - queryMode:', data.mode);
+      console.log('    - 完整后端响应:', JSON.parse(JSON.stringify(data)));
+
+      // 6. 钻取 session 状态（关键：queryTable / chartSql 反映后端 SP 占位符是否已替换）
+      if (Array.isArray(data.chartSql) && data.chartSql.length > 0) {
+        console.log('\n🗂️ 后端 chartSql 明细:');
+        (data.chartSql as any[]).forEach((cs: any, i: number) => {
+          console.group(`  chartSql[${i}]`);
+          console.log('    名称:', cs['图形名称'] || cs.name);
+          console.log('    编号:', cs['图形编号']);
+          console.log('    SQL:', cs.sql);
+          if (cs.error) console.log('    错误:', cs.error);
+          console.groupEnd();
+        });
+
+        // 检查 SQL 中是否还包含未替换的占位符
+        const placeholderPattern = /\$\{?[\u4e00-\u9fa5A-Za-z_]+\}?/g;
+        const hasUnreplaced = data.chartSql.some((cs: any) => cs.sql && placeholderPattern.test(cs.sql));
+        if (hasUnreplaced) {
+          console.log('  ⚠️ 检测到 SQL 中可能存在未替换的占位符（$查询表名 / $[部门全称赋权] 等）');
+        }
+      }
+    }
+  } catch (e) {
+    console.log('  ❌ 异常:', e);
+  }
+
+  // 7. 完整 chartData 原始 JSON（独立子组，单独可折叠）
+  console.groupCollapsed(`📦 完整 chartData（JSON） — ${charts.length} 项 [点击展开]`);
+  try {
+    // 关键：chartData 来自响应式 ref，元素可能是 Vue Proxy / 包含函数 / Symbol / 循环引用，
+    // 直接 JSON.stringify 会抛 "Converting circular structure to JSON"，导致整段静默。
+    // 这里做一次深拷贝解包后再 stringify。
+    const safeCharts = JSON.parse(JSON.stringify(charts));
+    console.log(JSON.stringify(safeCharts, null, 2));
+  } catch (e) {
+    console.log('JSON.stringify 失败（可能是循环引用 / 函数 / Symbol），回退输出结构:');
+    console.log('  - 错误:', e);
+    console.log('  - charts.length:', charts.length);
+    charts.forEach((c: any, i: number) => {
+      console.log(`  [${i}] keys:`, Object.keys(c || {}));
+      const dataRows = Array.isArray(c?.['数据']) ? c['数据'] : [];
+      console.log(`       数据条数: ${dataRows.length}, 数据 keys (首行):`, dataRows[0] ? Object.keys(dataRows[0]) : []);
+    });
+  }
+  console.groupEnd();
+
+  console.groupEnd();
+  msg('success', '图形调试信息已输出到控制台');
 }
 
 async function handleUpkeep() {
@@ -1797,28 +1962,23 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
         <div class="chart-panel rounded-12px shadow-sm">
           <div class="chart-header">
             <span class="chart-title">
-              图形展示
-              <span v-if="isDrilled" class="drill-badge">钻取第 {{ drillLevel }} 级</span>
+              <span class="title-text">图形展示</span>
+              <span class="title-divider">|</span>
+              <span class="drill-badge">{{ isDrilled ? `钻取第 ${drillLevel} 级` : '初始图形' }}</span>
             </span>
             <div class="flex flex-row gap-8px">
-              <NButton
-                v-if="isDrilled"
-                size="small"
-                type="primary"
-                @click="handleResetDrill"
-              >
-                初始图形
-              </NButton>
-              <NButton
-                v-else
-                size="small"
-                type="default"
-                @click="handleOpenChart(pageMeta)"
-              >
-                刷新
-              </NButton>
+              <NButton v-if="isDrilled" size="small" type="primary" @click="handleResetDrill">初始图形</NButton>
+              <NButton v-else size="small" type="default" @click="handleOpenChart(pageMeta)">刷新</NButton>
               <NButton size="small" type="default" @click="chartMaximized = !chartMaximized">
                 {{ chartMaximized ? '恢复' : '扩大' }}
+              </NButton>
+              <NButton
+                v-if="pageMeta?.toolbar.debugSql"
+                size="small"
+                type="warning"
+                @click="handleChartDebug"
+              >
+                调试
               </NButton>
               <NButton
                 size="small"

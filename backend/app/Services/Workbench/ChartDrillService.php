@@ -186,17 +186,49 @@ class ChartDrillService
                 $chartItem['数据'] = $dataResults ? ($dataResults->getResultArray() ?? []) : [];
                 $chartItem['SQL'] = $dataSql;
 
-                // 拆分多图形数据
+                // 加载 def_chart_column 列配置（坐标轴 / 图形类型），
+                // split 内部通过 $new = $baseChartItem 浅拷贝继承给每个分桶，
+                // 使前端可以按字段渲染折线 / 柱 / 饼等不同图形
+                $this->addChartColumnConfigs($chartItem, $row);
+
+                // 拆分多图形数据（splitChartDataByCode 内部会按"图形编号"分桶，
+                // 并用每桶首行的"图形名称"列覆盖 chartItem['图形名称']，
+                // 使不同图形编号对应不同的"图形名称"）
                 $result = array_merge($result, $this->splitChartDataByCode($chartItem, $chartItem['数据']));
             } catch (\Throwable $e) {
                 $chartItem['数据'] = [];
                 $chartItem['错误'] = $e->getMessage();
                 $chartItem['SQL'] = '';
+                $this->addChartColumnConfigs($chartItem, $row);
                 $result[] = $chartItem;
             }
         }
 
         return $result;
+    }
+
+    /**
+     * 从 SP 查询结果中提取"图形名称"
+     *
+     * SP 模板可在结果集中通过"图形名称"列自定义图表显示名称
+     * （例如钻取后 sp_公司_预算_月完成_财务科目_预算月份_月份() 返回带"图形名称"的结果）。
+     * 取首条非空值，主体取完后丢弃。
+     *
+     * @param array $dataRows SP 返回的数据行
+     * @return string|null 找到返回字符串，未找到返回 null
+     */
+    private function extractSpChartName(array $dataRows): ?string
+    {
+        foreach ($dataRows as $row) {
+            $row = (array) $row;
+            if (array_key_exists('图形名称', $row)) {
+                $val = trim((string) ($row['图形名称'] ?? ''));
+                if ($val !== '') {
+                    return $val;
+                }
+            }
+        }
+        return null;
     }
 
     /**
@@ -215,6 +247,46 @@ class ChartDrillService
             '钻取模块' => (string) $row->钻取模块,
             '数据' => []
         ];
+    }
+
+    /**
+     * 添加图表列配置
+     *
+     * 从 def_chart_column 读取"字段模块"对应的列配置（坐标轴 / 图形类型），
+     * 填充到 chartItem['字段']，使前端可以按字段渲染不同图形（折线/柱/饼等）。
+     *
+     * 例如：def_chart_column 中"完成率"字段 图形类型="折线图"，前端会用 line series 渲染；
+     *      没有此配置时，前端 fallback 到默认柱图，导致钻取后图形类型与初始不一致。
+     */
+    private function addChartColumnConfigs(array &$chartItem, object $row): void
+    {
+        if (empty($row->字段模块)) {
+            return;
+        }
+
+        $colSql = sprintf(
+            'select 字段模块, 列名, 字段名, 坐标轴, 图形类型
+             from def_chart_column
+             where 字段模块=%s and 顺序>0
+             order by 字段模块, 顺序',
+            $this->quote((string) $row->字段模块)
+        );
+
+        $colResults = $this->model->select($colSql)->getResult() ?? [];
+        $chartItem['字段'] = [];
+        $chartItem['字段数'] = 0;
+
+        foreach ($colResults as $colRow) {
+            $fieldName = (string) $colRow->字段名;
+            if ($fieldName === '' || !array_key_exists($fieldName, $chartItem['字段'])) {
+                $chartItem['字段'][$fieldName] = [];
+            }
+            $chartItem['字段数']++;
+            $chartItem['字段'][$fieldName]['列名']     = (string) $colRow->列名;
+            $chartItem['字段'][$fieldName]['字段名']   = $fieldName;
+            $chartItem['字段'][$fieldName]['坐标轴']   = (string) $colRow->坐标轴;
+            $chartItem['字段'][$fieldName]['图形类型'] = (string) $colRow->图形类型;
+        }
     }
 
     /**
@@ -345,6 +417,11 @@ class ChartDrillService
 
     /**
      * 将数据按"图形编号"字段拆分到独立图表
+     *
+     * - 按"图形编号"列分桶；缺省按 SID 解析
+     * - SP 模板可在结果集中通过"图形名称"列自定义每桶的图表名称，
+     *   拆桶时取桶内首行非空的"图形名称"作为该桶 chart item 的"图形名称"
+     * - 保留 baseChartItem['图形名称'] 中已拼装的 "(titleStr)" 副标题后缀
      */
     private function splitChartDataByCode(array $baseChartItem, array $dataResults): array
     {
@@ -366,6 +443,11 @@ class ChartDrillService
         }
 
         if (empty($codes)) {
+            // 不分桶：用首行的"图形名称"覆盖主体，保留可能的副标题后缀
+            $spName = $this->extractSpChartName($dataResults);
+            if ($spName !== null) {
+                $baseChartItem['图形名称'] = $this->mergeSpNameWithSubtitle($baseChartItem['图形名称'], $spName);
+            }
             $baseChartItem['数据'] = $dataResults;
             return [$baseChartItem];
         }
@@ -375,10 +457,20 @@ class ChartDrillService
             $new = $baseChartItem;
             $new['图形编号'] = (string) $code;
             $new['数据'] = [];
+            $bucketHasRow = false;
             foreach ($dataResults as $item) {
                 $item = (array) $item;
                 $codeVal = isset($item['图形编号']) ? (string) $item['图形编号'] : (explode('^', (string) ($item['SID'] ?? ''))[1] ?? '');
                 if ($codeVal === (string) $code) {
+                    // 桶内首行命中：用其"图形名称"覆盖 chart item 名称主体，
+                    // 使不同"图形编号"对应不同的"图形名称"
+                    if (!$bucketHasRow) {
+                        $spName = $this->extractSpChartName([$item]);
+                        if ($spName !== null) {
+                            $new['图形名称'] = $this->mergeSpNameWithSubtitle($new['图形名称'], $spName);
+                        }
+                        $bucketHasRow = true;
+                    }
                     $new['数据'][] = $item;
                 }
             }
@@ -386,6 +478,18 @@ class ChartDrillService
         }
 
         return $result;
+    }
+
+    /**
+     * 用 SP 返回的"图形名称"作为主体，保留 baseName 中已存在的 "(titleStr)" 副标题后缀
+     */
+    private function mergeSpNameWithSubtitle(mixed $baseName, string $spName): string
+    {
+        $current = (string) $baseName;
+        $parenPos = mb_strpos($current, '(');
+        return $parenPos === false
+            ? $spName
+            : $spName . mb_substr($current, $parenPos);
     }
 
     /**

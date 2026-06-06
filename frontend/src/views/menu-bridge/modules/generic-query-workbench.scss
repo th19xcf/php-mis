@@ -587,6 +587,32 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
 .chart-title {
   font-size: 16px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  .title-text {
+    background-color: $wb-primary-color;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .title-divider {
+    display: inline-block;
+    color: $wb-text-secondary;
+    font-weight: 400;
+    opacity: 0.6;
+    margin: 0 2px;
+  }
+
+  .drill-badge {
+    font-size: 13px;
+    font-weight: 500;
+    color: $wb-primary-color;
+  }
 }
 
 .chart-container {
