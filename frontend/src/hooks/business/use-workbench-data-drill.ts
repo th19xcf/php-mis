@@ -6,6 +6,7 @@ import { NRadioGroup, NRadio, NButton } from 'naive-ui';
 import { useRouter } from 'vue-router';
 
 import { fetchWorkbenchDrill } from '@/service/api/workbench';
+import { logger } from '@/utils/logger';
 
 type MessageType = 'success' | 'error' | 'warning' | 'info';
 
@@ -19,80 +20,80 @@ interface UseWorkbenchDataDrillOptions {
 export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
   const router = useRouter();
 
-  function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
+  function log(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [DATA-DRILL] [${method.toUpperCase()}]`;
 
     if (data !== undefined) {
-      console.log(`${prefix} ${message}`, data);
+      logger.info(`${prefix} ${message}`, data);
     } else {
-      console.log(`${prefix} ${message}`);
+      logger.info(`${prefix} ${message}`);
     }
   }
 
   async function handleDataDrill() {
-    logger('info', `========== handleDataDrill 开始 ==========`);
+    log('info', `========== handleDataDrill 开始 ==========`);
 
     const selectedRows = options.gridApi.value?.getSelectedRows() || [];
 
     if (selectedRows.length === 0) {
-      logger('warn', '未选择任何记录');
+      log('warn', '未选择任何记录');
       options.notify('warning', '请先选择要钻取的记录');
       return;
     }
 
     if (selectedRows.length > 1) {
-      logger('warn', `选择了 ${selectedRows.length} 条记录，超过限制`);
+      log('warn', `选择了 ${selectedRows.length} 条记录，超过限制`);
       options.notify('warning', '只能选择 1 条记录');
       return;
     }
 
     const functionCode = options.getFunctionCode();
     if (!functionCode) {
-      logger('error', '功能编码为空');
+      log('error', '功能编码为空');
       options.notify('error', '功能编码不能为空');
       return;
     }
 
     const selectedRow = selectedRows[0];
-    logger('info', `选中记录: rowId=${selectedRow.GUID || selectedRow.id || 'unknown'}`);
+    log('info', `选中记录: rowId=${selectedRow.GUID || selectedRow.id || 'unknown'}`);
 
     options.loading.value = true;
-    logger('debug', `设置 loading = true`);
+    log('debug', `设置 loading = true`);
 
     try {
-      logger('info', `获取钻取选项: fetchWorkbenchDrill("${functionCode}")`);
+      log('info', `获取钻取选项: fetchWorkbenchDrill("${functionCode}")`);
       const { data, error } = await fetchWorkbenchDrill(functionCode, {});
 
       options.loading.value = false;
-      logger('debug', `设置 loading = false`);
+      log('debug', `设置 loading = false`);
 
       if (error) {
-        logger('error', `获取钻取选项失败:`, error);
+        log('error', `获取钻取选项失败:`, error);
         options.notify('error', '获取钻取选项失败', error);
         return;
       }
 
       if (data.options && data.options.length > 0) {
-        logger('info', `获取到 ${data.options.length} 个钻取选项`);
+        log('info', `获取到 ${data.options.length} 个钻取选项`);
         await showDrillOptionsDialog(data.options, selectedRow);
       } else {
         handleNoDrillOptions(data);
       }
     } catch (err) {
       options.loading.value = false;
-      logger('error', `钻取操作异常:`, err);
+      log('error', `钻取操作异常:`, err);
       options.notify('error', '钻取操作失败', err);
     }
 
-    logger('info', `========== handleDataDrill 结束 ==========`);
+    log('info', `========== handleDataDrill 结束 ==========`);
   }
 
   function handleNoDrillOptions(data: any) {
     const drillModule = data.debug?.drillModule || 'empty';
     const queryModule = data.debug?.queryModule || 'empty';
 
-    logger('warn', `未找到钻取选项, drillModule="${drillModule}", queryModule="${queryModule}"`);
+    log('warn', `未找到钻取选项, drillModule="${drillModule}", queryModule="${queryModule}"`);
 
     if (drillModule && drillModule !== 'empty' && drillModule !== queryModule) {
       options.notify('warning', `钻取模块 [${drillModule}] 在 def_drill_config 表中未找到配置`);
@@ -123,7 +124,7 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
     const drillSelectedValue = ref<string>(drillOptions[0]?.value || '');
 
     const handleDrillConfirm = (selectedOpt: (typeof drillOptions)[0]) => {
-      logger('info', `开始钻取确认, functionCode=${selectedOpt.functionCode}`);
+      log('info', `开始钻取确认, functionCode=${selectedOpt.functionCode}`);
 
       const drillItem = selectedOpt.raw;
       const drillFieldsStr = drillItem.drillFields || '';
@@ -141,7 +142,7 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
       }
 
       if (!hasValidField) {
-        logger('warn', '钻取字段为空');
+        log('warn', '钻取字段为空');
         options.notify('warning', '钻取字段为空，无法钻取');
         return;
       }
@@ -164,11 +165,10 @@ export function useWorkbenchDataDrill(options: UseWorkbenchDataDrillOptions) {
       const targetMenu1 = drillItem.menu1 || '';
       const targetMenu2 = drillItem.menu2 || '';
 
-      logger(
-        'info',
+      log('info',
         `跳转参数: functionCode=${targetFunctionCode}, module=${targetModule}, menu1=${targetMenu1}, menu2=${targetMenu2}`
       );
-      logger('debug', `钻取参数:`, sendObj);
+      log('debug', `钻取参数:`, sendObj);
 
       router.push({
         path: `/menu-bridge`,

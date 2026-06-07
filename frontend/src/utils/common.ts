@@ -1,4 +1,5 @@
 import { $t } from '@/locales';
+import { logger } from '@/utils/logger';
 
 let tabSwitchStartTime = 0;
 let tabSwitchLabel = '';
@@ -12,13 +13,13 @@ export function recordTabSwitchEnd() {
   if (!tabSwitchStartTime) {
     return;
   }
-  
+
   const endTime = performance.now();
   const duration = endTime - tabSwitchStartTime;
-  console.log(
+  logger.info(
     `[🔀 switchTab] 切换完成: ${tabSwitchLabel}, 当前动作用时: ${duration.toFixed(2)}ms, 总用时: ${duration.toFixed(2)}ms`
   );
-  
+
   tabSwitchStartTime = 0;
 }
 

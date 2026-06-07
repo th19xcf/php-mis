@@ -5,6 +5,7 @@ import type { GridApi } from 'ag-grid-community';
 import { fetchWorkbenchPage, fetchWorkbenchPageData } from '@/service/api/workbench';
 import type { WorkbenchStore } from './use-workbench-grid-state';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
+import { logger } from '@/utils/logger';
 
 interface UseWorkbenchDataLoaderOptions {
   gridApi: Ref<GridApi<Api.Workbench.QueryRecord> | null>;
@@ -78,20 +79,20 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     return {
       end: () => {
         const duration = performance.now() - start;
-        console.log(`[性能计时] ${label}: ${duration.toFixed(2)}ms`);
+        logger.info(`[性能计时] ${label}: ${duration.toFixed(2)}ms`);
       },
       elapsed: () => performance.now() - start
     };
   }
 
-  function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
+  function log(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [DATA-LOADER] [${method.toUpperCase()}]`;
 
     if (data !== undefined) {
-      console.log(`${prefix} ${message}`, data);
+      logger.info(`${prefix} ${message}`, data);
     } else {
-      console.log(`${prefix} ${message}`);
+      logger.info(`${prefix} ${message}`);
     }
   }
 
@@ -161,12 +162,12 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     const remainingCount = totalRecords - firstChunkSize;
 
     if (remainingCount <= 0) {
-      console.log('[性能] 数据已全部加载');
+      logger.info('[性能] 数据已全部加载');
       bgTimer.end();
       return;
     }
 
-    console.log(
+    logger.info(
       `[进度] 开始后台加载数据: 总数=${totalRecords.toLocaleString()}, 已加载=${firstChunkSize.toLocaleString()}, 剩余=${remainingCount.toLocaleString()}`
     );
 
@@ -174,7 +175,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     const CONCURRENT_REQUESTS = Math.max(3, Math.min(6, Math.ceil(remainingCount / PAGE_SIZE / 4)));
 
     const chunksNeeded = Math.ceil(remainingCount / PAGE_SIZE);
-    console.log(`[进度] 分片策略: 每片${PAGE_SIZE}条, 并发${CONCURRENT_REQUESTS}个请求, 共${chunksNeeded}个分片`);
+    logger.info(`[进度] 分片策略: 每片${PAGE_SIZE}条, 并发${CONCURRENT_REQUESTS}个请求, 共${chunksNeeded}个分片`);
 
     const totalOffsets = Array.from({ length: chunksNeeded }, (_, i) => firstChunkSize + i * PAGE_SIZE);
     let nextChunkIndex = 0;
@@ -228,7 +229,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
               loadedRows += records.length;
               loadedCount.value = firstChunkSize + loadedRows;
               const progress = ((loadedCount.value / totalRecords) * 100).toFixed(1);
-              console.log(
+              logger.info(
                 `[进度] 已加载 ${loadedCount.value.toLocaleString()} / ${totalRecords.toLocaleString()} 条记录 (${progress}%)`
               );
               chunkRecordsMap.set(offset, records);
@@ -239,7 +240,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
               if (nextChunkIndex >= totalOffsets.length && activeRequests === 0) {
                 const finalCount = firstChunkSize + loadedRows;
-                console.log(
+                logger.info(
                   `[进度] ✅ 后台加载完成: 总数据量=${finalCount.toLocaleString()}, 期望=${totalRecords.toLocaleString()}, 是否匹配=${finalCount === totalRecords ? '是' : '否'}`
                 );
                 workbenchStore.setCache(functionCode, params, {
@@ -278,41 +279,40 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     const functionCode = options.functionCode.value.trim();
     const params = options.params.value.trim();
 
-    logger('info', `========== loadPage 开始 ==========`);
-    logger('info', `functionCode: "${functionCode}"`);
-    logger('info', `params: "${params}"`);
-    logger('info', `当前时间戳: ${performance.now().toFixed(1)}ms`);
+    log('info', `========== loadPage 开始 ==========`);
+    log('info', `functionCode: "${functionCode}"`);
+    log('info', `params: "${params}"`);
+    log('info', `当前时间戳: ${performance.now().toFixed(1)}ms`);
 
     if (!functionCode) {
-      logger('warn', 'functionCode 为空，跳过加载');
+      log('warn', 'functionCode 为空，跳过加载');
       pageMeta.value = null;
       serverRows.value = [];
       total.value = 0;
-      logger('info', `========== loadPage 结束（空 functionCode）==========`);
+      log('info', `========== loadPage 结束（空 functionCode）==========`);
       return;
     }
 
     isInitialLoading.value = true;
-    logger('debug', `设置 isInitialLoading = true`);
+    log('debug', `设置 isInitialLoading = true`);
 
     const cached = workbenchStore.getCache(functionCode, params);
     const isCacheComplete = cached && cached.isDataLoaded && cached.serverRows.length === cached.total;
 
-    logger('info', `缓存检查结果: 命中=${!!cached}, 完整=${isCacheComplete}`);
+    log('info', `缓存检查结果: 命中=${!!cached}, 完整=${isCacheComplete}`);
     if (cached) {
-      logger(
-        'debug',
+      log('debug',
         `缓存数据: total=${cached.total}, serverRows.length=${cached.serverRows?.length || 0}, isDataLoaded=${cached.isDataLoaded}`
       );
     }
 
     if (isCacheComplete) {
-      logger('info', `========== 开始缓存恢复 ==========`);
-      logger('info', `缓存数据量: ${cached.serverRows.length} 条`);
+      log('info', `========== 开始缓存恢复 ==========`);
+      log('info', `缓存数据量: ${cached.serverRows.length} 条`);
       const cacheTimer = createTimer('📦 缓存恢复总耗时');
 
       const step1Timer = createTimer('  [缓存-1] 恢复基本状态');
-      logger('info', `步骤1: 恢复基本状态`);
+      log('info', `步骤1: 恢复基本状态`);
       pageMeta.value = cached.pageMeta;
       total.value = cached.total;
       totalCount.value = cached.total;
@@ -323,26 +323,26 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       loadedParams.value = params;
       isDataLoaded.value = true;
       step1Timer.end();
-      logger('debug', `步骤1完成: pageMeta=${pageMeta.value?.title || 'null'}, total=${total.value}`);
+      log('debug', `步骤1完成: pageMeta=${pageMeta.value?.title || 'null'}, total=${total.value}`);
 
       const step2Timer = createTimer('  [缓存-2] 恢复 UI 状态');
-      logger('info', `步骤2: 恢复 UI 状态`);
+      log('info', `步骤2: 恢复 UI 状态`);
       const cachedUIState = workbenchStore.getUIState(functionCode, params);
       if (cachedUIState) {
-        logger('debug', `缓存的 UI 状态:`, cachedUIState);
+        log('debug', `缓存的 UI 状态:`, cachedUIState);
         conditionVisible.value = cachedUIState.conditionVisible;
         quickKeyword.value = cachedUIState.quickKeyword;
         selectedField.value = cachedUIState.selectedField;
         selectedOperator.value = cachedUIState.selectedOperator || 'contains';
         selectedValue.value = cachedUIState.selectedValue;
       } else {
-        logger('warn', '未找到缓存的 UI 状态');
+        log('warn', '未找到缓存的 UI 状态');
       }
 
       const cachedPage = workbenchStore.getPage(functionCode, params);
       const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
       if (cachedPage > 1 || cachedPageSize !== PAGE_SIZE_OPTIONS[0]) {
-        logger('info', `恢复分页状态: page=${cachedPage}, pageSize=${cachedPageSize}`);
+        log('info', `恢复分页状态: page=${cachedPage}, pageSize=${cachedPageSize}`);
         isRestoringPage.value = true;
         page.value = cachedPage;
         pageSize.value = cachedPageSize;
@@ -350,36 +350,36 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       step2Timer.end();
 
       const step3Timer = createTimer('  [缓存-3] 恢复表格数据');
-      logger('info', `步骤3: 恢复表格数据`);
+      log('info', `步骤3: 恢复表格数据`);
       if (cached.serverRows.length > CHUNK_SIZE) {
-        logger('info', `大数据量分片恢复: 总数=${cached.serverRows.length}, 先显示前 ${CHUNK_SIZE} 条`);
+        log('info', `大数据量分片恢复: 总数=${cached.serverRows.length}, 先显示前 ${CHUNK_SIZE} 条`);
         const firstChunk = cached.serverRows.slice(0, CHUNK_SIZE);
         serverRows.value = firstChunk;
-        logger('debug', `已设置第一片数据，长度=${serverRows.value.length}`);
+        log('debug', `已设置第一片数据，长度=${serverRows.value.length}`);
         step3Timer.end();
 
         requestAnimationFrame(() => {
           const step4Timer = createTimer('  [缓存-4] 恢复剩余数据');
-          logger('info', `步骤4: 恢复剩余数据`);
+          log('info', `步骤4: 恢复剩余数据`);
           setTimeout(() => {
             serverRows.value = cached.serverRows;
             isInitialLoading.value = false;
             step4Timer.end();
             cacheTimer.end();
             totalTimer.end();
-            logger('info', `缓存恢复完成 ✅, 总耗时=${totalTimer.elapsed().toFixed(2)}ms`);
-            logger('info', `========== loadPage 结束（缓存恢复）==========`);
+            log('info', `缓存恢复完成 ✅, 总耗时=${totalTimer.elapsed().toFixed(2)}ms`);
+            log('info', `========== loadPage 结束（缓存恢复）==========`);
           }, 100);
         });
       } else {
         serverRows.value = cached.serverRows;
         isInitialLoading.value = false;
-        logger('debug', `小数据量直接恢复: ${serverRows.value.length} 条`);
+        log('debug', `小数据量直接恢复: ${serverRows.value.length} 条`);
         step3Timer.end();
         cacheTimer.end();
         totalTimer.end();
-        logger('info', `缓存恢复完成 ✅（小数据量直接恢复）, 总耗时=${totalTimer.elapsed().toFixed(2)}ms`);
-        logger('info', `========== loadPage 结束（缓存恢复）==========`);
+        log('info', `缓存恢复完成 ✅（小数据量直接恢复）, 总耗时=${totalTimer.elapsed().toFixed(2)}ms`);
+        log('info', `========== loadPage 结束（缓存恢复）==========`);
       }
 
       setTimeout(() => {
@@ -410,35 +410,35 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     }
 
     loading.value = true;
-    logger('debug', `设置 loading = true`);
+    log('debug', `设置 loading = true`);
 
-    logger('info', `========== 开始网络请求 ==========`);
+    log('info', `========== 开始网络请求 ==========`);
     const { filters, conditionSql: drillConditionSql } = parseDrillParams(params);
-    logger('debug', `解析钻取参数完成: filters=${JSON.stringify(filters)}, drillConditionSql="${drillConditionSql}"`);
+    log('debug', `解析钻取参数完成: filters=${JSON.stringify(filters)}, drillConditionSql="${drillConditionSql}"`);
 
-    logger('info', `步骤1: 获取页面元数据`);
+    log('info', `步骤1: 获取页面元数据`);
     const metaTimer = createTimer('获取页面元数据');
-    logger('debug', `调用 fetchWorkbenchPage("${functionCode}")`);
+    log('debug', `调用 fetchWorkbenchPage("${functionCode}")`);
     const pageResult = await fetchWorkbenchPage(functionCode);
     metaTimer.end();
-    logger('info', `获取页面元数据完成，耗时=${metaTimer.elapsed().toFixed(2)}ms`);
+    log('info', `获取页面元数据完成，耗时=${metaTimer.elapsed().toFixed(2)}ms`);
 
     if (pageResult.error) {
       const errorMsg = '工作台初始化失败';
-      logger('error', `${errorMsg}:`, pageResult.error);
+      log('error', `${errorMsg}:`, pageResult.error);
       // 输出详细错误信息
       const error = pageResult.error;
-      logger('error', `错误类型: ${error.constructor.name}`);
-      logger('error', `错误消息: ${error.message}`);
+      log('error', `错误类型: ${error.constructor.name}`);
+      log('error', `错误消息: ${error.message}`);
       if (error.code) {
-        logger('error', `错误码: ${error.code}`);
+        log('error', `错误码: ${error.code}`);
       }
       if (error.response?.data) {
-        logger('error', `后端响应: ${JSON.stringify(error.response.data)}`);
+        log('error', `后端响应: ${JSON.stringify(error.response.data)}`);
       }
       options.notify('error', errorMsg);
       loading.value = false;
-      logger('info', `========== loadPage 结束（元数据获取失败）==========`);
+      log('info', `========== loadPage 结束（元数据获取失败）==========`);
       return;
     }
 
@@ -448,11 +448,11 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     pageSize.value = PAGE_SIZE_OPTIONS[0];
     selectedField.value = data.meta.conditions[0]?.fieldKey || '';
     selectedValue.value = '';
-    logger('debug', `页面元数据: pageName=${data.meta.title}, conditionsCount=${data.meta.conditions?.length || 0}`);
+    log('debug', `页面元数据: pageName=${data.meta.title}, conditionsCount=${data.meta.conditions?.length || 0}`);
 
-    logger('info', `步骤2: 获取第一页数据`);
+    log('info', `步骤2: 获取第一页数据`);
     const firstPageTimer = createTimer('获取第一页数据');
-    logger('debug', `调用 fetchWorkbenchPageData(), size=${CHUNK_SIZE}, fetchTotal=true`);
+    log('debug', `调用 fetchWorkbenchPageData(), size=${CHUNK_SIZE}, fetchTotal=true`);
     const firstPageResult = await fetchWorkbenchPageData(functionCode, {
       current: 1,
       size: CHUNK_SIZE,
@@ -461,56 +461,55 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       drillCondition: drillConditionSql || undefined
     });
     firstPageTimer.end();
-    logger('info', `获取第一页数据完成，耗时=${firstPageTimer.elapsed().toFixed(2)}ms`);
+    log('info', `获取第一页数据完成，耗时=${firstPageTimer.elapsed().toFixed(2)}ms`);
 
     if (firstPageResult.error) {
       const errorMsg = '获取数据失败';
-      logger('error', `${errorMsg}:`, firstPageResult.error);
+      log('error', `${errorMsg}:`, firstPageResult.error);
       options.notify('error', errorMsg);
       loading.value = false;
-      logger('info', `========== loadPage 结束（数据获取失败）==========`);
+      log('info', `========== loadPage 结束（数据获取失败）==========`);
       return;
     }
 
     const firstPageData = firstPageResult.data;
     total.value = firstPageData.total;
     totalCount.value = firstPageData.total;
-    logger(
-      'info',
+    log('info',
       `获取数据成功: total=${firstPageData.total}, records.length=${firstPageData.records.length}, hasMore=${firstPageData.hasMore}`
     );
 
-    logger('info', `步骤3: 首屏渲染`);
+    log('info', `步骤3: 首屏渲染`);
     const renderTimer = createTimer('首屏渲染');
     serverRows.value = firstPageData.records;
     loadedCount.value = firstPageData.records.length;
     isInitialChunkLoaded.value = true;
     loading.value = false;
     renderTimer.end();
-    logger('info', `首屏渲染完成，耗时=${renderTimer.elapsed().toFixed(2)}ms`);
+    log('info', `首屏渲染完成，耗时=${renderTimer.elapsed().toFixed(2)}ms`);
 
-    logger('info', `步骤4: 保存到缓存`);
+    log('info', `步骤4: 保存到缓存`);
     workbenchStore.setCache(functionCode, params, {
       pageMeta: data.meta,
       serverRows: firstPageData.records,
       total: firstPageData.total,
       isDataLoaded: false
     });
-    logger('debug', `缓存已保存: serverRows.length=${firstPageData.records.length}`);
+    log('debug', `缓存已保存: serverRows.length=${firstPageData.records.length}`);
 
     totalTimer.end();
 
     if (firstPageData.hasMore) {
-      logger('info', `步骤5: 后台加载剩余数据，总数=${firstPageData.total}`);
+      log('info', `步骤5: 后台加载剩余数据，总数=${firstPageData.total}`);
       isChunkLoading.value = true;
-      logger('debug', `设置 isChunkLoading = true`);
+      log('debug', `设置 isChunkLoading = true`);
 
       setTimeout(() => {
-        logger('debug', `启动后台加载: loadRemainingData()`);
+        log('debug', `启动后台加载: loadRemainingData()`);
         loadRemainingData(functionCode, params, data.meta, filters, drillConditionSql, firstPageData.total);
       }, 500);
     } else {
-      logger('info', `数据量较小，已全部加载，标记缓存为完整`);
+      log('info', `数据量较小，已全部加载，标记缓存为完整`);
       workbenchStore.setCache(functionCode, params, {
         pageMeta: data.meta,
         serverRows: firstPageData.records,
@@ -520,21 +519,21 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     }
 
     setTimeout(() => {
-      logger('debug', `调用 checkScrollPosition()`);
+      log('debug', `调用 checkScrollPosition()`);
       options.checkScrollPosition();
     }, 100);
 
     setTimeout(() => {
-      logger('info', `步骤6: 调整列宽度`);
+      log('info', `步骤6: 调整列宽度`);
       const api = options.gridApi.value;
       if (!api || api.isDestroyed()) {
-        logger('warn', `gridApi 为空或已销毁，跳过列宽度调整`);
+        log('warn', `gridApi 为空或已销毁，跳过列宽度调整`);
         return;
       }
 
       const columnState = api.getColumnState();
       if (!columnState || !Array.isArray(columnState)) {
-        logger('warn', `columnState 无效，跳过列宽度调整`);
+        log('warn', `columnState 无效，跳过列宽度调整`);
         return;
       }
 
@@ -567,16 +566,16 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
             }
           }
         });
-        logger('debug', `列宽度调整完成: ${allColIds.length} 列`);
+        log('debug', `列宽度调整完成: ${allColIds.length} 列`);
       } else {
-        logger('warn', `没有需要调整宽度的列`);
+        log('warn', `没有需要调整宽度的列`);
       }
       isInitialLoading.value = false;
-      logger('debug', `设置 isInitialLoading = false`);
+      log('debug', `设置 isInitialLoading = false`);
     }, 300);
 
-    logger('info', `loadPage 主流程完成，总耗时=${totalTimer.elapsed().toFixed(2)}ms`);
-    logger('info', `========== loadPage 结束（网络请求）==========`);
+    log('info', `loadPage 主流程完成，总耗时=${totalTimer.elapsed().toFixed(2)}ms`);
+    log('info', `========== loadPage 结束（网络请求）==========`);
   }
 
   function checkAndLoadData() {
@@ -586,77 +585,76 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     const cached = workbenchStore.getCache(currentFunctionCode, currentParams);
     const isCacheComplete = cached && cached.isDataLoaded && cached.serverRows.length === cached.total;
 
-    logger('info', `========== checkAndLoadData 开始 ==========`);
-    logger('info', `currentFunctionCode: "${currentFunctionCode}"`);
-    logger('info', `currentParams: "${currentParams}"`);
-    logger('info', `lockKey: "${lockKey}"`);
-    logger('info', `当前状态: isDataLoaded=${isDataLoaded.value}, loadedFunctionCode="${loadedFunctionCode.value}"`);
-    logger('info', `缓存状态: 命中=${!!cached}, 完整=${isCacheComplete}`);
+    log('info', `========== checkAndLoadData 开始 ==========`);
+    log('info', `currentFunctionCode: "${currentFunctionCode}"`);
+    log('info', `currentParams: "${currentParams}"`);
+    log('info', `lockKey: "${lockKey}"`);
+    log('info', `当前状态: isDataLoaded=${isDataLoaded.value}, loadedFunctionCode="${loadedFunctionCode.value}"`);
+    log('info', `缓存状态: 命中=${!!cached}, 完整=${isCacheComplete}`);
 
     if (!currentFunctionCode) {
-      logger('warn', 'functionCode 为空，跳过加载');
-      logger('info', `========== checkAndLoadData 结束（空 functionCode）==========`);
+      log('warn', 'functionCode 为空，跳过加载');
+      log('info', `========== checkAndLoadData 结束（空 functionCode）==========`);
       return;
     }
 
     if (loadingLocks.get(lockKey) && !isCacheComplete) {
-      logger('warn', `${lockKey} 正在加载中，跳过重复请求`);
-      logger('info', `========== checkAndLoadData 结束（重复请求）==========`);
+      log('warn', `${lockKey} 正在加载中，跳过重复请求`);
+      log('info', `========== checkAndLoadData 结束（重复请求）==========`);
       return;
     }
 
     const shouldLoad =
       !isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value;
-    logger('info', `是否需要加载: ${shouldLoad}`);
+    log('info', `是否需要加载: ${shouldLoad}`);
     if (!shouldLoad) {
-      logger(
-        'debug',
+      log('debug',
         `原因: isDataLoaded=${isDataLoaded.value}, loadedFunctionCode="${loadedFunctionCode.value}", loadedParams="${loadedParams.value}"`
       );
     }
 
     if (shouldLoad) {
-      logger('info', `开始加载数据`);
-      logger('debug', `设置加载锁: ${lockKey}`);
+      log('info', `开始加载数据`);
+      log('debug', `设置加载锁: ${lockKey}`);
       loadingLocks.set(lockKey, true);
       loadedFunctionCode.value = currentFunctionCode;
       loadedParams.value = currentParams;
-      logger('debug', `调用 loadPage()`);
+      log('debug', `调用 loadPage()`);
       loadPage();
       isDataLoaded.value = true;
       setTimeout(() => {
-        logger('debug', `释放加载锁: ${lockKey}`);
+        log('debug', `释放加载锁: ${lockKey}`);
         loadingLocks.delete(lockKey);
       }, 500);
     } else {
-      logger('info', '数据已加载且未变化，跳过');
+      log('info', '数据已加载且未变化，跳过');
     }
-    logger('info', `========== checkAndLoadData 结束 ==========`);
+    log('info', `========== checkAndLoadData 结束 ==========`);
   }
 
   onMounted(() => {
     const functionCode = options.functionCode.value;
     const params = options.params.value;
-    logger('info', `========== onMounted ==========`);
-    logger('info', `functionCode: "${functionCode}"`);
-    logger('info', `params: "${params}"`);
-    logger('info', `时间戳: ${performance.now().toFixed(1)}ms`);
+    log('info', `========== onMounted ==========`);
+    log('info', `functionCode: "${functionCode}"`);
+    log('info', `params: "${params}"`);
+    log('info', `时间戳: ${performance.now().toFixed(1)}ms`);
     checkAndLoadData();
   });
 
   onActivated(() => {
     const functionCode = options.functionCode.value;
-    logger('info', `========== onActivated ==========`);
-    logger('info', `functionCode: "${functionCode}"`);
-    logger('info', `isDataLoaded: ${isDataLoaded.value}`);
-    logger('info', `时间戳: ${performance.now().toFixed(1)}ms`);
+    log('info', `========== onActivated ==========`);
+    log('info', `functionCode: "${functionCode}"`);
+    log('info', `isDataLoaded: ${isDataLoaded.value}`);
+    log('info', `时间戳: ${performance.now().toFixed(1)}ms`);
   });
 
   onDeactivated(() => {
     const functionCode = options.functionCode.value;
-    logger('info', `========== onDeactivated ==========`);
-    logger('info', `functionCode: "${functionCode}"`);
-    logger('info', `时间戳: ${performance.now().toFixed(1)}ms`);
+    log('info', `========== onDeactivated ==========`);
+    log('info', `functionCode: "${functionCode}"`);
+    log('info', `时间戳: ${performance.now().toFixed(1)}ms`);
   });
 
   watch(
@@ -668,13 +666,13 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       const oldParams = oldVal.params;
 
       if (newFunctionCode === oldFunctionCode && newParams !== oldParams) {
-        logger('info', `========== 钻取事件 ==========`);
-        logger('info', `functionCode: "${newFunctionCode}"`);
-        logger('info', `params 变化: "${oldParams}" -> "${newParams}"`);
+        log('info', `========== 钻取事件 ==========`);
+        log('info', `functionCode: "${newFunctionCode}"`);
+        log('info', `params 变化: "${oldParams}" -> "${newParams}"`);
         loadedFunctionCode.value = newFunctionCode;
         loadedParams.value = newParams;
         isDataLoaded.value = false;
-        logger('debug', `调用 loadPage() 重新加载数据`);
+        log('debug', `调用 loadPage() 重新加载数据`);
         loadPage();
         isDataLoaded.value = true;
       }

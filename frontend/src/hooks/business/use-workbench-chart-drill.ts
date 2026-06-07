@@ -1,10 +1,8 @@
 import { ref, computed, type Ref } from 'vue';
 import { h } from 'vue';
 import { NRadio, NRadioGroup, NButton } from 'naive-ui';
-import {
-  fetchWorkbenchChartDrill,
-  resetWorkbenchChartDrill
-} from '@/service/api/workbench';
+import { fetchWorkbenchChartDrill, resetWorkbenchChartDrill } from '@/service/api/workbench';
+import { logger } from '@/utils/logger';
 
 type MessageType = 'success' | 'error' | 'warning' | 'info';
 
@@ -38,13 +36,13 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
   // 是否处于钻取状态
   const isDrilled = computed(() => drillLevel.value > 0);
 
-  function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
+  function log(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [CHART-DRILL] [${method.toUpperCase()}]`;
     if (data !== undefined) {
-      console.log(`${prefix} ${message}`, data);
+      logger.info(`${prefix} ${message}`, data);
     } else {
-      console.log(`${prefix} ${message}`);
+      logger.info(`${prefix} ${message}`);
     }
   }
 
@@ -53,11 +51,11 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
    * @param params ECharts click 回调参数
    */
   function handleChartClick(params: any) {
-    logger('info', `========== handleChartClick 开始 ==========`);
-    logger('info', `drillLevel=${drillLevel.value}, dataItem=${JSON.stringify(params?.data || {})}`);
+    log('info', `========== handleChartClick 开始 ==========`);
+    log('info', `drillLevel=${drillLevel.value}, dataItem=${JSON.stringify(params?.data || {})}`);
 
     if (!params || !params.data) {
-      logger('warn', `点击数据为空`);
+      log('warn', `点击数据为空`);
       return;
     }
 
@@ -65,7 +63,7 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
     // 旧版：SID 形如 "图形模块^图形编号"
     const sid: string = dataItem['SID'] || '';
     if (!sid) {
-      logger('warn', `数据点缺少 SID 字段`);
+      log('warn', `数据点缺少 SID 字段`);
       options.notify('warning', '当前数据点不支持钻取');
       return;
     }
@@ -73,33 +71,29 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
     // 取出该图表可用的钻取选项
     const drillOpts = options.getDrillOptionsForChart(sid);
     if (!drillOpts || drillOpts.length === 0) {
-      logger('info', `该数据点无钻取配置`);
+      log('info', `该数据点无钻取配置`);
       options.notify('info', '当前图形未配置钻取选项');
       return;
     }
 
-    logger('info', `找到 ${drillOpts.length} 个钻取选项:`, drillOpts);
+    log('info', `找到 ${drillOpts.length} 个钻取选项:`, drillOpts);
 
-    showDrillOptionsDialog(drillOpts, dataItem, sid);
+    showDrillOptionsDialog(drillOpts, dataItem);
   }
 
   /**
    * 弹出钻取选项选择对话框
    */
-  function showDrillOptionsDialog(
-    drillOpts: Api.Workbench.DrillOption[],
-    dataItem: Record<string, any>,
-    sid: string
-  ) {
+  function showDrillOptionsDialog(drillOpts: Api.Workbench.DrillOption[], dataItem: Record<string, any>) {
     // 构造前端钻取选项：value = "option^chart_module^drill_module"
     const choices = drillOpts.map((opt, idx) => ({
       id: `${opt.functionCode}_${idx}`,
       label: opt.label,
-      value: buildDrillOptionValue(opt, sid),
+      value: buildDrillOptionValue(opt),
       raw: opt
     }));
 
-    logger('debug', `弹出钻取选项对话框，选项数=${choices.length}`);
+    log('debug', `弹出钻取选项对话框，选项数=${choices.length}`);
 
     const selectedValue = ref<string>(choices[0]?.value || '');
 
@@ -118,54 +112,50 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
     };
 
     const renderContent = () =>
-      h(
-        'div',
-        { style: { display: 'flex', flexDirection: 'column', minHeight: '200px' } },
-        [
-          h(
-            NRadioGroup,
-            {
-              value: selectedValue.value,
-              'onUpdate:value': (val: string) => {
-                selectedValue.value = val;
-              },
-              style: { flex: 1, overflow: 'auto', padding: '16px' }
+      h('div', { style: { display: 'flex', flexDirection: 'column', minHeight: '200px' } }, [
+        h(
+          NRadioGroup,
+          {
+            value: selectedValue.value,
+            'onUpdate:value': (val: string) => {
+              selectedValue.value = val;
             },
-            {
-              default: () =>
-                choices.map(opt =>
-                  h(
-                    NRadio,
-                    {
-                      value: opt.value,
-                      style: { display: 'flex', marginBottom: '8px', alignItems: 'center' }
-                    },
-                    { default: () => opt.label }
-                  )
+            style: { flex: 1, overflow: 'auto', padding: '16px' }
+          },
+          {
+            default: () =>
+              choices.map(opt =>
+                h(
+                  NRadio,
+                  {
+                    value: opt.value,
+                    style: { display: 'flex', marginBottom: '8px', alignItems: 'center' }
+                  },
+                  { default: () => opt.label }
                 )
+              )
+          }
+        ),
+        h(
+          'div',
+          {
+            style: {
+              display: 'flex',
+              justifyContent: 'flex-end',
+              padding: '16px',
+              borderTop: '1px solid #3d4f60'
             }
-          ),
+          },
           h(
-            'div',
+            NButton,
             {
-              style: {
-                display: 'flex',
-                justifyContent: 'flex-end',
-                padding: '16px',
-                borderTop: '1px solid #3d4f60'
-              }
+              type: 'primary',
+              onClick: handleConfirm
             },
-            h(
-              NButton,
-              {
-                type: 'primary',
-                onClick: handleConfirm
-              },
-              { default: () => '确定' }
-            )
+            { default: () => '确定' }
           )
-        ]
-      );
+        )
+      ]);
 
     let dialogInstance: any = null;
     dialogInstance = window.$dialog?.info({
@@ -185,40 +175,36 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
       return;
     }
 
-    logger('info', `执行钻取: optionValue=${optionValue}, functionCode=${functionCode}`);
+    log('info', `执行钻取: optionValue=${optionValue}, functionCode=${functionCode}`);
 
     options.loading.value = true;
 
     try {
-      const payload = [
-        { 钻取级别: drillLevel.value },
-        { 钻取选项: optionValue },
-        dataItem
-      ];
+      const payload = [{ 钻取级别: drillLevel.value }, { 钻取选项: optionValue }, dataItem];
 
       const { data, error } = await fetchWorkbenchChartDrill(functionCode, payload);
 
       if (error) {
-        logger('error', `钻取失败:`, error);
+        log('error', `钻取失败:`, error);
         options.notify('error', '图形钻取失败', error);
         return;
       }
 
       if (!data || !data.charts) {
-        logger('warn', `钻取返回数据为空`);
+        log('warn', `钻取返回数据为空`);
         options.notify('warning', '钻取结果为空');
         return;
       }
 
       drillLevel.value = data.drillLevel ?? drillLevel.value + 1;
-      logger('info', `钻取成功, 新级别=${drillLevel.value}, 返回图表数=${data.charts.length}`);
+      log('info', `钻取成功, 新级别=${drillLevel.value}, 返回图表数=${data.charts.length}`);
 
       // 通知外部更新图表
       options.regenerateOptionsFromCharts(data.charts);
       options.onDrillChartsUpdated(data.charts);
       options.notify('success', `已钻取至第 ${drillLevel.value} 级`);
     } catch (err) {
-      logger('error', `钻取异常:`, err);
+      log('error', `钻取异常:`, err);
       options.notify('error', '图形钻取异常', err);
     } finally {
       options.loading.value = false;
@@ -232,16 +218,16 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
     const functionCode = options.getFunctionCode();
     if (!functionCode) return;
 
-    logger('info', `重置钻取状态`);
+    log('info', `重置钻取状态`);
 
     options.loading.value = true;
     try {
       await resetWorkbenchChartDrill(functionCode);
       drillLevel.value = 0;
-      logger('info', `钻取状态已重置`);
+      log('info', `钻取状态已重置`);
       options.notify('success', '已返回初始图形');
     } catch (err) {
-      logger('error', `重置钻取状态失败:`, err);
+      log('error', `重置钻取状态失败:`, err);
       options.notify('error', '重置钻取状态失败');
     } finally {
       options.loading.value = false;
@@ -260,7 +246,7 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
  * 构造钻取选项 value
  * 格式：option^chart_module^drill_module
  */
-function buildDrillOptionValue(opt: Api.Workbench.DrillOption, sid: string): string {
+function buildDrillOptionValue(opt: Api.Workbench.DrillOption): string {
   // 选项 value 格式：钻取选项^图形模块^钻取模块
   //   - 图形模块：来自 def_chart_drill_config.图形模块（即 opt.chartModule）
   //     绝不能用 dataItem.图形模块（SP 产出的逻辑模块，如 "公司_101"），二者对不上

@@ -55,6 +55,7 @@ import { useWorkbenchTableEdit } from '@/hooks/business/use-workbench-table-edit
 import { useWorkbenchDataLoader } from '@/hooks/business/use-workbench-data-loader';
 import { useThemeStore } from '@/store/modules/theme';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
+import { logger } from '@/utils/logger';
 import {
   WorkbenchImport,
   WorkbenchComment,
@@ -97,13 +98,13 @@ function msg(type: 'success' | 'error' | 'warning' | 'info', message: string, _d
       console.warn(prefix, message);
       break;
     case 'success':
-      console.log(`%c${prefix}%c ${message}`, 'color: #52c41a; font-weight: bold;', '');
+      logger.info(`%c${prefix}%c ${message}`, 'color: #52c41a; font-weight: bold;', '');
       break;
     case 'info':
       console.info(prefix, message);
       break;
     default:
-      console.log(prefix, message);
+      logger.info(prefix, message);
   }
 }
 
@@ -765,7 +766,7 @@ function _createTimer(label: string) {
   return {
     end: () => {
       const duration = performance.now() - start;
-      console.log(`[性能计时] ${label}: ${duration.toFixed(2)}ms`);
+      logger.info(`[性能计时] ${label}: ${duration.toFixed(2)}ms`);
       return duration;
     }
   };
@@ -1006,7 +1007,7 @@ const {
   },
   notifyError: (message: string) => {
     window.$message?.error(message);
-    console.log('\x1b[31m[ERROR]\x1b[0m', message);
+    logger.info('\x1b[31m[ERROR]\x1b[0m', message);
   }
 });
 // 获取字段选项
@@ -1106,61 +1107,61 @@ async function handleDebug() {
       return;
     }
 
-    console.group('🔍 调试信息 - ' + data.functionCode);
-    console.log('📊 查询配置:');
-    console.log('  - 查询表:', data.queryTable);
-    console.log('  - 查询模式:', data.mode);
-    console.log('  - WHERE 条件:', data.queryWhere || '(无)');
-    console.log('  - GROUP BY:', data.queryGroup || '(无)');
-    console.log('  - ORDER BY:', data.queryOrder || '(无)');
+    logger.groupStart('🔍 调试信息 - ' + data.functionCode);
+    logger.info('📊 查询配置:');
+    logger.info('  - 查询表:', data.queryTable);
+    logger.info('  - 查询模式:', data.mode);
+    logger.info('  - WHERE 条件:', data.queryWhere || '(无)');
+    logger.info('  - GROUP BY:', data.queryGroup || '(无)');
+    logger.info('  - ORDER BY:', data.queryOrder || '(无)');
 
-    console.log('\n📝 SELECT 部分:');
+    logger.info('\n📝 SELECT 部分:');
     data.selectParts.forEach((part, index) => {
-      console.log(`  ${index + 1}. ${part}`);
+      logger.info(`  ${index + 1}. ${part}`);
     });
 
-    console.log('\n🔧 WHERE 部分:');
+    logger.info('\n🔧 WHERE 部分:');
     if (data.whereParts.length > 0) {
       data.whereParts.forEach((part, index) => {
-        console.log(`  ${index + 1}. ${part}`);
+        logger.info(`  ${index + 1}. ${part}`);
       });
     } else {
-      console.log('  (无)');
+      logger.info('  (无)');
     }
 
-    console.log('\n💻 SQL 语句:');
-    console.log('  计数 SQL:', data.countSql || '(不适用)');
-    console.log('  查询 SQL:', data.querySql);
+    logger.info('\n💻 SQL 语句:');
+    logger.info('  计数 SQL:', data.countSql || '(不适用)');
+    logger.info('  查询 SQL:', data.querySql);
 
-    console.log('\n👤 用户权限:');
-    console.log('  - 公司ID:', data.userAuth.companyId);
-    console.log('  - 工号:', data.userAuth.userWorkId);
-    console.log(
+    logger.info('\n👤 用户权限:');
+    logger.info('  - 公司ID:', data.userAuth.companyId);
+    logger.info('  - 工号:', data.userAuth.userWorkId);
+    logger.info(
       '  - 角色编码:',
       Array.isArray(data.userAuth.roleCodes) ? data.userAuth.roleCodes.join(', ') : data.userAuth.roleCodes || '(无)'
     );
-    console.log('  - 属地赋权:', data.userAuth.locationAuth);
-    console.log(
+    logger.info('  - 属地赋权:', data.userAuth.locationAuth);
+    logger.info(
       '  - 部门编码赋权:',
       Array.isArray(data.userAuth.deptCodeAuth)
         ? data.userAuth.deptCodeAuth.join(', ')
         : data.userAuth.deptCodeAuth || '(无)'
     );
-    console.log(
+    logger.info(
       '  - 部门全称赋权:',
       Array.isArray(data.userAuth.deptNameAuth)
         ? data.userAuth.deptNameAuth.join(', ')
         : data.userAuth.deptNameAuth || '(无)'
     );
-    console.log('  - 调试权限:', data.userAuth.debugAuth ? '有' : '无');
+    logger.info('  - 调试权限:', data.userAuth.debugAuth ? '有' : '无');
 
-    console.log('\n⚙️ 功能权限:');
-    console.log('  - 模块:', data.functionAuth.module);
-    console.log('  - 参数:', data.functionAuth.params || '(无)');
-    console.log('  - 部门权限条件:', data.functionAuth.deptAuthCond || '(无)');
-    console.log('  - 属地权限条件:', data.functionAuth.locationAuthCond || '(无)');
+    logger.info('\n⚙️ 功能权限:');
+    logger.info('  - 模块:', data.functionAuth.module);
+    logger.info('  - 参数:', data.functionAuth.params || '(无)');
+    logger.info('  - 部门权限条件:', data.functionAuth.deptAuthCond || '(无)');
+    logger.info('  - 属地权限条件:', data.functionAuth.locationAuthCond || '(无)');
 
-    console.log('\n📋 字段映射:');
+    logger.info('\n📋 字段映射:');
     console.table(data.columns);
 
     // 获取图表配置信息以获取图形名称
@@ -1176,13 +1177,13 @@ async function handleDebug() {
           );
         }
       } catch (chartError) {
-        console.log('获取图表配置失败:', chartError);
+        logger.info('获取图表配置失败:', chartError);
       }
     }
 
     // 输出图形相关 SQL
-    console.log('\n📈 图形 SQL:');
-    console.log('chartModule:', data.chartModule);
+    logger.info('\n📈 图形 SQL:');
+    logger.info('chartModule:', data.chartModule);
 
     // 将占位符替换为真实值
     const replacePlaceholders = (sql: string): string => {
@@ -1206,23 +1207,23 @@ async function handleDebug() {
         ...chart,
         sql: chart.sql ? replacePlaceholders(chart.sql) : chart.sql
       }));
-      console.log('chartSql (已替换占位符):', JSON.stringify(replacedChartSql, null, 2));
+      logger.info('chartSql (已替换占位符):', JSON.stringify(replacedChartSql, null, 2));
     } else {
-      console.log('chartSql:', JSON.stringify(data.chartSql, null, 2));
+      logger.info('chartSql:', JSON.stringify(data.chartSql, null, 2));
     }
 
     // 输出图形配置信息到控制台
-    console.log('\n========================================');
-    console.log('📈 图形配置信息');
-    console.log('========================================');
-    console.log('chartModule:', data.chartModule);
-    console.log('\n查询 SQL:');
-    console.log(data.chartQuerySql || '(无)');
-    console.log('\nchartSql 数组长度:', data.chartSql?.length || 0);
+    logger.info('\n========================================');
+    logger.info('📈 图形配置信息');
+    logger.info('========================================');
+    logger.info('chartModule:', data.chartModule);
+    logger.info('\n查询 SQL:');
+    logger.info(data.chartQuerySql || '(无)');
+    logger.info('\nchartSql 数组长度:', data.chartSql?.length || 0);
 
     // 输出完整的 chartSql 数据结构
-    console.log('\nchartSql 完整数据:');
-    console.log(JSON.stringify(data.chartSql, null, 2));
+    logger.info('\nchartSql 完整数据:');
+    logger.info(JSON.stringify(data.chartSql, null, 2));
 
     interface ChartSqlItem {
       name?: string;
@@ -1232,18 +1233,18 @@ async function handleDebug() {
       error?: string;
     }
     if (data.chartSql && data.chartSql.length > 0) {
-      console.log('\n图形 SQL 明细:');
+      logger.info('\n图形 SQL 明细:');
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
-        console.log(`\n--- 图形 ${index + 1} ---`);
-        console.log('名称:', chart['图形名称'] || chart.name || chartNames[index] || '未命名');
-        console.log('SQL:', chart.sql ? replacePlaceholders(chart.sql) : '(无)');
+        logger.info(`\n--- 图形 ${index + 1} ---`);
+        logger.info('名称:', chart['图形名称'] || chart.name || chartNames[index] || '未命名');
+        logger.info('SQL:', chart.sql ? replacePlaceholders(chart.sql) : '(无)');
         if (chart.error) {
-          console.log('错误:', chart.error);
+          logger.info('错误:', chart.error);
         }
       });
 
       // 输出每个图形的钻取信息（来源：def_chart_drill_config）
-      console.log('\n图形钻取配置明细:');
+      logger.info('\n图形钻取配置明细:');
       let chartFullList: any[] = [];
       try {
         const drillChartResponse = await request({
@@ -1251,7 +1252,7 @@ async function handleDebug() {
         });
         chartFullList = drillChartResponse.data?.charts || [];
       } catch (e) {
-        console.log('  重新获取图形数据失败:', e);
+        logger.info('  重新获取图形数据失败:', e);
       }
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
         const matched =
@@ -1263,19 +1264,19 @@ async function handleDebug() {
         const drillModule = matched['钻取模块'] ?? '<空>';
         const drillOptions = Array.isArray(matched['钻取选项']) ? matched['钻取选项'] : [];
 
-        console.log(
+        logger.info(
           `\n  --- 图形 ${index + 1}: ${chart['图形名称'] || chart.name || chartNames[index] || '未命名'} ---`
         );
-        console.log(`    图形模块: ${matched['图形模块'] ?? '<空>'}`);
-        console.log(`    图形编号: ${matched['图形编号'] ?? '<空>'}`);
-        console.log(`    钻取模块 (def_chart_config): ${drillModule}`);
-        console.log(`    钻取选项数 (def_chart_drill_config): ${drillOptions.length}`);
+        logger.info(`    图形模块: ${matched['图形模块'] ?? '<空>'}`);
+        logger.info(`    图形编号: ${matched['图形编号'] ?? '<空>'}`);
+        logger.info(`    钻取模块 (def_chart_config): ${drillModule}`);
+        logger.info(`    钻取选项数 (def_chart_drill_config): ${drillOptions.length}`);
 
         if (drillOptions.length === 0) {
           if (drillModule === '<空>') {
-            console.log('    ⚠️ def_chart_config.钻取模块 为空，未发起 def_chart_drill_config 查询');
+            logger.info('    ⚠️ def_chart_config.钻取模块 为空，未发起 def_chart_drill_config 查询');
           } else {
-            console.log(`    ⚠️ def_chart_drill_config 中无 钻取模块=${drillModule} 且 顺序>0 的记录`);
+            logger.info(`    ⚠️ def_chart_drill_config 中无 钻取模块=${drillModule} 且 顺序>0 的记录`);
           }
         } else {
           console.table(
@@ -1290,25 +1291,25 @@ async function handleDebug() {
         }
       });
     } else {
-      console.log('\n❌ 未查询到图形配置');
-      console.log('请检查 def_chart_config 表中是否存在图形模块:', data.chartModule);
-      console.log('或者检查表中是否有顺序>0 的有效记录');
+      logger.info('\n❌ 未查询到图形配置');
+      logger.info('请检查 def_chart_config 表中是否存在图形模块:', data.chartModule);
+      logger.info('或者检查表中是否有顺序>0 的有效记录');
     }
-    console.log('========================================\n');
+    logger.info('========================================\n');
 
     if (data.chartSql && Array.isArray(data.chartSql) && data.chartSql.length > 0) {
       (data.chartSql as ChartSqlItem[]).forEach((chart: ChartSqlItem, index: number) => {
-        console.log(`  图形 ${index + 1}: ${chart['图形名称'] || chart.name || chartNames[index] || '未命名'}`);
-        console.log(`    SQL: ${chart.sql ? replacePlaceholders(chart.sql) : '(无)'}`);
+        logger.info(`  图形 ${index + 1}: ${chart['图形名称'] || chart.name || chartNames[index] || '未命名'}`);
+        logger.info(`    SQL: ${chart.sql ? replacePlaceholders(chart.sql) : '(无)'}`);
         if (chart.error) {
-          console.log(`    错误: ${chart.error}`);
+          logger.info(`    错误: ${chart.error}`);
         }
       });
     } else {
-      console.log('  (无图形配置或chartModule为空)');
+      logger.info('  (无图形配置或chartModule为空)');
     }
 
-    console.groupEnd();
+    logger.groupEnd();
 
     msg('success', '调试信息已输出到控制台');
   } catch (err) {
@@ -1330,44 +1331,46 @@ async function handleChartDebug() {
   const charts = chartData.value || [];
   const currentRoute = route;
 
-  console.group(`📈 图形调试 - functionCode=${fnCode} | 钻取级别=${drillLevel.value} (${isDrilled.value ? '钻取' : '初始'})`);
+  logger.groupStart(
+    `📈 图形调试 - functionCode=${fnCode} | 钻取级别=${drillLevel.value} (${isDrilled.value ? '钻取' : '初始'})`
+  );
 
   // 1. 路由与上下文
-  console.log('🧭 路由上下文:');
-  console.log('  - 路径:', currentRoute.path);
-  console.log('  - 名称:', String(currentRoute.name || ''));
-  console.log('  - query:', JSON.parse(JSON.stringify(currentRoute.query || {})));
-  console.log('  - meta.functionCode:', String(currentRoute.meta?.functionCode || ''));
-  //console.log('  - props.meta:', JSON.parse(JSON.stringify(props.meta || {})));
+  logger.info('🧭 路由上下文:');
+  logger.info('  - 路径:', currentRoute.path);
+  logger.info('  - 名称:', String(currentRoute.name || ''));
+  logger.info('  - query:', JSON.parse(JSON.stringify(currentRoute.query || {})));
+  logger.info('  - meta.functionCode:', String(currentRoute.meta?.functionCode || ''));
+  //logger.info('  - props.meta:', JSON.parse(JSON.stringify(props.meta || {})));
 
   // 2. 页面 meta 完整信息
-  console.log('\n📋 页面 pageMeta（来自后端 /workbench/page）:');
-  console.log('  - chartModule:', pageMeta.value?.chartModule || '<空>');
-  console.log('  - queryModule:', pageMeta.value?.queryModule || '<空>');
-  console.log('  - fieldModule:', pageMeta.value?.fieldModule || '<空>');
-  console.log('  - commentModule:', pageMeta.value?.commentModule || '<空>');
-  console.log('  - mode:', pageMeta.value?.mode || '<空>');
-  console.log('  - supportsStoredProcedure:', pageMeta.value?.supportsStoredProcedure);
-  console.log('  - toolbar:', JSON.parse(JSON.stringify(pageMeta.value?.toolbar || {})));
-  //console.log('  - 完整 pageMeta:', JSON.parse(JSON.stringify(pageMeta.value || {})));
+  logger.info('\n📋 页面 pageMeta（来自后端 /workbench/page）:');
+  logger.info('  - chartModule:', pageMeta.value?.chartModule || '<空>');
+  logger.info('  - queryModule:', pageMeta.value?.queryModule || '<空>');
+  logger.info('  - fieldModule:', pageMeta.value?.fieldModule || '<空>');
+  logger.info('  - commentModule:', pageMeta.value?.commentModule || '<空>');
+  logger.info('  - mode:', pageMeta.value?.mode || '<空>');
+  logger.info('  - supportsStoredProcedure:', pageMeta.value?.supportsStoredProcedure);
+  logger.info('  - toolbar:', JSON.parse(JSON.stringify(pageMeta.value?.toolbar || {})));
+  //logger.info('  - 完整 pageMeta:', JSON.parse(JSON.stringify(pageMeta.value || {})));
 
   // 3. 钻取状态 + 工具栏权限
-  console.log('\n🔍 钻取状态:');
-  console.log('  - drillLevel:', drillLevel.value);
-  console.log('  - isDrilled:', isDrilled.value);
-  console.log('  - chartVisible:', chartVisible.value);
-  console.log('  - chartLoading:', chartLoading.value);
-  console.log('  - chartMaximized:', chartMaximized.value);
+  logger.info('\n🔍 钻取状态:');
+  logger.info('  - drillLevel:', drillLevel.value);
+  logger.info('  - isDrilled:', isDrilled.value);
+  logger.info('  - chartVisible:', chartVisible.value);
+  logger.info('  - chartLoading:', chartLoading.value);
+  logger.info('  - chartMaximized:', chartMaximized.value);
 
   if (charts.length === 0) {
-    console.log('\n⚠️ 当前未加载任何图形（请先点击"图形"按钮打开）');
-    console.groupEnd();
+    logger.info('\n⚠️ 当前未加载任何图形（请先点击"图形"按钮打开）');
+    logger.groupEnd();
     msg('warning', '当前未加载图形数据');
     return;
   }
 
   // 4. chartData 详细
-  console.log(`\n📊 chartData 明细（${charts.length} 项）:`);
+  logger.info(`\n📊 chartData 明细（${charts.length} 项）:`);
   charts.forEach((chart: any, index: number) => {
     const chartModule = chart['图形模块'] ?? '<空>';
     const chartCode = chart['图形编号'] ?? '<空>';
@@ -1378,39 +1381,39 @@ async function handleChartDebug() {
     const dataRows = Array.isArray(chart['数据']) ? chart['数据'] : [];
     const drillOptions = Array.isArray(chart['钻取选项']) ? chart['钻取选项'] : [];
 
-    console.group(`📊 图形 ${index + 1}: ${chartName} [${chartModule}^${chartCode}]`);
-    console.log('基础信息:');
-    console.log('  - 图形模块:', chartModule);
-    console.log('  - 图形编号:', chartCode);
-    console.log('  - 图形名称:', chartName);
-    console.log('  - 取数方式:', fetchMode);
-    console.log('  - 钻取模块:', chart['钻取模块'] ?? '<空>');
-    console.log('  - 字段模块:', chart['字段模块'] ?? '<空>');
-    console.log('  - 页面布局:', chart['页面布局'] ?? '<空>');
-    console.log('  - 图形类型:', chart['图形类型'] ?? '<空>');
-    console.log('  - SID 模板:', chart['SID'] ?? '<空>');
-    console.log('  - 数据条数:', dataRows.length);
+    logger.groupStart(`📊 图形 ${index + 1}: ${chartName} [${chartModule}^${chartCode}]`);
+    logger.info('基础信息:');
+    logger.info('  - 图形模块:', chartModule);
+    logger.info('  - 图形编号:', chartCode);
+    logger.info('  - 图形名称:', chartName);
+    logger.info('  - 取数方式:', fetchMode);
+    logger.info('  - 钻取模块:', chart['钻取模块'] ?? '<空>');
+    logger.info('  - 字段模块:', chart['字段模块'] ?? '<空>');
+    logger.info('  - 页面布局:', chart['页面布局'] ?? '<空>');
+    logger.info('  - 图形类型:', chart['图形类型'] ?? '<空>');
+    logger.info('  - SID 模板:', chart['SID'] ?? '<空>');
+    logger.info('  - 数据条数:', dataRows.length);
 
     if (sql) {
-      console.log('SQL:');
-      console.log(sql);
+      logger.info('SQL:');
+      logger.info(sql);
     } else {
-      console.log('SQL: (空)');
+      logger.info('SQL: (空)');
     }
     if (error) {
-      console.log('❌ 错误:', error);
+      logger.info('❌ 错误:', error);
     }
     if (dataRows.length > 0) {
-      console.log('数据条数:', dataRows.length);
+      logger.info('数据条数:', dataRows.length);
     } else {
-      console.log('数据: (空)');
+      logger.info('数据: (空)');
     }
 
     if (drillOptions.length === 0) {
-      console.log('⚠️ 钻取选项: 无');
+      logger.info('⚠️ 钻取选项: 无');
     } else {
-      console.log(`钻取选项数: ${drillOptions.length}`);
-      console.log('钻取选项完整列表:');
+      logger.info(`钻取选项数: ${drillOptions.length}`);
+      logger.info('钻取选项完整列表:');
       console.table(
         drillOptions.map((o: any) => ({
           钻取选项: o.label ?? o['钻取选项'] ?? '<空>',
@@ -1422,71 +1425,74 @@ async function handleChartDebug() {
         }))
       );
     }
-    console.groupEnd();
+    logger.groupEnd();
   });
 
   // 5. 后端调试快照（拉取 /workbench/debug）
-  console.log('\n🛰️ 拉取后端调试快照 /workbench/debug ...');
+  logger.info('\n🛰️ 拉取后端调试快照 /workbench/debug ...');
   try {
     const payload: Api.Workbench.QueryPayload = { all: true, filters: [] };
     const { data, error } = await fetchWorkbenchDebug(fnCode, payload);
     if (error || !data) {
-      console.log('  ❌ 拉取失败:', error);
+      logger.info('  ❌ 拉取失败:', error);
     } else {
-      console.log('  ✅ 后端 pageMeta 快照:');
-      console.log('    - functionCode:', data.functionCode);
-      console.log('    - queryTable:', data.queryTable);
-      console.log('    - chartModule:', data.chartModule);
-      console.log('    - chartQuerySql:', data.chartQuerySql);
-      console.log('    - chartSql 长度:', data.chartSql?.length || 0);
-      console.log('    - queryMode:', data.mode);
-      console.log('    - 完整后端响应:', JSON.parse(JSON.stringify(data)));
+      logger.info('  ✅ 后端 pageMeta 快照:');
+      logger.info('    - functionCode:', data.functionCode);
+      logger.info('    - queryTable:', data.queryTable);
+      logger.info('    - chartModule:', data.chartModule);
+      logger.info('    - chartQuerySql:', data.chartQuerySql);
+      logger.info('    - chartSql 长度:', data.chartSql?.length || 0);
+      logger.info('    - queryMode:', data.mode);
+      logger.info('    - 完整后端响应:', JSON.parse(JSON.stringify(data)));
 
       // 6. 钻取 session 状态（关键：queryTable / chartSql 反映后端 SP 占位符是否已替换）
       if (Array.isArray(data.chartSql) && data.chartSql.length > 0) {
-        console.log('\n🗂️ 后端 chartSql 明细:');
+        logger.info('\n🗂️ 后端 chartSql 明细:');
         (data.chartSql as any[]).forEach((cs: any, i: number) => {
-          console.group(`  chartSql[${i}]`);
-          console.log('    名称:', cs['图形名称'] || cs.name);
-          console.log('    编号:', cs['图形编号']);
-          console.log('    SQL:', cs.sql);
-          if (cs.error) console.log('    错误:', cs.error);
-          console.groupEnd();
+          logger.groupStart(`  chartSql[${i}]`);
+          logger.info('    名称:', cs['图形名称'] || cs.name);
+          logger.info('    编号:', cs['图形编号']);
+          logger.info('    SQL:', cs.sql);
+          if (cs.error) logger.info('    错误:', cs.error);
+          logger.groupEnd();
         });
 
         // 检查 SQL 中是否还包含未替换的占位符
         const placeholderPattern = /\$\{?[\u4e00-\u9fa5A-Za-z_]+\}?/g;
         const hasUnreplaced = data.chartSql.some((cs: any) => cs.sql && placeholderPattern.test(cs.sql));
         if (hasUnreplaced) {
-          console.log('  ⚠️ 检测到 SQL 中可能存在未替换的占位符（$查询表名 / $[部门全称赋权] 等）');
+          logger.info('  ⚠️ 检测到 SQL 中可能存在未替换的占位符（$查询表名 / $[部门全称赋权] 等）');
         }
       }
     }
   } catch (e) {
-    console.log('  ❌ 异常:', e);
+    logger.info('  ❌ 异常:', e);
   }
 
   // 7. 完整 chartData 原始 JSON（独立子组，单独可折叠）
-  console.groupCollapsed(`📦 完整 chartData（JSON） — ${charts.length} 项 [点击展开]`);
+  logger.groupStart(`📦 完整 chartData（JSON） — ${charts.length} 项 [点击展开]`);
   try {
     // 关键：chartData 来自响应式 ref，元素可能是 Vue Proxy / 包含函数 / Symbol / 循环引用，
     // 直接 JSON.stringify 会抛 "Converting circular structure to JSON"，导致整段静默。
     // 这里做一次深拷贝解包后再 stringify。
     const safeCharts = JSON.parse(JSON.stringify(charts));
-    console.log(JSON.stringify(safeCharts, null, 2));
+    logger.info(JSON.stringify(safeCharts, null, 2));
   } catch (e) {
-    console.log('JSON.stringify 失败（可能是循环引用 / 函数 / Symbol），回退输出结构:');
-    console.log('  - 错误:', e);
-    console.log('  - charts.length:', charts.length);
+    logger.info('JSON.stringify 失败（可能是循环引用 / 函数 / Symbol），回退输出结构:');
+    logger.info('  - 错误:', e);
+    logger.info('  - charts.length:', charts.length);
     charts.forEach((c: any, i: number) => {
-      console.log(`  [${i}] keys:`, Object.keys(c || {}));
+      logger.info(`  [${i}] keys:`, Object.keys(c || {}));
       const dataRows = Array.isArray(c?.['数据']) ? c['数据'] : [];
-      console.log(`       数据条数: ${dataRows.length}, 数据 keys (首行):`, dataRows[0] ? Object.keys(dataRows[0]) : []);
+      logger.info(
+        `       数据条数: ${dataRows.length}, 数据 keys (首行):`,
+        dataRows[0] ? Object.keys(dataRows[0]) : []
+      );
     });
   }
-  console.groupEnd();
+  logger.groupEnd();
 
-  console.groupEnd();
+  logger.groupEnd();
   msg('success', '图形调试信息已输出到控制台');
 }
 
@@ -1972,12 +1978,7 @@ function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
               <NButton size="small" type="default" @click="chartMaximized = !chartMaximized">
                 {{ chartMaximized ? '恢复' : '扩大' }}
               </NButton>
-              <NButton
-                v-if="pageMeta?.toolbar.debugSql"
-                size="small"
-                type="warning"
-                @click="handleChartDebug"
-              >
+              <NButton v-if="pageMeta?.toolbar.debugSql" size="small" type="warning" @click="handleChartDebug">
                 调试
               </NButton>
               <NButton

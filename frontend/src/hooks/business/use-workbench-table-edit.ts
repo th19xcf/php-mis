@@ -5,6 +5,7 @@ import type { GridApi, ColDef } from 'ag-grid-community';
 import { submitTableEdit } from '@/service/api/workbench';
 import type { WorkbenchStore } from './use-workbench-grid-state';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
+import { logger } from '@/utils/logger';
 
 interface UseWorkbenchTableEditOptions {
   gridApi: Ref<GridApi<Api.Workbench.QueryRecord> | null>;
@@ -57,14 +58,14 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
 
   const hasTableModifications = computed(() => tableModifiedRows.value.size > 0);
 
-  function logger(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
+  function log(method: 'info' | 'warn' | 'error' | 'debug', message: string, data?: unknown) {
     const timestamp = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     const prefix = `[${timestamp}] [TABLE-EDIT] [${method.toUpperCase()}]`;
 
     if (data !== undefined) {
-      console.log(`${prefix} ${message}`, data);
+      logger.info(`${prefix} ${message}`, data);
     } else {
-      console.log(`${prefix} ${message}`);
+      logger.info(`${prefix} ${message}`);
     }
   }
 
@@ -169,21 +170,21 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
   }
 
   function handleCellValueChanged(event: any, hasTableEditAuth: boolean) {
-    logger('info', `========== handleCellValueChanged 开始 ==========`);
+    log('info', `========== handleCellValueChanged 开始 ==========`);
 
     if (isRestoringCellValue.value) {
-      logger('debug', '正在恢复单元格值，跳过本次修改');
+      log('debug', '正在恢复单元格值，跳过本次修改');
       return;
     }
 
     if (!hasTableEditAuth) {
-      logger('warn', '用户没有表级修改权限，恢复原始值');
+      log('warn', '用户没有表级修改权限，恢复原始值');
       options.notify('warning', '数据在此处修改无效，请点击"单条修改"或"多条修改"按钮进行修改');
       isRestoringCellValue.value = true;
       const rowNode = event.node;
       const originalValue = event.oldValue;
       const field = event.colDef.field;
-      logger('debug', `恢复字段 ${field} 的值: ${event.newValue} -> ${originalValue}`);
+      log('debug', `恢复字段 ${field} 的值: ${event.newValue} -> ${originalValue}`);
       rowNode.setDataValue(field, originalValue);
       setTimeout(() => {
         isRestoringCellValue.value = false;
@@ -195,22 +196,22 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
     const rowIndex = event.rowIndex;
     const rowId = getRowId(rowData, rowIndex);
 
-    logger('info', `行ID: ${rowId}, 字段: ${event.colDef.field}`);
-    logger('info', `值变化: ${event.oldValue} -> ${event.newValue}`);
+    log('info', `行ID: ${rowId}, 字段: ${event.colDef.field}`);
+    log('info', `值变化: ${event.oldValue} -> ${event.newValue}`);
 
     tableModifiedRows.value.add(rowId);
-    logger('debug', `已添加到修改集合，当前修改行数: ${tableModifiedRows.value.size}`);
+    log('debug', `已添加到修改集合，当前修改行数: ${tableModifiedRows.value.size}`);
 
     if (!originalRowsData.value.has(rowId)) {
       originalRowsData.value.set(rowId, { ...rowData });
-      logger('debug', `已保存原始数据`);
+      log('debug', `已保存原始数据`);
     }
 
     const currentData = modifiedRowsData.value.get(rowId) || {};
     currentData[event.colDef.field] = event.newValue;
     modifiedRowsData.value.set(rowId, currentData);
-    logger('debug', `已保存修改数据`);
-    logger('info', `========== handleCellValueChanged 结束 ==========`);
+    log('debug', `已保存修改数据`);
+    log('info', `========== handleCellValueChanged 结束 ==========`);
   }
 
   watch(
@@ -290,22 +291,22 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
   );
 
   async function handleTableEditSubmit() {
-    logger('info', '========== handleTableEditSubmit 开始 ==========');
+    log('info', '========== handleTableEditSubmit 开始 ==========');
 
     if (tableModifiedRows.value.size === 0) {
-      logger('warn', '没有需要提交的修改');
+      log('warn', '没有需要提交的修改');
       options.notify('warning', '没有需要提交的修改');
       return;
     }
 
     const functionCode = options.getFunctionCode();
     if (!functionCode) {
-      logger('warn', '功能编码不能为空');
+      log('warn', '功能编码不能为空');
       options.notify('error', '功能编码不能为空');
       return;
     }
 
-    logger('info', `功能编码: ${functionCode}`);
+    log('info', `功能编码: ${functionCode}`);
 
     const modifiedData: Api.Workbench.QueryRecord[] = [];
     tableModifiedRows.value.forEach(rowId => {
@@ -329,29 +330,29 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
       }
     });
 
-    logger('info', `要提交的记录数: ${modifiedData.length}`);
-    logger('debug', '提交的数据:', modifiedData);
+    log('info', `要提交的记录数: ${modifiedData.length}`);
+    log('debug', '提交的数据:', modifiedData);
 
     if (modifiedData.length === 0) {
-      logger('warn', '没有需要提交的修改');
+      log('warn', '没有需要提交的修改');
       options.notify('warning', '没有需要提交的修改');
       return;
     }
 
     try {
-      logger('info', '开始调用表级修改提交 API...');
+      log('info', '开始调用表级修改提交 API...');
       const { data, error } = await submitTableEdit(functionCode, modifiedData);
 
       if (error) {
-        logger('error', '表级修改提交失败 - API 错误:', error);
+        log('error', '表级修改提交失败 - API 错误:', error);
         options.notify('error', error.message || '表级修改提交失败');
         return;
       }
 
-      logger('info', 'API 返回数据:', data);
+      log('info', 'API 返回数据:', data);
 
       if (data?.success) {
-        logger('info', '表级修改提交成功');
+        log('info', '表级修改提交成功');
         options.notify('success', data.message || '表级修改提交成功');
         tableModifiedRows.value.clear();
         modifiedRowsData.value.clear();
@@ -360,15 +361,15 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
         options.workbenchStore.clearCache(functionCode, params);
         options.loadPage();
       } else {
-        logger('error', '表级修改提交失败 - 业务错误:', data?.message);
+        log('error', '表级修改提交失败 - 业务错误:', data?.message);
         options.notify('error', data?.message || '表级修改提交失败');
       }
     } catch (e: any) {
-      logger('error', '表级修改提交失败 - 异常:', e);
+      log('error', '表级修改提交失败 - 异常:', e);
       options.notify('error', e.message || '表级修改提交失败');
     }
 
-    logger('info', '========== handleTableEditSubmit 结束 ==========');
+    log('info', '========== handleTableEditSubmit 结束 ==========');
   }
 
   function clearModifications() {
