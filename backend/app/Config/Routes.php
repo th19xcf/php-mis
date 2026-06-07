@@ -38,24 +38,26 @@ $routes->group('workbench', static function ($routes) {
 	$routes->post('queryPaged/(:segment)', 'Workbench::queryPaged/$1');
 	$routes->post('drill/(:segment)', 'Workbench::drill/$1');
 	$routes->post('debug/(:segment)', 'Workbench::debug/$1');
-	$routes->get('import-columns/(:segment)', 'Workbench::importColumns/$1');
-	$routes->post('import/(:segment)', 'Workbench::import/$1');
-	$routes->get('add-fields/(:segment)', 'Workbench::addFields/$1');
-	$routes->get('detail-fields/(:segment)', 'Workbench::detailFields/$1');
-	$routes->get('batch-edit-fields/(:segment)', 'Workbench::batchEditFields/$1');
-	$routes->post('add-row/(:segment)', 'Workbench::addRow/$1');
-	$routes->get('popup-data/(:segment)', 'Workbench::popupData/$1');
-	$routes->get('popup-levels/(:segment)', 'Workbench::popupLevels/$1');
-	$routes->get('popup-level-data/(:segment)', 'Workbench::popupLevelData/$1');
-	$routes->post('update-fields/(:segment)', 'Workbench::updateFields/$1');
-	$routes->post('update-row/(:segment)', 'Workbench::updateRow/$1');
-	$routes->post('batch-update-row/(:segment)', 'Workbench::batchUpdateRow/$1');
-	$routes->post('delete-row/(:segment)', 'Workbench::deleteRow/$1');
+	// 导入接口：迁出至 Workbench\WorkbenchImportController
+	$routes->get('import-columns/(:segment)', 'Workbench\WorkbenchImportController::importColumns/$1');
+	$routes->post('import/(:segment)', 'Workbench\WorkbenchImportController::import/$1');
+	// 字段配置与记录增删改：迁出至 Workbench\WorkbenchEditController
+	$routes->get('add-fields/(:segment)', 'Workbench\WorkbenchEditController::addFields/$1');
+	$routes->get('detail-fields/(:segment)', 'Workbench\WorkbenchEditController::detailFields/$1');
+	$routes->get('batch-edit-fields/(:segment)', 'Workbench\WorkbenchEditController::batchEditFields/$1');
+	$routes->post('add-row/(:segment)', 'Workbench\WorkbenchEditController::addRow/$1');
+	$routes->post('update-fields/(:segment)', 'Workbench\WorkbenchEditController::updateFields/$1');
+	$routes->post('update-row/(:segment)', 'Workbench\WorkbenchEditController::updateRow/$1');
+	$routes->post('batch-update-row/(:segment)', 'Workbench\WorkbenchEditController::batchUpdateRow/$1');
+	$routes->post('delete-row/(:segment)', 'Workbench\WorkbenchEditController::deleteRow/$1');
 	$routes->post('table-edit/(:segment)', 'Workbench::tableEdit/$1');
 	$routes->post('upkeep/(:segment)', 'Workbench::upkeep/$1');
 	$routes->get('chart/(:segment)', 'Workbench::chart/$1');
 	$routes->post('chart-drill/(:segment)', 'Workbench::chartDrill/$1');
 	$routes->post('chart-drill-reset/(:segment)', 'Workbench::chartDrillReset/$1');
+	$routes->get('popup-data/(:segment)', 'Workbench::popupData/$1');
+	$routes->get('popup-levels/(:segment)', 'Workbench::popupLevels/$1');
+	$routes->get('popup-level-data/(:segment)', 'Workbench::popupLevelData/$1');
 });
 
 $routes->group('comment', static function ($routes) {

@@ -597,4 +597,49 @@ class ContextService
         }
         return implode(',', array_map(fn($item) => $this->quote($item), $items));
     }
+
+    /**
+     * 执行数据整理存储过程
+     *
+     * @param string $dataUpkeep 存储过程名
+     * @return bool 是否成功执行
+     */
+    public function executeUpkeep(string $dataUpkeep): bool
+    {
+        $model = new \App\Models\Mcommon();
+        $result = $model->select(sprintf('call %s', $dataUpkeep));
+        return $result !== false;
+    }
+
+    /**
+     * 替换条件字符串中的工作台变量
+     *
+     * 支持占位符：
+     *  - $属地授权 →  context['locationAuthzCond']
+     *  - $部门授权 →  context['deptAuthzCond']
+     *  - $查询表名 →  context['queryTable']
+     *
+     * @param string $condition 原始条件字符串
+     * @param array $context 工作台上下文
+     * @return string 替换后的条件字符串
+     */
+    public function replaceConditionVariables(string $condition, array $context): string
+    {
+        if (strpos($condition, '$属地授权') !== false) {
+            $locationCond = (string) ($context['locationAuthzCond'] ?? '1=1');
+            $condition = str_replace('$属地授权', $locationCond, $condition);
+        }
+
+        if (strpos($condition, '$部门授权') !== false) {
+            $deptCond = (string) ($context['deptAuthzCond'] ?? '1=1');
+            $condition = str_replace('$部门授权', $deptCond, $condition);
+        }
+
+        if (strpos($condition, '$查询表名') !== false) {
+            $queryTable = (string) ($context['queryTable'] ?? '');
+            $condition = str_replace('$查询表名', $queryTable, $condition);
+        }
+
+        return $condition;
+    }
 }

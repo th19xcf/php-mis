@@ -18,6 +18,25 @@ class ImportService
     }
 
     /**
+     * 构造导入失败的标准响应数组
+     *
+     * @param array $importData 待导入数据
+     * @param string $message 失败消息
+     * @return array
+     */
+    public function buildImportFailure(array $importData, string $message): array
+    {
+        return [
+            'success'      => false,
+            'message'      => $message,
+            'total'        => count($importData),
+            'successCount' => 0,
+            'errorCount'   => count($importData),
+            'errors'       => [['error' => $message]],
+        ];
+    }
+
+    /**
      * 获取导入列配置
      *
      * @param string $functionCode 功能编码
@@ -308,6 +327,321 @@ class ImportService
 
         $result = $this->model->exec($sql);
         return $result !== false;
+    }
+
+    /**
+     * 校验临时表数据（固定值/条件/日期）
+     *
+     * @param string $tmpTableName 临时表名
+     * @param array $importColumns 导入列配置
+     * @param string $userLocation 用户属地
+     * @return array ['hasError' => bool, 'message' => string, 'errors' => array]
+     */
+    public function validateImportDataByTable(string $tmpTableName, array $importColumns, string $userLocation): array
+    {
+        $userLocationAuthz = $userLocation ?: '';
+
+        foreach ($importColumns as $col) {
+            $columnName = $col['列名'] ?? '';
+            $fieldName = $col['字段名'] ?? '';
+            $checkType = $col['校验类型'] ?? '';
+            $checkInfo = $col['校验信息'] ?? '';
+            $object = $col['对象'] ?? '';
+
+            if ($checkType === '' || $fieldName === '') {
+                continue;
+            }
+
+            // 固定值校验
+            if (strpos($checkType, '固定值') !== false && $object !== '') {
+                $sql = sprintf('
+                    select
+                        t1.字段名 as 字段名,
+                        t1.字段值 as 字段值,
+                        ifnull(t2.对象值,"") as 对象值
+                    from
+                    (
+                        select "%s" as 字段名, %s as 字段值
+                        from %s
+                        group by 字段值
+                    ) as t1
+                    left join
+                    (
+                        select 对象名称,对象值
+                        from def_object
+                        where 对象名称="%s"
+                            and (属地="" or locate(属地,"%s"))
+                    ) as t2 on t1.字段值=t2.对象值
+                    where t2.对象值 is null and t1.字段值 != ""
+                ',
+                    $fieldName, $fieldName, $tmpTableName,
+                    $object, $userLocationAuthz);
+
+                $result = $this->model->select($sql);
+                if ($result !== false) {
+                    $errs = $result->getResultArray();
+                    if (count($errs) != 0) {
+                        $errArr = [];
+                        foreach ($errs as $err) {
+                            $errArr[] = $err['字段值'];
+                        }
+                        return [
+                            'hasError' => true,
+                            'message'  => sprintf('导入失败,列"%s"有不符合固定值的记录 {"%s"}', $columnName, implode(',', $errArr)),
+                            'errors'   => $errs,
+                        ];
+                    }
+                }
+            }
+
+            // 条件校验
+            if (strpos($checkType, '条件') !== false && $checkInfo !== '') {
+                $sql = sprintf(
+                    'select "%s" as 字段名, %s as 字段值 from %s where %s',
+                    $columnName, $fieldName, $tmpTableName, $checkInfo
+                );
+
+                $result = $this->model->select($sql);
+                if ($result !== false) {
+                    $errs = $result->getResultArray();
+                    if (count($errs) != 0) {
+                        $errArr = [];
+                        foreach ($errs as $err) {
+                            $errArr[] = $err['字段值'];
+                        }
+                        return [
+                            'hasError' => true,
+                            'message'  => sprintf('导入失败,列"%s"有不符合条件的记录 {"%s"}', $columnName, implode(',', $errArr)),
+                            'errors'   => $errs,
+                        ];
+                    }
+                }
+            }
+
+            // 日期格式校验
+            if (strpos($checkType, '日期') !== false) {
+                $sql = sprintf(
+                    'select "%s" as 字段名, %s as 字段值 from %s',
+                    $columnName, $fieldName, $tmpTableName
+                );
+
+                $result = $this->model->select($sql);
+                if ($result !== false) {
+                    $dates = $result->getResult();
+                    foreach ($dates as $date) {
+                        if ($date->字段值 == '') {
+                            continue;
+                        }
+                        $parts = [];
+                        if (preg_match("/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/", $date->字段值, $parts)) {
+                            if (checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1]) == false) {
+                                return [
+                                    'hasError' => true,
+                                    'message'  => sprintf('导入失败,列"%s"有不符合的记录{"%s"},必须为YYYY-mm-dd (如2023-01-02) 格式', $columnName, $date->字段值),
+                                    'errors'   => [['字段值' => $date->字段值]],
+                                ];
+                            }
+                        } else {
+                            return [
+                                'hasError' => true,
+                                'message'  => sprintf('导入失败,列"%s"有不符合的记录{"%s"},必须为YYYY-mm-dd (如2023-01-02) 格式', $columnName, $date->字段值),
+                                'errors'   => [['字段值' => $date->字段值]],
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+
+        return [
+            'hasError' => false,
+            'message'  => '校验通过',
+            'errors'   => [],
+        ];
+    }
+
+    /**
+     * 检查滤重字段是否有重复记录
+     *
+     * @param string $importModule 导入模块
+     * @param string $dataTable 数据表
+     * @param string $tmpTableName 临时表名
+     * @return array ['hasError' => bool, 'message' => string, 'errors' => array]
+     */
+    public function checkDuplicateFields(string $importModule, string $dataTable, string $tmpTableName): array
+    {
+        try {
+            $sql = sprintf(
+                'select 滤重字段 from def_import_config where 导入模块=%s',
+                $this->quote($importModule)
+            );
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return ['hasError' => false, 'message' => '', 'errors' => []];
+            }
+
+            $row = $result->getRowArray();
+            if (!$row || empty($row['滤重字段'])) {
+                return ['hasError' => false, 'message' => '', 'errors' => []];
+            }
+
+            $duplicateFields = $row['滤重字段'];
+
+            $sql = sprintf(
+                'select %s from %s where concat(%s) in (select concat(%s) from %s)',
+                $duplicateFields,
+                $dataTable,
+                $duplicateFields,
+                $duplicateFields,
+                $tmpTableName
+            );
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return ['hasError' => false, 'message' => '', 'errors' => []];
+            }
+
+            $errs = $result->getResultArray();
+            if (count($errs) > 0) {
+                $errArr = [];
+                foreach ($errs as $err) {
+                    $str = '';
+                    foreach ($err as $item) {
+                        if ($str !== '') {
+                            $str = $str . '^';
+                        }
+                        $str = $str . $item;
+                    }
+                    $errArr[] = $str;
+                }
+
+                return [
+                    'hasError' => true,
+                    'message'  => sprintf('导入失败,滤重列"%s"有重复记录 {"%s"}', $duplicateFields, implode(',', $errArr)),
+                    'errors'   => $errs,
+                ];
+            }
+
+            return ['hasError' => false, 'message' => '', 'errors' => []];
+        } catch (\Throwable $e) {
+            log_message('error', '滤重检查失败: ' . $e->getMessage());
+            return ['hasError' => false, 'message' => '', 'errors' => []];
+        }
+    }
+
+    /**
+     * 从临时表导入数据到正式表，应用查询名中的转换
+     *
+     * @param string $targetTable 目标表
+     * @param string $tempTable 临时表
+     * @param array $importColumns 导入列配置
+     * @return array ['success' => bool, 'count' => int, 'message' => string, 'errors' => array]
+     */
+    public function importFromTempTable(string $targetTable, string $tempTable, array $importColumns): array
+    {
+        try {
+            $db = db_connect('btdc');
+            $db->transStart();
+
+            $fieldNames = [];
+            $selectParts = [];
+
+            foreach ($importColumns as $col) {
+                $fieldName = $col['字段名'] ?? $col['列名'] ?? '';
+                $queryName = $col['查询名'] ?? '';
+
+                if ($fieldName === '') {
+                    continue;
+                }
+
+                $fieldNames[] = sprintf('`%s`', $fieldName);
+
+                if ($queryName !== '' && $queryName !== $fieldName) {
+                    $selectParts[] = sprintf('%s as `%s`', $queryName, $fieldName);
+                } else {
+                    $selectParts[] = sprintf('`%s`', $fieldName);
+                }
+            }
+
+            if (empty($fieldNames)) {
+                return [
+                    'success' => false,
+                    'count'   => 0,
+                    'message' => '没有可导入的字段',
+                    'errors'  => [],
+                ];
+            }
+
+            $sql = sprintf(
+                'INSERT INTO %s (%s) SELECT %s FROM %s',
+                $targetTable,
+                implode(', ', $fieldNames),
+                implode(', ', $selectParts),
+                $tempTable
+            );
+
+            $result = $db->query($sql);
+            $affectedRows = $db->affectedRows();
+
+            $db->transComplete();
+
+            if ($result === false) {
+                return [
+                    'success' => false,
+                    'count'   => 0,
+                    'message' => '导入失败：执行导入SQL失败',
+                    'errors'  => [],
+                ];
+            }
+
+            return [
+                'success' => true,
+                'count'   => $affectedRows,
+                'message' => sprintf('成功导入 %d 条数据', $affectedRows),
+                'errors'  => [],
+            ];
+        } catch (\Throwable $e) {
+            log_message('error', '从临时表导入失败: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'count'   => 0,
+                'message' => '导入失败：' . $e->getMessage(),
+                'errors'  => [['error' => $e->getMessage()]],
+            ];
+        }
+    }
+
+    /**
+     * 执行导入后处理模块
+     *
+     * @param string $importModule 导入模块
+     * @return void
+     */
+    public function executeAfterProcess(string $importModule): void
+    {
+        try {
+            $sql = sprintf(
+                'select 后处理模块 from def_import_config where 导入模块=%s',
+                $this->quote($importModule)
+            );
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return;
+            }
+
+            $row = $result->getRowArray();
+            if (!$row || empty($row['后处理模块'])) {
+                return;
+            }
+
+            $afterProcess = $row['后处理模块'];
+            $spSql = sprintf('call %s', $afterProcess);
+            $this->model->select($spSql);
+        } catch (\Throwable $e) {
+            log_message('error', '执行后处理模块失败: ' . $e->getMessage());
+        }
     }
 
     /**

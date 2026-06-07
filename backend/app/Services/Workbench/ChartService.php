@@ -18,6 +18,74 @@ class ChartService
     }
 
     /**
+     * 构造图表的"调试用"查询 SQL 列表
+     *
+     * 不应用权限条件、不拼接 SID 字段，纯粹把 def_chart_config 中的
+     * 取数方式/查询表名/查询字段/查询条件/汇总条件/排序条件/记录条数
+     * 还原为可执行的 SQL 字符串，仅供 debug 页面展示。
+     *
+     * @param string $chartModule 图形模块
+     * @return array<int, array{name: string, sql: string, error: string}>
+     */
+    public function buildChartQueriesForDebug(string $chartModule): array
+    {
+        $items = [];
+
+        if (empty($chartModule)) {
+            return $items;
+        }
+
+        $configs = $this->getChartConfigs($chartModule);
+
+        foreach ($configs as $chartConfig) {
+            $item = [
+                'name'  => (string) ($chartConfig->图形名称 ?? ''),
+                'sql'   => '',
+                'error' => '',
+            ];
+
+            try {
+                $fetchMethod = (string) ($chartConfig->取数方式 ?? '');
+                $queryTable = (string) ($chartConfig->查询表名 ?? '');
+                $queryFields = (string) ($chartConfig->查询字段 ?? '');
+                $queryCond = (string) ($chartConfig->查询条件 ?? '');
+                $queryGroup = (string) ($chartConfig->汇总条件 ?? '');
+                $queryOrder = (string) ($chartConfig->排序条件 ?? '');
+                $queryLimit = $chartConfig->记录条数 ?? '';
+
+                if ($fetchMethod === '存储过程') {
+                    $dataSql = $queryTable;
+                } elseif (!empty($queryTable)) {
+                    $fields = $queryFields !== '' ? $queryFields : '*';
+                    $dataSql = sprintf('select %s from %s', $fields, $queryTable);
+                    if (!empty($queryCond)) {
+                        $dataSql .= sprintf(' where %s', $queryCond);
+                    }
+                    if (!empty($queryGroup)) {
+                        $dataSql .= sprintf(' group by %s', $queryGroup);
+                    }
+                    if (!empty($queryOrder)) {
+                        $dataSql .= sprintf(' order by %s', $queryOrder);
+                    }
+                    if (!empty($queryLimit) && is_numeric($queryLimit)) {
+                        $dataSql .= sprintf(' limit %d', (int) $queryLimit);
+                    }
+                } else {
+                    $dataSql = '';
+                }
+
+                $item['sql'] = $dataSql;
+            } catch (\Throwable $e) {
+                $item['error'] = $e->getMessage();
+            }
+
+            $items[] = $item;
+        }
+
+        return $items;
+    }
+
+    /**
      * SQL 字符串转义（单引号包裹）
      */
     private function quote(string $value): string

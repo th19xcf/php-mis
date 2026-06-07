@@ -355,4 +355,97 @@ class QueryService
     {
         return "'" . addslashes($value) . "'";
     }
+
+    /**
+     * 构造工作台调试用 SQL（不复用 queryRecords / queryRecordsPaged 的执行路径，
+     * 仅生成 selectParts/whereParts/countSql/querySql 等"看一眼就知道会跑什么"的诊断数据）
+     *
+     * @param array $context  工作台上下文
+     * @param array $payload  请求参数（filters / drillCondition / all / current / size）
+     * @param array $columns  列配置
+     * @param bool  $fetchAll 是否全量（影响是否带 limit / offset）
+     * @param int   $current  页码
+     * @param int   $size     每页条数
+     * @return array{
+     *     selectParts: array, whereParts: array, countSql: ?string, querySql: string,
+     *     queryTable: string, queryWhere: string, queryGroup: string, queryOrder: string, mode: string
+     * }
+     */
+    public function buildDebugQuery(
+        array $context,
+        array $payload,
+        array $columns,
+        bool $fetchAll = false,
+        int $current = 1,
+        int $size = 20
+    ): array {
+        $queryConfig = $context['query'] ?? [];
+        $functionAuth = $context['function'] ?? [];
+        $userAuth = $context['user'] ?? [];
+
+        $columnMap = [];
+        foreach ($columns as $column) {
+            $columnMap[(string) ($column['列名'] ?? '')] = $column;
+        }
+
+        $selectParts = $this->buildSelectParts($columns, $functionAuth, $userAuth);
+        $whereParts = $this->buildWhereConditions($queryConfig, $functionAuth, $payload, $columnMap);
+        $this->addDrillCondition($whereParts, $payload);
+
+        $queryTable = (string) ($queryConfig['queryTable'] ?? '');
+        $queryWhere = (string) ($queryConfig['queryWhere'] ?? '');
+        $queryGroup = (string) ($queryConfig['queryGroup'] ?? '');
+        $queryOrder = (string) ($queryConfig['queryOrder'] ?? '');
+        $mode = (string) ($queryConfig['mode'] ?? '');
+
+        $baseFromSql = $queryTable !== '' ? sprintf(' from %s', $queryTable) : '';
+        $whereSql = !empty($whereParts) ? ' where ' . implode(' and ', $whereParts) : '';
+        $groupSql = $queryGroup !== '' ? ' group by ' . $queryGroup : '';
+        $orderSql = $queryOrder !== '' ? ' order by ' . $queryOrder : '';
+        $offset = ($current - 1) * $size;
+
+        $countSql = null;
+        $querySql = '';
+
+        if ($fetchAll) {
+            $querySql = sprintf(
+                'select (@i:=@i+1) as 序号, %s%s, (select @i:=0) as xh%s%s%s',
+                implode(',', $selectParts),
+                $baseFromSql,
+                $whereSql,
+                $groupSql,
+                $orderSql
+            );
+        } else {
+            $countSql = sprintf(
+                'select count(1) as total from (select 1%s%s%s) as total_rows',
+                $baseFromSql,
+                $whereSql,
+                $groupSql
+            );
+            $querySql = sprintf(
+                'select (@i:=@i+1) as 序号, %s%s, (select @i:=%d) as xh%s%s%s limit %d offset %d',
+                implode(',', $selectParts),
+                $baseFromSql,
+                $offset,
+                $whereSql,
+                $groupSql,
+                $orderSql,
+                $size,
+                $offset
+            );
+        }
+
+        return [
+            'selectParts' => $selectParts,
+            'whereParts'  => $whereParts,
+            'countSql'    => $countSql,
+            'querySql'    => $querySql,
+            'queryTable'  => $queryTable,
+            'queryWhere'  => $queryWhere,
+            'queryGroup'  => $queryGroup,
+            'queryOrder'  => $queryOrder,
+            'mode'        => $mode,
+        ];
+    }
 }
