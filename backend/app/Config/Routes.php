@@ -5,7 +5,19 @@ use CodeIgniter\Router\RouteCollection;
 /**
  * @var RouteCollection $routes
  */
-$routes->get('/', 'Home::index');
+// 根路径：代理到 SPA 入口（Home 控制器已下线）
+$routes->get('/', static function () {
+    $indexHtml = FCPATH . 'index.html';
+    if (is_file($indexHtml)) {
+        $body = file_get_contents($indexHtml);
+        return service('response')
+            ->setHeader('Content-Type', 'text/html; charset=UTF-8')
+            ->setBody($body);
+    }
+    return service('response')
+        ->setStatusCode(503)
+        ->setBody('MIS frontend entry (index.html) not found. Please run "pnpm build" in frontend/.');
+});
 
 $routes->group('auth', static function ($routes) {
 	$routes->post('login', 'Auth::login');
@@ -18,28 +30,6 @@ $routes->group('route', static function ($routes) {
 	$routes->get('getUserRoutes', 'Route::getUserRoutes');
 	$routes->get('getConstantRoutes', 'Route::getConstantRoutes');
 	$routes->get('isRouteExist', 'Route::isRouteExist');
-});
-
-$routes->group('frame', static function ($routes) {
-	$routes->get('init/(:segment)', 'Frame::init/$1');
-	$routes->get('init/(:segment)/(:segment)', 'Frame::init/$1/$2');
-	$routes->get('init/(:segment)/(:segment)/(:any)', 'Frame::init/$1/$2/$3');
-	$routes->match(['get', 'post'], 'set_query_condition/(:segment)', 'Frame::set_query_condition/$1');
-	$routes->match(['get', 'post'], 'set_sp_condition/(:segment)', 'Frame::set_sp_condition/$1');
-	$routes->match(['get', 'post'], 'comment_add/(:segment)', 'Frame::comment_add/$1');
-	$routes->match(['get', 'post'], 'update_row/(:segment)', 'Frame::update_row/$1');
-	$routes->match(['get', 'post'], 'add_row/(:segment)', 'Frame::add_row/$1');
-	$routes->match(['get', 'post'], 'delete_row/(:segment)', 'Frame::delete_row/$1');
-	$routes->get('export/(:segment)', 'Frame::export/$1');
-	$routes->get('export/(:segment)/(:any)', 'Frame::export/$1/$2');
-	$routes->match(['get', 'post'], 'verify_popup/(:segment)', 'Frame::verify_popup/$1');
-	$routes->match(['get', 'post'], 'upkeep/(:segment)', 'Frame::upkeep/$1');
-	$routes->match(['get', 'post'], 'update_table/(:segment)', 'Frame::update_table/$1');
-	$routes->match(['get', 'post'], 'chart_drill/(:segment)', 'Frame::chart_drill/$1');
-	$routes->get('change_pswd', 'Frame::change_pswd');
-	$routes->get('change_pswd/(:segment)', 'Frame::change_pswd/$1');
-	$routes->get('change_pswd/(:segment)/(:segment)', 'Frame::change_pswd/$1/$2');
-	$routes->post('change_pswd/(:segment)', 'Frame::change_pswd/$1');
 });
 
 $routes->group('workbench', static function ($routes) {
