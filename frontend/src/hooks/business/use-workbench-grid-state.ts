@@ -171,6 +171,13 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     if (hasColumnState && options.pageMeta.value?.columns) {
       const colStateMap = new Map(cachedColumnState.map((c: any) => [c.colId, c]));
       options.pageMeta.value.columns = options.pageMeta.value.columns.map(column => {
+        // GUID 列恒隐藏：忽略缓存，恢复时强制 hidden=true
+        const isGuidColumn =
+          String(column.field || '').trim().toUpperCase() === 'GUID' ||
+          String(column.title || '').trim().toUpperCase() === 'GUID';
+        if (isGuidColumn) {
+          return { ...column, hidden: true };
+        }
         const colState = colStateMap.get(column.field);
         if (colState && colState.hide !== undefined) {
           return { ...column, hidden: colState.hide };

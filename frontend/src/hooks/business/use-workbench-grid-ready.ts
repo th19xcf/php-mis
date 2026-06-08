@@ -41,6 +41,10 @@ export function useWorkbenchGridReady(options: UseWorkbenchGridReadyOptions) {
     const cachedPinColumns = options.workbenchStore.getPinColumns(fnCode, fnParams);
     const pinColumnsArray = Array.from(cachedPinColumns);
     const mergedColumnState = cachedColumnState.map((col: any) => {
+      // GUID 列恒隐藏：忽略缓存的 hide，强制隐藏
+      if (String(col.colId || '').trim().toUpperCase() === 'GUID') {
+        return { ...col, hide: true };
+      }
       if (pinColumnsArray.includes(col.colId)) {
         return { ...col, pinned: 'left' };
       }

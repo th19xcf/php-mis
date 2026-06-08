@@ -78,11 +78,16 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
         headerClasses.push('editable-column');
       }
 
+      // GUID 列恒隐藏：作为行内主键不参与业务展示
+      const isGuidColumn =
+        String(column.field || '').trim().toUpperCase() === 'GUID' ||
+        String(column.title || '').trim().toUpperCase() === 'GUID';
+
       const definition: ColDef<Api.Workbench.QueryRecord> = {
         field: column.field,
         headerName: column.title,
         // 不使用后端返回的宽度，而是由前端自动调整
-        hide: column.hidden,
+        hide: column.hidden || isGuidColumn,
         sortable: column.sortable,
         filter: true,
         resizable: true,
