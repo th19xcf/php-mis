@@ -83,6 +83,7 @@
     "consola": "3.4.2",
     "eslint": "10.2.0",
     "kolorist": "1.8.0",
+    "lint-staged": "^17.0.7",
     "oxfmt": "^0.45.0",
     "oxlint": "^1.60.0",
     "sass": "1.99.0",
@@ -101,7 +102,15 @@
   },
   "simple-git-hooks": {
     "commit-msg": "pnpm sa git-commit-verify",
-    "pre-commit": "pnpm typecheck && pnpm lint && pnpm fmt && git diff --exit-code"
+    "pre-commit": "pnpm lint-staged",
+    "pre-push": "pnpm typecheck"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,vue}": [
+      "eslint --fix",
+      "oxlint --fix",
+      "oxfmt"
+    ]
   },
   "engines": {
     "node": ">=20.19.0",
