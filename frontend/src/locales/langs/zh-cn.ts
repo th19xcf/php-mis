@@ -229,6 +229,7 @@ const local: App.I18n.Schema = {
     home: '首页',
     'menu-bridge': '动态菜单',
     'permission-demo': '权限演示',
+    'room-status': '房态图',
     system: '系统管理',
     system_dept: '部门管理',
     system_user: '用户管理',

@@ -233,6 +233,7 @@ const local: App.I18n.Schema = {
     home: 'Home',
     'menu-bridge': 'Dynamic Menu',
     'permission-demo': 'Permission Demo',
+    'room-status': 'Room Status',
     system: 'System',
     system_dept: 'Department Management',
     system_user: 'User Management',

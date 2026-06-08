@@ -49,7 +49,8 @@ const nativeComponentMap: Record<string, any> = {
   interview: defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
   train: defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
   employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
-  contract: defineAsyncComponent(() => import('@/views/contract/index.vue'))
+  contract: defineAsyncComponent(() => import('@/views/contract/index.vue')),
+  'room-status': defineAsyncComponent(() => import('@/views/room-status/index.vue'))
 };
 
 const isNativeFunction = computed(() => {
