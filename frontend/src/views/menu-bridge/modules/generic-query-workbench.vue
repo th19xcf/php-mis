@@ -8,24 +8,9 @@ import { computed, ref, shallowRef, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
-import {
-  AllCommunityModule,
-  ModuleRegistry,
-  themeAlpine,
-  type GridApi
-} from 'ag-grid-community';
+import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'ag-grid-community';
 import { AgGridVue } from 'ag-grid-vue3';
-import {
-  NButton,
-  NForm,
-  NFormItem,
-  NSelect,
-  NModal,
-  NInput,
-  NSpin,
-  NAlert,
-  NEmpty
-} from 'naive-ui';
+import { NButton, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty } from 'naive-ui';
 
 import { useColorMark } from '@/hooks/business/use-color-mark';
 import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
@@ -74,7 +59,7 @@ interface MenuBridgeMeta {
 }
 
 type ConditionOperator = 'contains' | 'equals' | 'startsWith';
- 
+
 type _QueryFilter = NonNullable<Api.Workbench.QueryPayload['filters']>[number];
 type NotifyType = 'success' | 'error' | 'warning' | 'info';
 
@@ -855,7 +840,7 @@ const { handleGridReady } = useWorkbenchGridReady({
               :theme="activeGridTheme"
               :column-defs="gridColumns"
               :default-col-def="defaultColDef"
-              :row-height="38"
+              :row-height="35"
               :header-height="40"
               :row-data="processedRows"
               :quick-filter-text="quickKeyword"
