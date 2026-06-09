@@ -114,18 +114,6 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
-    name: 'room-status',
-    path: '/room-status',
-    component: 'layout.base$view.room-status',
-    meta: {
-      title: 'room-status',
-      i18nKey: 'route.room-status',
-      functionCode: '1911',
-      icon: 'mdi:home-floor-0',
-      keepAlive: true
-    }
-  },
-  {
     name: 'personnel',
     path: '/personnel',
     component: 'layout.base',

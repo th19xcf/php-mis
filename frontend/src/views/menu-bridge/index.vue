@@ -145,7 +145,13 @@ function handleIframeLoad() {
         配置。
       </NAlert>
 
-      <NDescriptions v-else-if="!isNativeOnlyFunction && !isStaticHtml" :column="2" bordered size="small" class="mb-16px">
+      <NDescriptions
+        v-else-if="!isNativeOnlyFunction && !isStaticHtml"
+        :column="2"
+        bordered
+        size="small"
+        class="mb-16px"
+      >
         <NDescriptionsItem label="functionCode">{{ String(meta.functionCode || '') }}</NDescriptionsItem>
         <NDescriptionsItem label="module">{{ String(meta.module || '') }}</NDescriptionsItem>
         <NDescriptionsItem label="menu1">{{ String(meta.menu1 || '') }}</NDescriptionsItem>
