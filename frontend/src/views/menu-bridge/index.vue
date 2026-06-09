@@ -49,8 +49,12 @@ const nativeComponentMap: Record<string, any> = {
   interview: defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
   train: defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
   employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
-  contract: defineAsyncComponent(() => import('@/views/contract/index.vue')),
-  'room-status': defineAsyncComponent(() => import('@/views/room-status/index.vue'))
+  contract: defineAsyncComponent(() => import('@/views/contract/index.vue'))
+};
+
+// 静态 HTML 页面映射：frontendRoute -> public 下的相对路径
+const staticHtmlMap: Record<string, string> = {
+  'room-status': '/room-status/index.html'
 };
 
 const isNativeFunction = computed(() => {
@@ -61,6 +65,16 @@ const isNativeFunction = computed(() => {
 const currentNativeComponent = computed(() => {
   const routeName = String(meta.value.frontendRoute || '').trim();
   return nativeComponentMap[routeName] || null;
+});
+
+const isStaticHtml = computed(() => {
+  const routeName = String(meta.value.frontendRoute || '').trim();
+  return Boolean(routeName && staticHtmlMap[routeName]);
+});
+
+const staticHtmlUrl = computed(() => {
+  const routeName = String(meta.value.frontendRoute || '').trim();
+  return staticHtmlMap[routeName] || '';
 });
 
 const isNativeOnlyFunction = computed(() => {
@@ -126,12 +140,12 @@ function handleIframeLoad() {
 <template>
   <div class="menu-bridge-page" :class="{ 'system-dark': isDarkMode }">
     <NCard :bordered="false" :content-style="{ padding: '1px 8px 6px' }" class="bridge-card rounded-16px shadow-sm">
-      <NAlert v-if="!legacyUrl && !isNativeFunction" type="warning" class="mb-16px">
+      <NAlert v-if="!legacyUrl && !isNativeFunction && !isStaticHtml" type="warning" class="mb-16px">
         当前菜单缺少 module 或 functionCode 配置，无法生成功能页地址。请补齐 def_function 中的 功能模块、功能编码、参数
         配置。
       </NAlert>
 
-      <NDescriptions v-else-if="!isNativeOnlyFunction" :column="2" bordered size="small" class="mb-16px">
+      <NDescriptions v-else-if="!isNativeOnlyFunction && !isStaticHtml" :column="2" bordered size="small" class="mb-16px">
         <NDescriptionsItem label="functionCode">{{ String(meta.functionCode || '') }}</NDescriptionsItem>
         <NDescriptionsItem label="module">{{ String(meta.module || '') }}</NDescriptionsItem>
         <NDescriptionsItem label="menu1">{{ String(meta.menu1 || '') }}</NDescriptionsItem>
@@ -147,6 +161,21 @@ function handleIframeLoad() {
             <component :is="currentNativeComponent" />
           </KeepAlive>
         </template>
+
+        <!-- 静态 HTML 页面（public 下的纯静态资源） -->
+        <div v-else-if="isStaticHtml" class="iframe-shell">
+          <div v-if="!iframeLoaded" class="iframe-loading">
+            <NSpin size="large" />
+            <div class="mt-12px text-13px text-#6b7280">功能页加载中</div>
+          </div>
+          <iframe
+            :key="staticHtmlUrl"
+            class="legacy-frame"
+            sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-downloads"
+            :src="staticHtmlUrl"
+            @load="handleIframeLoad"
+          ></iframe>
+        </div>
 
         <!-- 通用查询工作台 - 使用 KeepAlive 缓存组件，避免数据互相干扰 -->
         <GenericQueryWorkbench
