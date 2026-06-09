@@ -53,75 +53,11 @@ class Mcommon extends Model
         return (int) $this->getDb()->affectedRows();
     }
 
-    public function modify(string $sql): int
-    {
-        $db = $this->getDb();
-        $db->query($sql);
-        return $db->affectedRows();
-    }
-
-    public function add(string $table, array $data, array $fld_arr): int
-    {
-        $db = $this->getDb();
-        $num = 0;
-
-        foreach ($data as $arr) {
-            if (!array_diff($arr, $fld_arr)) {
-                continue;
-            }
-            $arr = array_combine($fld_arr, $arr);
-            $db->table($table)->insert($arr);
-            $num = $db->affectedRows();
-        }
-
-        return $num;
-    }
-
-    public function add_by_trans(string $table, array $data, array $col_arr, array $fld_arr): int
-    {
-        $db = $this->getDb();
-
-        $db->transStart();
-
-        $num = 0;
-        foreach ($data as $arr) {
-            $db->table($table)->insert($arr);
-            $num += $db->affectedRows();
-        }
-
-        $db->transComplete();
-
-        if ($db->transStatus() === false) {
-            log_message('error', '事务执行错误');
-            return -1;
-        }
-
-        return $num;
-    }
-
     public function exec(string $sql): int
     {
         $db = $this->getDb();
         $db->query($sql);
         return $db->affectedRows();
-    }
-
-    public function import_before_sp(string $sp, ?string &$param = null): object
-    {
-        $db = $this->getDb();
-        $query = $db->query($sp);
-        $out = $db->query('select @out')->getResultArray();
-        if (count($out) > 0) {
-            $param = current($out[0]);
-        }
-
-        return $query;
-    }
-
-    public function get_fields(string $table_name): array
-    {
-        $db = $this->getDb();
-        return $db->getFieldNames($table_name);
     }
 
     public function sql_log(string $option, string $func_id = '', string $info = ''): int
@@ -156,9 +92,4 @@ class Mcommon extends Model
         return $db->escape($value);
     }
 
-    public function getLastQuery(): ?string
-    {
-        $db = $this->getDb();
-        return (string) $db->getLastQuery();
-    }
 }
