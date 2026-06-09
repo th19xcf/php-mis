@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, h, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
@@ -9,6 +9,9 @@ import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
 import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
+import { usePersonnelTreeSearch } from '@/hooks/business/use-personnel-tree-search';
+import { usePersonnelTreeIcon } from '@/hooks/business/use-personnel-tree-icon';
+import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
 
 
 const message = useMessage();
@@ -38,10 +41,6 @@ const isTransferMode = ref(false);
 const isSecondInterviewMode = ref(false);
 const submitting = ref(false);
 
-const searchKeyword = ref('');
-const filteredTreeData = ref<TreeOption[]>([]);
-const expandedKeys = ref<string[]>([]);
-
 const addFormDynamic = ref<Record<string, any>>({});
 
 const editDetailForm = ref<Record<string, any>>({});
@@ -70,6 +69,30 @@ const { handleCheck } = useTreeCheck<Api.Interview.InterviewTreeNode>({
   setSelectedGuids: interviewStore.setSelectedGuids
 });
 
+// 公共：左侧树搜索/过滤/展开
+const {
+  searchKeyword,
+  filteredTreeData,
+  expandedKeys,
+  handleSearch,
+  clearSearch,
+  handleExpandedKeysChange
+} = usePersonnelTreeSearch(treeData);
+
+// 公共：树节点图标
+const renderPrefix = usePersonnelTreeIcon({
+  root: '👥',
+  region: '🏢',
+  result: '📋',
+  train: '📚',
+  date: '📆',
+  channel: '📢',
+  person: '👤'
+});
+
+// 公共：编辑表单规范化
+const { buildEditForm } = usePersonnelEditFormInit();
+
 async function loadTree() {
   await interviewStore.refreshTree();
 }
@@ -91,7 +114,7 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
 
 async function openAddModal() {
   await loadFields(functionCode.value);
-  
+
   const initialForm: Record<string, any> = {};
   addFields.value.forEach(field => {
     if (field.fieldType === '日期') {
@@ -136,26 +159,11 @@ async function startEditDetail() {
     await loadFields(functionCode.value);
   }
 
-  const form: Record<string, any> = {};
-  
-  Object.keys(interviewDetail.value as Record<string, any>).forEach((key: string) => {
-    form[key] = (interviewDetail.value as Record<string, any>)[key] ?? '';
-  });
-  
-  detailFields.value.forEach(field => {
-    if (field.editable) {
-      const addField = addFields.value.find(f => f.columnName === field.columnName);
-      if (addField?.fieldType === '日期') {
-        if (!form[field.columnName] || form[field.columnName] === '' || form[field.columnName] === '0000-00-00') {
-          form[field.columnName] = undefined;
-        }
-      } else if (form[field.columnName] === undefined || form[field.columnName] === null) {
-        form[field.columnName] = '';
-      }
-    }
-  });
-  
-  editDetailForm.value = form;
+  editDetailForm.value = buildEditForm(
+    interviewDetail.value as Record<string, any>,
+    addFields.value,
+    detailFields.value
+  );
   isEditingDetail.value = true;
 }
 
@@ -308,96 +316,12 @@ async function handleSecondInterviewConfirm() {
   }
 }
 
-function renderPrefix({ option }: { option: TreeOption }) {
-  const data = option.data as Api.Interview.InterviewTreeNode;
-  const icons: Record<string, string> = {
-    root: '👥',
-    region: '🏢',
-    result: '📋',
-    train: '📚',
-    date: '📆',
-    channel: '📢',
-    person: '👤'
-  };
-  return h('span', { class: 'mr-1' }, icons[data.type] || '📄');
-}
-
-function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOption[]; expanded: string[] } {
-  const expanded: string[] = [];
-  const lowerKeyword = keyword.toLowerCase();
-
-  function filterNode(node: TreeOption): TreeOption | null {
-    const label = (node.label as string) || '';
-    const match = label.toLowerCase().includes(lowerKeyword);
-
-    const filteredChildren: TreeOption[] = [];
-    if (node.children) {
-      for (const child of node.children as TreeOption[]) {
-        const filtered = filterNode(child);
-        if (filtered) {
-          filteredChildren.push(filtered);
-        }
-      }
-    }
-
-    if (match || filteredChildren.length > 0) {
-      if (filteredChildren.length > 0) {
-        expanded.push(node.key as string);
-      }
-      return {
-        ...node,
-        children: filteredChildren.length > 0 ? filteredChildren : node.children
-      };
-    }
-
-    return null;
-  }
-
-  const filtered = nodes.map(node => filterNode(node)).filter((n): n is TreeOption => n !== null);
-  return { nodes: filtered, expanded };
-}
-
-function handleSearch() {
-  if (!searchKeyword.value.trim()) {
-    filteredTreeData.value = treeData.value;
-    expandedKeys.value = [];
-    return;
-  }
-
-  const { nodes, expanded } = filterTreeData(treeData.value, searchKeyword.value);
-  filteredTreeData.value = nodes;
-  expandedKeys.value = expanded;
-}
-
-function clearSearch() {
-  searchKeyword.value = '';
-  filteredTreeData.value = treeData.value;
-  expandedKeys.value = [];
-}
-
-watch(searchKeyword, (newValue) => {
-  if (!newValue.trim()) {
-    filteredTreeData.value = treeData.value;
-    expandedKeys.value = [];
-  } else {
-    const { nodes, expanded } = filterTreeData(treeData.value, newValue);
-    filteredTreeData.value = nodes;
-    expandedKeys.value = expanded;
-  }
-});
-
-function handleExpandedKeysChange(keys: string[]) {
-  expandedKeys.value = keys;
-}
-
 onMounted(async () => {
   interviewStore.loadTreeData();
   interviewStore.loadOptions();
 
-  filteredTreeData.value = treeData.value;
-  
   await loadFields(functionCode.value);
-  
+
   addFields.value.forEach(field => {
     if (field.columnName === '属地') {
       field.objectOptions = options.value?.region || [];
@@ -407,12 +331,6 @@ onMounted(async () => {
       field.objectOptions = options.value?.interviewResult || [];
     }
   });
-});
-
-watch(treeData, (newData) => {
-  if (!searchKeyword.value.trim()) {
-    filteredTreeData.value = newData;
-  }
 });
 
 watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (newValues) => {

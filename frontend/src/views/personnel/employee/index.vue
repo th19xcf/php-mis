@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, h } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
@@ -13,6 +13,9 @@ import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
 import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
+import { usePersonnelTreeSearch } from '@/hooks/business/use-personnel-tree-search';
+import { usePersonnelTreeIcon } from '@/hooks/business/use-personnel-tree-icon';
+import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
 
 const route = useRoute();
 const message = useMessage();
@@ -39,10 +42,6 @@ const isEditingDetail = ref(false);
 const isBatchMode = ref(false);
 const submitting = ref(false);
 
-const searchKeyword = ref('');
-const filteredTreeData = ref<TreeOption[]>([]);
-const expandedKeys = ref<string[]>([]);
-
 const editDetailForm = ref<Record<string, any>>({});
 
 const batchForm = ref({
@@ -62,6 +61,29 @@ const { handleCheck } = useTreeCheck<Api.Employee.EmployeeTreeNode>({
   setCheckedKeys: employeeStore.setCheckedKeys,
   setSelectedGuids: employeeStore.setSelectedGuids
 });
+
+// 公共：左侧树搜索/过滤/展开
+const {
+  searchKeyword,
+  filteredTreeData,
+  expandedKeys,
+  handleSearch,
+  clearSearch,
+  handleExpandedKeysChange
+} = usePersonnelTreeSearch(treeData);
+
+// 公共：树节点图标
+const renderPrefix = usePersonnelTreeIcon({
+  root: '👥',
+  region: '🏢',
+  status: '📋',
+  dept: '🏛️',
+  team: '👥',
+  person: '👤'
+});
+
+// 公共：编辑表单规范化
+const { buildEditForm } = usePersonnelEditFormInit();
 
 async function loadTree() {
   await employeeStore.fetchTree();
@@ -91,26 +113,11 @@ async function startEditDetail() {
     await loadFields(functionCode.value);
   }
 
-  const form: Record<string, any> = {};
-  
-  Object.keys(employeeDetail.value as Record<string, any>).forEach((key: string) => {
-    form[key] = (employeeDetail.value as Record<string, any>)[key] ?? '';
-  });
-  
-  detailFields.value.forEach(field => {
-    if (field.editable) {
-      const addField = addFields.value.find(f => f.columnName === field.columnName);
-      if (addField?.fieldType === '日期') {
-        if (!form[field.columnName] || form[field.columnName] === '' || form[field.columnName] === '0000-00-00') {
-          form[field.columnName] = undefined;
-        }
-      } else if (form[field.columnName] === undefined || form[field.columnName] === null) {
-        form[field.columnName] = '';
-      }
-    }
-  });
-  
-  editDetailForm.value = form;
+  editDetailForm.value = buildEditForm(
+    employeeDetail.value as Record<string, any>,
+    addFields.value,
+    detailFields.value
+  );
   isEditingDetail.value = true;
 }
 
@@ -198,106 +205,18 @@ function handleDelete() {
   });
 }
 
-function renderPrefix({ option }: { option: TreeOption }) {
-  const icons: Record<string, string> = {
-    root: '👥',
-    region: '🏢',
-    status: '📋',
-    dept: '🏛️',
-    team: '👥',
-    person: '👤'
-  };
-  return h('span', { class: 'mr-1' }, icons[(option.data as Api.Employee.EmployeeTreeNode).type] || '📄');
-}
-
-function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOption[]; expanded: string[] } {
-  const expanded: string[] = [];
-  const lowerKeyword = keyword.toLowerCase();
-
-  function filterNode(node: TreeOption): TreeOption | null {
-    const label = (node.label as string) || '';
-    const match = label.toLowerCase().includes(lowerKeyword);
-
-    const filteredChildren: TreeOption[] = [];
-    if (node.children) {
-      for (const child of node.children as TreeOption[]) {
-        const filtered = filterNode(child);
-        if (filtered) {
-          filteredChildren.push(filtered);
-        }
-      }
-    }
-
-    if (match || filteredChildren.length > 0) {
-      if (filteredChildren.length > 0) {
-        expanded.push(node.key as string);
-      }
-      return {
-        ...node,
-        children: filteredChildren.length > 0 ? filteredChildren : node.children
-      };
-    }
-
-    return null;
-  }
-
-  const filtered = nodes.map(node => filterNode(node)).filter((n): n is TreeOption => n !== null);
-  return { nodes: filtered, expanded };
-}
-
-function handleSearch() {
-  if (!searchKeyword.value.trim()) {
-    filteredTreeData.value = treeData.value;
-    expandedKeys.value = [];
-    return;
-  }
-
-  const { nodes, expanded } = filterTreeData(treeData.value, searchKeyword.value);
-  filteredTreeData.value = nodes;
-  expandedKeys.value = expanded;
-}
-
-function clearSearch() {
-  searchKeyword.value = '';
-  filteredTreeData.value = treeData.value;
-  expandedKeys.value = [];
-}
-
-watch(searchKeyword, (newValue) => {
-  if (!newValue.trim()) {
-    filteredTreeData.value = treeData.value;
-    expandedKeys.value = [];
-  } else {
-    const { nodes, expanded } = filterTreeData(treeData.value, newValue);
-    filteredTreeData.value = nodes;
-    expandedKeys.value = expanded;
-  }
-});
-
-function handleExpandedKeysChange(keys: string[]) {
-  expandedKeys.value = keys;
-}
-
 watch([isEditingDetail, isBatchMode], (newValues) => {
   if (newValues.every(v => !v) && employeeDetail.value) {
     employeeStore.fetchDetail(employeeDetail.value.GUID);
   }
 });
 
-watch(treeData, (newData) => {
-  if (!searchKeyword.value.trim()) {
-    filteredTreeData.value = newData;
-  }
-});
-
 onMounted(async () => {
   await loadTree();
   await employeeStore.fetchOptions();
-  
-  filteredTreeData.value = treeData.value;
-  
+
   await loadFields(functionCode.value);
-  
+
   addFields.value.forEach(field => {
     if (field.columnName === '员工状态') {
       field.objectOptions = options.value?.status || [];

@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { ref, onMounted, onActivated, h, computed, watch } from 'vue';
+import { ref, onMounted, onActivated, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { fetchAddInvitation, fetchUpdateInvitation, fetchDeleteInvitation, fetchTransferInvitation, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
 import { useInvitationStore } from '@/store/modules/invitation';
+import { useSplitter } from '@/hooks/business/use-splitter';
+import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
+import { usePersonnelTreeSearch } from '@/hooks/business/use-personnel-tree-search';
+import { usePersonnelTreeIcon } from '@/hooks/business/use-personnel-tree-icon';
+import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
 
 
 const message = useMessage();
@@ -22,10 +27,12 @@ const selectedGuids = computed(() => invitationStore.selectedGuids);
 const invitationDetail = computed(() => invitationStore.invitationDetail);
 const options = computed(() => invitationStore.options);
 
-const leftWidth = ref(320);
-const minLeftWidth = 200;
-const maxLeftWidth = 600;
-const isResizing = ref(false);
+const { leftWidth, isResizing, startResize } = useSplitter({
+  defaultWidth: 320,
+  minWidth: 200,
+  maxWidth: 600,
+  storageKey: 'store-splitter-width'
+});
 
 const submitting = ref(false);
 const transferForm = ref<Record<string, any>>({});
@@ -47,65 +54,38 @@ const batchEditForm = computed({
   set: (val) => invitationStore.setBatchEditForm(val)
 });
 const batchEditFields = computed(() => invitationStore.batchEditFields);
-const searchKeyword = ref('');
-const filteredTreeData = ref<TreeOption[]>([]);
-const expandedKeys = ref<string[]>([]);
 
-function startResize(e: MouseEvent) {
-  isResizing.value = true;
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
+const { handleCheck } = useTreeCheck<Api.Invitation.InvitationTreeNode>({
+  setCheckedKeys: invitationStore.setCheckedKeys,
+  setSelectedGuids: invitationStore.setSelectedGuids
+});
 
-  const startX = e.clientX;
-  const startWidth = leftWidth.value;
+// 公共：左侧树搜索/过滤/展开
+const {
+  searchKeyword,
+  filteredTreeData,
+  expandedKeys,
+  handleSearch,
+  clearSearch,
+  handleExpandedKeysChange
+} = usePersonnelTreeSearch(treeData);
 
-  function onMouseMove(moveEvent: MouseEvent) {
-    if (!isResizing.value) return;
-    const delta = moveEvent.clientX - startX;
-    const newWidth = Math.max(minLeftWidth, Math.min(maxLeftWidth, startWidth + delta));
-    leftWidth.value = newWidth;
-  }
+// 公共：树节点图标
+const renderPrefix = usePersonnelTreeIcon({
+  root: '👥',
+  region: '🏢',
+  result: '📋',
+  interview: '📅',
+  date: '📆',
+  channel: '📢',
+  person: '👤'
+});
 
-  function onMouseUp() {
-    isResizing.value = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-    localStorage.setItem('store-splitter-width', String(leftWidth.value));
-  }
-
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-}
+// 公共：编辑表单规范化
+const { buildEditForm } = usePersonnelEditFormInit();
 
 async function loadTree() {
   await invitationStore.refreshTree();
-}
-
-function handleCheck(keys: string[], _optionNodes: (TreeOption | null)[]) {
-  const guids: string[] = [];
-  const checkedKeySet = new Set(keys);
-
-  // 递归遍历树，收集所有被勾选的人员节点
-  function traverseAndCollect(nodes: TreeOption[]) {
-    for (const node of nodes) {
-      const data = node.data as Api.Invitation.InvitationTreeNode;
-      // 如果当前节点被勾选且是人员类型
-      if (checkedKeySet.has(node.key as string) && data.type === 'person' && data.guid) {
-        guids.push(data.guid);
-      }
-      // 递归处理子节点（即使父节点被勾选，也要检查子节点，因为cascade会勾选所有子节点）
-      if (node.children && node.children.length > 0) {
-        traverseAndCollect(node.children as TreeOption[]);
-      }
-    }
-  }
-
-  traverseAndCollect(treeData.value);
-
-  invitationStore.setCheckedKeys(keys);
-  invitationStore.setSelectedGuids(guids);
 }
 
 function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
@@ -121,11 +101,6 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
       invitationStore.invitationDetail = null;
     }
   }
-}
-
-function handleExpandedKeysChange(keys: string[]) {
-  expandedKeys.value = keys;
-  invitationStore.setExpandedKeys(keys);
 }
 
 async function openAddModal() {
@@ -250,24 +225,11 @@ async function startEditDetail() {
     }
   }
 
-  // 初始化编辑表单数据，保留原记录所有字段内容
-  const formData: Record<string, any> = {};
-
-  // 先将 invitationDetail 中的所有字段都复制到 formData
-  Object.keys(invitationDetail.value).forEach(key => {
-    formData[key] = invitationDetail.value?.[key] ?? '';
-  });
-
-  // 再基于 detailFields 中可编辑字段，确保有值存在
-  detailFields.value.forEach((field: Api.Workbench.DetailField) => {
-    if (field.editable) {
-      if (formData[field.columnName] === undefined || formData[field.columnName] === null) {
-        formData[field.columnName] = '';
-      }
-    }
-  });
-
-  editDetailForm.value = formData;
+  editDetailForm.value = buildEditForm(
+    invitationDetail.value as Record<string, any>,
+    addFields.value,
+    detailFields.value
+  );
   isEditingDetail.value = true;
 }
 
@@ -322,25 +284,6 @@ function handlePopupSelect(field: Api.Workbench.AddField) {
   message.info(`打开${field.fieldName}选择弹窗`);
 }
 
-async function _handleAdd() {
-  // 验证必填字段
-  const requiredField = addFields.value.find((f: Api.Workbench.AddField) => f.required && !addFormDynamic.value[f.columnName]);
-  if (requiredField) {
-    message.error(`${requiredField.fieldName}不能为空`);
-    return;
-  }
-
-  submitting.value = true;
-  const { error } = await fetchAddInvitation(addFormDynamic.value as Api.Invitation.InvitationAddParams);
-  submitting.value = false;
-
-  if (!error) {
-    message.success('新增邀约信息成功');
-    invitationStore.clearAddState();
-    await loadTree();
-  }
-}
-
 async function handleTransfer() {
   if (!transferForm.value.面试结果) {
     message.error('请选择面试结果');
@@ -389,101 +332,9 @@ function handleDelete() {
   });
 }
 
-function renderPrefix({ option }: { option: TreeOption }) {
-  const data = option.data as Api.Invitation.InvitationTreeNode;
-  const icons: Record<string, string> = {
-    root: '👥',
-    region: '🏢',
-    result: '📋',
-    interview: '📅',
-    date: '📆',
-    channel: '📢',
-    person: '👤'
-  };
-  return h('span', { class: 'mr-1' }, icons[data.type] || '📄');
-}
-
-// 搜索过滤树形数据
-function filterTreeData(nodes: TreeOption[], keyword: string): { nodes: TreeOption[]; expanded: string[] } {
-  const expanded: string[] = [];
-  const lowerKeyword = keyword.toLowerCase();
-
-  function filterNode(node: TreeOption): TreeOption | null {
-    const label = (node.label as string) || '';
-    const match = label.toLowerCase().includes(lowerKeyword);
-
-    const filteredChildren: TreeOption[] = [];
-    if (node.children) {
-      for (const child of node.children as TreeOption[]) {
-        const filtered = filterNode(child);
-        if (filtered) {
-          filteredChildren.push(filtered);
-        }
-      }
-    }
-
-    // 如果当前节点匹配或有子节点匹配，则保留
-    if (match || filteredChildren.length > 0) {
-      if (filteredChildren.length > 0) {
-        expanded.push(node.key as string);
-      }
-      return {
-        ...node,
-        children: filteredChildren.length > 0 ? filteredChildren : node.children
-      };
-    }
-
-    return null;
-  }
-
-  const filtered = nodes.map(node => filterNode(node)).filter((n): n is TreeOption => n !== null);
-  return { nodes: filtered, expanded };
-}
-
-// 处理搜索
-function handleSearch() {
-  if (!searchKeyword.value.trim()) {
-    filteredTreeData.value = treeData.value;
-    expandedKeys.value = [];
-    return;
-  }
-
-  const { nodes, expanded } = filterTreeData(treeData.value, searchKeyword.value);
-  filteredTreeData.value = nodes;
-  expandedKeys.value = expanded;
-}
-
-// 清空搜索
-function clearSearch() {
-  searchKeyword.value = '';
-  filteredTreeData.value = treeData.value;
-  expandedKeys.value = [];
-}
-
-watch(searchKeyword, (newValue) => {
-  if (!newValue.trim()) {
-    filteredTreeData.value = treeData.value;
-    expandedKeys.value = [];
-  } else {
-    const { nodes, expanded } = filterTreeData(treeData.value, newValue);
-    filteredTreeData.value = nodes;
-    expandedKeys.value = expanded;
-  }
-});
-
 onMounted(async () => {
-  const savedWidth = localStorage.getItem('store-splitter-width');
-  if (savedWidth) {
-    const width = Number(savedWidth);
-    if (!Number.isNaN(width) && width >= minLeftWidth && width <= maxLeftWidth) {
-      leftWidth.value = width;
-    }
-  }
   await invitationStore.loadTreeData();
   invitationStore.loadOptions();
-
-  // 初始化过滤后的树数据
-  filteredTreeData.value = treeData.value;
 
   // 从 store 恢复展开状态
   expandedKeys.value = invitationStore.expandedKeys;
@@ -499,8 +350,6 @@ onMounted(async () => {
 onActivated(() => {
   // 恢复展开状态
   expandedKeys.value = invitationStore.expandedKeys;
-  // 恢复过滤后的树数据
-  filteredTreeData.value = treeData.value;
 });
 </script>
 
