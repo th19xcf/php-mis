@@ -48,7 +48,6 @@ Vagrantfile
 #-------------------------
 # Temporary Files
 #-------------------------
-writable/
 writable/cache/*
 !writable/cache/index.html
 
@@ -66,6 +65,10 @@ writable/debugbar/*
 
 php_errors.log
 
+# 前端构建产物：index.html 由 pnpm build 重新生成；assets 目录下的 .js/.css/.jpg 不入库
+public/assets/*
+!public/assets/.gitkeep
+
 #-------------------------
 # User Guide Temp Files
 #-------------------------
@@ -77,17 +80,10 @@ user_guide_src/cilexer/pycilexer.egg-info/*
 #-------------------------
 # Test Files
 #-------------------------
-tests/
 tests/coverage*
 
 # Don't save phpunit under version control.
 phpunit
-
-# Temporary test files
-public/test-*.php
-
-# Compiled frontend assets
-public/assets/
 
 #-------------------------
 # Composer

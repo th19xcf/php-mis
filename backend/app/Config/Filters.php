@@ -109,11 +109,10 @@ class Filters extends BaseFilters
         'jwt' => [
             'before' => [
                 'auth/getUserInfo',
-                'frame/*',
                 'workbench/*',
                 'comment/*',
                 'dept/*',
-                'store/*',
+                'invitation/*',
                 'interview/*',
                 'train/*',
                 'employee/*',
