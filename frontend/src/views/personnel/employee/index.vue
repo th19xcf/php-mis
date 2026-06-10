@@ -4,11 +4,7 @@ import { useRoute } from 'vue-router';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
 import { useEmployeeStore } from '@/store/modules/employee';
-import {
-  fetchUpdateEmployee,
-  fetchBatchUpdateEmployee,
-  fetchDeleteEmployee
-} from '@/service/api';
+import { fetchUpdateEmployee, fetchBatchUpdateEmployee, fetchDeleteEmployee } from '@/service/api';
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
@@ -63,14 +59,8 @@ const { handleCheck } = useTreeCheck<Api.Employee.EmployeeTreeNode>({
 });
 
 // 公共：左侧树搜索/过滤/展开
-const {
-  searchKeyword,
-  filteredTreeData,
-  expandedKeys,
-  handleSearch,
-  clearSearch,
-  handleExpandedKeysChange
-} = usePersonnelTreeSearch(treeData);
+const { searchKeyword, filteredTreeData, expandedKeys, handleSearch, clearSearch, handleExpandedKeysChange } =
+  usePersonnelTreeSearch(treeData);
 
 // 公共：树节点图标
 const renderPrefix = usePersonnelTreeIcon({
@@ -86,7 +76,7 @@ const renderPrefix = usePersonnelTreeIcon({
 const { buildEditForm } = usePersonnelEditFormInit();
 
 async function loadTree() {
-  await employeeStore.fetchTree();
+  await employeeStore.loadTreeData();
 }
 
 function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
@@ -96,7 +86,7 @@ function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
   if (node) {
     const data = node.data as Api.Employee.EmployeeTreeNode;
     if (data.type === 'person' && data.guid) {
-      employeeStore.fetchDetail(data.guid);
+      employeeStore.loadEmployeeDetail(data.guid);
     } else {
       employeeStore.setEmployeeDetail(null);
     }
@@ -138,7 +128,7 @@ async function handleEditDetail() {
   if (!error) {
     message.success('修改成功');
     isEditingDetail.value = false;
-    await employeeStore.fetchDetail(employeeDetail.value.GUID);
+    await employeeStore.loadEmployeeDetail(employeeDetail.value.GUID);
     await loadTree();
   }
 }
@@ -192,7 +182,7 @@ function handleDelete() {
     return;
   }
 
-  confirmDelete(selectedGuids.value.length, '人员').then(async (confirmed) => {
+  confirmDelete(selectedGuids.value.length, '人员').then(async confirmed => {
     if (!confirmed) return;
 
     const { error } = await fetchDeleteEmployee(selectedGuids.value);
@@ -205,15 +195,15 @@ function handleDelete() {
   });
 }
 
-watch([isEditingDetail, isBatchMode], (newValues) => {
+watch([isEditingDetail, isBatchMode], newValues => {
   if (newValues.every(v => !v) && employeeDetail.value) {
-    employeeStore.fetchDetail(employeeDetail.value.GUID);
+    employeeStore.loadEmployeeDetail(employeeDetail.value.GUID);
   }
 });
 
 onMounted(async () => {
   await loadTree();
-  await employeeStore.fetchOptions();
+  await employeeStore.loadOptions();
 
   await loadFields(functionCode.value);
 
@@ -325,7 +315,12 @@ onMounted(async () => {
               <tr>
                 <td>员工状态</td>
                 <td>
-                  <NSelect v-model:value="batchForm.员工状态" :options="options?.status || []" placeholder="请选择员工状态" size="small" />
+                  <NSelect
+                    v-model:value="batchForm.员工状态"
+                    :options="options?.status || []"
+                    placeholder="请选择员工状态"
+                    size="small"
+                  />
                 </td>
               </tr>
               <tr>
@@ -419,11 +414,7 @@ onMounted(async () => {
                           size="small"
                           class="w-full"
                         />
-                        <NInput
-                          v-else
-                          v-model:value="editDetailForm[field.columnName]"
-                          size="small"
-                        />
+                        <NInput v-else v-model:value="editDetailForm[field.columnName]" size="small" />
                       </template>
                     </template>
                   </template>
@@ -442,9 +433,9 @@ onMounted(async () => {
         <div v-else-if="employeeDetail" class="space-y-4">
           <div class="flex justify-between items-center mb-2">
             <span class="text-lg font-600">在职信息</span>
-            <NButton 
-              type="primary" 
-              size="small" 
+            <NButton
+              type="primary"
+              size="small"
               :disabled="!employeeDetail || !employeeStore.selectedGuids.includes(String(employeeDetail.GUID))"
               @click="startEditDetail"
             >
@@ -475,7 +466,9 @@ onMounted(async () => {
                     </NTag>
                   </template>
                   <template v-else>
-                    <span :class="{ 'text-gray-400': !employeeDetail[field.columnName as keyof typeof employeeDetail] }">
+                    <span
+                      :class="{ 'text-gray-400': !employeeDetail[field.columnName as keyof typeof employeeDetail] }"
+                    >
                       {{ employeeDetail[field.columnName as keyof typeof employeeDetail] || '-' }}
                     </span>
                   </template>
