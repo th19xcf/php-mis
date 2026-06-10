@@ -155,7 +155,7 @@ class BaseApiController extends BaseController
             order by %s',
             $aliasName, $fieldName,
             $fieldName, $aliasName,
-            $roleAuthz, $this->quoteValue($functionCode),
+            $roleAuthz, $this->model->quote($functionCode),
             $aliasName, $aliasName,
             $fieldName, $fieldName
         );
@@ -170,11 +170,6 @@ class BaseApiController extends BaseController
         }
 
         return implode(',', array_values(array_unique($values)));
-    }
-
-    private function quoteValue(string $value): string
-    {
-        return sprintf("'%s'", str_replace(["\\", "'"], ["\\\\", "\\'"], $value));
     }
 
     protected function getJsonInput(): array
