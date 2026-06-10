@@ -102,10 +102,11 @@ class BaseApiController extends BaseController
     {
         $user = $this->userContext->getSessionUser();
         $employeeRegion = (string) ($user['location'] ?? '');
-        $userLocationAuth = $this->loadUserAuthField('属地赋权');
-        $roleLocationAuth = $this->loadRoleAuthField($functionCode, '属地赋权', '角色表属地');
 
         $service = new AuthorizationService();
+        $userLocationAuth = $service->loadUserAuthField('属地赋权');
+        $roleLocationAuth = $this->loadRoleAuthField($functionCode, '属地赋权', '角色表属地');
+
         return $service->resolve($userLocationAuth, $roleLocationAuth, $employeeRegion);
     }
 
@@ -119,10 +120,11 @@ class BaseApiController extends BaseController
     {
         $user = $this->userContext->getSessionUser();
         $employeeDeptName = (string) ($user['deptName'] ?? '');
-        $userDeptNameAuth = $this->loadUserAuthField('部门全称赋权');
-        $roleDeptNameAuth = $this->loadRoleAuthField($functionCode, '部门全称赋权', '全称赋权');
 
         $service = new AuthorizationService();
+        $userDeptNameAuth = $service->loadUserAuthField('部门全称赋权');
+        $roleDeptNameAuth = $this->loadRoleAuthField($functionCode, '部门全称赋权', '全称赋权');
+
         return $service->resolveDeptName($userDeptNameAuth, $roleDeptNameAuth, $employeeDeptName);
     }
 
@@ -130,26 +132,6 @@ class BaseApiController extends BaseController
     {
         $service = new AuthorizationService();
         return $service->buildDeptNameCondition($field, $resolvedAuth, $upkeepAuth);
-    }
-
-    private function loadUserAuthField(string $fieldName): string
-    {
-        $user = $this->userContext->getSessionUser();
-        $region = (string) ($user['location'] ?? '');
-        $workId = (string) ($user['workId'] ?? '');
-        if ($region === '' || $workId === '') {
-            return '';
-        }
-
-        $sql = sprintf(
-            'select replace(replace(%s,"，",",")," ","") as %s from def_user where 有效标识="1" and 员工属地=%s and 工号=%s',
-            $fieldName, $fieldName,
-            $this->quoteValue($region),
-            $this->quoteValue($workId)
-        );
-
-        $row = $this->model->select($sql)->getRowArray();
-        return (string) ($row[$fieldName] ?? '');
     }
 
     private function loadRoleAuthField(string $functionCode, string $fieldName, string $aliasName): string

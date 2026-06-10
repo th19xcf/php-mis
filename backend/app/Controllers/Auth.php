@@ -288,8 +288,8 @@ class Auth extends BaseController
         }
 
         $authorizationService = new AuthorizationService();
-        $userLocationAuth = $authorizationService->normalize($this->loadUserAuthField($user['work_id'], $region, '属地赋权'));
-        $userDeptNameAuth = $authorizationService->normalize($this->loadUserAuthField($user['work_id'], $region, '部门全称赋权'));
+        $userLocationAuth = $authorizationService->normalize($authorizationService->loadUserAuthField('属地赋权', $user['work_id'], $region));
+        $userDeptNameAuth = $authorizationService->normalize($authorizationService->loadUserAuthField('部门全称赋权', $user['work_id'], $region));
 
         $session->set([
             'company_id' => $region,
@@ -306,24 +306,6 @@ class Auth extends BaseController
             'user_location_authz' => $userLocationAuth,
             'user_dept_name_authz' => $userDeptNameAuth
         ]);
-    }
-
-    private function loadUserAuthField(string $workId, string $region, string $fieldName): string
-    {
-        $sql = sprintf(
-            'select replace(replace(%s,"，",",")," ","") as %s from def_user where 有效标识="1" and 员工属地=%s and 工号=%s',
-            $fieldName, $fieldName,
-            $this->quote($region),
-            $this->quote($workId)
-        );
-
-        $row = (new Mcommon())->select($sql)->getRowArray();
-        return (string) ($row[$fieldName] ?? '');
-    }
-
-    private function quote(string $value): string
-    {
-        return sprintf("'%s'", str_replace(["\\", "'"], ["\\\\", "\\'"], $value));
     }
 
 }
