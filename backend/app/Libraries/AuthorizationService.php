@@ -7,6 +7,13 @@ use App\Libraries\SessionUserContext;
 
 class AuthorizationService
 {
+    private Mcommon $model;
+
+    public function __construct()
+    {
+        $this->model = new Mcommon();
+    }
+
     public function normalize(string $value): string
     {
         if (trim($value) === '') {
@@ -128,6 +135,91 @@ class AuthorizationService
 
         $row = $model->select($sql)->getRowArray();
         return (string) ($row[$fieldName] ?? '');
+    }
+
+    /**
+     * 加载工作台查询配置（统一入口）。
+     *
+     * 取代 WorkbenchResponseTrait::loadQueryConfig 与 ContextService::loadQueryConfig
+     * 的两份重复实现，统一从 def_query_config 读取 21 字段配置并替换 $角色 变量。
+     *
+     * 与原实现的差异：
+     * - 统一使用 Mcommon::quote 替代 WorkbenchResponseTrait 手写 str_replace（更安全）
+     * - 保留 trait 版本更严格的 false check
+     * - 通过 $logger 回调参数保留 ContextService 原本的 log_message 行为
+     * - trait 与 service 都不再各自实现，调用方升级到本方法即可
+     *
+     * @param string $functionCode 功能编码
+     * @param string $userRole     当前用户角色（用于替换 $角色 变量）
+     * @param \Closure|null $logger 可选日志回调：function(string $msg, string $level): void
+     * @return array 配置字典（21 字段），无数据时返回 []
+     */
+    public function loadQueryConfig(string $functionCode, string $userRole, ?\Closure $logger = null): array
+    {
+        if ($logger !== null) {
+            $logger('[loadQueryConfig] 开始执行 SQL 查询, functionCode=' . $functionCode, 'debug');
+        }
+
+        $sql = sprintf(
+            'select
+                查询模块,模块类型,字段模块,钻取模块,
+                查询表名,数据表名,数据模式,
+                查询条件,汇总条件,排序条件,初始条数,
+                新增前处理模块,新增后处理模块,
+                更新前处理模块,更新后处理模块,
+                数据整理模块,备注模块,导入模块,图形模块,表样式
+            from def_query_config
+            where 查询模块 in
+                (
+                    select 模块名称
+                    from def_function
+                    where 有效标识="1" and 功能编码=%s
+                )',
+            $this->model->quote($functionCode)
+        );
+
+        $result = $this->model->select($sql);
+        if ($result === false) {
+            return [];
+        }
+        $row = $result->getRowArray();
+        if (!$row) {
+            return [];
+        }
+
+        $queryWhere = (string) ($row['查询条件'] ?? '');
+        if ($queryWhere !== '' && strpos($queryWhere, '$角色') !== false) {
+            $queryWhere = str_replace('$角色', $userRole, $queryWhere);
+        }
+
+        $config = [
+            'queryModule'   => (string) ($row['查询模块'] ?? ''),
+            'drillModule'   => (string) ($row['钻取模块'] ?? ''),
+            'mode'          => (string) ($row['模块类型'] ?? '数据查询'),
+            'fieldModule'   => (string) ($row['字段模块'] ?? ''),
+            'queryTable'    => (string) ($row['查询表名'] ?? ''),
+            'dataTable'     => (string) ($row['数据表名'] ?? ''),
+            'dataModel'     => (string) ($row['数据模式'] ?? ''),
+            'queryWhere'    => $queryWhere,
+            'queryGroup'    => (string) ($row['汇总条件'] ?? ''),
+            'queryOrder'    => (string) ($row['排序条件'] ?? ''),
+            'resultCount'   => (int) ($row['初始条数'] ?? 0),
+            'beforeInsert'  => (string) ($row['新增前处理模块'] ?? ''),
+            'afterInsert'   => (string) ($row['新增后处理模块'] ?? ''),
+            'beforeUpdate'  => (string) ($row['更新前处理模块'] ?? ''),
+            'afterUpdate'   => (string) ($row['更新后处理模块'] ?? ''),
+            'commentModule' => (string) ($row['备注模块'] ?? ''),
+            'importModule'  => (string) ($row['导入模块'] ?? ''),
+            'upkeepModule'  => (string) ($row['数据整理模块'] ?? ''),
+            'chartModule'   => (string) ($row['图形模块'] ?? ''),
+            'gridStyle'     => (string) (($row['表样式'] ?? '') === '' ? '表样式_A' : $row['表样式']),
+        ];
+
+        if ($logger !== null) {
+            $logger('[loadQueryConfig] 完成', 'debug');
+        }
+
+        return $config;
     }
 
     private function isUnlimited(string $value): bool

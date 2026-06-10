@@ -3,6 +3,7 @@
 namespace App\Controllers\Workbench;
 
 use App\Constants\ApiCode;
+use App\Libraries\AuthorizationService;
 use App\Models\Mcommon;
 
 /**
@@ -66,7 +67,13 @@ trait WorkbenchResponseTrait
     }
 
     /**
-     * 加载工作台查询配置
+     * 加载工作台查询配置（统一委托到 AuthorizationService::loadQueryConfig）。
+     *
+     * 注意：不缓存 AuthorizationService 实例于 trait 属性中 —— 因为 Workbench.php
+     * 已声明 private AuthorizationService $authorizationService 属性，trait 再声明
+     * 会因"nullable vs non-nullable"产生 Fatal error。每次调用新建 AuthorizationService
+     * 是安全的：Mcommon 内部通过 getDb() 缓存 db 连接，CI 的 db_connect('btdc') 是
+     * 全局共享，所以多个 AuthorizationService 实例共享同一个 DB 连接。
      *
      * @param string $functionCode 功能编码
      * @param string $userRole     当前用户角色（用于替换 $角色 变量）
@@ -74,60 +81,7 @@ trait WorkbenchResponseTrait
      */
     protected function loadQueryConfig(string $functionCode, string $userRole): array
     {
-        $sql = sprintf(
-            'select
-                查询模块,模块类型,字段模块,钻取模块,
-                查询表名,数据表名,数据模式,
-                查询条件,汇总条件,排序条件,初始条数,
-                新增前处理模块,新增后处理模块,
-                更新前处理模块,更新后处理模块,
-                数据整理模块,备注模块,导入模块,图形模块,表样式
-            from def_query_config
-            where 查询模块 in
-                (
-                    select 模块名称
-                    from def_function
-                    where 有效标识="1" and 功能编码=%s
-                )',
-            $this->quote($functionCode)
-        );
-
-        $result = $this->common->select($sql);
-        if ($result === false) {
-            return [];
-        }
-        $row = $result->getRowArray();
-        if (!$row) {
-            return [];
-        }
-
-        $queryWhere = (string) ($row['查询条件'] ?? '');
-        if ($queryWhere !== '' && strpos($queryWhere, '$角色') !== false) {
-            $queryWhere = str_replace('$角色', $userRole, $queryWhere);
-        }
-
-        return [
-            'queryModule'   => (string) ($row['查询模块'] ?? ''),
-            'drillModule'   => (string) ($row['钻取模块'] ?? ''),
-            'mode'          => (string) ($row['模块类型'] ?? '数据查询'),
-            'fieldModule'   => (string) ($row['字段模块'] ?? ''),
-            'queryTable'    => (string) ($row['查询表名'] ?? ''),
-            'dataTable'     => (string) ($row['数据表名'] ?? ''),
-            'dataModel'     => (string) ($row['数据模式'] ?? ''),
-            'queryWhere'    => $queryWhere,
-            'queryGroup'    => (string) ($row['汇总条件'] ?? ''),
-            'queryOrder'    => (string) ($row['排序条件'] ?? ''),
-            'resultCount'   => (int) ($row['初始条数'] ?? 0),
-            'beforeInsert'  => (string) ($row['新增前处理模块'] ?? ''),
-            'afterInsert'   => (string) ($row['新增后处理模块'] ?? ''),
-            'beforeUpdate'  => (string) ($row['更新前处理模块'] ?? ''),
-            'afterUpdate'   => (string) ($row['更新后处理模块'] ?? ''),
-            'commentModule' => (string) ($row['备注模块'] ?? ''),
-            'importModule'  => (string) ($row['导入模块'] ?? ''),
-            'upkeepModule'  => (string) ($row['数据整理模块'] ?? ''),
-            'chartModule'   => (string) ($row['图形模块'] ?? ''),
-            'gridStyle'     => (string) (($row['表样式'] ?? '') === '' ? '表样式_A' : $row['表样式']),
-        ];
+        return (new AuthorizationService())->loadQueryConfig($functionCode, $userRole);
     }
 
     /**
