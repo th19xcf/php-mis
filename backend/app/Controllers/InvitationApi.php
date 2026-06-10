@@ -25,7 +25,7 @@ class InvitationApi extends BaseApiController
             $locationAuthzCond);
 
         $results = $this->model->select($sql)->getResultArray();
-        $tree = $this->buildTree($results);
+        $tree = $this->buildGroupedInvitationTree($results);
 
         return $this->success($tree);
     }
@@ -232,7 +232,16 @@ class InvitationApi extends BaseApiController
         ]);
     }
 
-    private function buildTree(array $data): array
+    /**
+     * 构建邀约记录分组聚合树（多级桶聚合）。
+     *
+     * 算法：按 (招聘渠道, 面试日期, 邀约结果, 面试信息, 属地) 5 个字段做多级桶聚合。
+     * 与 buildOrgTree（递归父子）不同：这里不依赖父级编码，是顺序分组聚合。
+     *
+     * @param array $data 邀约数据（含 GUID/姓名/属地/邀约日期/邀约结果/面试信息/招聘渠道）
+     * @return array 聚合后的多级树
+     */
+    private function buildGroupedInvitationTree(array $data): array
     {
         $up5Arr = [];
         $up4Arr = [];

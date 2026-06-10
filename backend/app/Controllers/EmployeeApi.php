@@ -26,7 +26,7 @@ class EmployeeApi extends BaseApiController
             $locationAuthzCond);
 
         $results = $this->model->select($sql)->getResultArray();
-        $tree = $this->buildTree($results);
+        $tree = $this->buildGroupedEmployeeTree($results);
 
         return $this->success($tree);
     }
@@ -263,7 +263,16 @@ class EmployeeApi extends BaseApiController
         ]);
     }
 
-    private function buildTree(array $data): array
+    /**
+     * 构建人员分组聚合树（多级桶聚合）。
+     *
+     * 算法：按 (班组, 部门名称, 员工状态, 属地) 4 个字段做多级桶聚合，每层统计 num 和 items。
+     * 与 buildOrgTree（递归父子）不同：这里不依赖父级编码，是顺序分组聚合。
+     *
+     * @param array $data 人员数据（含 GUID/姓名/岗位名称/在岗月数/属地/员工状态/部门名称/班组）
+     * @return array 聚合后的多级树，节点含 id/value/num/items/type
+     */
+    private function buildGroupedEmployeeTree(array $data): array
     {
         $up4Arr = [];
         $up3Arr = [];

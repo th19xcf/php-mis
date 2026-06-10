@@ -26,7 +26,7 @@ class InterviewApi extends BaseApiController
             $locationAuthzCond);
 
         $results = $this->model->select($sql)->getResultArray();
-        $tree = $this->buildTree($results);
+        $tree = $this->buildGroupedInterviewTree($results);
 
         return $this->success($tree);
     }
@@ -238,7 +238,16 @@ class InterviewApi extends BaseApiController
         ]);
     }
 
-    private function buildTree(array $data): array
+    /**
+     * 构建面试记录分组聚合树（多级桶聚合）。
+     *
+     * 算法：按 (招聘渠道, 培训日期, 面试结果, 参培信息, 属地) 5 个字段做多级桶聚合。
+     * 与 buildOrgTree（递归父子）不同：这里不依赖父级编码，是顺序分组聚合。
+     *
+     * @param array $data 面试数据（含 GUID/姓名/属地/面试日期/面试结果/参培信息/预约培训日期/招聘渠道）
+     * @return array 聚合后的多级树
+     */
+    private function buildGroupedInterviewTree(array $data): array
     {
         $up5Arr = [];
         $up4Arr = [];

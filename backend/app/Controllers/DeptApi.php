@@ -17,7 +17,7 @@ class DeptApi extends BaseApiController
         ', $deptAuthz, $deptAuthz);
 
         $results = $this->model->select($sql)->getResultArray();
-        $tree = $this->buildTree($results);
+        $tree = $this->buildOrgTree($results);
 
         return $this->success($tree);
     }
@@ -234,7 +234,17 @@ class DeptApi extends BaseApiController
         ]);
     }
 
-    private function buildTree(array $data, string $parentCode = ''): array
+    /**
+     * 构建组织架构树（递归父子关系）。
+     *
+     * 算法：从 parentCode=''（顶级）开始，递归收集 上级部门编码 === 当前父编码 的子节点。
+     * 与 buildGrouped*Tree 系列（多级桶聚合）不同：这里依赖 部门编码 ↔ 上级部门编码 字段。
+     *
+     * @param array $data       部门数据（含 部门编码 / 上级部门编码 / 部门名称 等字段）
+     * @param string $parentCode 当前递归的父部门编码（首次传空字符串）
+     * @return array 树形结构，每个节点含 guid/deptCode/deptName/level/parentCode/leader/hasChildren/region/children
+     */
+    private function buildOrgTree(array $data, string $parentCode = ''): array
     {
         $tree = [];
 
@@ -252,7 +262,7 @@ class DeptApi extends BaseApiController
                     'children' => []
                 ];
 
-                $children = $this->buildTree($data, $item['部门编码']);
+                $children = $this->buildOrgTree($data, $item['部门编码']);
                 if (!empty($children)) {
                     $node['children'] = $children;
                 }

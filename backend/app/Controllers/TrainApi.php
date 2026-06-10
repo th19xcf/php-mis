@@ -25,7 +25,7 @@ class TrainApi extends BaseApiController
             $locationAuthzCond);
 
         $results = $this->model->select($sql)->getResultArray();
-        $tree = $this->buildTree($results);
+        $tree = $this->buildGroupedTrainTree($results);
 
         return $this->success($tree);
     }
@@ -301,7 +301,16 @@ class TrainApi extends BaseApiController
         ]);
     }
 
-    private function buildTree(array $data): array
+    /**
+     * 构建培训记录分组聚合树（多级桶聚合）。
+     *
+     * 算法：按 (培训开始日期, 培训老师, 培训状态, 属地) 4 个字段做多级桶聚合。
+     * 与 buildOrgTree（递归父子）不同：这里不依赖父级编码，是顺序分组聚合。
+     *
+     * @param array $data 培训数据（含 GUID/姓名/属地/培训开始日期/预计完成日期/培训老师/培训状态）
+     * @return array 聚合后的多级树
+     */
+    private function buildGroupedTrainTree(array $data): array
     {
         $up4Arr = [];
         $up3Arr = [];
