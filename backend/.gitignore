@@ -48,26 +48,16 @@ Vagrantfile
 #-------------------------
 # Temporary Files
 #-------------------------
-writable/cache/*
-!writable/cache/index.html
-
-writable/logs/*
-!writable/logs/index.html
-
-writable/session/*
-!writable/session/index.html
-
-writable/uploads/*
-!writable/uploads/index.html
-
-writable/debugbar/*
-!writable/debugbar/.gitkeep
-
-php_errors.log
+writable/
 
 # 前端构建产物：index.html 由 pnpm build 重新生成；assets 目录下的 .js/.css/.jpg 不入库
 public/assets/*
 !public/assets/.gitkeep
+
+# public 下的运行时目录
+public/writable/
+
+php_errors.log
 
 #-------------------------
 # User Guide Temp Files
@@ -86,9 +76,10 @@ tests/coverage*
 phpunit
 
 #-------------------------
-# Composer
+# Composer / Node.js
 #-------------------------
 vendor/
+node_modules/
 
 #-------------------------
 # IDE / Development Files
