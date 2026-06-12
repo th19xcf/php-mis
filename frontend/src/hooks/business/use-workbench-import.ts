@@ -81,7 +81,9 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     const validTypes = ['.xlsx', '.xls', '.csv'];
     const fileExt = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
     if (!validTypes.includes(fileExt)) {
-      importError.value = '请上传 Excel 文件 (.xlsx, .xls) 或 CSV 文件 (.csv)';
+      const msg = '请上传 Excel 文件 (.xlsx, .xls) 或 CSV 文件 (.csv)';
+      console.error(`[IMPORT] ${msg}`);
+      importError.value = msg;
       return;
     }
 
@@ -96,7 +98,9 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
       const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as any[][];
 
       if (jsonData.length < 2) {
-        importError.value = '文件数据不足，至少需要包含表头和一行数据';
+        const msg = '文件数据不足，至少需要包含表头和一行数据';
+        console.error(`[IMPORT] ${msg}`);
+        importError.value = msg;
         importPreviewData.value = [];
         return;
       }
@@ -105,7 +109,9 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
       const rows = jsonData.slice(1).filter(row => row.some(cell => cell !== undefined && cell !== ''));
 
       if (rows.length === 0) {
-        importError.value = '未找到有效数据行';
+        const msg = '未找到有效数据行';
+        console.error(`[IMPORT] ${msg}`);
+        importError.value = msg;
         importPreviewData.value = [];
         return;
       }
@@ -123,7 +129,9 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
       options.notify('success', `成功解析 ${rows.length} 条数据`);
     } catch (error) {
       console.error('导入文件解析失败:', error);
-      importError.value = '文件解析失败，请检查文件格式是否正确';
+      const msg = '文件解析失败，请检查文件格式是否正确';
+      console.error(`[IMPORT] ${msg}`);
+      importError.value = msg;
       importPreviewData.value = [];
     } finally {
       importLoading.value = false;
@@ -150,12 +158,33 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
 
       if (error) {
         console.error('导入请求错误:', error);
-        importError.value = '导入请求失败: ' + (error.message || '请稍后重试');
+        const backendMsg = error?.response?.data?.msg;
+        const backendErrors = error?.response?.data?.data?.errors;
+        const detail = backendMsg || error?.message || '请稍后重试';
+        console.error(`[IMPORT] 导入请求失败: ${detail}`);
+        if (backendErrors && Array.isArray(backendErrors) && backendErrors.length > 0) {
+          backendErrors.slice(0, 10).forEach((err: any) => {
+            if (typeof err === 'string') {
+              console.error(`[IMPORT]   - ${err}`);
+            } else if (err?.row !== undefined && err?.errors !== undefined) {
+              console.error(`[IMPORT]   - 第 ${err.row} 行: ${err.errors.join(', ')}`);
+            } else {
+              console.error(`[IMPORT]   - ${JSON.stringify(err)}`);
+            }
+          });
+          if (backendErrors.length > 10) {
+            console.error(`[IMPORT]   ...还有 ${backendErrors.length - 10} 条错误`);
+          }
+        }
+        const msg = '导入请求失败: ' + detail;
+        importError.value = msg;
         return;
       }
 
       if (!data) {
-        importError.value = '导入结果为空';
+        const msg = '导入结果为空';
+        console.error(`[IMPORT] ${msg}`);
+        importError.value = msg;
         return;
       }
 
@@ -180,17 +209,26 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
           }
           return JSON.stringify(err);
         });
-        importError.value = `${data.message}\n${errorMessages.join('\n')}`;
+        const msg = `${data.message}\n${errorMessages.join('\n')}`;
 
         if (data.errors.length > 5) {
-          importError.value += `\n...还有 ${data.errors.length - 5} 行错误`;
+          const fullMsg = `${msg}\n...还有 ${data.errors.length - 5} 行错误`;
+          console.error(`[IMPORT] ${fullMsg}`);
+          importError.value = fullMsg;
+        } else {
+          console.error(`[IMPORT] ${msg}`);
+          importError.value = msg;
         }
       } else {
-        importError.value = data.message;
+        const msg = data.message;
+        console.error(`[IMPORT] ${msg}`);
+        importError.value = msg;
       }
     } catch (error) {
       console.error('导入失败:', error);
-      importError.value = '导入失败，请稍后重试';
+      const msg = '导入失败，请稍后重试';
+      console.error(`[IMPORT] ${msg}`);
+      importError.value = msg;
     } finally {
       importLoading.value = false;
     }
