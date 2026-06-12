@@ -78,16 +78,11 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
         headerClasses.push('editable-column');
       }
 
-      // GUID 列恒隐藏：作为行内主键不参与业务展示
-      const isGuidColumn =
-        String(column.field || '').trim().toUpperCase() === 'GUID' ||
-        String(column.title || '').trim().toUpperCase() === 'GUID';
-
       const definition: ColDef<Api.Workbench.QueryRecord> = {
         field: column.field,
         headerName: column.title,
         // 不使用后端返回的宽度，而是由前端自动调整
-        hide: column.hidden || isGuidColumn,
+        hide: column.hidden,
         sortable: column.sortable,
         filter: true,
         resizable: true,
@@ -230,15 +225,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
       const api = options.gridApi.value;
       if (api && !api.isDestroyed()) {
         setTimeout(() => {
-          const currentRowCount = api.getDisplayedRowCount();
-          if (currentRowCount === 0 || rows.length <= currentRowCount) {
-            api.setGridOption('rowData', rows);
-          } else {
-            const newRows = rows.slice(currentRowCount);
-            if (newRows.length > 0) {
-              api.applyTransaction({ add: newRows });
-            }
-          }
+          api.setGridOption('rowData', rows);
         }, 0);
       }
     },

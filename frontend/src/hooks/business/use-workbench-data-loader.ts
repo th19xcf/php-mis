@@ -73,6 +73,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
   const loadedFunctionCode = ref<string>('');
   const loadedParams = ref<string>('');
   const isDataLoaded = ref(false);
+  let currentLoadId = 0;
 
   function createTimer(label: string) {
     const start = performance.now();
@@ -155,7 +156,8 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     meta: Api.Workbench.PageMeta,
     filters: QueryFilter[],
     drillConditionSql: string,
-    totalRecords: number
+    totalRecords: number,
+    loadId: number
   ) {
     const bgTimer = createTimer('后台加载总耗时');
     const firstChunkSize = serverRows.value.length;
@@ -163,6 +165,12 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
     if (remainingCount <= 0) {
       logger.info('[性能] 数据已全部加载');
+      bgTimer.end();
+      return;
+    }
+
+    if (loadId !== currentLoadId) {
+      logger.info(`[进度] 后台加载已过期（loadId=${loadId}, currentLoadId=${currentLoadId}），跳过`);
       bgTimer.end();
       return;
     }
@@ -195,6 +203,14 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       }
 
       if (mergedRows.length > 0) {
+        const currentFunctionCode = options.functionCode.value.trim();
+        const currentParams = options.params.value.trim();
+        
+        if (currentFunctionCode !== functionCode || currentParams !== params) {
+          logger.info('[进度] 后台加载数据已过期，跳过更新');
+          return;
+        }
+
         const updateTimer = createTimer('更新UI');
         serverRows.value = [...serverRows.value, ...mergedRows];
         updateTimer.end();
@@ -239,6 +255,16 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
               activeRequests -= 1;
 
               if (nextChunkIndex >= totalOffsets.length && activeRequests === 0) {
+                const currentFunctionCode = options.functionCode.value.trim();
+                const currentParams = options.params.value.trim();
+                
+                if (currentFunctionCode !== functionCode || currentParams !== params) {
+                  logger.info('[进度] 后台加载数据已过期，跳过缓存更新');
+                  bgTimer.end();
+                  resolve();
+                  return;
+                }
+
                 const finalCount = firstChunkSize + loadedRows;
                 logger.info(
                   `[进度] ✅ 后台加载完成: 总数据量=${finalCount.toLocaleString()}, 期望=${totalRecords.toLocaleString()}, 是否匹配=${finalCount === totalRecords ? '是' : '否'}`
@@ -292,6 +318,9 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       log('info', `========== loadPage 结束（空 functionCode）==========`);
       return;
     }
+
+    currentLoadId += 1;
+    const thisLoadId = currentLoadId;
 
     isInitialLoading.value = true;
     log('debug', `设置 isInitialLoading = true`);
@@ -481,6 +510,15 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
     log('info', `步骤3: 首屏渲染`);
     const renderTimer = createTimer('首屏渲染');
+    
+    if (thisLoadId !== currentLoadId) {
+      log('info', `加载已过期（thisLoadId=${thisLoadId}, currentLoadId=${currentLoadId}），跳过数据更新`);
+      renderTimer.end();
+      totalTimer.end();
+      log('info', `========== loadPage 结束（加载已过期）==========`);
+      return;
+    }
+    
     serverRows.value = firstPageData.records;
     loadedCount.value = firstPageData.records.length;
     isInitialChunkLoaded.value = true;
@@ -506,7 +544,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
       setTimeout(() => {
         log('debug', `启动后台加载: loadRemainingData()`);
-        loadRemainingData(functionCode, params, data.meta, filters, drillConditionSql, firstPageData.total);
+        loadRemainingData(functionCode, params, data.meta, filters, drillConditionSql, firstPageData.total, thisLoadId);
       }, 500);
     } else {
       log('info', `数据量较小，已全部加载，标记缓存为完整`);

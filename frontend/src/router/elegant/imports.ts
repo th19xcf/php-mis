@@ -29,7 +29,6 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   personnel_interview: () => import("@/views/personnel/interview/index.vue"),
   personnel_invitation: () => import("@/views/personnel/invitation/index.vue"),
   personnel_train: () => import("@/views/personnel/train/index.vue"),
-  "room-status": () => import("@/views/room-status/index.vue"),
   system_dept: () => import("@/views/system/dept/index.vue"),
   system_role: () => import("@/views/system/role/index.vue"),
   system_user: () => import("@/views/system/user/index.vue"),
