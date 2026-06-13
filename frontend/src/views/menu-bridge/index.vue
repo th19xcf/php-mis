@@ -9,7 +9,12 @@ import { recordTabSwitchEnd } from '@/utils/common';
 import GenericQueryWorkbench from './modules/generic-query-workbench.vue';
 
 defineOptions({
-  name: 'MenuBridge'
+  // 组件名必须与 router 中的 route.name 完全一致（kebab-case），
+  // 否则 global-content 里的 <KeepAlive :include="routeStore.cacheRoutes"> 按 name 精确匹配
+  // 会因为 'MenuBridge' !== 'menu-bridge' 而跳过缓存，导致切换标签页时整个组件被销毁重建，
+  // 进而 GenericQueryWorkbench 内的右栏（新增/修改/批注）状态全部丢失。
+  // eslint-disable-next-line vue/component-definition-name-casing
+  name: 'menu-bridge'
 });
 
 const route = useRoute();
@@ -183,13 +188,22 @@ function handleIframeLoad() {
           ></iframe>
         </div>
 
-        <!-- 通用查询工作台 - 使用 KeepAlive 缓存组件，避免数据互相干扰 -->
-        <GenericQueryWorkbench
-          v-else-if="activeView === 'workbench' && meta.functionCode"
-          :meta="meta"
-          :native-only="isNativeOnlyFunction"
-          :dynamic-like="false"
-        />
+        <!--
+          通用查询工作台 - 双层 KeepAlive 缓存：
+          1) 外层路由级 KeepAlive 按 route.name 缓存 MenuBridge；
+          2) 内层 KeepAlive 按 meta.functionCode 缓存 GenericQueryWorkbench，确保：
+             - 不同 functionCode 的工作台实例互不干扰（按 key 隔离）；
+             - 同一 functionCode 在切换标签页再切回时，
+               右栏（新增/单条修改/多条修改/添加批注/查看批注）的状态完整保留。
+        -->
+        <KeepAlive v-else-if="activeView === 'workbench' && meta.functionCode">
+          <GenericQueryWorkbench
+            :key="meta.functionCode"
+            :meta="meta"
+            :native-only="isNativeOnlyFunction"
+            :dynamic-like="false"
+          />
+        </KeepAlive>
 
         <!-- iframe 旧版页面 -->
         <div v-else-if="legacyUrl && !isNativeOnlyFunction" class="iframe-shell">

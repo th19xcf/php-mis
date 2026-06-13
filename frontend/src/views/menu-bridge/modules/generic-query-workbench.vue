@@ -4,7 +4,7 @@ const _loadingLocks = new Map<string, boolean>();
 </script>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -36,6 +36,7 @@ import { useWorkbenchUpkeep } from '@/hooks/business/use-workbench-upkeep';
 import { useWorkbenchDataFetchAll } from '@/hooks/business/use-workbench-data-fetch-all';
 import { useWorkbenchGridReady } from '@/hooks/business/use-workbench-grid-ready';
 import { useThemeStore } from '@/store/modules/theme';
+import { useWorkbenchRightPanelStore } from '@/store/modules/workbench-right-panel';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import { logger } from '@/utils/logger';
 import {
@@ -533,6 +534,101 @@ const {
     loadPage();
   },
   notify: (type: NotifyType, message: string) => msg(type, message)
+});
+
+// —— 右栏状态持久化：组件 mount / activate 时从 store 读回，watch 实时写回 ——
+const rightPanelStore = useWorkbenchRightPanelStore();
+
+/**
+ * 从 store 读回右栏状态，覆盖本地 ref 的初始默认值
+ * - 用于：组件被 KeepAlive 卸载后重新 mount（setup 中 composables 已用默认值初始化）
+ * - 仅在 store 中存在该 functionCode::params 的缓存时才覆盖，避免污染首次进入的场景
+ */
+function restoreRightPanelStateFromStore() {
+  const saved = rightPanelStore.getState(functionCode.value, params.value);
+  if (!saved) return;
+
+  // 用 store 中的状态覆盖 composables 初始化出来的默认值
+  if (saved.rightPanelMode !== undefined) rightPanelMode.value = saved.rightPanelMode;
+  if (saved.addVisible !== undefined) addVisible.value = saved.addVisible;
+  if (saved.addFormData !== undefined) addFormData.value = { ...saved.addFormData };
+  if (saved.addFormFields !== undefined) addFormFields.value = [...saved.addFormFields];
+  if (saved.updateVisible !== undefined) updateVisible.value = saved.updateVisible;
+  if (saved.updateFormData !== undefined) updateFormData.value = { ...saved.updateFormData };
+  if (saved.updateFormFields !== undefined) updateFormFields.value = [...saved.updateFormFields];
+  if (saved.batchUpdateVisible !== undefined) batchUpdateVisible.value = saved.batchUpdateVisible;
+  if (saved.batchUpdateFormData !== undefined) batchUpdateFormData.value = { ...saved.batchUpdateFormData };
+  if (saved.batchUpdateFormFields !== undefined) batchUpdateFormFields.value = [...saved.batchUpdateFormFields];
+  if (saved.addCommentVisible !== undefined) addCommentVisible.value = saved.addCommentVisible;
+  if (saved.viewCommentVisible !== undefined) viewCommentVisible.value = saved.viewCommentVisible;
+  if (saved.commentFormData !== undefined) commentFormData.value = { ...saved.commentFormData };
+  if (saved.commentRemark !== undefined) commentRemark.value = saved.commentRemark;
+  if (saved.commentFields !== undefined) commentFields.value = [...saved.commentFields];
+  if (saved.commentList !== undefined) commentList.value = [...saved.commentList];
+}
+
+/**
+ * 把当前右栏状态写回 store
+ * - 监听任何相关 ref 变化都会调用本函数
+ */
+function persistRightPanelStateToStore() {
+  rightPanelStore.setState(functionCode.value, params.value, {
+    rightPanelMode: rightPanelMode.value,
+    addVisible: addVisible.value,
+    addFormData: addFormData.value,
+    addFormFields: addFormFields.value,
+    updateVisible: updateVisible.value,
+    updateFormData: updateFormData.value,
+    updateFormFields: updateFormFields.value,
+    batchUpdateVisible: batchUpdateVisible.value,
+    batchUpdateFormData: batchUpdateFormData.value,
+    batchUpdateFormFields: batchUpdateFormFields.value,
+    addCommentVisible: addCommentVisible.value,
+    viewCommentVisible: viewCommentVisible.value,
+    commentFormData: commentFormData.value,
+    commentRemark: commentRemark.value,
+    commentFields: commentFields.value,
+    commentList: commentList.value
+  });
+}
+
+// 首次 setup：从 store 恢复（如果之前切走标签页保存过）
+restoreRightPanelStateFromStore();
+
+// 实时监听所有右栏相关 ref 变化，写回 store
+watch(
+  [
+    rightPanelMode,
+    addVisible,
+    addFormData,
+    addFormFields,
+    updateVisible,
+    updateFormData,
+    updateFormFields,
+    batchUpdateVisible,
+    batchUpdateFormData,
+    batchUpdateFormFields,
+    addCommentVisible,
+    viewCommentVisible,
+    commentFormData,
+    commentRemark,
+    commentFields,
+    commentList
+  ],
+  () => {
+    // functionCode / params 尚未就绪时不写入（极端情况）
+    if (!functionCode.value) return;
+    persistRightPanelStateToStore();
+  },
+  { deep: true }
+);
+
+// 兜底：mount / activate 钩子再尝试恢复一次（覆盖 cache key 在 setup 之后才稳定的情况）
+onMounted(() => {
+  restoreRightPanelStateFromStore();
+});
+onActivated(() => {
+  restoreRightPanelStateFromStore();
 });
 
 // —— 右侧面板协调：chart / 新增 / 单条修改 / 多条修改 互斥 ——
