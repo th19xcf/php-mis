@@ -29,6 +29,26 @@ function getFieldOptions(field: any) {
   return field.objectOptions || [];
 }
 
+/**
+ * 多选字段：formData 里存的是以 "," 分隔的字符串，
+ * 渲染 NSelect multiple 时需要解析为数组；变更时再 join 回去。
+ */
+function getMultiSelectValue(fieldName: string): string[] {
+  const raw = props.formData[fieldName];
+  if (raw == null || raw === '') return [];
+  return String(raw)
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function handleMultiFieldChange(fieldName: string, value: string[] | null | undefined) {
+  const parts = (value || [])
+    .map(s => (s == null ? '' : String(s).trim()))
+    .filter(Boolean);
+  handleFieldChange(fieldName, parts.join(','));
+}
+
 const title = computed(() => (props.isBatch ? '多条修改' : '单条修改'));
 const confirmText = computed(() => (props.isBatch ? '确认批量修改' : '确认修改'));
 const titleSub = computed(() => (props.isBatch ? '批量修改选中的记录' : '修改单条记录'));
@@ -44,21 +64,10 @@ const dark = computed(() => !!props.isDarkMode);
         <span class="title-sub">{{ titleSub }}</span>
       </span>
       <div class="flex flex-row gap-8px">
-        <NButton
-          v-if="!success"
-          type="primary"
-          size="small"
-          :disabled="loading"
-          @click="emit('confirm')"
-        >
+        <NButton v-if="!success" type="primary" size="small" :disabled="loading" @click="emit('confirm')">
           {{ confirmText }}
         </NButton>
-        <NButton
-          v-if="!success"
-          type="default"
-          size="small"
-          @click="emit('toggleMaximize')"
-        >
+        <NButton v-if="!success" type="default" size="small" @click="emit('toggleMaximize')">
           {{ isMaximized ? '恢复' : '扩大' }}
         </NButton>
         <NButton size="small" @click="emit('close')">关闭</NButton>
@@ -90,7 +99,17 @@ const dark = computed(() => !!props.isDarkMode);
                   :required="field.required"
                 >
                   <NSelect
-                    v-if="field.editorType === '下拉框' || field.fieldType === '选项'"
+                    v-if="field.editorType === '多选'"
+                    :value="getMultiSelectValue(field.fieldName)"
+                    :options="getFieldOptions(field)"
+                    :placeholder="`请选择${field.columnName}（可多选）`"
+                    :readonly="field.readonly"
+                    multiple
+                    clearable
+                    @update:value="handleMultiFieldChange(field.fieldName, $event)"
+                  />
+                  <NSelect
+                    v-else-if="field.editorType === '下拉框' || field.fieldType === '选项'"
                     :value="formData[field.fieldName]"
                     :options="getFieldOptions(field)"
                     :placeholder="`请选择${field.columnName}`"
@@ -151,13 +170,9 @@ const dark = computed(() => !!props.isDarkMode);
               </div>
             </NForm>
           </div>
-          <div
-            v-else-if="!error && !loading"
-            :class="['empty-fields', dark ? 'empty-fields-dark' : '']"
-          >
+          <div v-else-if="!error && !loading" class="empty-fields" :class="[dark ? 'empty-fields-dark' : '']">
             暂无可修改的字段
           </div>
-
         </NSpace>
       </NSpin>
     </div>

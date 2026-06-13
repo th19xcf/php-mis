@@ -25,6 +25,26 @@ function handleFieldChange(fieldName: string, value: any) {
   emit('update:formData', { ...props.formData, [fieldName]: value });
 }
 
+/**
+ * 多选字段：formData 里存的是以 "," 分隔的字符串，
+ * 渲染 NSelect multiple 时需要解析为数组；变更时再 join 回去。
+ */
+function getMultiSelectValue(fieldName: string): string[] {
+  const raw = props.formData[fieldName];
+  if (raw == null || raw === '') return [];
+  return String(raw)
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function handleMultiFieldChange(fieldName: string, value: string[] | null | undefined) {
+  const parts = (value || [])
+    .map(s => (s == null ? '' : String(s).trim()))
+    .filter(Boolean);
+  handleFieldChange(fieldName, parts.join(','));
+}
+
 const dark = computed(() => !!props.isDarkMode);
 </script>
 
@@ -37,9 +57,7 @@ const dark = computed(() => !!props.isDarkMode);
         <span class="title-sub">填写新记录</span>
       </span>
       <div class="flex flex-row gap-8px">
-        <NButton v-if="!success" type="default" size="small" @click="emit('addSample')">
-          添加样本数据
-        </NButton>
+        <NButton v-if="!success" type="default" size="small" @click="emit('addSample')">添加样本数据</NButton>
         <NButton v-if="!success" type="primary" size="small" :disabled="loading" @click="emit('confirm')">
           确认新增
         </NButton>
@@ -89,6 +107,15 @@ const dark = computed(() => !!props.isDarkMode);
                       </template>
                     </NInput>
                   </div>
+                  <NSelect
+                    v-else-if="field.inputType === 'multiSelect'"
+                    :value="getMultiSelectValue(field.fieldName)"
+                    :options="field.objectOptions || []"
+                    :placeholder="`请选择${field.columnName}（可多选）`"
+                    multiple
+                    clearable
+                    @update:value="handleMultiFieldChange(field.fieldName, $event)"
+                  />
                   <NSelect
                     v-else-if="field.objectName && field.objectName !== '' && field.inputType !== 'popup'"
                     :value="formData[field.fieldName]"

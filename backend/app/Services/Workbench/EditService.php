@@ -82,10 +82,21 @@ class EditService
                     $field['objectOptions'] = $this->getObjectOptions($对象);
                 }
 
+                // 多选：从 def_object 取值，前端渲染为 multiple NSelect，
+                // 最终值以 "," 分隔写入字段。
+                // 注意：多选与固定值是互斥语义，如果同时出现以多选为准。
+                if (strpos($赋值类型, '多选') !== false && !empty($对象)) {
+                    $field['inputType'] = 'multiSelect';
+                    $field['objectName'] = $对象;
+                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                }
+
                 if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
                     $field['inputType'] = 'popup';
                     $field['objectName'] = $对象;
-                } else {
+                } elseif (empty($field['inputType'])) {
+                    // 只有当 inputType 还没被多选分支设过时才回退到 text，
+                    // 避免被覆盖回 text。
                     $field['inputType'] = 'text';
                 }
 
@@ -498,6 +509,14 @@ class EditService
                     $field['objectOptions'] = $this->getObjectOptions($对象);
                 }
 
+                // 多选：从 def_object 取值，前端渲染为 multiple NSelect，
+                // 最终值以 "," 分隔写入字段。
+                if (strpos($赋值类型, '多选') !== false && !empty($对象)) {
+                    $field['inputType']    = 'multiSelect';
+                    $field['objectName']   = $对象;
+                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                }
+
                 if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
                     $field['inputType']  = 'popup';
                     $field['objectName'] = $对象;
@@ -544,7 +563,7 @@ class EditService
             $fields = [];
 
             foreach ($columns as $col) {
-                $fields[] = [
+                $field = [
                     'columnName' => $col['列名'],
                     'fieldName'  => $col['字段名'],
                     'fieldType'  => $col['列类型'] ?? '字符',
@@ -552,6 +571,19 @@ class EditService
                     'required'   => (string) ($col['不可为空'] ?? '0') === '1',
                     'readonly'   => (string) ($col['可修改'] ?? '0') === '2',
                 ];
+
+                // 多选 / 固定值 都从 def_object 拉选项，editorType 保持原样
+                // （更新/批量表单会通过 editorType 字符串来分支渲染）。
+                $赋值类型 = $col['赋值类型'] ?? '';
+                $对象     = $col['对象']     ?? '';
+                if (!empty($对象)
+                    && (strpos($赋值类型, '固定值') !== false || strpos($赋值类型, '多选') !== false)
+                ) {
+                    $field['objectName']   = $对象;
+                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                }
+
+                $fields[] = $field;
             }
 
             $currentData = [];
