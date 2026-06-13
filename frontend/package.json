@@ -105,13 +105,6 @@
     "pre-commit": "pnpm lint-staged",
     "pre-push": "pnpm typecheck"
   },
-  "lint-staged": {
-    "*.{ts,tsx,vue}": [
-      "eslint --fix",
-      "oxlint --fix",
-      "oxfmt"
-    ]
-  },
   "engines": {
     "node": ">=20.19.0",
     "pnpm": ">=10.5.0"
