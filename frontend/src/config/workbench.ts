@@ -1,6 +1,7 @@
 export const WORKBENCH_CONFIG = {
   STORAGE_KEYS: {
-    LEFT_PANEL_WIDTH: 'workbench-left-panel-width'
+    LEFT_PANEL_WIDTH: 'workbench-left-panel-width',
+    EDIT_PANEL_WIDTH: 'workbench-edit-panel-width'
   },
 
   PAGINATION: {

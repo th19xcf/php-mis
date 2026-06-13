@@ -492,7 +492,15 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
     min-height: 0;
   }
 
+  &.right-panel-mode .table-area {
+    flex: 0 0 55%;
+  }
+
   &.chart-mode .table-area {
+    flex: 0 0 55%;
+  }
+
+  &.edit-mode .table-area {
     flex: 0 0 55%;
   }
 
@@ -613,6 +621,86 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
     font-weight: 500;
     color: $wb-primary-color;
   }
+}
+
+// 编辑面板（新增 / 单条修改 / 多条修改）样式
+// 注意：这些 class 用在子组件 WorkbenchAddForm / WorkbenchUpdateForm 里，
+// 必须用 :deep() 才能穿透父组件 scoped 边界，否则样式整段失效。
+:deep(.edit-panel) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #ffffff;
+  border: 1px solid $wb-border-light;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+
+  .system-dark & {
+    background: var(--wb-dark-bg);
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+}
+
+:deep(.edit-header) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  height: 40px;
+  border-bottom: 1px solid $wb-border-light;
+  flex-shrink: 0;
+  background: #fafafa;
+
+  .system-dark & {
+    background: var(--wb-dark-bg);
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+}
+
+:deep(.edit-title) {
+  font-size: 16px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  .title-text {
+    background-color: $wb-primary-color;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .title-divider {
+    display: inline-block;
+    color: $wb-text-secondary;
+    font-weight: 400;
+    opacity: 0.6;
+    margin: 0 2px;
+  }
+
+  .title-sub {
+    font-size: 13px;
+    font-weight: 500;
+    color: $wb-text-secondary;
+
+    .system-dark & {
+      color: $wb-dark-text-muted;
+    }
+  }
+}
+
+:deep(.edit-container) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow-y: auto;
 }
 
 .chart-container {

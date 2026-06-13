@@ -111,6 +111,12 @@ const paginationPageSizeSelector = [...PAGE_SIZE_OPTIONS];
 const useLegacyTabHint = ref(false);
 const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
 
+// 右侧面板模式：null / 'chart' / 'add' / 'update' / 'batch' / 'comment'
+// 用于协调 chart 与 新增/单条修改/多条修改/添加批注/查看批注 互斥占据右侧分栏
+type RightPanelMode = 'chart' | 'add' | 'update' | 'batch' | 'comment' | null;
+const rightPanelMode = ref<RightPanelMode>(null);
+const rightPanelVisible = computed(() => rightPanelMode.value !== null);
+
 // 防止筛选恢复期间 filterChanged 覆盖筛选
 const isRestoringFilter = ref(false);
 // 防止排序恢复期间 sortChanged 覆盖排序
@@ -258,11 +264,24 @@ const hasChartEnabled = computed(() => !!pageMeta.value?.chartModule && pageMeta
 // 图表区图表自适应
 const workbenchContentRef = ref<HTMLDivElement | null>(null);
 const chartMaximized = ref(false);
+// 编辑面板（新增 / 单条修改 / 多条修改）独立的"扩大/恢复"状态，
+// 与图形面板的 chartMaximized 解耦，互不影响
+const editPanelMaximized = ref(false);
 
 // 图表 resize 在分栏拖动 / 最大化时复用
 function handlePanelResize() {
   if (chartVisible.value) {
     chartResize();
+  }
+}
+
+// 分栏拖动条入口：把 MouseEvent 显式透传给对应模式的 startResize
+// （不能用内联三目表达式，Vue 3 不会自动给表达式结果注入 $event）
+function handleSplitterMouseDown(e: MouseEvent) {
+  if (rightPanelMode.value === 'chart') {
+    startResize(e);
+  } else {
+    startEditResize(e);
   }
 }
 
@@ -274,6 +293,22 @@ const { leftPanelWidth, isResizing, startResize } = useWorkbenchPanelResize({
   storageKey: STORAGE_KEYS.LEFT_PANEL_WIDTH,
   onResize: handlePanelResize
 });
+
+const { leftPanelWidth: editLeftWidth, isResizing: editIsResizing, startResize: startEditResize } = useWorkbenchPanelResize({
+  containerRef: workbenchContentRef,
+  defaultPercent: 55,
+  minPercent: 15,
+  maxPercent: 70,
+  storageKey: STORAGE_KEYS.EDIT_PANEL_WIDTH,
+  onResize: () => {
+    // 编辑面板内容为表单，无图表 resize 需求
+  }
+});
+
+const anyRightPanelResizing = computed(() => isResizing.value || editIsResizing.value);
+const activeLeftWidth = computed(() =>
+  rightPanelMode.value === 'chart' ? leftPanelWidth.value : editLeftWidth.value
+);
 
 const {
   colorMarkVisible,
@@ -497,6 +532,157 @@ const {
   notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
+// —— 右侧面板协调：chart / 新增 / 单条修改 / 多条修改 互斥 ——
+// 关闭"新增/单条/多条"表单：clearAddPanel / clearUpdatePanel / clearBatchUpdatePanel
+function clearAddPanel() {
+  addVisible.value = false;
+  addError.value = '';
+  addSuccess.value = '';
+}
+function clearUpdatePanel() {
+  updateVisible.value = false;
+  updateError.value = '';
+  updateSuccess.value = '';
+}
+function clearBatchUpdatePanel() {
+  batchUpdateVisible.value = false;
+  batchUpdateError.value = '';
+  batchUpdateSuccess.value = '';
+}
+function clearCommentPanel() {
+  addCommentVisible.value = false;
+  viewCommentVisible.value = false;
+}
+
+async function handleOpenAddPanel() {
+  // 关闭其它右侧面板
+  clearUpdatePanel();
+  clearBatchUpdatePanel();
+  clearCommentPanel();
+  if (chartVisible.value) {
+    chartVisible.value = false;
+    chartMaximized.value = false;
+  }
+  rightPanelMode.value = 'add';
+  await handleOpenAdd();
+}
+
+async function handleOpenUpdatePanel() {
+  clearAddPanel();
+  clearBatchUpdatePanel();
+  clearCommentPanel();
+  if (chartVisible.value) {
+    chartVisible.value = false;
+    chartMaximized.value = false;
+  }
+  // 校验选中的记录数与原行为一致
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    msg('warning', '请先选择要修改的记录');
+    return;
+  }
+  if (selectedRows.length > 1) {
+    msg('warning', '修改操作只能选择一条记录');
+    return;
+  }
+  rightPanelMode.value = 'update';
+  await handleOpenUpdate();
+  // handleOpenUpdate 内部可能因为无法取主键而未设置 updateVisible，此时回退 mode
+  if (!updateVisible.value) {
+    rightPanelMode.value = null;
+  }
+}
+
+async function handleOpenBatchUpdatePanel() {
+  clearAddPanel();
+  clearUpdatePanel();
+  clearCommentPanel();
+  if (chartVisible.value) {
+    chartVisible.value = false;
+    chartMaximized.value = false;
+  }
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    msg('warning', '请先选择要修改的记录');
+    return;
+  }
+  rightPanelMode.value = 'batch';
+  await handleOpenBatchUpdate();
+  if (!batchUpdateVisible.value) {
+    rightPanelMode.value = null;
+  }
+}
+
+async function handleOpenAddCommentPanel() {
+  // 关闭其它右侧面板
+  clearAddPanel();
+  clearUpdatePanel();
+  clearBatchUpdatePanel();
+  if (chartVisible.value) {
+    chartVisible.value = false;
+    chartMaximized.value = false;
+  }
+  // 先打开右侧分栏，模式置为 'comment'
+  rightPanelMode.value = 'comment';
+  // 校验选中的记录数与原行为一致
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    msg('warning', '请先选择要添加批注的记录');
+    rightPanelMode.value = null;
+    return;
+  }
+  if (selectedRows.length > 1) {
+    msg('warning', '只能选择一条记录');
+    rightPanelMode.value = null;
+    return;
+  }
+  await handleOpenAddComment();
+  // handleOpenAddComment 内部可能因为取主键失败而未设置 addCommentVisible，此时回退 mode
+  if (!addCommentVisible.value) {
+    rightPanelMode.value = null;
+  }
+}
+
+async function handleOpenViewCommentPanel() {
+  // 关闭其它右侧面板
+  clearAddPanel();
+  clearUpdatePanel();
+  clearBatchUpdatePanel();
+  if (chartVisible.value) {
+    chartVisible.value = false;
+    chartMaximized.value = false;
+  }
+  // 先打开右侧分栏，模式置为 'comment'
+  rightPanelMode.value = 'comment';
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    msg('warning', '请先选择要查看批注的记录');
+    rightPanelMode.value = null;
+    return;
+  }
+  if (selectedRows.length > 1) {
+    msg('warning', '只能选择一条记录');
+    rightPanelMode.value = null;
+    return;
+  }
+  await handleOpenViewComment();
+  if (!viewCommentVisible.value) {
+    rightPanelMode.value = null;
+  }
+}
+
+function handleCloseRightPanel() {
+  rightPanelMode.value = null;
+  clearAddPanel();
+  clearUpdatePanel();
+  clearBatchUpdatePanel();
+  clearCommentPanel();
+  if (chartVisible.value) {
+    chartVisible.value = false;
+    chartMaximized.value = false;
+  }
+}
+
 const {
   chartVisible,
   chartLoading,
@@ -518,6 +704,43 @@ const {
     }
     handleChartClick(clickParams);
   }
+});
+
+async function handleOpenChartPanel() {
+  if (!pageMeta.value) return;
+  // 关闭右侧编辑面板
+  clearAddPanel();
+  clearUpdatePanel();
+  clearBatchUpdatePanel();
+  clearCommentPanel();
+  rightPanelMode.value = 'chart';
+  await handleOpenChart(pageMeta.value);
+}
+
+// 监听表单 visible：visible 转 false 时同步清空右侧面板 mode
+// （success 自动关闭 / 用户点击关闭按钮 都会触发）
+watch(addVisible, val => {
+  if (!val && rightPanelMode.value === 'add') rightPanelMode.value = null;
+});
+watch(updateVisible, val => {
+  if (!val && rightPanelMode.value === 'update') rightPanelMode.value = null;
+});
+watch(batchUpdateVisible, val => {
+  if (!val && rightPanelMode.value === 'batch') rightPanelMode.value = null;
+});
+// 监听批注 visible：add/view 任一为 true 时保持 comment 模式，
+// 二者均为 false 且当前是 comment 模式时同步清空
+watch(
+  [addCommentVisible, viewCommentVisible],
+  ([addVal, viewVal]) => {
+    if (rightPanelMode.value === 'comment' && !addVal && !viewVal) {
+      rightPanelMode.value = null;
+    }
+  }
+);
+// 监听 chart 关闭（原有"关闭"按钮 / handleCloseRightPanel 都会改 chartVisible）
+watch(chartVisible, val => {
+  if (!val && rightPanelMode.value === 'chart') rightPanelMode.value = null;
 });
 
 const { drillLevel, isDrilled, handleChartClick, resetDrill } = useWorkbenchChartDrill({
@@ -756,15 +979,23 @@ const { handleGridReady } = useWorkbenchGridReady({
             <NButton @click="handleOpenFieldColumn">字段选择</NButton>
             <NButton @click="handleOpenCondition">条件面板</NButton>
             <NButton @click="openDataDrill">数据钻取</NButton>
-            <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddComment">添加批注</NButton>
-            <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewComment">查看批注</NButton>
+            <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddCommentPanel">添加批注</NButton>
+            <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewCommentPanel">查看批注</NButton>
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
-            <NButton v-if="hasChartEnabled" @click="() => handleOpenChart(pageMeta)">图形</NButton>
-            <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAdd">新增</NButton>
-            <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="handleOpenUpdate">
+            <NButton v-if="hasChartEnabled" @click="handleOpenChartPanel">图形</NButton>
+            <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAddPanel">新增</NButton>
+            <NButton
+              v-if="pageMeta?.toolbar.edit"
+              :disabled="updateLoading"
+              @click="handleOpenUpdatePanel"
+            >
               单条修改
             </NButton>
-            <NButton v-if="pageMeta?.toolbar.batchEdit" :disabled="batchUpdateLoading" @click="handleOpenBatchUpdate">
+            <NButton
+              v-if="pageMeta?.toolbar.batchEdit"
+              :disabled="batchUpdateLoading"
+              @click="handleOpenBatchUpdatePanel"
+            >
               多条修改
             </NButton>
             <NButton v-if="pageMeta?.toolbar.delete" :disabled="deleteLoading" @click="handleDelete">删除</NButton>
@@ -818,13 +1049,23 @@ const { handleGridReady } = useWorkbenchGridReady({
     <div
       ref="workbenchContentRef"
       class="workbench-content"
-      :class="{ 'chart-mode': chartVisible && !chartMaximized, resizing: isResizing }"
+      :class="{
+        'right-panel-mode': rightPanelVisible && !chartMaximized && !editPanelMaximized,
+        'chart-mode': rightPanelMode === 'chart' && !chartMaximized,
+        'edit-mode':
+          (rightPanelMode === 'add' ||
+            rightPanelMode === 'update' ||
+            rightPanelMode === 'batch' ||
+            rightPanelMode === 'comment') &&
+          !chartMaximized && !editPanelMaximized,
+        resizing: anyRightPanelResizing
+      }"
     >
       <!-- 左侧表格区域 -->
       <div
-        v-show="!chartMaximized"
+        v-show="!chartMaximized && !editPanelMaximized"
         class="table-area"
-        :style="chartVisible && !chartMaximized ? { flex: `0 0 ${leftPanelWidth}%` } : {}"
+        :style="rightPanelVisible && !chartMaximized && !editPanelMaximized ? { flex: `0 0 ${activeLeftWidth}%` } : {}"
       >
         <NCard
           :bordered="false"
@@ -878,24 +1119,31 @@ const { handleGridReady } = useWorkbenchGridReady({
         </NCard>
       </div>
 
-      <!-- 可拖动分隔条 -->
+      <!-- 可拖动分隔条（chart 与 edit 模式共用） -->
       <div
-        v-if="chartVisible && !chartMaximized"
+        v-if="rightPanelVisible && !chartMaximized && !editPanelMaximized"
         class="resize-splitter"
-        :class="{ 'is-resizing': isResizing }"
+        :class="{ 'is-resizing': anyRightPanelResizing }"
         title="拖动调整宽度"
-        @mousedown="startResize"
+        @mousedown="handleSplitterMouseDown"
       >
         <div class="resize-line" />
       </div>
 
-      <!-- 右侧图形区域 -->
+      <!-- 右侧分栏：chart / 新增 / 单条修改 / 多条修改 / 批注 互斥 -->
       <div
-        v-show="chartVisible"
+        v-show="rightPanelVisible"
         class="chart-area"
-        :style="{ flex: chartMaximized ? '1' : `0 0 ${100 - leftPanelWidth}%` }"
+        :style="{
+          flex:
+            (chartMaximized && rightPanelMode === 'chart') ||
+            (editPanelMaximized && rightPanelMode !== 'chart')
+              ? '1'
+              : `0 0 ${100 - activeLeftWidth}%`
+        }"
       >
-        <div class="chart-panel rounded-12px shadow-sm">
+        <!-- 图形模式 -->
+        <div v-if="rightPanelMode === 'chart'" class="chart-panel rounded-12px shadow-sm">
           <div class="chart-header">
             <span class="chart-title">
               <span class="title-text">图形展示</span>
@@ -911,17 +1159,7 @@ const { handleGridReady } = useWorkbenchGridReady({
               <NButton v-if="pageMeta?.toolbar.debugSql" size="small" type="warning" @click="handleChartDebug">
                 调试
               </NButton>
-              <NButton
-                size="small"
-                @click="
-                  () => {
-                    chartMaximized = false;
-                    chartVisible = false;
-                  }
-                "
-              >
-                关闭
-              </NButton>
+              <NButton size="small" @click="handleCloseRightPanel">关闭</NButton>
             </div>
           </div>
           <div class="chart-container">
@@ -939,6 +1177,79 @@ const { handleGridReady } = useWorkbenchGridReady({
             </NSpin>
           </div>
         </div>
+
+        <!-- 新增模式 -->
+        <WorkbenchAddForm
+          v-else-if="rightPanelMode === 'add' && addVisible"
+          :loading="addLoading"
+          :error="addError"
+          :success="addSuccess"
+          :form-fields="addFormFields"
+          :form-data="addFormData"
+          :is-dark-mode="isDarkMode"
+          :is-maximized="editPanelMaximized"
+          @update:form-data="addFormData = $event"
+          @confirm="confirmAdd"
+          @open-popup="handleOpenPopup"
+          @close="clearAddPanel"
+          @toggle-maximize="editPanelMaximized = !editPanelMaximized"
+        />
+
+        <!-- 单条修改模式 -->
+        <WorkbenchUpdateForm
+          v-else-if="rightPanelMode === 'update' && updateVisible"
+          :loading="updateLoading"
+          :error="updateError"
+          :success="updateSuccess"
+          :form-fields="updateFormFields"
+          :form-data="updateFormData"
+          :is-dark-mode="isDarkMode"
+          :is-maximized="editPanelMaximized"
+          @update:form-data="updateFormData = $event"
+          @confirm="confirmUpdate"
+          @open-popup="handleOpenPopup"
+          @close="clearUpdatePanel"
+          @toggle-maximize="editPanelMaximized = !editPanelMaximized"
+        />
+
+        <!-- 多条修改模式 -->
+        <WorkbenchUpdateForm
+          v-else-if="rightPanelMode === 'batch' && batchUpdateVisible"
+          :is-batch="true"
+          :loading="batchUpdateLoading"
+          :error="batchUpdateError"
+          :success="batchUpdateSuccess"
+          :form-fields="batchUpdateFormFields"
+          :form-data="batchUpdateFormData"
+          :is-dark-mode="isDarkMode"
+          :is-maximized="editPanelMaximized"
+          @update:form-data="batchUpdateFormData = $event"
+          @confirm="confirmBatchUpdate"
+          @open-popup="handleOpenPopup"
+          @close="clearBatchUpdatePanel"
+          @toggle-maximize="editPanelMaximized = !editPanelMaximized"
+        />
+
+        <!-- 批注模式（添加 / 查看 互斥） -->
+        <WorkbenchComment
+          v-else-if="rightPanelMode === 'comment' && (addCommentVisible || viewCommentVisible)"
+          :add-visible="addCommentVisible"
+          :view-visible="viewCommentVisible"
+          :loading="commentLoading"
+          :fields="commentFields"
+          :form-data="commentFormData"
+          :list="commentList"
+          :module-name="commentModuleName"
+          :remark="commentRemark"
+          :key-field-list="keyFieldList"
+          :key-field-count="keyFieldCount"
+          :is-dark-mode="isDarkMode"
+          :is-maximized="editPanelMaximized"
+          @update:remark="commentRemark = $event"
+          @submit="handleSubmitComment"
+          @close="clearCommentPanel"
+          @toggle-maximize="editPanelMaximized = !editPanelMaximized"
+        />
       </div>
     </div>
 
@@ -1096,23 +1407,6 @@ const { handleGridReady } = useWorkbenchGridReady({
       </NSpace>
     </NModal>
 
-    <!-- 批注弹窗 -->
-    <WorkbenchComment
-      v-model:add-visible="addCommentVisible"
-      v-model:view-visible="viewCommentVisible"
-      :loading="commentLoading"
-      :fields="commentFields"
-      :form-data="commentFormData"
-      :list="commentList"
-      :module-name="commentModuleName"
-      :remark="commentRemark"
-      :key-field-list="keyFieldList"
-      :key-field-count="keyFieldCount"
-      :is-dark-mode="isDarkMode"
-      @update:remark="commentRemark = $event"
-      @submit="handleSubmitComment"
-    />
-
     <!-- 导入弹窗 -->
     <WorkbenchImport
       v-model:visible="importVisible"
@@ -1152,45 +1446,7 @@ const { handleGridReady } = useWorkbenchGridReady({
       @load-children="handleLoadCascaderChildren"
     />
 
-    <!-- 新增弹窗 -->
-    <WorkbenchAddForm
-      v-model:visible="addVisible"
-      :loading="addLoading"
-      :error="addError"
-      :success="addSuccess"
-      :form-fields="addFormFields"
-      :form-data="addFormData"
-      @update:form-data="addFormData = $event"
-      @confirm="confirmAdd"
-      @open-popup="handleOpenPopup"
-    />
-
-    <!-- 修改弹窗 -->
-    <WorkbenchUpdateForm
-      v-model:visible="updateVisible"
-      :loading="updateLoading"
-      :error="updateError"
-      :success="updateSuccess"
-      :form-fields="updateFormFields"
-      :form-data="updateFormData"
-      @update:form-data="updateFormData = $event"
-      @confirm="confirmUpdate"
-      @open-popup="handleOpenPopup"
-    />
-
-    <!-- 批量修改弹窗 -->
-    <WorkbenchUpdateForm
-      v-model:visible="batchUpdateVisible"
-      :loading="batchUpdateLoading"
-      :error="batchUpdateError"
-      :success="batchUpdateSuccess"
-      :form-fields="batchUpdateFormFields"
-      :form-data="batchUpdateFormData"
-      is-batch
-      @update:form-data="batchUpdateFormData = $event"
-      @confirm="confirmBatchUpdate"
-      @open-popup="handleOpenPopup"
-    />
+    <!-- 新增 / 单条修改 / 多条修改 已改为右侧分栏渲染，详见 workbench-content.chart-area -->
   </div>
 </template>
 

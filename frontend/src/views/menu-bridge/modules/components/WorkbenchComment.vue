@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NModal, NSpin, NSpace, NButton, NEmpty, NInput } from 'naive-ui';
+import { NSpin, NSpace, NButton, NEmpty, NInput } from 'naive-ui';
 
 defineProps<{
   addVisible: boolean;
@@ -13,197 +13,223 @@ defineProps<{
   keyFieldList: any[];
   keyFieldCount: number;
   isDarkMode: boolean;
+  isMaximized?: boolean;
 }>();
 
 const emit = defineEmits<{
-  'update:addVisible': [value: boolean];
-  'update:viewVisible': [value: boolean];
   'update:remark': [value: string];
   submit: [];
+  close: [];
+  toggleMaximize: [];
 }>();
 </script>
 
 <template>
-  <NModal
-    :show="addVisible"
-    preset="card"
-    title="添加批注"
-    class="w-600px"
-    :class="{ 'comment-modal-dark': isDarkMode }"
-    :mask-closable="false"
-    @update:show="emit('update:addVisible', $event)"
-  >
-    <NSpin :show="loading">
-      <NSpace vertical :size="16">
-        <div v-if="keyFieldCount > 0" class="comment-form-wrapper">
-          <div
-            class="comment-form-header"
-            :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
-          >
-            <div
-              class="comment-form-col comment-col-name"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              列名
-            </div>
-            <div
-              class="comment-form-col comment-col-type"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              列类型
-            </div>
-            <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">取值</div>
-          </div>
-
-          <div class="comment-form-body" :style="isDarkMode ? { borderColor: '#4b5965' } : {}">
-            <div
-              v-for="(field, index) in keyFieldList"
-              :key="field.name"
-              class="comment-form-row"
-              :style="
-                isDarkMode
-                  ? {
-                      borderBottomColor: '#4b5965',
-                      borderBottom: index === keyFieldList.length - 1 ? 'none' : '1px solid #4b5965'
-                    }
-                  : {}
-              "
-            >
+  <div class="edit-panel" :class="{ 'edit-panel-dark': isDarkMode }">
+    <div class="edit-header" :class="{ 'edit-header-dark': isDarkMode }">
+      <span class="edit-title">
+        <span class="title-text">{{ addVisible ? '添加批注' : '查看批注' }}</span>
+        <span class="title-divider">|</span>
+        <span class="title-sub">{{ addVisible ? '填写批注内容' : '查看历史批注' }}</span>
+      </span>
+      <div class="flex flex-row gap-8px">
+        <NButton
+          v-if="addVisible"
+          type="primary"
+          size="small"
+          :disabled="loading"
+          @click="emit('submit')"
+        >
+          确定
+        </NButton>
+        <NButton size="small" type="default" @click="emit('toggleMaximize')">
+          {{ isMaximized ? '恢复' : '扩大' }}
+        </NButton>
+        <NButton size="small" @click="emit('close')">关闭</NButton>
+      </div>
+    </div>
+    <div class="edit-container">
+      <NSpin :show="loading">
+        <NSpace vertical :size="16">
+          <!-- 添加批注：表单区 -->
+          <template v-if="addVisible">
+            <div v-if="keyFieldCount > 0" class="comment-form-wrapper">
               <div
-                class="comment-form-col comment-col-name"
-                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+                class="comment-form-header"
+                :class="{ 'comment-form-header-dark': isDarkMode }"
               >
-                {{ field.comment || field.name }}
+                <div
+                  class="comment-form-col comment-col-name"
+                  :class="{ 'comment-form-col-dark': isDarkMode }"
+                >
+                  列名
+                </div>
+                <div
+                  class="comment-form-col comment-col-type"
+                  :class="{ 'comment-form-col-dark': isDarkMode }"
+                >
+                  列类型
+                </div>
+                <div class="comment-form-col comment-col-value" :class="{ 'comment-form-col-value-dark': isDarkMode }">
+                  取值
+                </div>
               </div>
+
+              <div class="comment-form-body" :class="{ 'comment-form-body-dark': isDarkMode }">
+                <div
+                  v-for="(field, index) in keyFieldList"
+                  :key="field.name"
+                  class="comment-form-row"
+                  :class="{
+                    'comment-form-row-dark': isDarkMode,
+                    'comment-form-row-last': index === keyFieldList.length - 1
+                  }"
+                >
+                  <div
+                    class="comment-form-col comment-col-name"
+                    :class="{ 'comment-form-col-dark': isDarkMode }"
+                  >
+                    {{ field.comment || field.name }}
+                  </div>
+                  <div
+                    class="comment-form-col comment-col-type"
+                    :class="{ 'comment-form-col-dark': isDarkMode }"
+                  >
+                    {{ field.type }}
+                  </div>
+                  <div
+                    class="comment-form-col comment-col-value"
+                    :class="{ 'comment-form-col-value-dark': isDarkMode }"
+                  >
+                    <span
+                      class="comment-key-field-value"
+                      :class="{ 'comment-key-field-value-dark': isDarkMode }"
+                    >
+                      {{ formData[field.name] }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <NEmpty v-else description="该功能未配置批注模块" />
+
+            <div class="comment-form-wrapper">
               <div
-                class="comment-form-col comment-col-type"
-                :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
+                class="comment-form-header"
+                :class="{ 'comment-form-header-dark': isDarkMode }"
               >
-                {{ field.type }}
+                <div
+                  class="comment-form-col comment-col-name"
+                  :class="{ 'comment-form-col-dark': isDarkMode }"
+                >
+                  备注模块
+                </div>
+                <div
+                  class="comment-form-col comment-col-type"
+                  :class="{ 'comment-form-col-dark': isDarkMode }"
+                >
+                  字符
+                </div>
+                <div
+                  class="comment-form-col comment-col-value"
+                  :class="{ 'comment-form-col-value-dark': isDarkMode }"
+                >
+                  <span :class="{ 'comment-form-col-value-dark': isDarkMode }">{{ moduleName }}</span>
+                </div>
               </div>
-              <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
-                <span class="comment-key-field-value" :style="isDarkMode ? { color: '#b0b0b0' } : {}">
-                  {{ formData[field.name] }}
-                </span>
+            </div>
+
+            <div class="comment-form-wrapper">
+              <div
+                class="comment-form-header"
+                :class="{ 'comment-form-header-dark': isDarkMode }"
+              >
+                <div
+                  class="comment-form-col comment-col-name"
+                  :class="{ 'comment-form-col-dark': isDarkMode }"
+                >
+                  备注说明
+                </div>
+                <div
+                  class="comment-form-col comment-col-type"
+                  :class="{ 'comment-form-col-dark': isDarkMode }"
+                >
+                  文本
+                </div>
+                <div
+                  class="comment-form-col comment-col-value"
+                  :class="{ 'comment-form-col-value-dark': isDarkMode }"
+                >
+                  <NInput
+                    :value="remark"
+                    type="textarea"
+                    placeholder="请输入备注说明"
+                    :rows="3"
+                    @update:value="emit('update:remark', $event)"
+                  />
+                </div>
               </div>
             </div>
-          </div>
-        </div>
+          </template>
 
-        <NEmpty v-else description="该功能未配置批注模块" />
+          <!-- 查看批注：列表区 -->
+          <template v-else-if="viewVisible">
+            <div v-if="list.length > 0" class="comment-card-list">
+              <div
+                v-for="(item, index) in list"
+                :key="index"
+                class="comment-card"
+                :class="{ 'comment-card-dark': isDarkMode }"
+              >
+                <div class="comment-card-header" :class="{ 'comment-card-header-dark': isDarkMode }">
+                  <div class="comment-card-user" :class="{ 'comment-card-user-dark': isDarkMode }">
+                    <span class="comment-card-user-icon">用户</span>
+                    <span>{{ item.操作人员 || '未知用户' }}</span>
+                  </div>
+                  <div class="comment-card-time" :class="{ 'comment-card-time-dark': isDarkMode }">
+                    {{ item.操作时间 || item.创建时间 || '-' }}
+                  </div>
+                </div>
 
-        <div class="comment-form-wrapper">
-          <div
-            class="comment-form-header"
-            :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
-          >
-            <div
-              class="comment-form-col comment-col-name"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              备注模块
-            </div>
-            <div
-              class="comment-form-col comment-col-type"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              字符
-            </div>
-            <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
-              <span :style="isDarkMode ? { color: '#e0e0e0' } : {}">{{ moduleName }}</span>
-            </div>
-          </div>
-        </div>
+                <div class="comment-card-content">
+                  <div class="comment-card-label" :class="{ 'comment-card-label-dark': isDarkMode }">
+                    备注说明
+                  </div>
+                  <div class="comment-card-text" :class="{ 'comment-card-text-dark': isDarkMode }">
+                    {{ item.备注说明 || '无' }}
+                  </div>
+                </div>
 
-        <div class="comment-form-wrapper">
-          <div
-            class="comment-form-header"
-            :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderColor: '#4b5965', color: '#e0e0e0' } : {}"
-          >
-            <div
-              class="comment-form-col comment-col-name"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              备注说明
+                <div
+                  class="comment-card-footer"
+                  :class="{ 'comment-card-footer-dark': isDarkMode }"
+                >
+                  <div
+                    v-for="field in fields.filter(f => f.isKeyField && item[f.name])"
+                    :key="field.name"
+                    class="comment-card-tag"
+                    :class="{ 'comment-card-tag-dark': isDarkMode }"
+                  >
+                    <span
+                      class="comment-card-tag-label"
+                      :class="{ 'comment-card-tag-label-dark': isDarkMode }"
+                    >{{ field.comment || field.name }}:</span>
+                    <span
+                      class="comment-card-tag-value"
+                      :class="{ 'comment-card-tag-value-dark': isDarkMode }"
+                      :title="String(item[field.name])"
+                    >{{ item[field.name] }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div
-              class="comment-form-col comment-col-type"
-              :style="isDarkMode ? { backgroundColor: '#1f1f1f', borderRightColor: '#4b5965', color: '#e0e0e0' } : {}"
-            >
-              文本
-            </div>
-            <div class="comment-form-col comment-col-value" :style="isDarkMode ? { color: '#e0e0e0' } : {}">
-              <NInput
-                :value="remark"
-                type="textarea"
-                placeholder="请输入备注说明"
-                :rows="3"
-                @update:value="emit('update:remark', $event)"
-              />
-            </div>
-          </div>
-        </div>
-
-        <NSpace justify="end">
-          <NButton @click="emit('update:addVisible', false)">取消</NButton>
-          <NButton type="primary" :loading="loading" @click="emit('submit')">确定</NButton>
+            <NEmpty v-else description="暂无批注记录" />
+          </template>
         </NSpace>
-      </NSpace>
-    </NSpin>
-  </NModal>
-
-  <NModal
-    :show="viewVisible"
-    preset="card"
-    title="查看批注"
-    class="w-800px"
-    :mask-closable="false"
-    @update:show="emit('update:viewVisible', $event)"
-  >
-    <NSpin :show="loading">
-      <NSpace vertical :size="16">
-        <div v-if="list.length > 0" class="comment-card-list">
-          <div
-            v-for="(item, index) in list"
-            :key="index"
-            class="comment-card"
-            :class="{ 'comment-card-dark': isDarkMode }"
-          >
-            <div class="comment-card-header">
-              <div class="comment-card-user">
-                <span class="comment-card-user-icon">👤</span>
-                <span>{{ item.操作人员 || '未知用户' }}</span>
-              </div>
-              <div class="comment-card-time">
-                {{ item.操作时间 || item.创建时间 || '-' }}
-              </div>
-            </div>
-
-            <div class="comment-card-content">
-              <div class="comment-card-label">备注说明</div>
-              <div class="comment-card-text">{{ item.备注说明 || '无' }}</div>
-            </div>
-
-            <div class="comment-card-footer">
-              <div
-                v-for="field in fields.filter(f => f.isKeyField && item[f.name])"
-                :key="field.name"
-                class="comment-card-tag"
-              >
-                <span class="comment-card-tag-label">{{ field.comment || field.name }}:</span>
-                <span class="comment-card-tag-value" :title="String(item[field.name])">{{ item[field.name] }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <NEmpty v-else description="暂无批注记录" />
-
-        <NSpace justify="end">
-          <NButton @click="emit('update:viewVisible', false)">关闭</NButton>
-        </NSpace>
-      </NSpace>
-    </NSpin>
-  </NModal>
+      </NSpin>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -218,9 +244,19 @@ const emit = defineEmits<{
   font-weight: bold;
 }
 
+.comment-form-header-dark {
+  background-color: #1f1f1f !important;
+  border-color: #4b5965 !important;
+  color: #e0e0e0 !important;
+}
+
 .comment-form-body {
   border: 1px solid #d9d9d9;
   border-top: none;
+}
+
+.comment-form-body-dark {
+  border-color: #4b5965 !important;
 }
 
 .comment-form-row {
@@ -228,14 +264,28 @@ const emit = defineEmits<{
   border-bottom: 1px solid #d9d9d9;
 }
 
-.comment-form-row:last-child {
+.comment-form-row-last {
   border-bottom: none;
+}
+
+.comment-form-row-dark {
+  border-bottom-color: #4b5965 !important;
 }
 
 .comment-form-col {
   padding: 8px 12px;
   display: flex;
   align-items: center;
+}
+
+.comment-form-col-dark {
+  background-color: #1f1f1f !important;
+  border-right-color: #4b5965 !important;
+  color: #e0e0e0 !important;
+}
+
+.comment-form-col-value-dark {
+  color: #e0e0e0 !important;
 }
 
 .comment-col-name {
@@ -260,9 +310,11 @@ const emit = defineEmits<{
   font-style: italic;
 }
 
+.comment-key-field-value-dark {
+  color: #b0b0b0 !important;
+}
+
 .comment-card-list {
-  max-height: 500px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -302,7 +354,7 @@ const emit = defineEmits<{
   border-bottom: 1px solid #f0f0f0;
 }
 
-.comment-card-dark .comment-card-header {
+.comment-card-header-dark {
   border-bottom-color: #4b5965;
 }
 
@@ -315,7 +367,7 @@ const emit = defineEmits<{
   font-size: 14px;
 }
 
-.comment-card-dark .comment-card-user {
+.comment-card-user-dark {
   color: #4ea4f3;
 }
 
@@ -328,7 +380,7 @@ const emit = defineEmits<{
   font-size: 13px;
 }
 
-.comment-card-dark .comment-card-time {
+.comment-card-time-dark {
   color: #a0a0a0;
 }
 
@@ -342,7 +394,7 @@ const emit = defineEmits<{
   margin-bottom: 4px;
 }
 
-.comment-card-dark .comment-card-label {
+.comment-card-label-dark {
   color: #a0a0a0;
 }
 
@@ -354,7 +406,7 @@ const emit = defineEmits<{
   word-break: break-all;
 }
 
-.comment-card-dark .comment-card-text {
+.comment-card-text-dark {
   color: #e0e0e0;
 }
 
@@ -366,7 +418,7 @@ const emit = defineEmits<{
   border-top: 1px dashed #f0f0f0;
 }
 
-.comment-card-dark .comment-card-footer {
+.comment-card-footer-dark {
   border-top-color: #4b5965;
 }
 
@@ -381,7 +433,7 @@ const emit = defineEmits<{
   max-width: 100%;
 }
 
-.comment-card-dark .comment-card-tag {
+.comment-card-tag-dark {
   background: #2a2a2a;
 }
 
@@ -390,7 +442,7 @@ const emit = defineEmits<{
   flex-shrink: 0;
 }
 
-.comment-card-dark .comment-card-tag-label {
+.comment-card-tag-label-dark {
   color: #a0a0a0;
 }
 
@@ -402,7 +454,7 @@ const emit = defineEmits<{
   white-space: nowrap;
 }
 
-.comment-card-dark .comment-card-tag-value {
+.comment-card-tag-value-dark {
   color: #c0c0c0;
 }
 </style>
