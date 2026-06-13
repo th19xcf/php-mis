@@ -50,23 +50,27 @@ export const useWorkbenchRightPanelStore = defineStore('workbench-right-panel', 
   function setState(functionCode: string, params: string, state: Partial<WorkbenchRightPanelState>) {
     const key = getKey(functionCode, params);
     const existing = stateByKey.value.get(key);
+    // 关键：用 'field' in state 严格判断字段是否被显式提供，
+    // 避免 `state.x ?? existing?.x` 把合法 null / false / [] / {} 误回退到旧值。
+    // 历史 bug：rightPanelMode 关闭视窗时显式传 null，被 ?? 错误回退到 existing 的 'add'，
+    // 导致"关闭标签页后再打开标签，右栏容器残留为空白壳子"。
     const merged: WorkbenchRightPanelState = {
-      rightPanelMode: state.rightPanelMode ?? existing?.rightPanelMode ?? null,
-      addVisible: state.addVisible ?? existing?.addVisible ?? false,
-      addFormData: state.addFormData ?? existing?.addFormData ?? {},
-      addFormFields: state.addFormFields ?? existing?.addFormFields ?? [],
-      updateVisible: state.updateVisible ?? existing?.updateVisible ?? false,
-      updateFormData: state.updateFormData ?? existing?.updateFormData ?? {},
-      updateFormFields: state.updateFormFields ?? existing?.updateFormFields ?? [],
-      batchUpdateVisible: state.batchUpdateVisible ?? existing?.batchUpdateVisible ?? false,
-      batchUpdateFormData: state.batchUpdateFormData ?? existing?.batchUpdateFormData ?? {},
-      batchUpdateFormFields: state.batchUpdateFormFields ?? existing?.batchUpdateFormFields ?? [],
-      addCommentVisible: state.addCommentVisible ?? existing?.addCommentVisible ?? false,
-      viewCommentVisible: state.viewCommentVisible ?? existing?.viewCommentVisible ?? false,
-      commentFormData: state.commentFormData ?? existing?.commentFormData ?? {},
-      commentRemark: state.commentRemark ?? existing?.commentRemark ?? '',
-      commentFields: state.commentFields ?? existing?.commentFields ?? [],
-      commentList: state.commentList ?? existing?.commentList ?? [],
+      rightPanelMode: 'rightPanelMode' in state ? state.rightPanelMode : (existing?.rightPanelMode ?? null),
+      addVisible: 'addVisible' in state ? state.addVisible : (existing?.addVisible ?? false),
+      addFormData: 'addFormData' in state ? state.addFormData : (existing?.addFormData ?? {}),
+      addFormFields: 'addFormFields' in state ? state.addFormFields : (existing?.addFormFields ?? []),
+      updateVisible: 'updateVisible' in state ? state.updateVisible : (existing?.updateVisible ?? false),
+      updateFormData: 'updateFormData' in state ? state.updateFormData : (existing?.updateFormData ?? {}),
+      updateFormFields: 'updateFormFields' in state ? state.updateFormFields : (existing?.updateFormFields ?? []),
+      batchUpdateVisible: 'batchUpdateVisible' in state ? state.batchUpdateVisible : (existing?.batchUpdateVisible ?? false),
+      batchUpdateFormData: 'batchUpdateFormData' in state ? state.batchUpdateFormData : (existing?.batchUpdateFormData ?? {}),
+      batchUpdateFormFields: 'batchUpdateFormFields' in state ? state.batchUpdateFormFields : (existing?.batchUpdateFormFields ?? []),
+      addCommentVisible: 'addCommentVisible' in state ? state.addCommentVisible : (existing?.addCommentVisible ?? false),
+      viewCommentVisible: 'viewCommentVisible' in state ? state.viewCommentVisible : (existing?.viewCommentVisible ?? false),
+      commentFormData: 'commentFormData' in state ? state.commentFormData : (existing?.commentFormData ?? {}),
+      commentRemark: 'commentRemark' in state ? state.commentRemark : (existing?.commentRemark ?? ''),
+      commentFields: 'commentFields' in state ? state.commentFields : (existing?.commentFields ?? []),
+      commentList: 'commentList' in state ? state.commentList : (existing?.commentList ?? []),
       timestamp: Date.now()
     };
     stateByKey.value.set(key, merged);
