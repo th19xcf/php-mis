@@ -43,7 +43,8 @@ import {
   WorkbenchComment,
   WorkbenchAddForm,
   WorkbenchUpdateForm,
-  WorkbenchPopupSelect
+  WorkbenchPopupSelect,
+  WorkbenchSelectAllHeader
 } from './components';
 
 const route = useRoute();
@@ -1124,12 +1125,13 @@ const { handleGridReady } = useWorkbenchGridReady({
               :pagination="true"
               :pagination-page-size="pageSize"
               :pagination-page-size-selector="paginationPageSizeSelector"
-              :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: true }"
+              :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: false, selectAll: 'filtered' }"
               :selection-column-def="{
                 width: 37,
                 minWidth: 37,
                 resizable: false,
-                headerClass: 'selection-header-left'
+                headerClass: 'selection-header-left',
+                headerComponent: WorkbenchSelectAllHeader
               }"
               :row-buffer="20"
               :suppress-column-virtualisation="false"
