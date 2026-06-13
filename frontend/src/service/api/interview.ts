@@ -17,7 +17,8 @@ export function fetchAddInterview(data: Api.Interview.InterviewAddParams) {
   return request<null>({
     url: '/interview/add',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -25,7 +26,8 @@ export function fetchUpdateInterview(data: Api.Interview.InterviewUpdateParams) 
   return request<null>({
     url: '/interview/update',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -33,7 +35,8 @@ export function fetchDeleteInterview(guids: string[]) {
   return request<null>({
     url: '/interview/delete',
     method: 'post',
-    data: { guids }
+    data: { guids },
+    skipAuthError: true
   });
 }
 
@@ -41,7 +44,8 @@ export function fetchTransferInterview(data: Api.Interview.InterviewTransferPara
   return request<null>({
     url: '/interview/transfer',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 

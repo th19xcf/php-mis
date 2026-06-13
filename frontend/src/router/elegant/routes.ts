@@ -166,7 +166,9 @@ export const generatedRoutes: GeneratedRoute[] = [
     component: 'layout.base$view.room-status',
     meta: {
       title: 'room-status',
-      i18nKey: 'route.room-status'
+      i18nKey: 'route.room-status',
+      // 房态图由后端菜单（frontendRoute）驱动，自身不参与侧边栏导航
+      hideInMenu: true
     }
   },
   {

@@ -1,5 +1,9 @@
 import { request } from '../request';
 
+// 写接口（add/update/delete/batch/submit/upkeep/reset/import）需在
+// config 上设置 `skipAuthError: true`，避免后端把业务校验错误复用到
+// logout 业务码时误触发 authStore.resetStore() → 跳登录页。详见
+// service/request/index.ts 的 onBackendFail 实现。
 export function fetchWorkbenchPage(functionCode: string) {
   return request<{ meta: Api.Workbench.PageMeta }>({ url: `/workbench/page/${encodeURIComponent(functionCode)}` });
 }
@@ -64,7 +68,12 @@ export function importData(functionCode: string, data: any[]) {
     data: {
       data,
       config: {}
-    }
+    },
+    // 导入接口的业务校验错误（如 "Data too long for column..."）不应
+    // 被后端复用的 logout 业务码误判为会话失效。拦截器读此标记后
+    // 跳过强制登出，错误交由 useWorkbenchImport 在弹窗内提示用户。
+    // 真过期场景（expiredTokenCodes）仍按 token 刷新流程处理。
+    skipAuthError: true
   });
 }
 
@@ -90,7 +99,8 @@ export function addRow(functionCode: string, data: Record<string, any>) {
   return request<Api.Workbench.AddResult>({
     url: `/workbench/add-row/${encodeURIComponent(functionCode)}`,
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -98,7 +108,8 @@ export function deleteRow(functionCode: string, keys: (string | number)[]) {
   return request<Api.Workbench.DeleteResult>({
     url: `/workbench/delete-row/${encodeURIComponent(functionCode)}`,
     method: 'post',
-    data: { keys }
+    data: { keys },
+    skipAuthError: true
   });
 }
 
@@ -114,7 +125,8 @@ export function updateRow(functionCode: string, keys: (string | number)[], data:
   return request<Api.Workbench.UpdateResult>({
     url: `/workbench/update-row/${encodeURIComponent(functionCode)}`,
     method: 'post',
-    data: { keys, data }
+    data: { keys, data },
+    skipAuthError: true
   });
 }
 
@@ -122,7 +134,8 @@ export function batchUpdateRow(functionCode: string, keys: (string | number)[], 
   return request<Api.Workbench.UpdateResult>({
     url: `/workbench/batch-update-row/${encodeURIComponent(functionCode)}`,
     method: 'post',
-    data: { keys, data }
+    data: { keys, data },
+    skipAuthError: true
   });
 }
 
@@ -153,7 +166,8 @@ export function submitTableEdit(functionCode: string, data: Api.Workbench.QueryR
   return request<Api.Workbench.UpdateResult>({
     url: `/workbench/table-edit/${encodeURIComponent(functionCode)}`,
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -173,7 +187,8 @@ export function executeUpkeep(functionCode: string) {
     message: string;
   }>({
     url: `/workbench/upkeep/${encodeURIComponent(functionCode)}`,
-    method: 'post'
+    method: 'post',
+    skipAuthError: true
   });
 }
 
@@ -200,6 +215,7 @@ export function fetchWorkbenchChartDrill(functionCode: string, payload: any[]) {
 export function resetWorkbenchChartDrill(functionCode: string) {
   return request<{ message: string }>({
     url: `/workbench/chart-drill-reset/${encodeURIComponent(functionCode)}`,
-    method: 'post'
+    method: 'post',
+    skipAuthError: true
   });
 }

@@ -25,6 +25,7 @@ export function addComment(functionCode: string, data: Api.Comment.AddPayload) {
   return request<Api.Common.SuccessResponse>({
     url: `/comment/add/${encodeURIComponent(functionCode)}`,
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }

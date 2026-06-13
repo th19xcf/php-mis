@@ -84,6 +84,7 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
       const msg = '请上传 Excel 文件 (.xlsx, .xls) 或 CSV 文件 (.csv)';
       console.error(`[IMPORT] ${msg}`);
       importError.value = msg;
+      options.notify('error', msg);
       return;
     }
 
@@ -132,6 +133,7 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
       const msg = '文件解析失败，请检查文件格式是否正确';
       console.error(`[IMPORT] ${msg}`);
       importError.value = msg;
+      options.notify('error', msg);
       importPreviewData.value = [];
     } finally {
       importLoading.value = false;
@@ -215,20 +217,24 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
           const fullMsg = `${msg}\n...还有 ${data.errors.length - 5} 行错误`;
           console.error(`[IMPORT] ${fullMsg}`);
           importError.value = fullMsg;
+          options.notify('error', fullMsg);
         } else {
           console.error(`[IMPORT] ${msg}`);
           importError.value = msg;
+          options.notify('error', msg);
         }
       } else {
         const msg = data.message;
         console.error(`[IMPORT] ${msg}`);
         importError.value = msg;
+        options.notify('error', msg);
       }
     } catch (error) {
       console.error('导入失败:', error);
       const msg = '导入失败，请稍后重试';
       console.error(`[IMPORT] ${msg}`);
       importError.value = msg;
+      options.notify('error', msg);
     } finally {
       importLoading.value = false;
     }

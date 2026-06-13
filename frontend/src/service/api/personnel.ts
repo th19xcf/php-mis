@@ -17,7 +17,8 @@ export function fetchUpdateTrain(data: Api.Train.TrainUpdateParams) {
   return request<null>({
     url: '/train/update',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -25,7 +26,8 @@ export function fetchBatchUpdateTrain(data: Api.Train.TrainBatchUpdateParams) {
   return request<null>({
     url: '/train/batchUpdate',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -33,7 +35,8 @@ export function fetchDeleteTrain(guids: string[]) {
   return request<null>({
     url: '/train/delete',
     method: 'post',
-    data: { guids }
+    data: { guids },
+    skipAuthError: true
   });
 }
 
@@ -41,7 +44,8 @@ export function fetchTransferTrain(data: Api.Train.TrainTransferParams) {
   return request<null>({
     url: '/train/transfer',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -68,7 +72,8 @@ export function fetchUpdateEmployee(data: Api.Employee.EmployeeUpdateParams) {
   return request<null>({
     url: '/employee/update',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -76,7 +81,8 @@ export function fetchBatchUpdateEmployee(data: Api.Employee.EmployeeBatchUpdateP
   return request<null>({
     url: '/employee/batchUpdate',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -84,7 +90,8 @@ export function fetchDeleteEmployee(guids: string[]) {
   return request<null>({
     url: '/employee/delete',
     method: 'post',
-    data: { guids }
+    data: { guids },
+    skipAuthError: true
   });
 }
 

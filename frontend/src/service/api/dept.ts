@@ -15,7 +15,8 @@ export function fetchAddDept(data: Api.Dept.DeptAddParams) {
   return request<Api.Dept.DeptAddResult>({
     url: '/dept/add',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -24,7 +25,8 @@ export function fetchUpdateDept(data: Api.Dept.DeptUpdateParams) {
   return request<Api.Dept.DeptUpdateResult>({
     url: '/dept/update',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -33,7 +35,8 @@ export function fetchDeleteDept(guid: string) {
   return request<Api.Dept.DeptDeleteResult>({
     url: '/dept/delete',
     method: 'post',
-    data: { guid }
+    data: { guid },
+    skipAuthError: true
   });
 }
 

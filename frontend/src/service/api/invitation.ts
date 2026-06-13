@@ -17,7 +17,8 @@ export function fetchAddInvitation(data: Api.Invitation.InvitationAddParams) {
   return request<null>({
     url: '/invitation/add',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -25,7 +26,8 @@ export function fetchUpdateInvitation(data: Api.Invitation.InvitationUpdateParam
   return request<null>({
     url: '/invitation/update',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 
@@ -33,7 +35,8 @@ export function fetchDeleteInvitation(guids: string[]) {
   return request<null>({
     url: '/invitation/delete',
     method: 'post',
-    data: { guids }
+    data: { guids },
+    skipAuthError: true
   });
 }
 
@@ -41,7 +44,8 @@ export function fetchTransferInvitation(data: Api.Invitation.InvitationTransferP
   return request<null>({
     url: '/invitation/transfer',
     method: 'post',
-    data
+    data,
+    skipAuthError: true
   });
 }
 

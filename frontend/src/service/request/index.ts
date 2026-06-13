@@ -42,6 +42,12 @@ export const request = createFlatRequest(
       const authStore = useAuthStore();
       const responseCode = String(response.data.code);
 
+      // 是否对当前请求"豁免强制登出"：
+      // 某些业务接口（导入/批量写入/导出等）即便返回了 logoutCodes /
+      // modalLogoutCodes 中的码，也不应视作会话失效，而是业务校验失败。
+      // 调用方通过在 request config 上设置 `skipAuthError: true` 启用。
+      const skipAuthError = Boolean((response.config as any)?.skipAuthError);
+
       function handleLogout() {
         authStore.resetStore();
       }
@@ -54,7 +60,7 @@ export const request = createFlatRequest(
       }
 
       // when the backend response code is in `logoutCodes`, it means the user will be logged out and redirected to login page
-      if (SERVICE_CODE_CONFIG.logoutCodes.includes(responseCode)) {
+      if (SERVICE_CODE_CONFIG.logoutCodes.includes(responseCode) && !skipAuthError) {
         handleLogout();
         return null;
       }
@@ -62,6 +68,7 @@ export const request = createFlatRequest(
       // when the backend response code is in `modalLogoutCodes`, it means the user will be logged out by displaying a modal
       if (
         SERVICE_CODE_CONFIG.modalLogoutCodes.includes(responseCode) &&
+        !skipAuthError &&
         !request.state.errMsgStack?.includes(response.data.msg)
       ) {
         request.state.errMsgStack = [...(request.state.errMsgStack || []), response.data.msg];
