@@ -18,6 +18,7 @@ const emit = defineEmits<{
   openPopup: [field: any];
   close: [];
   toggleMaximize: [];
+  addSample: [];
 }>();
 
 function handleFieldChange(fieldName: string, value: any) {
@@ -36,21 +37,13 @@ const dark = computed(() => !!props.isDarkMode);
         <span class="title-sub">填写新记录</span>
       </span>
       <div class="flex flex-row gap-8px">
-        <NButton
-          v-if="!success"
-          type="primary"
-          size="small"
-          :disabled="loading"
-          @click="emit('confirm')"
-        >
+        <NButton v-if="!success" type="default" size="small" @click="emit('addSample')">
+          添加样本数据
+        </NButton>
+        <NButton v-if="!success" type="primary" size="small" :disabled="loading" @click="emit('confirm')">
           确认新增
         </NButton>
-        <NButton
-          v-if="!success"
-          type="default"
-          size="small"
-          @click="emit('toggleMaximize')"
-        >
+        <NButton v-if="!success" type="default" size="small" @click="emit('toggleMaximize')">
           {{ isMaximized ? '恢复' : '扩大' }}
         </NButton>
         <NButton size="small" @click="emit('close')">关闭</NButton>
@@ -68,7 +61,7 @@ const dark = computed(() => !!props.isDarkMode);
           </NAlert>
 
           <div v-if="!success">
-            <div :class="['form-field-count', dark ? 'form-field-count-dark' : '']">
+            <div class="form-field-count" :class="[dark ? 'form-field-count-dark' : '']">
               字段数量: {{ formFields.length }}
             </div>
             <NForm :model="formData" label-placement="left" label-width="120px">
@@ -131,7 +124,6 @@ const dark = computed(() => !!props.isDarkMode);
               </div>
             </NForm>
           </div>
-
         </NSpace>
       </NSpin>
     </div>

@@ -294,7 +294,11 @@ const { leftPanelWidth, isResizing, startResize } = useWorkbenchPanelResize({
   onResize: handlePanelResize
 });
 
-const { leftPanelWidth: editLeftWidth, isResizing: editIsResizing, startResize: startEditResize } = useWorkbenchPanelResize({
+const {
+  leftPanelWidth: editLeftWidth,
+  isResizing: editIsResizing,
+  startResize: startEditResize
+} = useWorkbenchPanelResize({
   containerRef: workbenchContentRef,
   defaultPercent: 55,
   minPercent: 15,
@@ -306,9 +310,7 @@ const { leftPanelWidth: editLeftWidth, isResizing: editIsResizing, startResize: 
 });
 
 const anyRightPanelResizing = computed(() => isResizing.value || editIsResizing.value);
-const activeLeftWidth = computed(() =>
-  rightPanelMode.value === 'chart' ? leftPanelWidth.value : editLeftWidth.value
-);
+const activeLeftWidth = computed(() => (rightPanelMode.value === 'chart' ? leftPanelWidth.value : editLeftWidth.value));
 
 const {
   colorMarkVisible,
@@ -549,6 +551,45 @@ function clearBatchUpdatePanel() {
   batchUpdateError.value = '';
   batchUpdateSuccess.value = '';
 }
+
+// 「添加样本数据」：把表格勾选的 1 行数据合并到 addFormData
+//   - 0 行 / 多行：提示，不修改表单
+//   - 1 行：只覆盖表单中存在的字段（按 formFields.fieldName 匹配），保留用户已输入的其它字段
+function handleAddSample() {
+  if (rightPanelMode.value !== 'add' || !addVisible.value) {
+    msg('warning', '请先打开新增视图');
+    return;
+  }
+  const selectedRows = gridApi.value?.getSelectedRows() || [];
+  if (selectedRows.length === 0) {
+    msg('warning', '请先在表格中勾选一行作为样本数据');
+    return;
+  }
+  if (selectedRows.length > 1) {
+    msg('warning', '只能选择一行作为样本数据');
+    return;
+  }
+
+  const sample = selectedRows[0] as Record<string, any>;
+  const merged: Record<string, any> = { ...addFormData.value };
+  let matchedCount = 0;
+  for (const field of addFormFields.value) {
+    const fieldName = field.fieldName as string;
+    if (!fieldName) continue;
+    if (Object.prototype.hasOwnProperty.call(sample, fieldName)) {
+      merged[fieldName] = sample[fieldName];
+      matchedCount += 1;
+    }
+  }
+
+  if (matchedCount === 0) {
+    msg('warning', '所选行与表单字段不匹配，未填入任何字段');
+    return;
+  }
+
+  addFormData.value = merged;
+  msg('success', `已从样本行填入 ${matchedCount} 个字段`);
+}
 function clearCommentPanel() {
   addCommentVisible.value = false;
   viewCommentVisible.value = false;
@@ -730,14 +771,11 @@ watch(batchUpdateVisible, val => {
 });
 // 监听批注 visible：add/view 任一为 true 时保持 comment 模式，
 // 二者均为 false 且当前是 comment 模式时同步清空
-watch(
-  [addCommentVisible, viewCommentVisible],
-  ([addVal, viewVal]) => {
-    if (rightPanelMode.value === 'comment' && !addVal && !viewVal) {
-      rightPanelMode.value = null;
-    }
+watch([addCommentVisible, viewCommentVisible], ([addVal, viewVal]) => {
+  if (rightPanelMode.value === 'comment' && !addVal && !viewVal) {
+    rightPanelMode.value = null;
   }
-);
+});
 // 监听 chart 关闭（原有"关闭"按钮 / handleCloseRightPanel 都会改 chartVisible）
 watch(chartVisible, val => {
   if (!val && rightPanelMode.value === 'chart') rightPanelMode.value = null;
@@ -984,11 +1022,7 @@ const { handleGridReady } = useWorkbenchGridReady({
             <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
             <NButton v-if="hasChartEnabled" @click="handleOpenChartPanel">图形</NButton>
             <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAddPanel">新增</NButton>
-            <NButton
-              v-if="pageMeta?.toolbar.edit"
-              :disabled="updateLoading"
-              @click="handleOpenUpdatePanel"
-            >
+            <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="handleOpenUpdatePanel">
               单条修改
             </NButton>
             <NButton
@@ -1057,7 +1091,8 @@ const { handleGridReady } = useWorkbenchGridReady({
             rightPanelMode === 'update' ||
             rightPanelMode === 'batch' ||
             rightPanelMode === 'comment') &&
-          !chartMaximized && !editPanelMaximized,
+          !chartMaximized &&
+          !editPanelMaximized,
         resizing: anyRightPanelResizing
       }"
     >
@@ -1136,8 +1171,7 @@ const { handleGridReady } = useWorkbenchGridReady({
         class="chart-area"
         :style="{
           flex:
-            (chartMaximized && rightPanelMode === 'chart') ||
-            (editPanelMaximized && rightPanelMode !== 'chart')
+            (chartMaximized && rightPanelMode === 'chart') || (editPanelMaximized && rightPanelMode !== 'chart')
               ? '1'
               : `0 0 ${100 - activeLeftWidth}%`
         }"
@@ -1193,6 +1227,7 @@ const { handleGridReady } = useWorkbenchGridReady({
           @open-popup="handleOpenPopup"
           @close="clearAddPanel"
           @toggle-maximize="editPanelMaximized = !editPanelMaximized"
+          @add-sample="handleAddSample"
         />
 
         <!-- 单条修改模式 -->
