@@ -4,7 +4,18 @@ import { fetchPopupLevelData, fetchPopupLevels } from '@/service/api/workbench';
 
 interface UseWorkbenchPopupCascaderOptions {
   getFunctionCode: () => string;
-  onConfirmSelection: (fieldName: string, value: string) => void;
+  /**
+   * 获取指定字段在当前活动表单中的原值。
+   * 「添加」模式会把新值拼到原值之后（"," 分隔），需要由父组件提供原值。
+   * 父组件应基于 rightPanelMode（add / update / batch）从对应表单数据中读取。
+   */
+  getCurrentValue: (fieldName: string) => string;
+  /**
+   * 确认选择
+   * @param mode  'replace' 替换：直接覆盖字段值
+   *               'append'  添加：在原值后追加新值（用 "," 分隔）
+   */
+  onConfirmSelection: (fieldName: string, value: string, mode: 'replace' | 'append') => void;
   notifyError: (message: string) => void;
 }
 
@@ -67,22 +78,26 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
     }
   }
 
-  function handleLoadCascaderChildren(option: any) {
+  function handleLoadCascaderChildren(option: any, resolve: () => void) {
     const functionCode = options.getFunctionCode();
     const objectName = popupField.value?.objectName;
 
     if (!functionCode || !objectName) {
+      resolve();
       return Promise.resolve();
     }
 
     const nextLevel = option.level + 1;
     if (nextLevel > popupMaxLevel.value) {
       option.isLeaf = true;
+      resolve();
       return Promise.resolve();
     }
 
     const parentCode = option.fullName || option.value;
-    return fetchPopupLevelData(functionCode, objectName, nextLevel, parentCode)
+    // 必须在 fetch 完成、把 children / isLeaf 全部写到 option 之后才调用 resolve，
+    // 这样 NCascader 才会把节点登记为已加载的叶子节点，末级节点也才能被点击选中。
+    fetchPopupLevelData(functionCode, objectName, nextLevel, parentCode)
       .then(({ data, error }) => {
         if (error) {
           options.notifyError(error.message || '加载子节点失败');
@@ -103,10 +118,18 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
       })
       .catch((e: any) => {
         options.notifyError(e.message || '加载子节点失败');
+      })
+      .finally(() => {
+        resolve();
       });
   }
 
-  function handleCascaderValueChange(_value: string | null, _option: any) {}
+  function handleCascaderValueChange(value: string | null, _option: any) {
+    // 必须把 cascader 选中的值同步回 popupSelectedValue，
+    // 否则：1) 顶部输入框的"请选择"占位符不会更新；
+    //      2) confirmPopupSelection 内部判空直接 return，导致选不中。
+    popupSelectedValue.value = value;
+  }
 
   function findCascaderOption(optionsList: any[], value: string): any | null {
     for (const option of optionsList) {
@@ -121,15 +144,55 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
     return null;
   }
 
-  function confirmPopupSelection() {
+  /**
+   * 替换：直接把 cascader 选中的 fullName 写回字段
+   */
+  function replacePopupSelection() {
     if (!popupField.value || !popupSelectedValue.value) return;
 
     const selectedOption = findCascaderOption(popupCascaderOptions.value, popupSelectedValue.value);
     if (selectedOption) {
       const selectedLabel = selectedOption.fullName || selectedOption.label;
-      options.onConfirmSelection(popupField.value.fieldName, selectedLabel);
+      options.onConfirmSelection(popupField.value.fieldName, selectedLabel, 'replace');
     }
 
+    popupVisible.value = false;
+  }
+
+  /**
+   * 添加：把 cascader 选中的 fullName 拼到原值之后（用 "," 分隔）
+   * - 原值为空时退化为替换
+   * - 原值与新值已重复时不重复添加（去重）
+   */
+  function appendPopupSelection() {
+    if (!popupField.value || !popupSelectedValue.value) return;
+
+    const selectedOption = findCascaderOption(popupCascaderOptions.value, popupSelectedValue.value);
+    if (!selectedOption) {
+      popupVisible.value = false;
+      return;
+    }
+
+    const selectedLabel = selectedOption.fullName || selectedOption.label;
+    const currentValue = String(options.getCurrentValue(popupField.value.fieldName) || '').trim();
+    let finalValue: string;
+    if (!currentValue) {
+      finalValue = selectedLabel;
+    } else {
+      // 按 "," 拆原值去重后再拼，避免出现 "A,B,A"
+      const parts = currentValue
+        .split(',')
+        .map(part => part.trim())
+        .filter(Boolean);
+      if (parts.includes(selectedLabel)) {
+        finalValue = parts.join(',');
+      } else {
+        parts.push(selectedLabel);
+        finalValue = parts.join(',');
+      }
+    }
+
+    options.onConfirmSelection(popupField.value.fieldName, finalValue, 'append');
     popupVisible.value = false;
   }
 
@@ -144,6 +207,7 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
     handleOpenPopup,
     handleLoadCascaderChildren,
     handleCascaderValueChange,
-    confirmPopupSelection
+    replacePopupSelection,
+    appendPopupSelection
   };
 }

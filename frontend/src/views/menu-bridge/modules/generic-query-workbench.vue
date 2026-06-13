@@ -1041,10 +1041,31 @@ const {
   handleOpenPopup,
   handleLoadCascaderChildren,
   handleCascaderValueChange,
-  confirmPopupSelection
+  replacePopupSelection,
+  appendPopupSelection
 } = useWorkbenchPopupCascader({
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  onConfirmSelection: (fieldName: string, value: string) => {
+  /**
+   * 「添加」模式需要拿当前活动表单中该字段的原值做拼接。
+   * 三类表单（新增 / 单条修改 / 多条修改）由 rightPanelMode 区分。
+   * 注：setEditFieldValue 会同时写三类表单，理论上三者一致，但
+   * 出于稳健性，仍按当前面板读对应 ref。
+   */
+  getCurrentValue: (fieldName: string) => {
+    if (rightPanelMode.value === 'add') {
+      return String(addFormData.value[fieldName] ?? '');
+    }
+    if (rightPanelMode.value === 'update') {
+      return String(updateFormData.value[fieldName] ?? '');
+    }
+    if (rightPanelMode.value === 'batch') {
+      return String(batchUpdateFormData.value[fieldName] ?? '');
+    }
+    return '';
+  },
+  onConfirmSelection: (fieldName: string, value: string, _mode: 'replace' | 'append') => {
+    // 替换/添加的最终值已由 composable 算好（添加模式包含去重和 "," 拼接），
+    // 这里只负责把值落到三个表单上。
     setEditFieldValue(fieldName, value);
   },
   notifyError: (message: string) => {
@@ -1575,7 +1596,8 @@ const { handleGridReady } = useWorkbenchGridReady({
       :levels="popupLevels"
       :max-level="popupMaxLevel"
       @update:selected-value="handleCascaderValueChange"
-      @confirm="confirmPopupSelection"
+      @replace="replacePopupSelection"
+      @append="appendPopupSelection"
       @load-children="handleLoadCascaderChildren"
     />
 
