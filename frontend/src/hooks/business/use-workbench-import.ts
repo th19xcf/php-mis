@@ -202,27 +202,22 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
           options.reloadPage();
         }, 1500);
       } else if (data.errors && data.errors.length > 0) {
-        const errorMessages = data.errors.slice(0, 5).map((err: any) => {
-          if (err.row !== undefined && err.errors !== undefined) {
-            return `第 ${err.row} 行: ${err.errors.join(', ')}`;
+        // 仅在控制台输出详情（包含执行失败的 SQL 等），页面保持简短提示
+        data.errors.forEach((err: any) => {
+          if (err.sql) {
+            console.error('[IMPORT] 执行失败的 SQL:', err.sql);
+          } else if (typeof err === 'string') {
+            console.error('[IMPORT] 错误:', err);
+          } else if (err?.row !== undefined && err?.errors !== undefined) {
+            console.error(`[IMPORT] 第 ${err.row} 行: ${err.errors.join(', ')}`);
+          } else {
+            console.error('[IMPORT] 错误:', JSON.stringify(err));
           }
-          if (err.字段值 !== undefined) {
-            return `字段值: ${err.字段值}`;
-          }
-          return JSON.stringify(err);
         });
-        const msg = `${data.message}\n${errorMessages.join('\n')}`;
-
-        if (data.errors.length > 5) {
-          const fullMsg = `${msg}\n...还有 ${data.errors.length - 5} 行错误`;
-          console.error(`[IMPORT] ${fullMsg}`);
-          importError.value = fullMsg;
-          options.notify('error', fullMsg);
-        } else {
-          console.error(`[IMPORT] ${msg}`);
-          importError.value = msg;
-          options.notify('error', msg);
-        }
+        const msg = data.message;
+        console.error(`[IMPORT] ${msg}`);
+        importError.value = msg;
+        options.notify('error', msg);
       } else {
         const msg = data.message;
         console.error(`[IMPORT] ${msg}`);

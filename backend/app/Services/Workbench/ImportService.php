@@ -591,7 +591,7 @@ class ImportService
                     'success' => false,
                     'count'   => 0,
                     'message' => '导入失败：执行导入SQL失败',
-                    'errors'  => [],
+                    'errors'  => [['sql' => $sql]],
                 ];
             }
 
