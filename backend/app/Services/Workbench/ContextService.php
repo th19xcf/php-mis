@@ -272,16 +272,65 @@ class ContextService
 
     /**
      * 加载查询配置
+     *
+     * 直接查询 def_query_config，避免依赖已被精简的 AuthorizationService。
+     * 数据形状与 WorkbenchResponseTrait::loadQueryConfig 保持一致。
      */
     private function loadQueryConfig(string $functionCode, string $userRole): array
     {
-        return $this->authorizationService->loadQueryConfig(
-            $functionCode,
-            $userRole,
-            static function (string $msg, string $level): void {
-                log_message($level, $msg);
-            }
+        log_message('debug', '[loadQueryConfig] 开始执行 SQL 查询, functionCode=' . $functionCode);
+        $sql = sprintf(
+            'select
+                查询模块,模块类型,字段模块,钻取模块,
+                查询表名,数据表名,数据模式,
+                查询条件,汇总条件,排序条件,初始条数,
+                新增前处理模块,新增后处理模块,
+                更新前处理模块,更新后处理模块,
+                数据整理模块,备注模块,导入模块,图形模块,表样式
+            from def_query_config
+            where 查询模块 in
+                (
+                    select 模块名称
+                    from def_function
+                    where 有效标识="1" and 功能编码=%s
+                )',
+            $this->quote($functionCode)
         );
+
+        $row = $this->model->select($sql)->getRowArray();
+        if (!$row) {
+            return [];
+        }
+
+        $queryWhere = (string) ($row['查询条件'] ?? '');
+        if ($queryWhere !== '' && strpos($queryWhere, '$角色') !== false) {
+            $queryWhere = str_replace('$角色', $userRole, $queryWhere);
+        }
+
+        $result = [
+            'queryModule'   => (string) ($row['查询模块'] ?? ''),
+            'drillModule'   => (string) ($row['钻取模块'] ?? ''),
+            'mode'          => (string) ($row['模块类型'] ?? '数据查询'),
+            'fieldModule'   => (string) ($row['字段模块'] ?? ''),
+            'queryTable'    => (string) ($row['查询表名'] ?? ''),
+            'dataTable'     => (string) ($row['数据表名'] ?? ''),
+            'dataModel'     => (string) ($row['数据模式'] ?? ''),
+            'queryWhere'    => $queryWhere,
+            'queryGroup'    => (string) ($row['汇总条件'] ?? ''),
+            'queryOrder'    => (string) ($row['排序条件'] ?? ''),
+            'resultCount'   => (int) ($row['初始条数'] ?? 0),
+            'beforeInsert'  => (string) ($row['新增前处理模块'] ?? ''),
+            'afterInsert'   => (string) ($row['新增后处理模块'] ?? ''),
+            'beforeUpdate'  => (string) ($row['更新前处理模块'] ?? ''),
+            'afterUpdate'   => (string) ($row['更新后处理模块'] ?? ''),
+            'commentModule' => (string) ($row['备注模块'] ?? ''),
+            'importModule'  => (string) ($row['导入模块'] ?? ''),
+            'upkeepModule'  => (string) ($row['数据整理模块'] ?? ''),
+            'chartModule'   => (string) ($row['图形模块'] ?? ''),
+            'gridStyle'     => (string) (($row['表样式'] ?? '') === '' ? '表样式_A' : $row['表样式']),
+        ];
+        log_message('debug', '[loadQueryConfig] 完成');
+        return $result;
     }
 
     /**
