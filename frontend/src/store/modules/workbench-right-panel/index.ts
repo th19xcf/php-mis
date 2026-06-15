@@ -54,28 +54,27 @@ export const useWorkbenchRightPanelStore = defineStore('workbench-right-panel', 
     // 避免 `state.x ?? existing?.x` 把合法 null / false / [] / {} 误回退到旧值。
     // 历史 bug：rightPanelMode 关闭视窗时显式传 null，被 ?? 错误回退到 existing 的 'add'，
     // 导致"关闭标签页后再打开标签，右栏容器残留为空白壳子"。
+    // 说明：state 是 Partial<T>，TS 没法通过 'field' in state 把 state.field 收窄成非 undefined，
+    // 但运行时只要 key 存在就一定有值（即便值是合法的 null/false/[]/{}），这里用 ! 断言。
+    const has = <K extends keyof WorkbenchRightPanelState>(k: K) => k in state;
+    const pick = <K extends keyof WorkbenchRightPanelState>(k: K) => (state as WorkbenchRightPanelState)[k];
     const merged: WorkbenchRightPanelState = {
-      rightPanelMode: 'rightPanelMode' in state ? state.rightPanelMode : (existing?.rightPanelMode ?? null),
-      addVisible: 'addVisible' in state ? state.addVisible : (existing?.addVisible ?? false),
-      addFormData: 'addFormData' in state ? state.addFormData : (existing?.addFormData ?? {}),
-      addFormFields: 'addFormFields' in state ? state.addFormFields : (existing?.addFormFields ?? []),
-      updateVisible: 'updateVisible' in state ? state.updateVisible : (existing?.updateVisible ?? false),
-      updateFormData: 'updateFormData' in state ? state.updateFormData : (existing?.updateFormData ?? {}),
-      updateFormFields: 'updateFormFields' in state ? state.updateFormFields : (existing?.updateFormFields ?? []),
-      batchUpdateVisible:
-        'batchUpdateVisible' in state ? state.batchUpdateVisible : (existing?.batchUpdateVisible ?? false),
-      batchUpdateFormData:
-        'batchUpdateFormData' in state ? state.batchUpdateFormData : (existing?.batchUpdateFormData ?? {}),
-      batchUpdateFormFields:
-        'batchUpdateFormFields' in state ? state.batchUpdateFormFields : (existing?.batchUpdateFormFields ?? []),
-      addCommentVisible:
-        'addCommentVisible' in state ? state.addCommentVisible : (existing?.addCommentVisible ?? false),
-      viewCommentVisible:
-        'viewCommentVisible' in state ? state.viewCommentVisible : (existing?.viewCommentVisible ?? false),
-      commentFormData: 'commentFormData' in state ? state.commentFormData : (existing?.commentFormData ?? {}),
-      commentRemark: 'commentRemark' in state ? state.commentRemark : (existing?.commentRemark ?? ''),
-      commentFields: 'commentFields' in state ? state.commentFields : (existing?.commentFields ?? []),
-      commentList: 'commentList' in state ? state.commentList : (existing?.commentList ?? []),
+      rightPanelMode: has('rightPanelMode') ? pick('rightPanelMode') : (existing?.rightPanelMode ?? null),
+      addVisible: has('addVisible') ? pick('addVisible') : (existing?.addVisible ?? false),
+      addFormData: has('addFormData') ? pick('addFormData') : (existing?.addFormData ?? {}),
+      addFormFields: has('addFormFields') ? pick('addFormFields') : (existing?.addFormFields ?? []),
+      updateVisible: has('updateVisible') ? pick('updateVisible') : (existing?.updateVisible ?? false),
+      updateFormData: has('updateFormData') ? pick('updateFormData') : (existing?.updateFormData ?? {}),
+      updateFormFields: has('updateFormFields') ? pick('updateFormFields') : (existing?.updateFormFields ?? []),
+      batchUpdateVisible: has('batchUpdateVisible') ? pick('batchUpdateVisible') : (existing?.batchUpdateVisible ?? false),
+      batchUpdateFormData: has('batchUpdateFormData') ? pick('batchUpdateFormData') : (existing?.batchUpdateFormData ?? {}),
+      batchUpdateFormFields: has('batchUpdateFormFields') ? pick('batchUpdateFormFields') : (existing?.batchUpdateFormFields ?? []),
+      addCommentVisible: has('addCommentVisible') ? pick('addCommentVisible') : (existing?.addCommentVisible ?? false),
+      viewCommentVisible: has('viewCommentVisible') ? pick('viewCommentVisible') : (existing?.viewCommentVisible ?? false),
+      commentFormData: has('commentFormData') ? pick('commentFormData') : (existing?.commentFormData ?? {}),
+      commentRemark: has('commentRemark') ? pick('commentRemark') : (existing?.commentRemark ?? ''),
+      commentFields: has('commentFields') ? pick('commentFields') : (existing?.commentFields ?? []),
+      commentList: has('commentList') ? pick('commentList') : (existing?.commentList ?? []),
       timestamp: Date.now()
     };
     stateByKey.value.set(key, merged);
