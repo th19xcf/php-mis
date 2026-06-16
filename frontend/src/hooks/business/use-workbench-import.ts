@@ -8,7 +8,9 @@ import { fetchImportColumns, importData } from '@/service/api/workbench';
 interface UseWorkbenchImportOptions {
   gridApi: Ref<GridApi<Api.Workbench.QueryRecord> | null>;
   getFunctionCode: () => string;
+  getParams: () => string;
   reloadPage: () => void;
+  clearCache: (functionCode: string, params: string) => void;
   notify: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void;
 }
 
@@ -196,6 +198,9 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
           message: data.message
         };
         options.notify('success', data.message);
+
+        // 导入成功后清除缓存，确保 reloadPage 拉取最新数据
+        options.clearCache(options.getFunctionCode(), options.getParams());
 
         setTimeout(() => {
           importVisible.value = false;

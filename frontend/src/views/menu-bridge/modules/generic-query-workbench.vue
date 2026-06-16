@@ -182,7 +182,9 @@ const {
 } = useWorkbenchImport({
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getParams: () => params.value,
   reloadPage: () => loadPage(),
+  clearCache: (fc, p) => workbenchStore.clearCache(fc, p),
   notify: (type: NotifyType, message: string) => msg(type, message)
 });
 
