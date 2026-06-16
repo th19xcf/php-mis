@@ -123,7 +123,7 @@ class WorkbenchImportController extends BaseController
             if (!$this->importService->createTempTable($tmpTableName, $importColumns)) {
                 return $this->success($this->importService->buildImportFailure($importData, '导入失败：创建临时表失败'));
             }
-            if (!$this->importService->insertToTempTable($tmpTableName, $validData)) {
+            if (!$this->importService->insertToTempTable($tmpTableName, $validData, $importColumns)) {
                 $this->importService->dropTempTable($tmpTableName);
                 return $this->success($this->importService->buildImportFailure($importData, '导入失败：插入临时表失败'));
             }

@@ -67,8 +67,8 @@ class ImportService
         }
 
         $sql = sprintf(
-            'select 列名, 字段名, 查询名, 顺序, 字段类型, 校验类型, 导入类型
-            from def_import_column 
+            'select 列名, 字段名, 查询名, 顺序, 字段类型, 校验类型, 导入类型, 缺省值
+            from def_import_column
             where 导入模块=%s
             order by 顺序',
             $this->quote($importModule)
@@ -90,7 +90,8 @@ class ImportService
                 'columnOrder' => (int) ($row['顺序'] ?? 0),
                 'columnType' => (string) ($row['字段类型'] ?? ''),
                 'checkType' => (string) ($row['校验类型'] ?? ''),
-                'importType' => (string) ($row['导入类型'] ?? '')
+                'importType' => (string) ($row['导入类型'] ?? ''),
+                'defaultValue' => (string) ($row['缺省值'] ?? '')
             ];
         }
 
@@ -114,7 +115,7 @@ class ImportService
 
         if ($importModule !== '') {
             $sql = sprintf(
-                'select 列名, 字段名, 查询名, 顺序, 字段类型, 字段长度, 校验信息, 校验类型, 对象, 导入类型, 系统变量, 匹配标识
+                'select 列名, 字段名, 查询名, 顺序, 字段类型, 字段长度, 校验信息, 校验类型, 对象, 导入类型, 系统变量, 匹配标识, 缺省值
                 from def_import_column
                 where 导入模块=%s
                 order by 顺序',
@@ -272,7 +273,12 @@ class ImportService
         foreach ($columns as $col) {
             $fieldName = $col['字段名'] ?? $col['列名'];
             $fieldLength = $col['字段长度'] ?? 255;
-            $fieldDefs[] = sprintf('%s varchar(%s) not null default ""', $fieldName, $fieldLength);
+            $defaultValue = (string) ($col['缺省值'] ?? '');
+            if ($defaultValue !== '') {
+                $fieldDefs[] = sprintf('%s varchar(%s) not null default %s', $fieldName, $fieldLength, $this->quote($defaultValue));
+            } else {
+                $fieldDefs[] = sprintf('%s varchar(%s) not null default ""', $fieldName, $fieldLength);
+            }
         }
 
         $sql = sprintf('CREATE TABLE %s (%s)', $tableName, implode(',', $fieldDefs));
@@ -297,14 +303,26 @@ class ImportService
     /**
      * 插入数据到临时表
      *
+     * 字段值为空时，若 def_import_column 中配置了 缺省值，则使用缺省值写入。
+     *
      * @param string $tableName 表名
      * @param array $data 数据
+     * @param array $importColumns 导入列配置（含 字段名、缺省值）
      * @return bool
      */
-    public function insertToTempTable(string $tableName, array $data): bool
+    public function insertToTempTable(string $tableName, array $data, array $importColumns = []): bool
     {
         if (empty($data)) {
             return true;
+        }
+
+        $defaultValueMap = [];
+        foreach ($importColumns as $col) {
+            $fieldName = $col['字段名'] ?? '';
+            $defaultValue = (string) ($col['缺省值'] ?? '');
+            if ($fieldName !== '' && $defaultValue !== '') {
+                $defaultValueMap[$fieldName] = $defaultValue;
+            }
         }
 
         $fields = array_keys($data[0]);
@@ -313,7 +331,11 @@ class ImportService
         foreach ($data as $row) {
             $rowValues = [];
             foreach ($fields as $field) {
-                $rowValues[] = $this->quote($row[$field] ?? '');
+                $value = $row[$field] ?? '';
+                if (($value === '' || $value === null) && isset($defaultValueMap[$field])) {
+                    $value = $defaultValueMap[$field];
+                }
+                $rowValues[] = $this->quote((string) $value);
             }
             $values[] = '(' . implode(',', $rowValues) . ')';
         }
