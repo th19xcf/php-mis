@@ -5,6 +5,8 @@ namespace App\Services\Workbench;
 use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
+use CodeIgniter\Cache\CacheInterface;
+use Config\Services;
 
 /**
  * 上下文服务类
@@ -12,15 +14,20 @@ use App\Models\Mcommon;
  */
 class ContextService
 {
+    private const CACHE_PREFIX = 'workbench_context_';
+    private const CACHE_TTL_SECONDS = 60;
+
     private Mcommon $model;
     private AuthorizationService $authorizationService;
     private SessionUserContext $userContext;
+    private CacheInterface $cache;
 
     public function __construct()
     {
         $this->model = new Mcommon();
         $this->authorizationService = new AuthorizationService();
         $this->userContext = new SessionUserContext();
+        $this->cache = Services::cache();
     }
 
     /**
@@ -42,6 +49,23 @@ class ContextService
         $userWorkId = $user['workId'];
         $userPassword = $user['password'];
         log_message('debug', '[ContextService] 步骤1完成: companyId=' . $companyId . ', userWorkId=' . $userWorkId);
+
+        $cacheKey = $this->buildCacheKey($functionCode, $userWorkId, $companyId);
+        $cached = $this->cache->get($cacheKey);
+        if (is_array($cached) && isset($cached['context'], $cached['definition'])) {
+            log_message('debug', '[ContextService] 缓存命中: ' . $cacheKey);
+            $context = $cached['context'];
+            $definition = $cached['definition'];
+
+            // 敏感字段不缓存，命中后从当前会话补回
+            if (isset($context['user']) && is_array($context['user'])) {
+                $context['user']['userPassword'] = $userPassword;
+            }
+
+            return [$context, $definition];
+        }
+
+        log_message('debug', '[ContextService] 缓存未命中，开始构建上下文: ' . $cacheKey);
 
         log_message('debug', '[ContextService] 步骤2: loadUserAuthorization');
         $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $userPassword);
@@ -111,7 +135,90 @@ class ContextService
             'queryTable' => $queryConfig['queryTable']
         ];
 
+        $this->saveCache($cacheKey, $context, $definition);
+
         return [$context, $definition];
+    }
+
+    /**
+     * 构建缓存键
+     */
+    private function buildCacheKey(string $functionCode, string $userWorkId, string $region): string
+    {
+        return self::CACHE_PREFIX . md5($functionCode) . '_' . md5(implode('|', [$userWorkId, $region]));
+    }
+
+    /**
+     * 保存工作台上下文到缓存
+     */
+    private function saveCache(string $cacheKey, array $context, array $definition): void
+    {
+        // 敏感字段不进入缓存
+        if (isset($context['user']['userPassword'])) {
+            $context['user']['userPassword'] = '';
+        }
+
+        $this->cache->save($cacheKey, [
+            'context' => $context,
+            'definition' => $definition,
+            'cachedAt' => time(),
+        ], self::CACHE_TTL_SECONDS);
+
+        log_message('debug', '[ContextService] 上下文已缓存: ' . $cacheKey);
+    }
+
+    /**
+     * 清除工作台上下文缓存
+     *
+     * - 三个参数均为空：清空当前缓存驱动的全部数据（慎用）。
+     * - 仅提供 functionCode：清除该功能编码下所有用户/属地的缓存。
+     * - 三个参数全部提供：精确删除单条缓存。
+     *
+     * @param string $functionCode 功能编码
+     * @param string $userWorkId   用户工号
+     * @param string $region       属地/公司编码
+     */
+    public function clearCache(string $functionCode = '', string $userWorkId = '', string $region = ''): void
+    {
+        if ($functionCode === '' && $userWorkId === '' && $region === '') {
+            // 注意：clean() 会清空当前缓存驱动的全部数据，不仅限于工作台上下文
+            $this->cache->clean();
+            log_message('info', '[ContextService] 已清空全部缓存');
+            return;
+        }
+
+        if ($functionCode !== '' && $userWorkId === '' && $region === '') {
+            $this->clearCacheByFunctionCode($functionCode);
+            return;
+        }
+
+        $targetKey = $this->buildCacheKey($functionCode, $userWorkId, $region);
+        $this->cache->delete($targetKey);
+        log_message('info', '[ContextService] 已清除工作台上下文缓存: ' . $targetKey);
+    }
+
+    /**
+     * 清除指定功能编码下的所有工作台上下文缓存
+     */
+    public function clearCacheByFunctionCode(string $functionCode): void
+    {
+        $pattern = $this->buildFunctionCachePattern($functionCode);
+
+        try {
+            $this->cache->deleteMatching($pattern);
+            log_message('info', '[ContextService] 已清除功能编码缓存: ' . $functionCode . ', pattern: ' . $pattern);
+        } catch (\BadMethodCallException $e) {
+            log_message('warning', '[ContextService] 当前缓存驱动不支持 deleteMatching，回退到全量清空');
+            $this->cache->clean();
+        }
+    }
+
+    /**
+     * 构建功能编码级缓存匹配模式
+     */
+    private function buildFunctionCachePattern(string $functionCode): string
+    {
+        return self::CACHE_PREFIX . md5($functionCode) . '_*';
     }
 
     /**

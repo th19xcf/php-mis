@@ -243,8 +243,63 @@ class Workbench extends BaseController
     }
 
     /**
-     * 获取弹窗数据
+     * 清除工作台上下文缓存
+     *
+     * 供管理员/维护人员在调整权限、字段、查询配置后手动刷新缓存。
      */
+    public function clearContextCache(string $functionCode = '')
+    {
+        try {
+            $functionCode = trim($functionCode);
+            $payload = $this->request->getJSON(true) ?? [];
+            $scope = (string) ($payload['scope'] ?? 'self');
+
+            $user = $this->userContext->requireLogin();
+            $companyId = $user['companyId'];
+            $userWorkId = $user['workId'];
+            $userPassword = $user['password'];
+
+            // 仅允许本人缓存清理；系统维护身份可执行功能级/全量清理
+            $canMaintain = ($userPassword === $userWorkId . $userWorkId);
+
+            if ($scope === 'all') {
+                if (!$canMaintain) {
+                    return $this->error(ApiCode::AUTH_UNAUTHORIZED, '无权执行全量缓存清理');
+                }
+                $this->contextService->clearCache();
+                return $this->success(['cleared' => true, 'scope' => 'all']);
+            }
+
+            if ($functionCode === '') {
+                return $this->error('4001', '功能编码不能为空');
+            }
+
+            if ($scope === 'function') {
+                if (!$canMaintain) {
+                    return $this->error(ApiCode::AUTH_UNAUTHORIZED, '无权执行功能级缓存清理');
+                }
+                $this->contextService->clearCacheByFunctionCode($functionCode);
+                return $this->success([
+                    'cleared' => true,
+                    'scope' => 'function',
+                    'functionCode' => $functionCode,
+                ]);
+            }
+
+            $this->contextService->clearCache($functionCode, $userWorkId, $companyId);
+            return $this->success([
+                'cleared' => true,
+                'scope' => 'self',
+                'functionCode' => $functionCode,
+            ]);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '清除工作台上下文缓存失败: ' . $e->getMessage());
+            return $this->error('5001', '清除工作台上下文缓存失败');
+        }
+    }
+
     /**
      * 获取弹窗数据
      */
