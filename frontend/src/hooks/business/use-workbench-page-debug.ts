@@ -123,6 +123,15 @@ export function useWorkbenchPageDebug(options: UseWorkbenchPageDebugOptions) {
       }
 
       logger.info('\n========================================');
+      logger.info('🛠️ 数据整理 / 📦 导入 / 💬 备注 模块');
+      logger.info('========================================');
+      logger.info('  - 数据整理模块:', data.upkeepModule || '(未配置)');
+      logger.info('  - 数据整理 SQL:', data.upkeepSql || '(无)');
+      logger.info('  - 导入模块:', data.importModule || '(未配置)');
+      logger.info('  - 备注模块:', data.commentModule || '(未配置)');
+      logger.info('========================================\n');
+
+      logger.info('========================================');
       logger.info('📈 图形配置信息');
       logger.info('========================================');
       logger.info('chartModule:', data.chartModule);

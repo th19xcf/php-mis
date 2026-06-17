@@ -167,6 +167,12 @@ class Workbench extends BaseController
                 'querySql'      => $debug['querySql'],
                 'chartModule'   => $chartModule,
                 'chartSql'      => $chartSql,
+                'upkeepModule'  => (string) ($queryConfig['upkeepModule'] ?? ''),
+                'upkeepSql'     => (string) ($queryConfig['upkeepModule'] ?? '') !== ''
+                    ? sprintf('call %s', $queryConfig['upkeepModule'])
+                    : '',
+                'importModule'  => (string) ($queryConfig['importModule'] ?? ''),
+                'commentModule' => (string) ($queryConfig['commentModule'] ?? ''),
                 'userAuth'      => [
                     'companyId'      => $userAuth['companyId'],
                     'userWorkId'     => $userAuth['userWorkId'],

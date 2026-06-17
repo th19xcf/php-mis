@@ -277,6 +277,14 @@ declare namespace Api {
         error?: string;
       }>;
       chartQuerySql?: string;
+      /** 数据整理模块名（def_query_config.数据整理模块） */
+      upkeepModule?: string;
+      /** 数据整理存储过程调用 SQL（call xxx） */
+      upkeepSql?: string;
+      /** 导入模块名（def_query_config.导入模块） */
+      importModule?: string;
+      /** 备注模块名（def_query_config.备注模块） */
+      commentModule?: string;
     }
   }
 }
