@@ -96,9 +96,16 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
 
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
+      // 注意：raw: false 让单元格按显示文本返回（避免日期被解析为 Excel 序列号，例如 2026-05-08 -> 46150）
+      // cellDates: false 配合 raw: false 使用，确保日期列保留原始字符串格式
+      // dateNF: 'yyyy-mm-dd' 指定日期列的格式化样式
+      const workbook = XLSX.read(data, { type: 'array', cellDates: false });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as any[][];
+      const jsonData = XLSX.utils.sheet_to_json(firstSheet, {
+        header: 1,
+        raw: false,
+        dateNF: 'yyyy-mm-dd'
+      }) as any[][];
 
       if (jsonData.length < 2) {
         const msg = '文件数据不足，至少需要包含表头和一行数据';
@@ -123,7 +130,17 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
         const obj: Record<string, any> = { _rowIndex: index + 2 };
         headers.forEach((header, colIndex) => {
           if (header) {
-            obj[header] = row[colIndex] ?? '';
+            let cellValue = row[colIndex] ?? '';
+            // 如果是字符串类型的日期（raw: false 时日期单元格返回格式化的字符串），
+            // 去掉末尾的时间部分（如 "2026-05-08 00:00:00" -> "2026-05-08"），
+            // 避免写入临时表时多出时间。
+            if (typeof cellValue === 'string') {
+              const dateLikeMatch = cellValue.match(/^(\d{4}-\d{2}-\d{2})[ T]/);
+              if (dateLikeMatch) {
+                cellValue = dateLikeMatch[1];
+              }
+            }
+            obj[header] = cellValue;
           }
         });
         return obj;
