@@ -45,7 +45,7 @@ class DrillService
             left join def_function as t2 on t1.功能编码=t2.功能编码
             where 钻取模块=%s
             order by 顺序,convert(页面选项 using gbk)',
-            $this->quote($drillModule)
+            $this->model->quote($drillModule)
         );
 
         $results = $this->model->select($sql)->getResultArray();
@@ -70,16 +70,5 @@ class DrillService
         }
 
         return $options;
-    }
-
-    /**
-     * 引用值
-     *
-     * @param string $value 要引用的值
-     * @return string 引用后的值
-     */
-    private function quote(string $value): string
-    {
-        return "'" . addslashes($value) . "'";
     }
 }

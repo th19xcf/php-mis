@@ -77,9 +77,9 @@ class ChartDrillService
                and 钻取选项=%s
                and 图形模块=%s
                and 钻取模块=%s',
-            $this->quote($option),
-            $this->quote($chartId),
-            $this->quote($drillId)
+            $this->model->quote($option),
+            $this->model->quote($chartId),
+            $this->model->quote($drillId)
         );
 
         $drillConfigRows = $this->model->select($drillConfigSql)->getResult() ?? [];
@@ -167,8 +167,8 @@ class ChartDrillService
                and 图形模块=%s
                %s
              order by 图形模块, 图形编号, 顺序',
-            $this->quote($chartModule),
-            $chartCode !== '' ? sprintf('and 图形编号=%s', $this->quote($chartCode)) : ''
+            $this->model->quote($chartModule),
+            $chartCode !== '' ? sprintf('and 图形编号=%s', $this->model->quote($chartCode)) : ''
         );
 
         $rows = $this->model->select($sql)->getResult() ?? [];
@@ -269,7 +269,7 @@ class ChartDrillService
              from def_chart_column
              where 字段模块=%s and 顺序>0
              order by 字段模块, 顺序',
-            $this->quote((string) $row->字段模块)
+            $this->model->quote((string) $row->字段模块)
         );
 
         $colResults = $this->model->select($colSql)->getResult() ?? [];
@@ -361,7 +361,7 @@ class ChartDrillService
                     $fld   = trim($kv[0]);
                     $val   = trim($kv[1]);
                     if ($fld !== '' && $val !== '') {
-                        $whereParts[] = sprintf('%s=%s', $fld, $this->quote($val));
+                        $whereParts[] = sprintf('%s=%s', $fld, $this->model->quote($val));
                     }
                 }
             }
@@ -378,7 +378,7 @@ class ChartDrillService
                     if (count($kv) >= 2) {
                         $baseCond = str_replace(
                             sprintf('$%s', trim($kv[0])),
-                            $this->quote(trim($kv[1])),
+                            $this->model->quote(trim($kv[1])),
                             $baseCond
                         );
                     }
@@ -397,7 +397,7 @@ class ChartDrillService
         $sql = sprintf(
             'select %s, %s as SID from %s where %s',
             (string) $row->查询字段,
-            $this->quote(sprintf('%s^%s', $row->图形模块, $row->图形编号)),
+            $this->model->quote(sprintf('%s^%s', $row->图形模块, $row->图形编号)),
             (string) $row->查询表名,
             $where
         );
@@ -575,14 +575,6 @@ class ChartDrillService
             }
         }
         return $title;
-    }
-
-    /**
-     * 引用值
-     */
-    private function quote(string $value): string
-    {
-        return "'" . addslashes($value) . "'";
     }
 
     /**

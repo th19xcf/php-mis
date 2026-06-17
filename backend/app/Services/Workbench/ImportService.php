@@ -50,7 +50,7 @@ class ImportService
                 select 模块名称 from def_function 
                 where 有效标识="1" and 功能编码=%s
             )',
-            $this->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
         $query = $this->model->select($sql);
@@ -71,7 +71,7 @@ class ImportService
             from def_import_column
             where 导入模块=%s
             order by 顺序',
-            $this->quote($importModule)
+            $this->model->quote($importModule)
         );
 
         $query = $this->model->select($sql);
@@ -119,7 +119,7 @@ class ImportService
                 from def_import_column
                 where 导入模块=%s
                 order by 顺序',
-                $this->quote($importModule)
+                $this->model->quote($importModule)
             );
             $query = $this->model->select($sql);
             if ($query !== false) {
@@ -275,7 +275,7 @@ class ImportService
             $fieldLength = $col['字段长度'] ?? 255;
             $defaultValue = (string) ($col['缺省值'] ?? '');
             if ($defaultValue !== '') {
-                $fieldDefs[] = sprintf('%s varchar(%s) not null default %s', $fieldName, $fieldLength, $this->quote($defaultValue));
+                $fieldDefs[] = sprintf('%s varchar(%s) not null default %s', $fieldName, $fieldLength, $this->model->quote($defaultValue));
             } else {
                 $fieldDefs[] = sprintf('%s varchar(%s) not null default ""', $fieldName, $fieldLength);
             }
@@ -335,7 +335,7 @@ class ImportService
                 if (($value === '' || $value === null) && isset($defaultValueMap[$field])) {
                     $value = $defaultValueMap[$field];
                 }
-                $rowValues[] = $this->quote((string) $value);
+                $rowValues[] = $this->model->quote((string) $value);
             }
             $values[] = '(' . implode(',', $rowValues) . ')';
         }
@@ -495,7 +495,7 @@ class ImportService
         try {
             $sql = sprintf(
                 'select 滤重字段 from def_import_config where 导入模块=%s',
-                $this->quote($importModule)
+                $this->model->quote($importModule)
             );
 
             $result = $this->model->select($sql);
@@ -647,7 +647,7 @@ class ImportService
         try {
             $sql = sprintf(
                 'select 后处理模块 from def_import_config where 导入模块=%s',
-                $this->quote($importModule)
+                $this->model->quote($importModule)
             );
 
             $result = $this->model->select($sql);
@@ -749,7 +749,7 @@ class ImportService
             $fieldLength = $col['字段长度'] ?? 255;
             $defaultValue = (string) ($col['缺省值'] ?? '');
             if ($defaultValue !== '') {
-                $fieldDefs[] = sprintf('%s varchar(%s) not null default %s', $fieldName, $fieldLength, $this->quote($defaultValue));
+                $fieldDefs[] = sprintf('%s varchar(%s) not null default %s', $fieldName, $fieldLength, $this->model->quote($defaultValue));
             } else {
                 $fieldDefs[] = sprintf('%s varchar(%s) not null default ""', $fieldName, $fieldLength);
             }
@@ -798,7 +798,7 @@ class ImportService
                 if (($value === '' || $value === null) && isset($defaultValueMap[$fieldName])) {
                     $value = $defaultValueMap[$fieldName];
                 }
-                $rowValues[] = $this->quote((string) $value);
+                $rowValues[] = $this->model->quote((string) $value);
             }
             $values[] = '(' . implode(',', $rowValues) . ')';
         }
@@ -850,16 +850,5 @@ class ImportService
             implode(', ', $selectParts),
             $tempTable
         );
-    }
-
-    /**
-     * 引用值
-     *
-     * @param string $value 要引用的值
-     * @return string
-     */
-    private function quote(string $value): string
-    {
-        return "'" . addslashes($value) . "'";
     }
 }

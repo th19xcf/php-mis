@@ -45,7 +45,7 @@ class EditService
                 where 功能编码=%s and 列顺序>0 and 可新增="1"
                 group by 列名
                 order by 列顺序',
-                $this->quote($functionCode)
+                $this->model->quote($functionCode)
             );
 
             log_message('info', "getAddFields SQL: {$sql}");
@@ -146,7 +146,7 @@ class EditService
             'select 字段模块 from def_query_config where 查询模块 in (
                 select 模块名称 from def_function where 有效标识="1" and 功能编码=%s
             )',
-            $this->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
         $result = $this->model->select($sql);
@@ -172,8 +172,8 @@ class EditService
 
             $sql = sprintf(
                 'select 对象值 from def_object where 对象名称=%s and (属地="" or locate(属地, %s))',
-                $this->quote($objectName),
-                $this->quote($userLocation)
+                $this->model->quote($objectName),
+                $this->model->quote($userLocation)
             );
 
             $result = $this->model->select($sql);
@@ -413,7 +413,7 @@ class EditService
                 where 功能编码=%s and 列顺序>0
                 group by 列名
                 order by 列顺序',
-                $this->quote($functionCode)
+                $this->model->quote($functionCode)
             );
 
             $result = $this->model->select($sql);
@@ -467,7 +467,7 @@ class EditService
                 where 功能编码=%s and 列顺序>0 and 可修改="2"
                 group by 列名
                 order by 列顺序',
-                $this->quote($functionCode)
+                $this->model->quote($functionCode)
             );
 
             $result = $this->model->select($sql);
@@ -551,7 +551,7 @@ class EditService
                 where 功能编码=%s and 列顺序>0 and (可修改="1" or 可修改="2")
                 group by 列名
                 order by 列顺序',
-                $this->quote($functionCode)
+                $this->model->quote($functionCode)
             );
 
             $result = $this->model->select($sql);
@@ -1112,16 +1112,5 @@ class EditService
     {
         $session = \Config\Services::session();
         return (string) ($session->get($key) ?? '');
-    }
-
-    /**
-     * 引用值
-     *
-     * @param string $value 要引用的值
-     * @return string 引用后的值
-     */
-    private function quote(string $value): string
-    {
-        return "'" . addslashes($value) . "'";
     }
 }

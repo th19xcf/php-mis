@@ -86,14 +86,6 @@ class ChartService
     }
 
     /**
-     * SQL 字符串转义（单引号包裹）
-     */
-    private function quote(string $value): string
-    {
-        return "'" . addslashes($value) . "'";
-    }
-
-    /**
      * 加载图表自身的钻取选项（参考旧版 Frame.php::get_chart_data 中 def_chart_drill_config 查询逻辑）
      *
      * 与 DrillService.getDrillOptions() 的区别：
@@ -116,7 +108,7 @@ class ChartService
              from def_chart_drill_config
              where 顺序>0 and 钻取模块=%s
              order by 钻取模块, 顺序',
-            $this->quote($drillModule)
+            $this->model->quote($drillModule)
         );
 
         $results = $this->model->select($sql)->getResultArray() ?? [];

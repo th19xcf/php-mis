@@ -18,15 +18,15 @@ class AuthModel
         if ($password === $userWorkId . $userWorkId) {
             $logSwitch = false;
         } else {
-            $passwordSql = sprintf(' and 密码=%s', $this->quote($password));
+            $passwordSql = sprintf(' and 密码=%s', $this->common->quote($password));
         }
 
         $sql = sprintf(
             'select 员工编号,工号,姓名,员工属地,员工部门编码,员工部门全称,日志标识
             from def_user
             where 有效标识="1" and 员工属地=%s and 工号=%s%s',
-            $this->quote($region),
-            $this->quote($userWorkId),
+            $this->common->quote($region),
+            $this->common->quote($userWorkId),
             $passwordSql
         );
 
@@ -63,8 +63,8 @@ class AuthModel
             'select 员工编号,工号,姓名,员工属地,员工部门编码,员工部门全称,日志标识
             from def_user
             where 有效标识="1" and 员工属地=%s and 工号=%s',
-            $this->quote($region),
-            $this->quote($userWorkId)
+            $this->common->quote($region),
+            $this->common->quote($userWorkId)
         );
 
         $row = $this->common->select($sql)->getRowArray();
@@ -212,8 +212,8 @@ class AuthModel
                 from def_role_group
                 where 有效标识="1"
             ) as t2 on t1.角色组=t2.角色组',
-            $this->quote($region),
-            $this->quote($userWorkId)
+            $this->common->quote($region),
+            $this->common->quote($userWorkId)
         );
 
         $row = $this->common->select($sql)->getRowArray();
@@ -272,22 +272,19 @@ class AuthModel
             $logSwitch = false;
         }
 
+        $roles = $this->getRoleCodes((string) $row['工号'], (string) $row['员工属地']);
+
         return [
             'id' => (int) $row['员工编号'],
             'user_name' => (string) $row['姓名'],
             'work_id' => (string) $row['工号'],
-            'role' => 'R_SUPER',
+            'role' => $roles[0] ?? '',
             'region' => (string) $row['员工属地'],
             'dept_code' => (string) $row['员工部门编码'],
             'dept_name' => (string) $row['员工部门全称'],
             'log_switch' => $logSwitch,
             'buttons' => []
         ];
-    }
-
-    private function quote(string $value): string
-    {
-        return sprintf("'%s'", str_replace(["\\", "'"], ["\\\\", "\\'"], $value));
     }
 
     /**
@@ -299,7 +296,7 @@ class AuthModel
         foreach ($items as $item) {
             $value = trim((string) $item);
             if ($value !== '') {
-                $quoted[] = $this->quote($value);
+                $quoted[] = $this->common->quote($value);
             }
         }
 

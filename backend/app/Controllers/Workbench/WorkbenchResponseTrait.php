@@ -56,17 +56,6 @@ trait WorkbenchResponseTrait
     }
 
     /**
-     * SQL 字符串值引用（addslashes + 单引号包裹）
-     *
-     * @param string $value
-     * @return string
-     */
-    protected function quote(string $value): string
-    {
-        return sprintf("'%s'", str_replace(["\\", "'"], ["\\\\", "\\'"], $value));
-    }
-
-    /**
      * 加载工作台查询配置（统一委托到 AuthorizationService::loadQueryConfig）。
      *
      * 注意：不缓存 AuthorizationService 实例于 trait 属性中 —— 因为 Workbench.php
@@ -111,7 +100,7 @@ trait WorkbenchResponseTrait
             'SELECT t1.主键字段 FROM def_query_config t1
             INNER JOIN def_function t2 ON t2.模块名称 = t1.查询模块
             WHERE t2.功能编码 = %s',
-            $this->quote($functionCode)
+            $this->common->quote($functionCode)
         );
 
         $result = $this->common->select($sql);

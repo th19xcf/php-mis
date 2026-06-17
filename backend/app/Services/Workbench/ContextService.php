@@ -258,8 +258,8 @@ class ContextService
                 from def_role_group
                 where 有效标识="1"
             ) as t2 on t1.角色组=t2.角色组',
-            $this->quote($companyId),
-            $this->quote($userWorkId)
+            $this->model->quote($companyId),
+            $this->model->quote($userWorkId)
         );
 
         $row = $this->model->select($sql)->getRowArray();
@@ -331,7 +331,7 @@ class ContextService
             left join def_function as t2 on t1.功能赋权=t2.功能编码
             left join def_query_config as t3 on if(t2.功能类型="查询", t2.模块名称, "")=t3.查询模块',
             $userAuth['roleCodesQuoted'],
-            $this->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
         $row = $this->model->select($sql)->getRowArray();
@@ -401,7 +401,7 @@ class ContextService
                     from def_function
                     where 有效标识="1" and 功能编码=%s
                 )',
-            $this->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
         $row = $this->model->select($sql)->getRowArray();
@@ -458,7 +458,7 @@ class ContextService
             where 功能编码=%s and 列顺序>0
             group by 列名
             order by 列顺序',
-            $this->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
         $result = $this->model->select($sql)->getResultArray();
@@ -547,7 +547,7 @@ class ContextService
             group by 部门编码赋权
             order by 部门编码赋权',
             $userAuth['roleCodesQuoted'],
-            $this->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
         $result = $this->model->select($sql);
@@ -599,7 +599,7 @@ class ContextService
             group by 部门全称赋权
             order by 部门全称赋权',
             $roleCodesQuoted,
-            $this->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
         $results = $this->model->select($sql)->getResultArray();
@@ -655,7 +655,7 @@ class ContextService
             group by 属地赋权
             order by 属地赋权',
             $roleCodesQuoted,
-            $this->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
         $results = $this->model->select($sql)->getResultArray();
@@ -690,14 +690,6 @@ class ContextService
     }
 
     /**
-     * 引用值
-     */
-    private function quote(string $value): string
-    {
-        return "'" . addslashes($value) . "'";
-    }
-
-    /**
      * 引用列表
      */
     private function quoteList(array $items): string
@@ -705,7 +697,7 @@ class ContextService
         if (empty($items)) {
             return '';
         }
-        return implode(',', array_map(fn($item) => $this->quote($item), $items));
+        return implode(',', array_map(fn($item) => $this->model->quote($item), $items));
     }
 
     /**

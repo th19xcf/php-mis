@@ -226,7 +226,7 @@ class QueryService
                 $selectParts[] = sprintf(
                     'if(%s=%s,%s,"-") as `%s`',
                     $column['工号字段'],
-                    $this->quote($userAuth['userWorkId']),
+                    $this->model->quote($userAuth['userWorkId']),
                     $queryName,
                     $alias
                 );
@@ -293,13 +293,13 @@ class QueryService
 
             switch ($operator) {
                 case 'equals':
-                    $whereParts[] = sprintf('%s=%s', $fieldName, $this->quote($value));
+                    $whereParts[] = sprintf('%s=%s', $fieldName, $this->model->quote($value));
                     break;
                 case 'startsWith':
-                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->quote($value . '%'));
+                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->model->quote($value . '%'));
                     break;
                 default:
-                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->quote('%' . $value . '%'));
+                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->model->quote('%' . $value . '%'));
                     break;
             }
         }
@@ -343,17 +343,6 @@ class QueryService
         }
 
         return $rows;
-    }
-
-    /**
-     * 引用值
-     *
-     * @param string $value 要引用的值
-     * @return string 引用后的值
-     */
-    private function quote(string $value): string
-    {
-        return "'" . addslashes($value) . "'";
     }
 
     /**

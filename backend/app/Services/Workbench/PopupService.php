@@ -36,8 +36,8 @@ class PopupService
             from view_function
             where 赋值类型="弹窗" and 功能编码=%s and 对象=%s
             group by 对象',
-            $this->quote($functionCode),
-            $this->quote($objectName)
+            $this->model->quote($functionCode),
+            $this->model->quote($objectName)
         );
 
         $result = $this->model->select($sql);
@@ -192,7 +192,7 @@ class PopupService
                 order by main.本级编码',
                 $tableName,
                 $level,
-                $this->quote($parentCode . '>>%')
+                $this->model->quote($parentCode . '>>%')
             );
         }
 
@@ -215,13 +215,5 @@ class PopupService
             'items' => $items,
             'level' => $level,
         ];
-    }
-
-    /**
-     * 引用值
-     */
-    private function quote(string $value): string
-    {
-        return "'" . addslashes($value) . "'";
     }
 }
