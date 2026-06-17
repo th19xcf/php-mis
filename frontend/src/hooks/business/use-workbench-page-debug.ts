@@ -198,17 +198,22 @@ export function useWorkbenchPageDebug(options: UseWorkbenchPageDebugOptions) {
 
       logger.info('\n📋 导入列配置:');
       if (data.importColumns && data.importColumns.length > 0) {
+        // 后端 ImportService::getImportConfig 返回的 importColumns 数组使用中文 key
+        // （列名 / 字段名 / 查询名 / 顺序 / 字段类型 / 校验类型 / 校验信息 / 导入类型 / 缺省值 / 对象 / 系统变量 / 匹配标识）
         // eslint-disable-next-line no-console
         console.table(
           data.importColumns.map((c: any) => ({
-            列名: c.columnName,
-            字段名: c.fieldName,
-            查询名: c.queryName,
-            顺序: c.columnOrder,
-            字段类型: c.columnType,
-            校验类型: c.checkType,
-            导入类型: c.importType,
-            缺省值: c.defaultValue || ''
+            列名: c['列名'] ?? '',
+            字段名: c['字段名'] ?? '',
+            查询名: c['查询名'] ?? '',
+            顺序: c['顺序'] ?? '',
+            字段类型: c['字段类型'] ?? '',
+            校验类型: c['校验类型'] ?? '',
+            校验信息: c['校验信息'] ?? '',
+            导入类型: c['导入类型'] ?? '',
+            缺省值: c['缺省值'] ?? '',
+            系统变量: c['系统变量'] ?? '',
+            匹配标识: c['匹配标识'] ?? ''
           }))
         );
       } else {
