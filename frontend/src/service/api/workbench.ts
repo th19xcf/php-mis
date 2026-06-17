@@ -77,6 +77,15 @@ export function importData(functionCode: string, data: any[]) {
   });
 }
 
+export function fetchImportDebug(functionCode: string, payload: Record<string, any> = {}) {
+  return request<Api.Workbench.ImportDebugData>({
+    url: `/workbench/import-debug/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data: payload,
+    skipAuthError: true
+  });
+}
+
 export function fetchAddFields(functionCode: string) {
   return request<Api.Workbench.AddFieldsData>({
     url: `/workbench/add-fields/${encodeURIComponent(functionCode)}`

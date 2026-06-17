@@ -41,6 +41,7 @@ $routes->group('workbench', static function ($routes) {
 	// 导入接口：迁出至 Workbench\WorkbenchImportController
 	$routes->get('import-columns/(:segment)', 'Workbench\WorkbenchImportController::importColumns/$1');
 	$routes->post('import/(:segment)', 'Workbench\WorkbenchImportController::import/$1');
+	$routes->post('import-debug/(:segment)', 'Workbench\WorkbenchImportController::importDebug/$1');
 	// 字段配置与记录增删改：迁出至 Workbench\WorkbenchEditController
 	$routes->get('add-fields/(:segment)', 'Workbench\WorkbenchEditController::addFields/$1');
 	$routes->get('detail-fields/(:segment)', 'Workbench\WorkbenchEditController::detailFields/$1');

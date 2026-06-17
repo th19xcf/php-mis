@@ -1,4 +1,4 @@
-import { fetchWorkbenchDebug } from '@/service/api/workbench';
+import { fetchImportDebug, fetchWorkbenchDebug } from '@/service/api/workbench';
 import { logger } from '@/utils/logger';
 
 type NotifyType = 'success' | 'error' | 'warning' | 'info';
@@ -152,9 +152,74 @@ export function useWorkbenchPageDebug(options: UseWorkbenchPageDebugOptions) {
 
       logger.groupEnd();
       options.notify('success', '调试信息已输出到控制台');
+
+      // 导入调试 SQL（不依赖具体样本数据，仅展示结构与配置）
+      await handleImportDebug(functionCode);
     } catch (err) {
       options.notify('error', '获取调试信息失败');
       console.error('调试信息获取错误:', err);
+    }
+  }
+
+  /**
+   * 工作台「导入」调试：调后端 /workbench/import-debug 拉取导入相关 SQL 快照并打印到控制台。
+   *  - 输出 tmpTableName / dataTable / importModule
+   *  - 输出 createTempTableSql（建临时表）
+   *  - 输出 insertToTempTableSql（写临时表，含 缺省值 逻辑，可选）
+   *  - 输出 importFromTempTableSql（从临时表导入正式表，INSERT ... SELECT）
+   *  - 输出 importColumns（导入列配置）
+   */
+  async function handleImportDebug(functionCode: string) {
+    try {
+      const { data, error } = await fetchImportDebug(functionCode, {});
+      if (error || !data) {
+        options.notify('error', '获取导入调试信息失败');
+        return;
+      }
+      if (!data.success) {
+        options.notify('error', data.message || '获取导入调试信息失败');
+        return;
+      }
+
+      logger.groupStart('📥 导入调试 - ' + functionCode);
+      logger.info('🏷️  基本信息:');
+      logger.info('  - 数据表:', data.dataTable || '(无)');
+      logger.info('  - 导入模块:', data.importModule || '(无)');
+      logger.info('  - 临时表名:', data.tmpTableName || '(无)');
+
+      logger.info('\n📋 导入列配置:');
+      if (data.importColumns && data.importColumns.length > 0) {
+        // eslint-disable-next-line no-console
+        console.table(
+          data.importColumns.map((c: any) => ({
+            列名: c.columnName,
+            字段名: c.fieldName,
+            查询名: c.queryName,
+            顺序: c.columnOrder,
+            字段类型: c.columnType,
+            校验类型: c.checkType,
+            导入类型: c.importType,
+            缺省值: c.defaultValue || ''
+          }))
+        );
+      } else {
+        logger.info('  (无)');
+      }
+
+      logger.info('\n💻 导入相关 SQL:');
+      logger.info('  ① 创建临时表 SQL:');
+      logger.info(data.createTempTableSql || '(无)');
+      logger.info('\n  ② 插入临时表 SQL（需要 sampleData 时才返回）:');
+      logger.info(data.insertToTempTableSql || '(无样本数据，未生成)');
+      logger.info('\n  ③ 从临时表导入正式表 SQL（INSERT ... SELECT）:');
+      logger.info(data.importFromTempTableSql || '(无)');
+      logger.info('========================================\n');
+
+      logger.groupEnd();
+      options.notify('success', '导入调试 SQL 已输出到控制台');
+    } catch (err) {
+      options.notify('error', '获取导入调试信息失败');
+      console.error('导入调试信息获取错误:', err);
     }
   }
 

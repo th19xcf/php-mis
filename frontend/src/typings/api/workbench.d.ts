@@ -112,6 +112,7 @@ declare namespace Api {
       columnType: string;
       checkType: string;
       importType: string;
+      defaultValue?: string;
     }
 
     interface ImportColumnsData {
@@ -131,6 +132,18 @@ declare namespace Api {
       successCount: number;
       errorCount: number;
       errors: ImportError[];
+    }
+
+    interface ImportDebugData {
+      success: boolean;
+      message?: string;
+      tmpTableName?: string;
+      dataTable?: string;
+      importModule?: string;
+      createTempTableSql?: string;
+      insertToTempTableSql?: string;
+      importFromTempTableSql?: string;
+      importColumns?: ImportColumn[];
     }
 
     interface AddField {

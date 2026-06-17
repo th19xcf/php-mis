@@ -603,6 +603,8 @@ class ImportService
                 $tempTable
             );
 
+            log_message('debug', '[ImportService] 导入SQL: ' . $sql);
+
             $result = $db->query($sql);
             $affectedRows = $db->affectedRows();
 
@@ -664,6 +666,190 @@ class ImportService
         } catch (\Throwable $e) {
             log_message('error', '执行后处理模块失败: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * 构建导入调试 SQL（不复用 importFromTempTable 的执行路径，
+     * 仅生成 createTempTable/insertToTempTable/importFromTempTable 等"看一眼就知道会跑什么"的诊断数据）
+     *
+     * @param string $functionCode 功能编码
+     * @param string $menu1 菜单1
+     * @param string $menu2 菜单2
+     * @param string $userWorkid 用户工号
+     * @param string $dataTable 数据表
+     * @param string $importModule 导入模块
+     * @param array $sampleData 示例数据（可选）
+     * @return array
+     */
+    public function buildDebugImport(
+        string $functionCode,
+        string $menu1 = '',
+        string $menu2 = '',
+        string $userWorkid = '',
+        string $dataTable = '',
+        string $importModule = '',
+        array $sampleData = []
+    ): array {
+        try {
+            $importConfig = $this->getImportConfig(
+                $functionCode,
+                $menu1,
+                $menu2,
+                $userWorkid,
+                $dataTable,
+                $importModule
+            );
+            $importColumns = $importConfig['importColumns'];
+            $tmpTableName = $importConfig['tmpTableName'];
+
+            $createTempTableSql = $this->buildCreateTempTableSql($tmpTableName, $importColumns);
+
+            $insertToTempTableSql = '';
+            if (!empty($sampleData)) {
+                $insertToTempTableSql = $this->buildInsertToTempTableSql($tmpTableName, $sampleData, $importColumns);
+            }
+
+            $importFromTempTableSql = $this->buildImportFromTempTableSql($dataTable, $tmpTableName, $importColumns);
+
+            return [
+                'success'               => true,
+                'tmpTableName'          => $tmpTableName,
+                'dataTable'             => $dataTable,
+                'importModule'          => $importModule,
+                'createTempTableSql'    => $createTempTableSql,
+                'insertToTempTableSql'  => $insertToTempTableSql,
+                'importFromTempTableSql'=> $importFromTempTableSql,
+                'importColumns'         => $importColumns,
+            ];
+        } catch (\Throwable $e) {
+            log_message('error', '构建导入调试 SQL 失败: ' . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => '构建导入调试 SQL 失败: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * 构建创建临时表 SQL
+     *
+     * @param string $tableName 表名
+     * @param array $columns 列配置
+     * @return string
+     */
+    private function buildCreateTempTableSql(string $tableName, array $columns): string
+    {
+        if (empty($columns)) {
+            return sprintf('CREATE TABLE %s (id int auto_increment primary key, data varchar(255))', $tableName);
+        }
+
+        $fieldDefs = [];
+        foreach ($columns as $col) {
+            $fieldName = $col['字段名'] ?? $col['列名'];
+            $fieldLength = $col['字段长度'] ?? 255;
+            $defaultValue = (string) ($col['缺省值'] ?? '');
+            if ($defaultValue !== '') {
+                $fieldDefs[] = sprintf('%s varchar(%s) not null default %s', $fieldName, $fieldLength, $this->quote($defaultValue));
+            } else {
+                $fieldDefs[] = sprintf('%s varchar(%s) not null default ""', $fieldName, $fieldLength);
+            }
+        }
+
+        return sprintf('CREATE TABLE %s (%s)', $tableName, implode(',', $fieldDefs));
+    }
+
+    /**
+     * 构建插入临时表 SQL
+     *
+     * @param string $tableName 表名
+     * @param array $data 数据
+     * @param array $importColumns 导入列配置
+     * @return string
+     */
+    private function buildInsertToTempTableSql(string $tableName, array $data, array $importColumns): string
+    {
+        $fields = [];
+        foreach ($importColumns as $col) {
+            $fieldName = $col['字段名'] ?? $col['列名'] ?? '';
+            if ($fieldName !== '') {
+                $fields[] = sprintf('`%s`', $fieldName);
+            }
+        }
+
+        if (empty($fields)) {
+            return '';
+        }
+
+        $defaultValueMap = [];
+        foreach ($importColumns as $col) {
+            $fieldName = $col['字段名'] ?? '';
+            $defaultValue = (string) ($col['缺省值'] ?? '');
+            if ($fieldName !== '' && $defaultValue !== '') {
+                $defaultValueMap[$fieldName] = $defaultValue;
+            }
+        }
+
+        $values = [];
+        foreach ($data as $row) {
+            $rowValues = [];
+            foreach ($fields as $field) {
+                $fieldName = trim($field, '`');
+                $value = $row[$fieldName] ?? '';
+                if (($value === '' || $value === null) && isset($defaultValueMap[$fieldName])) {
+                    $value = $defaultValueMap[$fieldName];
+                }
+                $rowValues[] = $this->quote((string) $value);
+            }
+            $values[] = '(' . implode(',', $rowValues) . ')';
+        }
+
+        if (empty($values)) {
+            return '';
+        }
+
+        return sprintf('INSERT INTO %s (%s) VALUES %s', $tableName, implode(',', $fields), implode(',', $values));
+    }
+
+    /**
+     * 构建从临时表导入正式表的 SQL
+     *
+     * @param string $targetTable 目标表
+     * @param string $tempTable 临时表
+     * @param array $importColumns 导入列配置
+     * @return string
+     */
+    private function buildImportFromTempTableSql(string $targetTable, string $tempTable, array $importColumns): string
+    {
+        $fieldNames = [];
+        $selectParts = [];
+
+        foreach ($importColumns as $col) {
+            $fieldName = $col['字段名'] ?? $col['列名'] ?? '';
+            $queryName = $col['查询名'] ?? '';
+
+            if ($fieldName === '') {
+                continue;
+            }
+
+            $fieldNames[] = sprintf('`%s`', $fieldName);
+
+            if ($queryName !== '' && $queryName !== $fieldName) {
+                $selectParts[] = sprintf('%s as `%s`', $queryName, $fieldName);
+            } else {
+                $selectParts[] = sprintf('`%s`', $fieldName);
+            }
+        }
+
+        if (empty($fieldNames)) {
+            return '-- 没有可导入的字段';
+        }
+
+        return sprintf('INSERT INTO %s (%s) SELECT %s FROM %s',
+            $targetTable,
+            implode(', ', $fieldNames),
+            implode(', ', $selectParts),
+            $tempTable
+        );
     }
 
     /**

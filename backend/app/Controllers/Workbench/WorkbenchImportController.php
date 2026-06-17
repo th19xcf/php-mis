@@ -30,6 +30,49 @@ class WorkbenchImportController extends BaseController
     }
 
     /**
+     * 获取导入调试 SQL
+     */
+    public function importDebug(string $functionCode = '')
+    {
+        try {
+            $functionCode = trim($functionCode);
+            if ($functionCode === '') {
+                throw new \RuntimeException('功能编码不能为空');
+            }
+
+            $payload = $this->request->getJSON(true) ?? [];
+            $menu1 = $payload['menu1'] ?? '';
+            $menu2 = $payload['menu2'] ?? '';
+            $userWorkid = $payload['userWorkid'] ?? '';
+            $sampleData = $payload['sampleData'] ?? [];
+
+            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
+                throw new \RuntimeException('未找到数据表配置');
+            }
+            $dataTable = $queryConfig['dataTable'];
+            $importModule = $queryConfig['importModule'] ?? '';
+
+            $debugResult = $this->importService->buildDebugImport(
+                $functionCode,
+                $menu1,
+                $menu2,
+                $userWorkid,
+                $dataTable,
+                $importModule,
+                $sampleData
+            );
+
+            return $this->success($debugResult);
+        } catch (\RuntimeException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '获取导入调试 SQL 失败: ' . $e->getMessage());
+            return $this->error(ApiCode::SERVER_ERROR, '获取导入调试 SQL 失败');
+        }
+    }
+
+    /**
      * 获取导入列配置
      */
     public function importColumns(string $functionCode = '')
