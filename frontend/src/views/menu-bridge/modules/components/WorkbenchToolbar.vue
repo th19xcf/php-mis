@@ -49,9 +49,9 @@ function checkScrollPosition() {
     if (!toolbarScrollRef.value) return;
     const { scrollWidth, clientWidth } = toolbarScrollRef.value;
     const hasOverflow = scrollWidth > clientWidth;
-    showLeftArrow.value = hasOverflow && toolbarScrollRef.value.scrollLeft > 0;
-    showRightArrow.value =
-      hasOverflow && toolbarScrollRef.value.scrollLeft + clientWidth < scrollWidth - 1;
+    // 溢出时同时显示左右箭头，方便用户发现两侧都有未显示内容
+    showLeftArrow.value = hasOverflow;
+    showRightArrow.value = hasOverflow;
   });
 }
 
