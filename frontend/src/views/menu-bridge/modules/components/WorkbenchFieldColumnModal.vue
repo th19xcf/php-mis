@@ -61,6 +61,8 @@ function handleChange(val: (string | number)[]) {
           </NCheckbox>
         </div>
 
+        <div class="pin-column-divider" />
+
         <NCheckboxGroup :value="modelValue" class="pin-column-group" @update:value="handleChange">
           <NSpace vertical :size="10">
             <NCheckbox v-for="item in options" :key="String(item.value)" :value="String(item.value)">
@@ -80,9 +82,17 @@ $wb-dark-border-light: #3d4f60;
 
 // 弹窗通过 teleport 渲染到 body 外部，无法继承父组件 scoped 样式，
 // 因此样式放在此处，使用 html.dark 作为暗色选择器以匹配全局暗色状态。
+.pin-column-divider {
+  height: 1px;
+  background: #d4dce5;
+  margin: 4px 0 10px;
+
+  html.dark & {
+    background: $wb-dark-border-light;
+  }
+}
+
 .pin-column-group {
-  padding-top: 8px;
-  border-top: 1px solid #d4dce5;
   background: #f5f7fa;
 
   .n-checkbox .n-checkbox__label {
