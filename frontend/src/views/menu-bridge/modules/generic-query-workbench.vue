@@ -39,6 +39,7 @@ import { useThemeStore } from '@/store/modules/theme';
 import { useWorkbenchRightPanelStore } from '@/store/modules/workbench-right-panel';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import { logger } from '@/utils/logger';
+import { markTrace } from '@/utils/performance-trace';
 import { isGuidColumn } from '@/utils/menu-bridge';
 import type { MenuBridgeMeta, ConditionOperator } from '@/typings/menu-bridge';
 import { DEFAULT_COL_DEF } from './constants';
@@ -585,9 +586,11 @@ watch(
 
 // 兜底：mount / activate 钩子再尝试恢复一次（覆盖 cache key 在 setup 之后才稳定的情况）
 onMounted(() => {
+  markTrace('组件挂载完成');
   restoreRightPanelStateFromStore();
 });
 onActivated(() => {
+  markTrace('组件激活完成');
   restoreRightPanelStateFromStore();
 });
 

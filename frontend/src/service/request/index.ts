@@ -7,6 +7,7 @@ import { $t } from '@/locales';
 import { SERVICE_CODE_CONFIG } from '@/constants/service-code';
 import { getAuthorization, handleExpiredRequest, showErrorMsg } from './shared';
 import type { RequestInstanceState } from './type';
+import { markTrace } from '@/utils/performance-trace';
 
 const isHttpProxy = import.meta.env.DEV && import.meta.env.VITE_HTTP_PROXY === 'Y';
 const { baseURL, otherBaseURL } = getServiceBaseURL(import.meta.env, isHttpProxy);
@@ -31,12 +32,24 @@ export const request = createFlatRequest(
       const Authorization = getAuthorization();
       Object.assign(config.headers, { Authorization });
 
+      // 性能追踪：标记 API 请求发起
+      const url = config.url || '';
+      markTrace(`API请求发起: ${url}`);
+
       return config;
     },
     isBackendSuccess(response) {
       // when the backend response code is "0000"(default), it means the request is success
       // to change this logic by yourself, you can modify the `VITE_SERVICE_SUCCESS_CODE` in `.env` file
-      return String(response.data.code) === SERVICE_CODE_CONFIG.successCode;
+      const isSuccess = String(response.data.code) === SERVICE_CODE_CONFIG.successCode;
+
+      // 性能追踪：标记 API 响应接收
+      if (isSuccess) {
+        const url = response.config?.url || '';
+        markTrace(`API响应接收: ${url}`);
+      }
+
+      return isSuccess;
     },
     async onBackendFail(response, instance) {
       const authStore = useAuthStore();
@@ -47,7 +60,7 @@ export const request = createFlatRequest(
       // logout/modalLogout 业务码而不强制登出。详见
       // src/service/api/workbench.ts 顶部说明。
       const skipAuthError =
-        ((response.config as unknown as { skipAuthError?: boolean } | undefined)?.skipAuthError) === true;
+        (response.config as unknown as { skipAuthError?: boolean } | undefined)?.skipAuthError === true;
       if (skipAuthError) {
         return null;
       }

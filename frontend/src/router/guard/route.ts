@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/modules/auth';
 import { useRouteStore } from '@/store/modules/route';
 import { localStg } from '@/utils/storage';
 import { getRouteName } from '@/router/elegant/transform';
+import { markTrace } from '@/utils/performance-trace';
 
 /**
  * create route guard
@@ -12,9 +13,12 @@ import { getRouteName } from '@/router/elegant/transform';
  */
 export function createRouteGuard(router: Router) {
   router.beforeEach(async (to, from) => {
+    markTrace('路由守卫开始');
+
     const location = await initRoute(to);
 
     if (location) {
+      markTrace('路由守卫重定向');
       return location;
     }
 
@@ -38,6 +42,7 @@ export function createRouteGuard(router: Router) {
 
     // if the route does not need login, then it is allowed to access directly
     if (!needLogin) {
+      markTrace('路由守卫完成');
       return handleRouteSwitch(to, from);
     }
 
@@ -52,7 +57,12 @@ export function createRouteGuard(router: Router) {
     }
 
     // switch route normally
+    markTrace('路由守卫完成');
     return handleRouteSwitch(to, from);
+  });
+
+  router.afterEach(() => {
+    markTrace('路由导航完成');
   });
 }
 

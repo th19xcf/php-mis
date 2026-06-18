@@ -1,4 +1,4 @@
-import { ref, watch, onMounted, onActivated, onDeactivated } from 'vue';
+import { ref, watch, onMounted, onActivated, onDeactivated, nextTick } from 'vue';
 import type { Ref, ComputedRef } from 'vue';
 import type { GridApi } from 'ag-grid-community';
 
@@ -6,6 +6,7 @@ import { fetchWorkbenchPage, fetchWorkbenchPageData } from '@/service/api/workbe
 import type { WorkbenchStore } from './use-workbench-grid-state';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import { logger } from '@/utils/logger';
+import { markTrace, endTrace } from '@/utils/performance-trace';
 
 interface UseWorkbenchDataLoaderOptions {
   gridApi: Ref<GridApi<Api.Workbench.QueryRecord> | null>;
@@ -205,7 +206,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       if (mergedRows.length > 0) {
         const currentFunctionCode = options.functionCode.value.trim();
         const currentParams = options.params.value.trim();
-        
+
         if (currentFunctionCode !== functionCode || currentParams !== params) {
           logger.info('[进度] 后台加载数据已过期，跳过更新');
           return;
@@ -257,7 +258,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
               if (nextChunkIndex >= totalOffsets.length && activeRequests === 0) {
                 const currentFunctionCode = options.functionCode.value.trim();
                 const currentParams = options.params.value.trim();
-                
+
                 if (currentFunctionCode !== functionCode || currentParams !== params) {
                   logger.info('[进度] 后台加载数据已过期，跳过缓存更新');
                   bgTimer.end();
@@ -330,7 +331,8 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
     log('info', `缓存检查结果: 命中=${!!cached}, 完整=${isCacheComplete}`);
     if (cached) {
-      log('debug',
+      log(
+        'debug',
         `缓存数据: total=${cached.total}, serverRows.length=${cached.serverRows?.length || 0}, isDataLoaded=${cached.isDataLoaded}`
       );
     }
@@ -338,6 +340,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     if (isCacheComplete) {
       log('info', `========== 开始缓存恢复 ==========`);
       log('info', `缓存数据量: ${cached.serverRows.length} 条`);
+      markTrace('缓存命中，开始恢复');
       const cacheTimer = createTimer('📦 缓存恢复总耗时');
 
       const step1Timer = createTimer('  [缓存-1] 恢复基本状态');
@@ -385,6 +388,7 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
         const firstChunk = cached.serverRows.slice(0, CHUNK_SIZE);
         serverRows.value = firstChunk;
         log('debug', `已设置第一片数据，长度=${serverRows.value.length}`);
+        markTrace('数据处理完成');
         step3Timer.end();
 
         requestAnimationFrame(() => {
@@ -393,9 +397,12 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
           setTimeout(() => {
             serverRows.value = cached.serverRows;
             isInitialLoading.value = false;
+            markTrace('DOM渲染完成');
             step4Timer.end();
             cacheTimer.end();
             totalTimer.end();
+            markTrace('首屏渲染完成');
+            endTrace();
             log('info', `缓存恢复完成 ✅, 总耗时=${totalTimer.elapsed().toFixed(2)}ms`);
             log('info', `========== loadPage 结束（缓存恢复）==========`);
           }, 100);
@@ -403,10 +410,19 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       } else {
         serverRows.value = cached.serverRows;
         isInitialLoading.value = false;
+        markTrace('数据处理完成');
         log('debug', `小数据量直接恢复: ${serverRows.value.length} 条`);
         step3Timer.end();
         cacheTimer.end();
         totalTimer.end();
+        // DOM 渲染完成后结束追踪
+        nextTick(() => {
+          requestAnimationFrame(() => {
+            markTrace('DOM渲染完成');
+            markTrace('首屏渲染完成');
+            endTrace();
+          });
+        });
         log('info', `缓存恢复完成 ✅（小数据量直接恢复）, 总耗时=${totalTimer.elapsed().toFixed(2)}ms`);
         log('info', `========== loadPage 结束（缓存恢复）==========`);
       }
@@ -440,12 +456,14 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
     loading.value = true;
     log('debug', `设置 loading = true`);
+    markTrace('缓存未命中，开始网络请求');
 
     log('info', `========== 开始网络请求 ==========`);
     const { filters, conditionSql: drillConditionSql } = parseDrillParams(params);
     log('debug', `解析钻取参数完成: filters=${JSON.stringify(filters)}, drillConditionSql="${drillConditionSql}"`);
 
     log('info', `步骤1: 获取页面元数据`);
+    markTrace('数据处理开始');
     const metaTimer = createTimer('获取页面元数据');
     log('debug', `调用 fetchWorkbenchPage("${functionCode}")`);
     const pageResult = await fetchWorkbenchPage(functionCode);
@@ -504,13 +522,14 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     const firstPageData = firstPageResult.data;
     total.value = firstPageData.total;
     totalCount.value = firstPageData.total;
-    log('info',
+    log(
+      'info',
       `获取数据成功: total=${firstPageData.total}, records.length=${firstPageData.records.length}, hasMore=${firstPageData.hasMore}`
     );
 
     log('info', `步骤3: 首屏渲染`);
     const renderTimer = createTimer('首屏渲染');
-    
+
     if (thisLoadId !== currentLoadId) {
       log('info', `加载已过期（thisLoadId=${thisLoadId}, currentLoadId=${currentLoadId}），跳过数据更新`);
       renderTimer.end();
@@ -518,13 +537,23 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       log('info', `========== loadPage 结束（加载已过期）==========`);
       return;
     }
-    
+
     serverRows.value = firstPageData.records;
     loadedCount.value = firstPageData.records.length;
     isInitialChunkLoaded.value = true;
     loading.value = false;
+    markTrace('数据处理完成');
     renderTimer.end();
     log('info', `首屏渲染完成，耗时=${renderTimer.elapsed().toFixed(2)}ms`);
+
+    // DOM 渲染完成后结束追踪
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        markTrace('DOM渲染完成');
+        markTrace('首屏渲染完成');
+        endTrace();
+      });
+    });
 
     log('info', `步骤4: 保存到缓存`);
     workbenchStore.setCache(functionCode, params, {
@@ -646,7 +675,8 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       !isDataLoaded.value || currentFunctionCode !== loadedFunctionCode.value || currentParams !== loadedParams.value;
     log('info', `是否需要加载: ${shouldLoad}`);
     if (!shouldLoad) {
-      log('debug',
+      log(
+        'debug',
         `原因: isDataLoaded=${isDataLoaded.value}, loadedFunctionCode="${loadedFunctionCode.value}", loadedParams="${loadedParams.value}"`
       );
     }

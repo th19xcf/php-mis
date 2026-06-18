@@ -2,6 +2,7 @@ import { useRouter } from 'vue-router';
 import type { RouteLocationRaw } from 'vue-router';
 import type { RouteKey } from '@elegant-router/types';
 import { router as globalRouter } from '@/router';
+import { startTrace } from '@/utils/performance-trace';
 
 /**
  * Router push
@@ -37,6 +38,9 @@ export function useRouterPush(inSetup = true) {
   }
 
   function routerPushByKeyWithMetaQuery(key: RouteKey) {
+    // 性能追踪：菜单点击时启动追踪
+    startTrace(String(key));
+
     const allRoutes = router.getRoutes();
     const meta = allRoutes.find(item => item.name === key)?.meta || null;
 
