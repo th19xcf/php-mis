@@ -9,8 +9,8 @@ import { useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
 import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'ag-grid-community';
-import { AgGridVue } from 'ag-grid-vue3';
 import { NButton, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty } from 'naive-ui';
+import { AgGridVue } from 'ag-grid-vue3';
 
 import { useColorMark } from '@/hooks/business/use-color-mark';
 import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
@@ -46,7 +46,11 @@ import {
   WorkbenchAddForm,
   WorkbenchUpdateForm,
   WorkbenchPopupSelect,
-  WorkbenchSelectAllHeader
+  WorkbenchSelectAllHeader,
+  WorkbenchPinColumnModal,
+  WorkbenchFieldColumnModal,
+  WorkbenchConditionDrawer,
+  WorkbenchColorMarkModal
 } from './components';
 
 const route = useRoute();
@@ -1388,159 +1392,45 @@ const { handleGridReady } = useWorkbenchGridReady({
       </div>
     </div>
 
-    <NModal
-      v-model:show="pinColumnVisible"
-      preset="card"
-      title="固定列"
-      class="w-420px pin-column-modal"
-      :class="{ 'pin-column-modal-dark': isDarkMode }"
-      :mask-closable="true"
-    >
-      <NSpace vertical :size="16">
-        <div class="pin-column-select-panel">
-          <div class="pin-column-actions">
-            <NCheckbox
-              :checked="pinTargetFields.length === 0"
-              @update:checked="checked => checked && handleClearPinColumns()"
-            >
-              全不选
-            </NCheckbox>
-          </div>
+    <WorkbenchPinColumnModal
+      v-model:visible="pinColumnVisible"
+      v-model:model-value="pinTargetFields"
+      :options="pinColumnOptions"
+      :is-dark-mode="isDarkMode"
+      @change="handlePinSelectionChange"
+      @clear="handleClearPinColumns"
+    />
 
-          <NCheckboxGroup
-            v-model:value="pinTargetFields"
-            class="pin-column-group"
-            @update:value="handlePinSelectionChange"
-          >
-            <NSpace vertical :size="10">
-              <NCheckbox v-for="item in pinColumnOptions" :key="String(item.value)" :value="String(item.value)">
-                {{ item.label }}
-              </NCheckbox>
-            </NSpace>
-          </NCheckboxGroup>
-        </div>
-      </NSpace>
-    </NModal>
+    <WorkbenchFieldColumnModal
+      v-model:visible="fieldColumnVisible"
+      v-model:model-value="visibleFieldColumns"
+      :options="fieldColumnOptions"
+      :is-dark-mode="isDarkMode"
+      @change="handleFieldSelectionChange"
+      @clear="handleClearFieldColumns"
+      @select-all="handleSelectAllFieldColumns"
+    />
 
-    <NModal
-      v-model:show="fieldColumnVisible"
-      preset="card"
-      title="字段选择"
-      class="w-420px pin-column-modal"
-      :class="{ 'pin-column-modal-dark': isDarkMode }"
-      :mask-closable="true"
-    >
-      <NSpace vertical :size="16">
-        <div class="pin-column-select-panel">
-          <div class="pin-column-actions">
-            <NCheckbox
-              :checked="visibleFieldColumns.length === fieldColumnOptions.length && fieldColumnOptions.length > 0"
-              @update:checked="checked => (checked ? handleSelectAllFieldColumns() : handleClearFieldColumns())"
-            >
-              全选
-            </NCheckbox>
-            <NCheckbox
-              :checked="visibleFieldColumns.length === 0"
-              @update:checked="checked => checked && handleClearFieldColumns()"
-            >
-              全不选
-            </NCheckbox>
-          </div>
-
-          <NCheckboxGroup
-            v-model:value="visibleFieldColumns"
-            class="pin-column-group"
-            @update:value="handleFieldSelectionChange"
-          >
-            <NSpace vertical :size="10">
-              <NCheckbox v-for="item in fieldColumnOptions" :key="String(item.value)" :value="String(item.value)">
-                {{ item.label }}
-              </NCheckbox>
-            </NSpace>
-          </NCheckboxGroup>
-        </div>
-      </NSpace>
-    </NModal>
-
-    <NDrawer v-model:show="conditionVisible" :width="420" placement="right">
-      <NDrawerContent title="条件面板" closable>
-        <NSpace vertical :size="16">
-          <NForm label-placement="top">
-            <NFormItem label="字段">
-              <NSelect
-                v-model:value="selectedField"
-                :options="filterableFields.map(field => ({ label: field, value: field }))"
-              />
-            </NFormItem>
-            <NFormItem label="操作符">
-              <NSelect
-                v-model:value="selectedOperator"
-                :options="[
-                  { label: '包含', value: 'contains' },
-                  { label: '等于', value: 'equals' },
-                  { label: '前缀匹配', value: 'startsWith' }
-                ]"
-              />
-            </NFormItem>
-            <NFormItem label="取值">
-              <NInput v-model:value="selectedValue" placeholder="输入筛选值" />
-            </NFormItem>
-          </NForm>
-
-          <NAlert type="warning">
-            当前已接到后端 JSON 协议；后续只需继续补齐新增、修改、删除、备注、钻取等动作接口。
-          </NAlert>
-
-          <NSpace justify="end">
-            <NButton @click="conditionVisible = false">取消</NButton>
-            <NButton type="primary" @click="handleApplyCondition">应用</NButton>
-          </NSpace>
-        </NSpace>
-      </NDrawerContent>
-    </NDrawer>
+    <WorkbenchConditionDrawer
+      v-model:visible="conditionVisible"
+      v-model:selected-field="selectedField"
+      v-model:selected-operator="selectedOperator"
+      v-model:selected-value="selectedValue"
+      :filterable-fields="filterableFields"
+      @apply="handleApplyCondition"
+    />
 
     <!-- 颜色标注弹窗 -->
-    <NModal v-model:show="colorMarkVisible" preset="card" title="颜色标注设置" class="w-480px" :mask-closable="false">
-      <NSpace vertical :size="16">
-        <NForm label-placement="left" label-width="80">
-          <NFormItem label="字段一">
-            <NSelect v-model:value="colorMarkField1" :options="colorMarkEnabledColumns" />
-          </NFormItem>
-          <NFormItem label="比较符">
-            <NSelect
-              v-model:value="colorMarkOperator"
-              :options="[
-                { label: '大于', value: '大于' },
-                { label: '小于', value: '小于' },
-                { label: '等于', value: '等于' },
-                { label: '大于等于', value: '大于等于' },
-                { label: '小于等于', value: '小于等于' },
-                { label: '不等于', value: '不等于' }
-              ]"
-            />
-          </NFormItem>
-          <NFormItem label="字段二">
-            <NSelect v-model:value="colorMarkField2" :options="colorMarkEnabledColumns" />
-          </NFormItem>
-          <NFormItem label="颜色">
-            <NSelect
-              v-model:value="colorMarkColor"
-              :options="[
-                { label: '白底红字', value: '白底红字' },
-                { label: '白底蓝字', value: '白底蓝字' },
-                { label: '黄底红色', value: '黄底红色' }
-              ]"
-            />
-          </NFormItem>
-        </NForm>
-
-        <NSpace justify="end">
-          <NButton @click="colorMarkVisible = false">取消</NButton>
-          <NButton @click="handleClearColorMark">清除</NButton>
-          <NButton type="primary" @click="handleApplyColorMark">应用</NButton>
-        </NSpace>
-      </NSpace>
-    </NModal>
+    <WorkbenchColorMarkModal
+      v-model:visible="colorMarkVisible"
+      v-model:field1="colorMarkField1"
+      v-model:operator="colorMarkOperator"
+      v-model:field2="colorMarkField2"
+      v-model:color="colorMarkColor"
+      :enabled-columns="colorMarkEnabledColumns"
+      @apply="handleApplyColorMark"
+      @clear="handleClearColorMark"
+    />
 
     <!-- 导入弹窗 -->
     <WorkbenchImport

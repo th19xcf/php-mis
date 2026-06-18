@@ -5,3 +5,7 @@ export { default as WorkbenchAddForm } from './WorkbenchAddForm.vue';
 export { default as WorkbenchUpdateForm } from './WorkbenchUpdateForm.vue';
 export { default as WorkbenchPopupSelect } from './WorkbenchPopupSelect.vue';
 export { default as WorkbenchSelectAllHeader } from './WorkbenchSelectAllHeader.vue';
+export { default as WorkbenchPinColumnModal } from './WorkbenchPinColumnModal.vue';
+export { default as WorkbenchFieldColumnModal } from './WorkbenchFieldColumnModal.vue';
+export { default as WorkbenchConditionDrawer } from './WorkbenchConditionDrawer.vue';
+export { default as WorkbenchColorMarkModal } from './WorkbenchColorMarkModal.vue';

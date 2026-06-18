@@ -1,11 +1,7 @@
 import { ref } from 'vue';
 import type { Ref } from 'vue';
 import type { GridApi } from 'ag-grid-community';
-
-interface ColorMarkFieldOption {
-  label: string;
-  value: string;
-}
+import type { SelectOption } from 'naive-ui';
 
 type ColorMarkOperator = '大于' | '小于' | '等于';
 type ColorMarkColor = '白底红字' | '白底蓝字' | '黄底红色';
@@ -18,7 +14,7 @@ interface ColorMarkConfig {
 }
 
 interface UseColorMarkOptions {
-  colorMarkEnabledColumns: Ref<ColorMarkFieldOption[]>;
+  colorMarkEnabledColumns: Ref<SelectOption[]>;
   gridApi: Ref<GridApi<Api.Workbench.QueryRecord> | null>;
   notify: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void;
 }
@@ -33,16 +29,16 @@ export function useColorMark(options: UseColorMarkOptions) {
 
   function resetColorMarkState() {
     colorMarkConfig.value = null;
-    colorMarkField1.value = options.colorMarkEnabledColumns.value[0]?.value || '';
-    colorMarkField2.value = options.colorMarkEnabledColumns.value[0]?.value || '';
+    colorMarkField1.value = String(options.colorMarkEnabledColumns.value[0]?.value || '');
+    colorMarkField2.value = String(options.colorMarkEnabledColumns.value[0]?.value || '');
     colorMarkOperator.value = '大于';
     colorMarkColor.value = '白底红字';
   }
 
   function handleOpenColorMark() {
     if (options.colorMarkEnabledColumns.value.length > 0) {
-      colorMarkField1.value = options.colorMarkEnabledColumns.value[0]?.value || '';
-      colorMarkField2.value = options.colorMarkEnabledColumns.value[0]?.value || '';
+      colorMarkField1.value = String(options.colorMarkEnabledColumns.value[0]?.value || '');
+      colorMarkField2.value = String(options.colorMarkEnabledColumns.value[0]?.value || '');
     }
     colorMarkVisible.value = true;
   }
