@@ -265,35 +265,6 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
   }
 }
 
-.pin-column-select-panel {
-  max-height: 320px;
-  overflow: auto;
-  border: 1px solid #d4dce5;
-  border-radius: 8px;
-  padding: 12px;
-  background: $wb-bg-hover;
-}
-
-.pin-column-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-bottom: 12px;
-
-  :deep(.n-checkbox .n-checkbox__label) {
-    color: #334155;
-  }
-}
-
-.pin-column-group {
-  padding-top: 8px;
-  border-top: 1px solid #d4dce5;
-
-  :deep(.n-checkbox .n-checkbox__label) {
-    color: #334155;
-  }
-}
-
 :deep(.query-grid .ag-root-wrapper),
 :deep(.query-grid .ag-root),
 :deep(.query-grid .ag-header),
@@ -506,49 +477,8 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
 }
 
 // 右侧面板样式已抽至 styles/workbench-right-panel.scss
-
-.pin-column-modal-dark {
-  .pin-column-select-panel {
-    border-color: $wb-dark-border-light;
-    background: $wb-dark-surface;
-  }
-
-  .pin-column-group {
-    border-top-color: $wb-dark-border-light;
-  }
-
-  .pin-column-actions {
-    :deep(.n-checkbox .n-checkbox__label) {
-      color: rgb(var(--base-text-color));
-    }
-
-    :deep(.n-checkbox .n-checkbox-box) {
-      border-color: #7f95ac;
-      background-color: $wb-dark-surface;
-    }
-
-    :deep(.n-checkbox.n-checkbox--checked .n-checkbox-box) {
-      border-color: #4ea4f3;
-      background-color: #2f7fc5;
-    }
-  }
-
-  .pin-column-group {
-    :deep(.n-checkbox .n-checkbox__label) {
-      color: rgb(var(--base-text-color));
-    }
-
-    :deep(.n-checkbox .n-checkbox-box) {
-      border-color: #7f95ac;
-      background-color: $wb-dark-surface;
-    }
-
-    :deep(.n-checkbox.n-checkbox--checked .n-checkbox-box) {
-      border-color: #4ea4f3;
-      background-color: #2f7fc5;
-    }
-  }
-}
+// 固定列/字段选择弹窗样式已抽至 components/WorkbenchPinColumnModal.vue
+//  （n-modal 通过 teleport 渲染到 body 外，父组件 scoped 样式无法影响）
 
 .system-dark {
   :deep(.toolbar-card),
@@ -830,40 +760,27 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
     box-shadow: none;
   }
 
-  .pin-column-select-panel {
+  // 弹窗卡片本身暗色
+  :deep(.n-card) {
+    --n-color: var(--wb-dark-bg);
+    --n-color-embedded: var(--wb-dark-bg);
+    --n-color-modal: var(--wb-dark-bg);
+    background: var(--wb-dark-bg) !important;
     border-color: $wb-dark-border-light;
-    background: $wb-dark-surface;
   }
 
-  .pin-column-group {
-    border-top-color: $wb-dark-border-light;
+  :deep(.n-card-header) {
+    background: var(--wb-dark-bg) !important;
+    color: #fff;
+    border-bottom-color: $wb-dark-border-light;
   }
 
-  .pin-column-actions,
-  .pin-column-group {
-    :deep(.n-checkbox .n-checkbox__label) {
-      color: rgb(var(--base-text-color));
-    }
-
-    :deep(.n-checkbox .n-checkbox-box) {
-      border-color: #7f95ac;
-      background-color: var(--wb-dark-bg);
-    }
-
-    :deep(.n-checkbox.n-checkbox--checked .n-checkbox-box) {
-      border-color: #4ea4f3;
-      background-color: #2f7fc5;
-    }
+  :deep(.n-card__content) {
+    background: var(--wb-dark-bg) !important;
   }
 
-  :deep(.n-checkbox:not(.n-checkbox--disabled) .n-checkbox-box) {
-    border-color: #7f95ac !important;
-    background-color: var(--wb-dark-bg) !important;
-  }
-
-  :deep(.n-checkbox.n-checkbox--checked:not(.n-checkbox--disabled) .n-checkbox-box) {
-    border-color: #4ea4f3 !important;
-    background-color: #2f7fc5 !important;
+  :deep(.n-base-close) {
+    color: #fff;
   }
 
   :deep(.query-grid .ag-filter-body-wrapper) {
