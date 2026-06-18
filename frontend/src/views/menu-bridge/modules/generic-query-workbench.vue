@@ -18,7 +18,6 @@ import { useWorkbenchDelete } from '@/hooks/business/use-workbench-delete';
 import { useWorkbenchEditForms } from '@/hooks/business/use-workbench-edit-forms';
 import { useWorkbenchImport } from '@/hooks/business/use-workbench-import';
 import { useWorkbenchPopupCascader } from '@/hooks/business/use-workbench-popup-cascader';
-import { useToolbarScroll } from '@/hooks/business/use-toolbar-scroll';
 import { useWorkbenchComment } from '@/hooks/business/use-workbench-comment';
 import { useWorkbenchGridState } from '@/hooks/business/use-workbench-grid-state';
 import { useWorkbenchChart } from '@/hooks/business/use-workbench-chart';
@@ -179,8 +178,9 @@ const {
   notify
 });
 
-// 工具栏滚动相关
-const { showLeftArrow, showRightArrow, checkScrollPosition, scrollToolbar } = useToolbarScroll();
+// 工具栏滚动相关：状态由 WorkbenchToolbar 内部管理，父组件通过 ref 转发
+const toolbarRef = ref<{ checkScrollPosition: () => void } | null>(null);
+const checkScrollPosition = () => toolbarRef.value?.checkScrollPosition();
 const gridShellRef = ref<HTMLDivElement | null>(null);
 
 function isGridShellVisible() {
@@ -1062,9 +1062,8 @@ const { handleGridReady } = useWorkbenchGridReady({
 <template>
   <div class="generic-query-workbench" :class="{ 'system-dark': isDarkMode }">
     <WorkbenchToolbar
+      ref="toolbarRef"
       v-model:quick-keyword="quickKeyword"
-      :show-left-arrow="showLeftArrow"
-      :show-right-arrow="showRightArrow"
       :function-code="String(pageMeta?.functionCode || props.meta.functionCode || '')"
       :page-meta="pageMeta"
       :has-table-modifications="hasTableModifications"
@@ -1073,8 +1072,6 @@ const { handleGridReady } = useWorkbenchGridReady({
       :update-loading="updateLoading"
       :batch-update-loading="batchUpdateLoading"
       :delete-loading="deleteLoading"
-      @scroll-left="scrollToolbar('left')"
-      @scroll-right="scrollToolbar('right')"
       @refresh="handleRefresh"
       @reset="handleReset"
       @open-pin-column="handleOpenPinColumn"
@@ -1094,7 +1091,6 @@ const { handleGridReady } = useWorkbenchGridReady({
       @handle-export="handleExport"
       @handle-debug="handleDebug"
       @upkeep="handleUpkeep"
-      @check-scroll-position="checkScrollPosition"
     />
 
     <NAlert v-if="pageMeta?.fallbackHint" type="warning" class="mb-6px">

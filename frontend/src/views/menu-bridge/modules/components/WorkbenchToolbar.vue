@@ -1,10 +1,9 @@
 <script setup lang="ts">
+import { nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { NButton, NInput, NTag, NCard } from 'naive-ui';
 import SvgIcon from '@/components/custom/svg-icon.vue';
 
 defineProps<{
-  showLeftArrow: boolean;
-  showRightArrow: boolean;
   quickKeyword: string;
   functionCode: string;
   pageMeta: any;
@@ -18,8 +17,6 @@ defineProps<{
 
 const emit = defineEmits<{
   'update:quickKeyword': [value: string];
-  scrollLeft: [];
-  scrollRight: [];
   refresh: [];
   reset: [];
   openPinColumn: [];
@@ -39,12 +36,51 @@ const emit = defineEmits<{
   handleExport: [];
   handleDebug: [];
   upkeep: [];
-  checkScrollPosition: [];
 }>();
 
-defineExpose({
-  checkScrollPosition: () => emit('checkScrollPosition')
+// 在子组件内部管理滚动状态，ref 指向自己的 DOM
+const toolbarScrollRef = ref<HTMLDivElement | null>(null);
+const showLeftArrow = ref(false);
+const showRightArrow = ref(false);
+let resizeObserver: ResizeObserver | null = null;
+
+function checkScrollPosition() {
+  nextTick(() => {
+    if (!toolbarScrollRef.value) return;
+    const { scrollWidth, clientWidth } = toolbarScrollRef.value;
+    const hasOverflow = scrollWidth > clientWidth;
+    showLeftArrow.value = hasOverflow && toolbarScrollRef.value.scrollLeft > 0;
+    showRightArrow.value =
+      hasOverflow && toolbarScrollRef.value.scrollLeft + clientWidth < scrollWidth - 1;
+  });
+}
+
+function scrollToolbar(direction: 'left' | 'right') {
+  if (!toolbarScrollRef.value) return;
+  const scrollAmount = 200;
+  const target =
+    direction === 'left'
+      ? toolbarScrollRef.value.scrollLeft - scrollAmount
+      : toolbarScrollRef.value.scrollLeft + scrollAmount;
+  toolbarScrollRef.value.scrollTo({ left: target, behavior: 'smooth' });
+}
+
+onMounted(() => {
+  setTimeout(() => checkScrollPosition(), 100);
+  window.addEventListener('resize', checkScrollPosition);
+  if (toolbarScrollRef.value && typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(checkScrollPosition);
+    resizeObserver.observe(toolbarScrollRef.value);
+  }
 });
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkScrollPosition);
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
+
+defineExpose({ checkScrollPosition });
 </script>
 
 <template>
@@ -52,21 +88,22 @@ defineExpose({
     <div class="flex items-center gap-12px">
       <div class="flex items-center flex-1 min-w-0">
         <NButton
-          v-if="showLeftArrow"
+          v-show="showLeftArrow"
           quaternary
           circle
           size="small"
           class="scroll-arrow mr-8px"
-          @click="emit('scrollLeft')"
+          @click="scrollToolbar('left')"
         >
           <template #icon>
-            <SvgIcon icon="material-symbols:chevron-left" />
+            <SvgIcon icon="ant-design:left-outlined" />
           </template>
         </NButton>
 
         <div
+          ref="toolbarScrollRef"
           class="toolbar-scroll flex items-center gap-8px flex-nowrap overflow-x-hidden"
-          @scroll="emit('checkScrollPosition')"
+          @scroll="checkScrollPosition"
         >
           <NButton @click="emit('refresh')">刷新</NButton>
           <NButton @click="emit('reset')">重置</NButton>
@@ -102,15 +139,15 @@ defineExpose({
         </div>
 
         <NButton
-          v-if="showRightArrow"
+          v-show="showRightArrow"
           quaternary
           circle
           size="small"
           class="scroll-arrow ml-8px"
-          @click="emit('scrollRight')"
+          @click="scrollToolbar('right')"
         >
           <template #icon>
-            <SvgIcon icon="material-symbols:chevron-right" />
+            <SvgIcon icon="ant-design:right-outlined" />
           </template>
         </NButton>
       </div>
