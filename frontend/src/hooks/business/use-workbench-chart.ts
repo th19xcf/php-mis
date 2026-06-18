@@ -41,17 +41,23 @@ const darkThemeColors = {
   tooltipBgColor: 'rgba(31, 41, 55, 0.95)',
   tooltipTextColor: '#e5e7eb',
   tooltipBorderColor: '#4b5563'
+  // dark 模式不设置 tooltipBoxShadow：tooltip 自身已是 0.95 alpha 深色半透明，
+  // 再叠加深色阴影会被深色背景"吃掉"，反而让信息框视觉上消失
 };
 
 const lightThemeColors = {
-  backgroundColor: '#ffffff',
+  // 修复：light 模式图表背景用极浅灰（#f8fafc），视觉上接近白色但与白色 tooltip 有微小对比度。
+  // 之前用 transparent 让父容器透出，但父容器本身就是白色/近白色，导致白底白底问题。
+  backgroundColor: '#f8fafc',
   textColor: '#1f2937',
   axisLineColor: '#6b7280',
-  splitLineColor: '#d1d5db',
+  splitLineColor: 'rgba(0, 0, 0, 0.08)',
   legendTextColor: '#374151',
   tooltipBgColor: '#ffffff',
   tooltipTextColor: '#1f2937',
-  tooltipBorderColor: '#e5e7eb'
+  tooltipBorderColor: 'rgba(0, 0, 0, 0.15)',
+  // 增强阴影：让白色 tooltip 在浅灰背景上有明显立体感
+  tooltipBoxShadow: '0 2px 12px rgba(0, 0, 0, 0.18)'
 };
 
 function generateChartOption(chart: any, isDarkMode: boolean): any {
@@ -245,6 +251,11 @@ function generateChartOption(chart: any, isDarkMode: boolean): any {
         borderColor: themeColors.tooltipBorderColor || '#e5e7eb',
         borderWidth: 1,
         padding: [10, 15],
+        // 通过 extraCssText 注入 box-shadow：setOption 会覆盖默认主题的 tooltip 样式，
+        // 这里手动补回阴影，避免 light 模式下白底白图表背景下信息框"消失"
+        extraCssText: themeColors.tooltipBoxShadow
+          ? `box-shadow: ${themeColors.tooltipBoxShadow};`
+          : undefined,
         formatter: function (params: any) {
           let result = `<div style="font-weight: bold; margin-bottom: 8px;">${params[0].axisValue}</div>`;
           params.forEach((item: any) => {
@@ -757,16 +768,12 @@ export function useWorkbenchChart(options: UseWorkbenchChartOptions) {
       log('info', `重新生成图表配置以适配主题`);
       const newOptions = generateChartOptionsFromBackend(chartData.value, darkMode);
 
-      if (chartInstances.value.length > 0) {
-        log('info', `更新现有图表实例`);
-        newOptions.forEach((option, index) => {
-          if (option && !option.error && chartInstances.value[index]) {
-            chartInstances.value[index].setOption(option, true);
-          }
-        });
-      } else {
-        chartOptions.value = newOptions;
-      }
+      // 修复：setOption(option, true) 不会完全清空 ECharts 内部状态，
+      // 特别是 extraCssText / backgroundColor / borderColor 等样式字段
+      // 会残留旧主题的值，导致切换主题后 tooltip 看不见。
+      // 改为销毁现有实例、走 watch(chartOptions) 的完整重建流程。
+      disposeAllCharts();
+      chartOptions.value = newOptions;
     }
   });
 
