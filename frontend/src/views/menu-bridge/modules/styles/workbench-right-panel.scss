@@ -1,0 +1,287 @@
+// 右侧面板共享样式变量（与 generic-query-workbench.scss 保持一致）
+$wb-primary-color: #1890ff;
+$wb-primary-hover: #40a9ff;
+$wb-border-color: #d9d9d9;
+$wb-border-light: #e8e8e8;
+$wb-text-secondary: #666666;
+$wb-dark-bg: #1b2a38;
+$wb-dark-border-light: #3d4f60;
+$wb-dark-text-muted: #b0b0b0;
+$wb-shadow-color: rgba(0, 0, 0, 0.04);
+$wb-shadow-hover: rgba(0, 0, 0, 0.08);
+
+@mixin wb-flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin wb-transition-fast {
+  transition: all 0.2s ease;
+}
+
+// —— chart-area 容器（从 .workbench-content 中抽出） ——
+.chart-area {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-right: 12px;
+}
+
+// —— 分隔条 ——
+.resize-splitter {
+  width: 8px;
+  cursor: col-resize;
+  @include wb-flex-center;
+  @include wb-transition-fast;
+  flex-shrink: 0;
+
+  &:hover {
+    background-color: $wb-shadow-color;
+  }
+
+  &.is-resizing {
+    background-color: $wb-shadow-hover;
+  }
+
+  .system-dark &:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .system-dark &.is-resizing {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.resize-line {
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background-color: $wb-border-color;
+  @include wb-transition-fast;
+
+  .resize-splitter:hover &,
+  .resize-splitter.is-resizing & {
+    background-color: $wb-primary-color;
+  }
+
+  .system-dark & {
+    background-color: #555;
+
+    .resize-splitter:hover &,
+    .resize-splitter.is-resizing & {
+      background-color: $wb-primary-hover;
+    }
+  }
+}
+
+// —— 图形面板 ——
+.chart-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #ffffff;
+  border: 1px solid $wb-border-light;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+
+  .system-dark & {
+    background: var(--wb-dark-bg);
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  height: 40px;
+  border-bottom: 1px solid $wb-border-light;
+  flex-shrink: 0;
+  background: #fafafa;
+
+  .system-dark & {
+    background: var(--wb-dark-bg);
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+}
+
+.chart-title {
+  font-size: 16px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  .title-text {
+    background-color: $wb-primary-color;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .title-divider {
+    display: inline-block;
+    color: $wb-text-secondary;
+    font-weight: 400;
+    opacity: 0.6;
+    margin: 0 2px;
+  }
+
+  .drill-badge {
+    font-size: 13px;
+    font-weight: 500;
+    color: $wb-primary-color;
+  }
+}
+
+.chart-container {
+  flex: 1;
+  min-height: 400px;
+  max-height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow-y: auto;
+
+  .n-spin {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  :deep(.n-spin-container) {
+    width: 100%;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  :deep(.n-spin-content) {
+    width: 100%;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    align-items: flex-start;
+    gap: 0;
+  }
+}
+
+.chart-wrapper {
+  flex-shrink: 0;
+  min-height: 300px;
+  margin: 4px;
+  box-sizing: border-box;
+  background-color: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 8px;
+
+  &.box_1-1-1 {
+    width: calc(100% - 8px);
+    height: 510px;
+  }
+
+  &.box_2-1-1 {
+    width: calc(100% - 8px);
+    height: 255px;
+  }
+
+  &.box_2-1-2 {
+    width: calc(50% - 8px);
+    height: 255px;
+  }
+
+  &.box_2-1-3 {
+    width: calc(33.33% - 8px);
+    height: 255px;
+  }
+}
+
+// —— 编辑面板（新增 / 单条修改 / 多条修改）样式 ——
+// 这些 class 用在子组件 WorkbenchAddForm / WorkbenchUpdateForm 里，
+// 本组件使用非 scoped 样式，可直接穿透到子组件
+.edit-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #ffffff;
+  border: 1px solid $wb-border-light;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+
+  .system-dark & {
+    background: var(--wb-dark-bg);
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+}
+
+.edit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  height: 40px;
+  border-bottom: 1px solid $wb-border-light;
+  flex-shrink: 0;
+  background: #fafafa;
+
+  .system-dark & {
+    background: var(--wb-dark-bg);
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+}
+
+.edit-title {
+  font-size: 16px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  .title-text {
+    background-color: $wb-primary-color;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .title-divider {
+    display: inline-block;
+    color: $wb-text-secondary;
+    font-weight: 400;
+    opacity: 0.6;
+    margin: 0 2px;
+  }
+
+  .title-sub {
+    font-size: 13px;
+    font-weight: 500;
+    color: $wb-text-secondary;
+
+    .system-dark & {
+      color: $wb-dark-text-muted;
+    }
+  }
+}
+
+.edit-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow-y: auto;
+}

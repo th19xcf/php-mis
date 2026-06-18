@@ -9,7 +9,7 @@ import { useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
 import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'ag-grid-community';
-import { NButton, NSpin, NAlert, NEmpty } from 'naive-ui';
+import { NSpin, NAlert } from 'naive-ui';
 import { AgGridVue } from 'ag-grid-vue3';
 
 import { useColorMark } from '@/hooks/business/use-color-mark';
@@ -46,15 +46,13 @@ import { DEFAULT_COL_DEF } from './constants';
 import {
   WorkbenchToolbar,
   WorkbenchImport,
-  WorkbenchComment,
-  WorkbenchAddForm,
-  WorkbenchUpdateForm,
   WorkbenchPopupSelect,
   WorkbenchSelectAllHeader,
   WorkbenchPinColumnModal,
   WorkbenchFieldColumnModal,
   WorkbenchConditionDrawer,
-  WorkbenchColorMarkModal
+  WorkbenchColorMarkModal,
+  WorkbenchRightPanel
 } from './components';
 
 const route = useRoute();
@@ -182,7 +180,7 @@ const {
 });
 
 // 工具栏滚动相关
-const { toolbarScrollRef, showLeftArrow, showRightArrow, checkScrollPosition, scrollToolbar } = useToolbarScroll();
+const { showLeftArrow, showRightArrow, checkScrollPosition, scrollToolbar } = useToolbarScroll();
 const gridShellRef = ref<HTMLDivElement | null>(null);
 
 function isGridShellVisible() {
@@ -211,18 +209,6 @@ function hasSuspiciousNarrowColumnState(columnState: any[]) {
 
 // 是否有整表修改权限
 const hasTableEditAuth = computed(() => pageMeta.value?.toolbar.tableEdit === true);
-
-const defaultColDef = {
-  width: 120,
-  minWidth: 0,
-  // 不设置 maxWidth，允许自适应到任意宽度
-  resizable: true,
-  editable: true,
-  filter: true,
-  filterParams: {
-    maxNumConditions: 5
-  }
-};
 
 // 可颜色标注的列
 const colorMarkEnabledColumns = computed(() => {
@@ -1076,9 +1062,9 @@ const { handleGridReady } = useWorkbenchGridReady({
 <template>
   <div class="generic-query-workbench" :class="{ 'system-dark': isDarkMode }">
     <WorkbenchToolbar
+      v-model:quick-keyword="quickKeyword"
       :show-left-arrow="showLeftArrow"
       :show-right-arrow="showRightArrow"
-      v-model:quick-keyword="quickKeyword"
       :function-code="String(pageMeta?.functionCode || props.meta.functionCode || '')"
       :page-meta="pageMeta"
       :has-table-modifications="hasTableModifications"
@@ -1195,138 +1181,70 @@ const { handleGridReady } = useWorkbenchGridReady({
         </NCard>
       </div>
 
-      <!-- 可拖动分隔条（chart 与 edit 模式共用） -->
-      <div
-        v-if="rightPanelVisible && !chartMaximized && !editPanelMaximized"
-        class="resize-splitter"
-        :class="{ 'is-resizing': anyRightPanelResizing }"
-        title="拖动调整宽度"
-        @mousedown="handleSplitterMouseDown"
-      >
-        <div class="resize-line" />
-      </div>
-
-      <!-- 右侧分栏：chart / 新增 / 单条修改 / 多条修改 / 批注 互斥 -->
-      <div
-        v-show="rightPanelVisible"
-        class="chart-area"
-        :style="{
-          flex:
-            (chartMaximized && rightPanelMode === 'chart') || (editPanelMaximized && rightPanelMode !== 'chart')
-              ? '1'
-              : `0 0 ${100 - activeLeftWidth}%`
-        }"
-      >
-        <!-- 图形模式 -->
-        <div v-if="rightPanelMode === 'chart'" class="chart-panel rounded-12px shadow-sm">
-          <div class="chart-header">
-            <span class="chart-title">
-              <span class="title-text">图形展示</span>
-              <span class="title-divider">|</span>
-              <span class="drill-badge">{{ isDrilled ? `钻取第 ${drillLevel} 级` : '初始图形' }}</span>
-            </span>
-            <div class="flex flex-row gap-8px">
-              <NButton v-if="isDrilled" size="small" type="primary" @click="handleResetDrill">初始图形</NButton>
-              <NButton v-else size="small" type="default" @click="handleOpenChart(pageMeta)">刷新</NButton>
-              <NButton size="small" type="default" @click="chartMaximized = !chartMaximized">
-                {{ chartMaximized ? '恢复' : '扩大' }}
-              </NButton>
-              <NButton v-if="pageMeta?.toolbar.debugSql" size="small" type="warning" @click="handleChartDebug">
-                调试
-              </NButton>
-              <NButton size="small" @click="handleCloseRightPanel">关闭</NButton>
-            </div>
-          </div>
-          <div class="chart-container">
-            <NSpin :show="chartLoading">
-              <template v-if="chartOptions.length > 0">
-                <div
-                  v-for="(option, index) in chartOptions"
-                  :key="index"
-                  :ref="el => setChartRef(el as any, index)"
-                  class="chart-wrapper"
-                  :class="[option.chartLayout || 'box_1-1-1']"
-                ></div>
-              </template>
-              <NEmpty v-else-if="!chartLoading" description="暂无图形数据" />
-            </NSpin>
-          </div>
-        </div>
-
-        <!-- 新增模式 -->
-        <WorkbenchAddForm
-          v-else-if="rightPanelMode === 'add' && addVisible"
-          :loading="addLoading"
-          :error="addError"
-          :success="addSuccess"
-          :form-fields="addFormFields"
-          :form-data="addFormData"
-          :is-dark-mode="isDarkMode"
-          :is-maximized="editPanelMaximized"
-          @update:form-data="addFormData = $event"
-          @confirm="confirmAdd"
-          @open-popup="handleOpenPopup"
-          @close="clearAddPanel"
-          @toggle-maximize="editPanelMaximized = !editPanelMaximized"
-          @add-sample="handleAddSample"
-        />
-
-        <!-- 单条修改模式 -->
-        <WorkbenchUpdateForm
-          v-else-if="rightPanelMode === 'update' && updateVisible"
-          :loading="updateLoading"
-          :error="updateError"
-          :success="updateSuccess"
-          :form-fields="updateFormFields"
-          :form-data="updateFormData"
-          :is-dark-mode="isDarkMode"
-          :is-maximized="editPanelMaximized"
-          @update:form-data="updateFormData = $event"
-          @confirm="confirmUpdate"
-          @open-popup="handleOpenPopup"
-          @close="clearUpdatePanel"
-          @toggle-maximize="editPanelMaximized = !editPanelMaximized"
-        />
-
-        <!-- 多条修改模式 -->
-        <WorkbenchUpdateForm
-          v-else-if="rightPanelMode === 'batch' && batchUpdateVisible"
-          :is-batch="true"
-          :loading="batchUpdateLoading"
-          :error="batchUpdateError"
-          :success="batchUpdateSuccess"
-          :form-fields="batchUpdateFormFields"
-          :form-data="batchUpdateFormData"
-          :is-dark-mode="isDarkMode"
-          :is-maximized="editPanelMaximized"
-          @update:form-data="batchUpdateFormData = $event"
-          @confirm="confirmBatchUpdate"
-          @open-popup="handleOpenPopup"
-          @close="clearBatchUpdatePanel"
-          @toggle-maximize="editPanelMaximized = !editPanelMaximized"
-        />
-
-        <!-- 批注模式（添加 / 查看 互斥） -->
-        <WorkbenchComment
-          v-else-if="rightPanelMode === 'comment' && (addCommentVisible || viewCommentVisible)"
-          :add-visible="addCommentVisible"
-          :view-visible="viewCommentVisible"
-          :loading="commentLoading"
-          :fields="commentFields"
-          :form-data="commentFormData"
-          :list="commentList"
-          :module-name="commentModuleName"
-          :remark="commentRemark"
-          :key-field-list="keyFieldList"
-          :key-field-count="keyFieldCount"
-          :is-dark-mode="isDarkMode"
-          :is-maximized="editPanelMaximized"
-          @update:remark="commentRemark = $event"
-          @submit="handleSubmitComment"
-          @close="clearCommentPanel"
-          @toggle-maximize="editPanelMaximized = !editPanelMaximized"
-        />
-      </div>
+      <!-- 可拖动分隔条 + 右侧分栏：chart / 新增 / 单条修改 / 多条修改 / 批注 互斥 -->
+      <WorkbenchRightPanel
+        :mode="rightPanelMode"
+        :is-dark-mode="isDarkMode"
+        :active-left-width="activeLeftWidth"
+        :any-right-panel-resizing="anyRightPanelResizing"
+        :chart-maximized="chartMaximized"
+        :edit-panel-maximized="editPanelMaximized"
+        :chart-options="chartOptions"
+        :chart-loading="chartLoading"
+        :is-drilled="isDrilled"
+        :drill-level="drillLevel"
+        :has-chart-debug="!!pageMeta?.toolbar.debugSql"
+        :add-visible="addVisible"
+        :add-loading="addLoading"
+        :add-error="addError"
+        :add-success="addSuccess"
+        :add-form-fields="addFormFields"
+        :add-form-data="addFormData"
+        :update-visible="updateVisible"
+        :update-loading="updateLoading"
+        :update-error="updateError"
+        :update-success="updateSuccess"
+        :update-form-fields="updateFormFields"
+        :update-form-data="updateFormData"
+        :batch-update-visible="batchUpdateVisible"
+        :batch-update-loading="batchUpdateLoading"
+        :batch-update-error="batchUpdateError"
+        :batch-update-success="batchUpdateSuccess"
+        :batch-update-form-fields="batchUpdateFormFields"
+        :batch-update-form-data="batchUpdateFormData"
+        :add-comment-visible="addCommentVisible"
+        :view-comment-visible="viewCommentVisible"
+        :comment-loading="commentLoading"
+        :comment-fields="commentFields"
+        :comment-form-data="commentFormData"
+        :comment-list="commentList"
+        :comment-module-name="commentModuleName"
+        :comment-remark="commentRemark"
+        :key-field-list="keyFieldList"
+        :key-field-count="keyFieldCount"
+        @update:chart-maximized="chartMaximized = $event"
+        @update:edit-panel-maximized="editPanelMaximized = $event"
+        @update:add-form-data="addFormData = $event"
+        @update:update-form-data="updateFormData = $event"
+        @update:batch-update-form-data="batchUpdateFormData = $event"
+        @update:comment-remark="commentRemark = $event"
+        @close="handleCloseRightPanel"
+        @refresh-chart="pageMeta && handleOpenChart(pageMeta)"
+        @reset-drill="handleResetDrill"
+        @chart-debug="handleChartDebug"
+        @set-chart-ref="setChartRef"
+        @confirm-add="confirmAdd"
+        @confirm-update="confirmUpdate"
+        @confirm-batch-update="confirmBatchUpdate"
+        @submit-comment="handleSubmitComment"
+        @open-popup="handleOpenPopup"
+        @clear-add="clearAddPanel"
+        @clear-update="clearUpdatePanel"
+        @clear-batch="clearBatchUpdatePanel"
+        @clear-comment="clearCommentPanel"
+        @add-sample="handleAddSample"
+        @splitter-mousedown="handleSplitterMouseDown"
+      />
     </div>
 
     <WorkbenchPinColumnModal

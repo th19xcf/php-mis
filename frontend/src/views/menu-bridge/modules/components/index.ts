@@ -9,3 +9,4 @@ export { default as WorkbenchPinColumnModal } from './WorkbenchPinColumnModal.vu
 export { default as WorkbenchFieldColumnModal } from './WorkbenchFieldColumnModal.vue';
 export { default as WorkbenchConditionDrawer } from './WorkbenchConditionDrawer.vue';
 export { default as WorkbenchColorMarkModal } from './WorkbenchColorMarkModal.vue';
+export { default as WorkbenchRightPanel } from './WorkbenchRightPanel.vue';

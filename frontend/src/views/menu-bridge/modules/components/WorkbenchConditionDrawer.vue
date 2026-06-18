@@ -1,9 +1,42 @@
+<script setup lang="ts">
+import { computed } from 'vue';
+import { NDrawer, NDrawerContent, NSpace, NForm, NFormItem, NSelect, NInput, NAlert, NButton } from 'naive-ui';
+import type { ConditionOperator } from '@/typings/menu-bridge';
+
+interface Props {
+  visible: boolean;
+  selectedField: string;
+  selectedOperator: ConditionOperator;
+  selectedValue: string;
+  filterableFields: string[];
+}
+
+const props = defineProps<Props>();
+
+const emit = defineEmits<{
+  'update:visible': [boolean];
+  'update:selectedField': [string];
+  'update:selectedOperator': [ConditionOperator];
+  'update:selectedValue': [string];
+  apply: [];
+}>();
+
+const visibleRef = computed({
+  get: () => props.visible,
+  set: val => emit('update:visible', val)
+});
+
+const fieldOptions = computed(() => props.filterableFields.map(field => ({ label: field, value: field })));
+
+const operatorOptions = [
+  { label: '包含', value: 'contains' as ConditionOperator },
+  { label: '等于', value: 'equals' as ConditionOperator },
+  { label: '前缀匹配', value: 'startsWith' as ConditionOperator }
+];
+</script>
+
 <template>
-  <NDrawer
-    v-model:show="visibleRef"
-    :width="420"
-    placement="right"
-  >
+  <NDrawer v-model:show="visibleRef" :width="420" placement="right">
     <NDrawerContent title="条件面板" closable>
       <NSpace vertical :size="16">
         <NForm label-placement="top">
@@ -42,40 +75,3 @@
     </NDrawerContent>
   </NDrawer>
 </template>
-
-<script setup lang="ts">
-import { computed } from 'vue';
-import { NDrawer, NDrawerContent, NSpace, NForm, NFormItem, NSelect, NInput, NAlert, NButton } from 'naive-ui';
-import type { ConditionOperator } from '@/typings/menu-bridge';
-
-interface Props {
-  visible: boolean;
-  selectedField: string;
-  selectedOperator: ConditionOperator;
-  selectedValue: string;
-  filterableFields: string[];
-}
-
-const props = defineProps<Props>();
-
-const emit = defineEmits<{
-  'update:visible': [boolean];
-  'update:selectedField': [string];
-  'update:selectedOperator': [ConditionOperator];
-  'update:selectedValue': [string];
-  apply: [];
-}>();
-
-const visibleRef = computed({
-  get: () => props.visible,
-  set: val => emit('update:visible', val)
-});
-
-const fieldOptions = computed(() => props.filterableFields.map(field => ({ label: field, value: field })));
-
-const operatorOptions = [
-  { label: '包含', value: 'contains' as ConditionOperator },
-  { label: '等于', value: 'equals' as ConditionOperator },
-  { label: '前缀匹配', value: 'startsWith' as ConditionOperator }
-];
-</script>
