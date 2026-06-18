@@ -102,8 +102,7 @@
   },
   "simple-git-hooks": {
     "commit-msg": "pnpm sa git-commit-verify",
-    "pre-commit": "pnpm lint-staged",
-    "pre-push": "pnpm typecheck"
+    "pre-commit": "pnpm typecheck"
   },
   "engines": {
     "node": ">=20.19.0",
