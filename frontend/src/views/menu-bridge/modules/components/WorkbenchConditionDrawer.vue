@@ -46,8 +46,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { NDrawer, NDrawerContent, NSpace, NForm, NFormItem, NSelect, NInput, NAlert, NButton } from 'naive-ui';
-
-export type ConditionOperator = 'contains' | 'equals' | 'startsWith';
+import type { ConditionOperator } from '@/typings/menu-bridge';
 
 interface Props {
   visible: boolean;

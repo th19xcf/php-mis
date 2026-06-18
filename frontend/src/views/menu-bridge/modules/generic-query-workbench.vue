@@ -40,6 +40,9 @@ import { useThemeStore } from '@/store/modules/theme';
 import { useWorkbenchRightPanelStore } from '@/store/modules/workbench-right-panel';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import { logger } from '@/utils/logger';
+import { isGuidColumn } from '@/utils/menu-bridge';
+import type { MenuBridgeMeta, ConditionOperator } from '@/typings/menu-bridge';
+import { DEFAULT_COL_DEF } from './constants';
 import {
   WorkbenchToolbar,
   WorkbenchImport,
@@ -58,21 +61,7 @@ const route = useRoute();
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-interface MenuBridgeMeta {
-  functionCode?: string;
-  menu1?: string;
-  menu2?: string;
-  module?: string;
-  params?: string;
-}
-
-type ConditionOperator = 'contains' | 'equals' | 'startsWith';
-
 type _QueryFilter = NonNullable<Api.Workbench.QueryPayload['filters']>[number];
-
-function isGuidColumn(field: string, label: string) {
-  return field.trim().toUpperCase() === 'GUID' || label.trim().toUpperCase() === 'GUID';
-}
 
 const { notify } = useWorkbenchNotify();
 
@@ -82,7 +71,7 @@ const props = defineProps<{
   dynamicLike?: boolean;
 }>();
 
-const { GRID_THEME, STORAGE_KEYS } = WORKBENCH_CONFIG;
+const { GRID_THEME, STORAGE_KEYS, PAGINATION } = WORKBENCH_CONFIG;
 
 const lightGridTheme = themeAlpine.withParams(GRID_THEME.LIGHT);
 const darkGridTheme = themeAlpine.withParams(GRID_THEME.DARK);
@@ -91,8 +80,7 @@ const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 const activeGridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
 
-const PAGE_SIZE_OPTIONS = [500, 1000, 2000] as const;
-const paginationPageSizeSelector = [...PAGE_SIZE_OPTIONS];
+const paginationPageSizeSelector = [...PAGINATION.PAGE_SIZE_OPTIONS];
 
 const useLegacyTabHint = ref(false);
 const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
@@ -124,7 +112,7 @@ const isInitialLoading = ref(true);
 const isRestoringPage = ref(false);
 const isRestoringSelection = ref(false);
 const page = ref(1);
-const pageSize = ref(PAGE_SIZE_OPTIONS[0]);
+const pageSize = ref(PAGINATION.PAGE_SIZE_OPTIONS[0]);
 const selectedField = ref('');
 const selectedOperator = ref<ConditionOperator>('contains');
 const selectedValue = ref('');
@@ -427,7 +415,7 @@ const { workbenchStore, registerGridPersistenceListeners } = useWorkbenchGridSta
   pageMeta,
   page,
   pageSize,
-  defaultPageSize: PAGE_SIZE_OPTIONS[0],
+  defaultPageSize: PAGINATION.PAGE_SIZE_OPTIONS[0],
   conditionVisible,
   fieldColumnVisible,
   pinColumnVisible,
@@ -1167,7 +1155,7 @@ const { handleGridReady } = useWorkbenchGridReady({
             <AgGridVue
               :theme="activeGridTheme"
               :column-defs="gridColumns"
-              :default-col-def="defaultColDef"
+              :default-col-def="DEFAULT_COL_DEF"
               :row-height="35"
               :header-height="40"
               :row-data="processedRows"

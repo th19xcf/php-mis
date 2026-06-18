@@ -32,7 +32,6 @@ declare module "@elegant-router/types" {
     "personnel_interview": "/personnel/interview";
     "personnel_invitation": "/personnel/invitation";
     "personnel_train": "/personnel/train";
-    "room-status": "/room-status";
     "system": "/system";
     "system_dept": "/system/dept";
     "system_role": "/system/role";
@@ -79,7 +78,6 @@ declare module "@elegant-router/types" {
     | "menu-bridge"
     | "permission-demo"
     | "personnel"
-    | "room-status"
     | "system"
   >;
 
@@ -111,7 +109,6 @@ declare module "@elegant-router/types" {
     | "personnel_interview"
     | "personnel_invitation"
     | "personnel_train"
-    | "room-status"
     | "system_dept"
     | "system_role"
     | "system_user"
