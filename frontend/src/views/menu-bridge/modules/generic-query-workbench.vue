@@ -9,7 +9,7 @@ import { useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
 import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'ag-grid-community';
-import { NButton, NForm, NFormItem, NSelect, NModal, NInput, NSpin, NAlert, NEmpty } from 'naive-ui';
+import { NButton, NSpin, NAlert, NEmpty } from 'naive-ui';
 import { AgGridVue } from 'ag-grid-vue3';
 
 import { useColorMark } from '@/hooks/business/use-color-mark';
@@ -41,6 +41,7 @@ import { useWorkbenchRightPanelStore } from '@/store/modules/workbench-right-pan
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import { logger } from '@/utils/logger';
 import {
+  WorkbenchToolbar,
   WorkbenchImport,
   WorkbenchComment,
   WorkbenchAddForm,
@@ -1086,93 +1087,41 @@ const { handleGridReady } = useWorkbenchGridReady({
 
 <template>
   <div class="generic-query-workbench" :class="{ 'system-dark': isDarkMode }">
-    <NCard
-      :bordered="false"
-      :content-style="{ padding: '1px 10px' }"
-      class="toolbar-card mb-2px rounded-12px shadow-sm"
-    >
-      <div class="flex items-center gap-12px">
-        <!-- 左侧按钮区域 - 可横向滚动 -->
-        <div class="flex items-center flex-1 min-w-0">
-          <!-- 左箭头 -->
-          <NButton
-            v-if="showLeftArrow"
-            quaternary
-            circle
-            size="small"
-            class="scroll-arrow mr-8px"
-            @click="scrollToolbar('left')"
-          >
-            <template #icon>
-              <SvgIcon icon="material-symbols:chevron-left" />
-            </template>
-          </NButton>
-
-          <!-- 按钮容器 -->
-          <div
-            ref="toolbarScrollRef"
-            class="toolbar-scroll flex items-center gap-8px flex-nowrap overflow-x-hidden"
-            @scroll="checkScrollPosition"
-          >
-            <NButton @click="handleRefresh">刷新</NButton>
-            <NButton @click="handleReset">重置</NButton>
-            <NButton @click="handleOpenPinColumn">固定列</NButton>
-            <NButton @click="handleOpenFieldColumn">字段选择</NButton>
-            <NButton @click="handleOpenCondition">条件面板</NButton>
-            <NButton @click="openDataDrill">数据钻取</NButton>
-            <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenAddCommentPanel">添加批注</NButton>
-            <NButton v-if="pageMeta?.toolbar.comment" @click="handleOpenViewCommentPanel">查看批注</NButton>
-            <NButton v-if="hasColorMarkEnabledColumns" @click="handleOpenColorMark">颜色标注</NButton>
-            <NButton v-if="hasChartEnabled" @click="handleOpenChartPanel">图形</NButton>
-            <NButton v-if="pageMeta?.toolbar.add" @click="handleOpenAddPanel">新增</NButton>
-            <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="handleOpenUpdatePanel">
-              单条修改
-            </NButton>
-            <NButton
-              v-if="pageMeta?.toolbar.batchEdit"
-              :disabled="batchUpdateLoading"
-              @click="handleOpenBatchUpdatePanel"
-            >
-              多条修改
-            </NButton>
-            <NButton v-if="pageMeta?.toolbar.delete" :disabled="deleteLoading" @click="handleDelete">删除</NButton>
-            <NButton
-              v-if="pageMeta?.toolbar.tableEdit"
-              :disabled="!hasTableModifications"
-              @click="handleTableEditSubmit"
-            >
-              表级修改提交
-            </NButton>
-            <NButton v-if="pageMeta?.toolbar.upkeep" @click="handleUpkeep">数据整理</NButton>
-            <NButton v-if="pageMeta?.toolbar.import" @click="handleImport">导入</NButton>
-            <NButton :disabled="!pageMeta?.toolbar.export" @click="handleExport">导出</NButton>
-            <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="handleDebug">
-              调试
-            </NButton>
-          </div>
-
-          <!-- 右箭头 -->
-          <NButton
-            v-if="showRightArrow"
-            quaternary
-            circle
-            size="small"
-            class="scroll-arrow ml-8px"
-            @click="scrollToolbar('right')"
-          >
-            <template #icon>
-              <SvgIcon icon="material-symbols:chevron-right" />
-            </template>
-          </NButton>
-        </div>
-
-        <!-- 右侧搜索框和信息栏 - 固定 -->
-        <div class="flex items-center gap-12px flex-shrink-0">
-          <NInput v-model:value="quickKeyword" clearable placeholder="快速检索当前结果" class="w-280px" />
-          <NTag type="success" size="small">{{ String(pageMeta?.functionCode || props.meta.functionCode || '') }}</NTag>
-        </div>
-      </div>
-    </NCard>
+    <WorkbenchToolbar
+      :show-left-arrow="showLeftArrow"
+      :show-right-arrow="showRightArrow"
+      v-model:quick-keyword="quickKeyword"
+      :function-code="String(pageMeta?.functionCode || props.meta.functionCode || '')"
+      :page-meta="pageMeta"
+      :has-table-modifications="hasTableModifications"
+      :has-color-mark-enabled-columns="hasColorMarkEnabledColumns"
+      :has-chart-enabled="hasChartEnabled"
+      :update-loading="updateLoading"
+      :batch-update-loading="batchUpdateLoading"
+      :delete-loading="deleteLoading"
+      @scroll-left="scrollToolbar('left')"
+      @scroll-right="scrollToolbar('right')"
+      @refresh="handleRefresh"
+      @reset="handleReset"
+      @open-pin-column="handleOpenPinColumn"
+      @open-field-column="handleOpenFieldColumn"
+      @open-condition="handleOpenCondition"
+      @data-drill="openDataDrill"
+      @open-add-comment="handleOpenAddCommentPanel"
+      @open-view-comment="handleOpenViewCommentPanel"
+      @open-color-mark="handleOpenColorMark"
+      @open-chart="handleOpenChartPanel"
+      @open-add="handleOpenAddPanel"
+      @open-update="handleOpenUpdatePanel"
+      @open-batch-update="handleOpenBatchUpdatePanel"
+      @delete="handleDelete"
+      @table-edit-submit="handleTableEditSubmit"
+      @handle-import="handleImport"
+      @handle-export="handleExport"
+      @handle-debug="handleDebug"
+      @upkeep="handleUpkeep"
+      @check-scroll-position="checkScrollPosition"
+    />
 
     <NAlert v-if="pageMeta?.fallbackHint" type="warning" class="mb-6px">
       {{ pageMeta.fallbackHint }}

@@ -10,6 +10,7 @@ defineProps<{
   pageMeta: any;
   hasTableModifications: boolean;
   hasColorMarkEnabledColumns: boolean;
+  hasChartEnabled: boolean;
   updateLoading: boolean;
   batchUpdateLoading: boolean;
   deleteLoading: boolean;
@@ -28,6 +29,7 @@ const emit = defineEmits<{
   openAddComment: [];
   openViewComment: [];
   openColorMark: [];
+  openChart: [];
   openAdd: [];
   openUpdate: [];
   openBatchUpdate: [];
@@ -36,6 +38,7 @@ const emit = defineEmits<{
   handleImport: [];
   handleExport: [];
   handleDebug: [];
+  upkeep: [];
   checkScrollPosition: [];
 }>();
 
@@ -74,6 +77,7 @@ defineExpose({
           <NButton v-if="pageMeta?.toolbar.comment" @click="emit('openAddComment')">添加批注</NButton>
           <NButton v-if="pageMeta?.toolbar.comment" @click="emit('openViewComment')">查看批注</NButton>
           <NButton v-if="hasColorMarkEnabledColumns" @click="emit('openColorMark')">颜色标注</NButton>
+          <NButton v-if="hasChartEnabled" @click="emit('openChart')">图形</NButton>
           <NButton v-if="pageMeta?.toolbar.add" @click="emit('openAdd')">新增</NButton>
           <NButton v-if="pageMeta?.toolbar.edit" :disabled="updateLoading" @click="emit('openUpdate')">
             单条修改
@@ -89,6 +93,7 @@ defineExpose({
           >
             表级修改提交
           </NButton>
+          <NButton v-if="pageMeta?.toolbar.upkeep" @click="emit('upkeep')">数据整理</NButton>
           <NButton v-if="pageMeta?.toolbar.import" @click="emit('handleImport')">导入</NButton>
           <NButton :disabled="!pageMeta?.toolbar.export" @click="emit('handleExport')">导出</NButton>
           <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="emit('handleDebug')">
