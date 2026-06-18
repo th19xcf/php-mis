@@ -35,6 +35,7 @@ import { useWorkbenchDrillOptions } from '@/hooks/business/use-workbench-drill-o
 import { useWorkbenchUpkeep } from '@/hooks/business/use-workbench-upkeep';
 import { useWorkbenchDataFetchAll } from '@/hooks/business/use-workbench-data-fetch-all';
 import { useWorkbenchGridReady } from '@/hooks/business/use-workbench-grid-ready';
+import { useWorkbenchNotify } from '@/hooks/business/use-workbench-notify';
 import { useThemeStore } from '@/store/modules/theme';
 import { useWorkbenchRightPanelStore } from '@/store/modules/workbench-right-panel';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
@@ -63,34 +64,12 @@ interface MenuBridgeMeta {
 type ConditionOperator = 'contains' | 'equals' | 'startsWith';
 
 type _QueryFilter = NonNullable<Api.Workbench.QueryPayload['filters']>[number];
-type NotifyType = 'success' | 'error' | 'warning' | 'info';
 
 function isGuidColumn(field: string, label: string) {
   return field.trim().toUpperCase() === 'GUID' || label.trim().toUpperCase() === 'GUID';
 }
 
-function msg(type: NotifyType, message: string, _data?: unknown) {
-  window.$message?.[type](message);
-
-  const prefix = `[${type.toUpperCase()}]`;
-
-  switch (type) {
-    case 'error':
-      console.error(prefix, message);
-      break;
-    case 'warning':
-      console.warn(prefix, message);
-      break;
-    case 'success':
-      logger.info(`%c${prefix}%c ${message}`, 'color: #52c41a; font-weight: bold;', '');
-      break;
-    case 'info':
-      console.info(prefix, message);
-      break;
-    default:
-      logger.info(prefix, message);
-  }
-}
+const { notify } = useWorkbenchNotify();
 
 const props = defineProps<{
   meta: MenuBridgeMeta;
@@ -185,7 +164,7 @@ const {
   getParams: () => params.value,
   reloadPage: () => loadPage(),
   clearCache: (fc, p) => workbenchStore.clearCache(fc, p),
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 const {
@@ -206,7 +185,7 @@ const {
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   getCommentModuleName: () => pageMeta.value?.commentModule || String(props.meta.functionCode || '').trim(),
-  notify: (type: NotifyType, message: string, data?: unknown) => msg(type, message, data)
+  notify
 });
 
 // 工具栏滚动相关
@@ -330,7 +309,7 @@ const {
 } = useColorMark({
   colorMarkEnabledColumns,
   gridApi,
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 const filterableFields = computed(() => {
@@ -472,7 +451,7 @@ const {
   functionCode,
   params,
   workbenchStore,
-  notify: (type: NotifyType, message: string) => msg(type, message),
+  notify,
   checkScrollPosition,
   pageMeta,
   serverRows,
@@ -535,7 +514,7 @@ const {
     isDataLoaded.value = false;
     loadPage();
   },
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 // —— 右栏状态持久化：组件 mount / activate 时从 store 读回，watch 实时写回 ——
@@ -656,16 +635,16 @@ function clearBatchUpdatePanel() {
 //   - 1 行：只覆盖表单中存在的字段（按 formFields.fieldName 匹配），保留用户已输入的其它字段
 function handleAddSample() {
   if (rightPanelMode.value !== 'add' || !addVisible.value) {
-    msg('warning', '请先打开新增视图');
+    notify('warning', '请先打开新增视图');
     return;
   }
   const selectedRows = gridApi.value?.getSelectedRows() || [];
   if (selectedRows.length === 0) {
-    msg('warning', '请先在表格中勾选一行作为样本数据');
+    notify('warning', '请先在表格中勾选一行作为样本数据');
     return;
   }
   if (selectedRows.length > 1) {
-    msg('warning', '只能选择一行作为样本数据');
+    notify('warning', '只能选择一行作为样本数据');
     return;
   }
 
@@ -682,12 +661,12 @@ function handleAddSample() {
   }
 
   if (matchedCount === 0) {
-    msg('warning', '所选行与表单字段不匹配，未填入任何字段');
+    notify('warning', '所选行与表单字段不匹配，未填入任何字段');
     return;
   }
 
   addFormData.value = merged;
-  msg('success', `已从样本行填入 ${matchedCount} 个字段`);
+  notify('success', `已从样本行填入 ${matchedCount} 个字段`);
 }
 function clearCommentPanel() {
   addCommentVisible.value = false;
@@ -718,11 +697,11 @@ async function handleOpenUpdatePanel() {
   // 校验选中的记录数与原行为一致
   const selectedRows = gridApi.value?.getSelectedRows() || [];
   if (selectedRows.length === 0) {
-    msg('warning', '请先选择要修改的记录');
+    notify('warning', '请先选择要修改的记录');
     return;
   }
   if (selectedRows.length > 1) {
-    msg('warning', '修改操作只能选择一条记录');
+    notify('warning', '修改操作只能选择一条记录');
     return;
   }
   rightPanelMode.value = 'update';
@@ -743,7 +722,7 @@ async function handleOpenBatchUpdatePanel() {
   }
   const selectedRows = gridApi.value?.getSelectedRows() || [];
   if (selectedRows.length === 0) {
-    msg('warning', '请先选择要修改的记录');
+    notify('warning', '请先选择要修改的记录');
     return;
   }
   rightPanelMode.value = 'batch';
@@ -767,12 +746,12 @@ async function handleOpenAddCommentPanel() {
   // 校验选中的记录数与原行为一致
   const selectedRows = gridApi.value?.getSelectedRows() || [];
   if (selectedRows.length === 0) {
-    msg('warning', '请先选择要添加批注的记录');
+    notify('warning', '请先选择要添加批注的记录');
     rightPanelMode.value = null;
     return;
   }
   if (selectedRows.length > 1) {
-    msg('warning', '只能选择一条记录');
+    notify('warning', '只能选择一条记录');
     rightPanelMode.value = null;
     return;
   }
@@ -796,12 +775,12 @@ async function handleOpenViewCommentPanel() {
   rightPanelMode.value = 'comment';
   const selectedRows = gridApi.value?.getSelectedRows() || [];
   if (selectedRows.length === 0) {
-    msg('warning', '请先选择要查看批注的记录');
+    notify('warning', '请先选择要查看批注的记录');
     rightPanelMode.value = null;
     return;
   }
   if (selectedRows.length > 1) {
-    msg('warning', '只能选择一条记录');
+    notify('warning', '只能选择一条记录');
     rightPanelMode.value = null;
     return;
   }
@@ -834,12 +813,12 @@ const {
   reloadChartsFromDrill
 } = useWorkbenchChart({
   getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
-  notify: (type: NotifyType, message: string) => msg(type, message),
+  notify,
   onChartClick: (clickParams: any) => {
     // 图表点击事件转发给图形钻取 hook
     if (drillLevel.value >= 1) {
       // 钻取状态下点击，提示用户先返回
-      msg('info', '当前为钻取结果，如需继续钻取请先点击"初始图形"');
+      notify('info', '当前为钻取结果，如需继续钻取请先点击"初始图形"');
       return;
     }
     handleChartClick(clickParams);
@@ -892,7 +871,7 @@ const { drillLevel, isDrilled, handleChartClick, resetDrill } = useWorkbenchChar
     // 兜底：使用页面级钻取选项（来自 def_drill_config）
     return drillOptions.value ?? null;
   },
-  notify: (type: NotifyType, message: string) => msg(type, message),
+  notify,
   loading: ref(false), // 图形钻取 loading 与其他操作解耦
   onDrillChartsUpdated: async (charts: any[]) => {
     // 用钻取结果重新渲染图表
@@ -936,7 +915,7 @@ const {
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   getParams: () => String(props.meta.params || '').trim(),
   workbenchStore,
-  notify: (type: NotifyType, message: string) => msg(type, message),
+  notify,
   loadPage,
   serverRows,
   pageMeta,
@@ -948,7 +927,7 @@ const {
 const { handleExport } = useWorkbenchExport({
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 // 钻取选项对话框（数据行 → 跳转新功能页）
@@ -956,7 +935,7 @@ const { openDataDrill } = useWorkbenchDrillDialog({
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   loading,
-  notify: (type: NotifyType, message: string, data?: unknown) => msg(type, message, data)
+  notify
 });
 
 // 全量数据加载 + 条件筛选应用
@@ -969,7 +948,7 @@ const { queryPage } = useWorkbenchDataFetchAll({
   total,
   serverRows,
   loading,
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 // 状态重置（handleReset / handleRefresh）
@@ -991,7 +970,7 @@ const { handleReset, handleRefresh } = useWorkbenchStateReset({
   loadPage,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   getParams: () => String(props.meta.params || '').trim(),
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 // 数据整理
@@ -999,13 +978,13 @@ const { handleUpkeep } = useWorkbenchUpkeep({
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   loading,
   loadPage,
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 // 页面级 / 图表级 调试
 const { handleDebug } = useWorkbenchPageDebug({
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 const { handleChartDebug } = useWorkbenchChartDebug({
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
@@ -1016,7 +995,7 @@ const { handleChartDebug } = useWorkbenchChartDebug({
   chartLoading,
   chartMaximized,
   pageMeta,
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 const { deleteLoading, handleDelete } = useWorkbenchDelete({
@@ -1029,7 +1008,7 @@ const { deleteLoading, handleDelete } = useWorkbenchDelete({
     isDataLoaded.value = false;
     loadPage();
   },
-  notify: (type: NotifyType, message: string) => msg(type, message)
+  notify
 });
 
 const {
@@ -1083,7 +1062,7 @@ function handleOpenCondition() {
 async function handleApplyCondition() {
   conditionVisible.value = false;
   await queryPage();
-  msg('success', '已应用筛选条件');
+  notify('success', '已应用筛选条件');
 }
 
 // gridReady 处理（恢复列状态 / 筛选 / 排序 / 注册持久化监听）
