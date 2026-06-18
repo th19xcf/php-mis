@@ -55,7 +55,7 @@ class WorkbenchEditController extends BaseController
                 ? $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')'
                 : '获取新增字段配置失败';
 
-            return $this->error('5001', $errorMsg);
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, $errorMsg);
         }
     }
 
@@ -73,7 +73,7 @@ class WorkbenchEditController extends BaseController
             return $this->success($result);
         } catch (\Throwable $e) {
             log_message('error', '获取详情字段配置失败: ' . $e->getMessage());
-            return $this->error('5002', '获取详情字段配置失败');
+            return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '获取详情字段配置失败');
         }
     }
 
@@ -91,7 +91,7 @@ class WorkbenchEditController extends BaseController
             return $this->success($result);
         } catch (\Throwable $e) {
             log_message('error', '获取批量修改字段配置失败: ' . $e->getMessage());
-            return $this->error('5003', '获取批量修改字段配置失败');
+            return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '获取批量修改字段配置失败');
         }
     }
 
@@ -107,7 +107,7 @@ class WorkbenchEditController extends BaseController
             $config = $this->editService->getDataTableConfig($functionCode, $session);
 
             if (empty($config['dataTable'])) {
-                return $this->error('5001', '新增失败：未找到数据表配置');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '新增失败：未找到数据表配置');
             }
 
             $this->editService->executeBeforeInsert($config['beforeInsert']);
@@ -124,7 +124,7 @@ class WorkbenchEditController extends BaseController
                     $num = $this->editService->addRowMode2($config['dataTable'], $request, $session->get('user_workid') ?? 'system');
                     break;
                 default:
-                    return $this->error('5001', sprintf('新增失败,数据模式[-%s-]错误', $config['dataModel']));
+                    return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, sprintf('新增失败,数据模式[-%s-]错误', $config['dataModel']));
             }
 
             $this->editService->executeAfterInsert($config['afterInsert'], $config['primaryKey'], $request);
@@ -139,7 +139,7 @@ class WorkbenchEditController extends BaseController
             $errorMsg = ENVIRONMENT === 'development'
                 ? sprintf('新增失败: %s', $e->getMessage())
                 : '新增失败';
-            return $this->error('5001', $errorMsg);
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, $errorMsg);
         }
     }
 
@@ -151,14 +151,14 @@ class WorkbenchEditController extends BaseController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                return $this->error('5001', '功能编码不能为空');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '功能编码不能为空');
             }
 
             $payload = $this->request->getJSON(true) ?? [];
             $keyValues = $payload['keys'] ?? [];
 
             if (empty($keyValues)) {
-                return $this->error('5001', '未指定要修改的记录');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未指定要修改的记录');
             }
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
@@ -175,7 +175,7 @@ class WorkbenchEditController extends BaseController
             return $this->success($result);
         } catch (\Throwable $e) {
             log_message('error', '获取修改字段配置失败: ' . $e->getMessage());
-            return $this->error('5001', '获取修改字段配置失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取修改字段配置失败');
         }
     }
 
@@ -195,7 +195,7 @@ class WorkbenchEditController extends BaseController
             $formData  = $payload['data'] ?? [];
 
             if (empty($keyValues)) {
-                return $this->error('5001', '修改失败：未指定要修改的记录');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未指定要修改的记录');
             }
 
             $session = \Config\Services::session();
@@ -203,14 +203,14 @@ class WorkbenchEditController extends BaseController
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
-                return $this->error('5001', '修改失败：未找到数据表配置');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'] ?? '0';
 
             $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
             if (empty($primaryKey)) {
-                return $this->error('5001', '修改失败：未找到主键字段');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到主键字段');
             }
 
             $num = $this->editService->updateRowByModel(
@@ -218,7 +218,7 @@ class WorkbenchEditController extends BaseController
             );
 
             if ($num < 0) {
-                return $this->error('5001', sprintf('修改失败,数据模式[-%s-]错误', $dataModel));
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, sprintf('修改失败,数据模式[-%s-]错误', $dataModel));
             }
 
             return $this->success([
@@ -230,7 +230,7 @@ class WorkbenchEditController extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '修改记录失败: ' . $e->getMessage());
-            return $this->error('5001', '修改失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败');
         }
     }
 
@@ -250,10 +250,10 @@ class WorkbenchEditController extends BaseController
             $formData  = $payload['data'] ?? [];
 
             if (empty($keyValues)) {
-                return $this->error('5001', '修改失败：未指定要修改的记录');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未指定要修改的记录');
             }
             if (empty($formData)) {
-                return $this->error('5001', '修改失败：没有要更新的字段');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：没有要更新的字段');
             }
 
             $session = \Config\Services::session();
@@ -261,14 +261,14 @@ class WorkbenchEditController extends BaseController
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
-                return $this->error('5001', '修改失败：未找到数据表配置');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'] ?? '0';
 
             $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
             if (empty($primaryKey)) {
-                return $this->error('5001', '修改失败：未找到主键字段');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到主键字段');
             }
 
             $num = $this->editService->batchUpdateRowsByModel(
@@ -276,7 +276,7 @@ class WorkbenchEditController extends BaseController
             );
 
             if ($num < 0) {
-                return $this->error('5001', sprintf('修改失败,数据模式[-%s-]错误', $dataModel));
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, sprintf('修改失败,数据模式[-%s-]错误', $dataModel));
             }
 
             return $this->success([
@@ -288,7 +288,7 @@ class WorkbenchEditController extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '批量修改记录失败: ' . $e->getMessage());
-            return $this->error('5001', '批量修改失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '批量修改失败');
         }
     }
 
@@ -307,7 +307,7 @@ class WorkbenchEditController extends BaseController
             $keyValues = $payload['keys'] ?? [];
 
             if (empty($keyValues)) {
-                return $this->error('5001', '删除失败：未指定要删除的记录');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '删除失败：未指定要删除的记录');
             }
 
             $session = \Config\Services::session();
@@ -315,14 +315,14 @@ class WorkbenchEditController extends BaseController
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
-                return $this->error('5001', '删除失败：未找到数据表配置');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '删除失败：未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'] ?? '0';
 
             $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
             if (empty($primaryKey)) {
-                return $this->error('5001', '删除失败：未找到主键字段');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '删除失败：未找到主键字段');
             }
 
             $num = $this->editService->deleteRowByModel(
@@ -330,7 +330,7 @@ class WorkbenchEditController extends BaseController
             );
 
             if ($num < 0) {
-                return $this->error('5001', sprintf('删除失败,数据模式[-%s-]错误', $dataModel));
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, sprintf('删除失败,数据模式[-%s-]错误', $dataModel));
             }
 
             return $this->success([
@@ -342,7 +342,7 @@ class WorkbenchEditController extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '删除记录失败: ' . $e->getMessage());
-            return $this->error('5001', '删除失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '删除失败');
         }
     }
 }

@@ -27,6 +27,14 @@ final class ApiCode
     public const BUSINESS_ERROR = '2003';
     public const SERVER_ERROR = '5000';
 
+    // Workbench module (5001-5099)
+    public const WORKBENCH_PARAM_REQUIRED = '4001';
+    public const WORKBENCH_TABLE_CONFIG_MISSING = '5001';
+    public const WORKBENCH_QUERY_FAILED = '5002';
+    public const WORKBENCH_PAGED_QUERY_FAILED = '5003';
+    public const WORKBENCH_CHART_DRILL_FAILED = '5004';
+    public const WORKBENCH_CHART_DRILL_RESET_FAILED = '5005';
+
     /** @var string[] */
     public const LOGOUT_CODES = [
         self::AUTH_UNAUTHORIZED,

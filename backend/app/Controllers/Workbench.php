@@ -66,7 +66,7 @@ class Workbench extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '[Workbench::page] Throwable: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
-            return $this->error('5001', $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')');
         }
     }
 
@@ -82,7 +82,7 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            return $this->error('5002', '工作台查询失败');
+            return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '工作台查询失败');
         }
     }
 
@@ -120,7 +120,7 @@ class Workbench extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '分页查询失败: ' . $e->getMessage());
-            return $this->error('5003', '分页查询失败: ' . $e->getMessage());
+            return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '分页查询失败: ' . $e->getMessage());
         }
     }
 
@@ -201,7 +201,7 @@ class Workbench extends BaseController
         } catch (\Throwable $e) {
             log_message('error', '获取调试信息失败: ' . $e->getMessage());
             log_message('error', '错误堆栈: ' . $e->getTraceAsString());
-            return $this->error('5003', '获取调试信息失败: ' . $e->getMessage());
+            return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '获取调试信息失败: ' . $e->getMessage());
         }
     }
 
@@ -238,7 +238,7 @@ class Workbench extends BaseController
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
-            return $this->error('5003', '工作台钻取失败: ' . $e->getMessage());
+            return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '工作台钻取失败: ' . $e->getMessage());
         }
     }
 
@@ -271,7 +271,7 @@ class Workbench extends BaseController
             }
 
             if ($functionCode === '') {
-                return $this->error('4001', '功能编码不能为空');
+                return $this->error(ApiCode::WORKBENCH_PARAM_REQUIRED, '功能编码不能为空');
             }
 
             if ($scope === 'function') {
@@ -296,7 +296,7 @@ class Workbench extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '清除工作台上下文缓存失败: ' . $e->getMessage());
-            return $this->error('5001', '清除工作台上下文缓存失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '清除工作台上下文缓存失败');
         }
     }
 
@@ -312,13 +312,13 @@ class Workbench extends BaseController
             $data = $this->popupService->getPopupData($functionCode, $objectName);
 
             if (empty($data['popupGrid'])) {
-                return $this->error('5001', '未找到弹窗配置');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未找到弹窗配置');
             }
 
             return $this->success($data);
         } catch (\Throwable $e) {
             log_message('error', '获取弹窗数据失败: ' . $e->getMessage());
-            return $this->error('5001', '获取弹窗数据失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗数据失败');
         }
     }
 
@@ -334,13 +334,13 @@ class Workbench extends BaseController
             $data = $this->popupService->getPopupLevels($functionCode, $objectName);
 
             if (empty($data['levels'])) {
-                return $this->error('5001', '未找到弹窗配置');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未找到弹窗配置');
             }
 
             return $this->success($data);
         } catch (\Throwable $e) {
             log_message('error', '获取弹窗级别配置失败: ' . $e->getMessage());
-            return $this->error('5001', '获取弹窗级别配置失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗级别配置失败');
         }
     }
 
@@ -358,13 +358,13 @@ class Workbench extends BaseController
             $data = $this->popupService->getPopupLevelData($functionCode, $objectName, $level, $parentCode);
 
             if (empty($data['items']) && $level === 1) {
-                return $this->error('5001', '未找到弹窗配置');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未找到弹窗配置');
             }
 
             return $this->success($data);
         } catch (\Throwable $e) {
             log_message('error', '获取弹窗级别数据失败: ' . $e->getMessage());
-            return $this->error('5001', '获取弹窗级别数据失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗级别数据失败');
         }
     }
 
@@ -385,7 +385,7 @@ class Workbench extends BaseController
 
             $rows = $this->request->getJSON(true) ?? [];
             if (empty($rows)) {
-                return $this->error('5001', '没有要提交的修改数据');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '没有要提交的修改数据');
             }
 
             $session = \Config\Services::session();
@@ -393,14 +393,14 @@ class Workbench extends BaseController
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
-                return $this->error('5001', '修改失败：未找到数据表配置');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'] ?? '0';
 
             $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
             if (empty($primaryKey)) {
-                return $this->error('5001', '修改失败：未找到主键字段');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到主键字段');
             }
 
             $result = $this->editService->tableEditByModel(
@@ -408,7 +408,7 @@ class Workbench extends BaseController
             );
 
             if (!$result['success']) {
-                return $this->error('5001', $result['message']);
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, $result['message']);
             }
 
             return $this->success([
@@ -420,7 +420,7 @@ class Workbench extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '表级修改提交失败: ' . $e->getMessage());
-            return $this->error('5001', '表级修改提交失败: ' . $e->getMessage());
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '表级修改提交失败: ' . $e->getMessage());
         }
     }
 
@@ -435,7 +435,7 @@ class Workbench extends BaseController
             $chartModule = $definition['chartModule'] ?? '';
 
             if (empty($chartModule)) {
-                return $this->error('4001', '当前功能未配置图形模块');
+                return $this->error(ApiCode::WORKBENCH_PARAM_REQUIRED, '当前功能未配置图形模块');
             }
 
             $chartData = $this->chartService->getChartData($context, $chartModule);
@@ -447,7 +447,7 @@ class Workbench extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取图形数据失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
-            return $this->error('5001', '获取图形数据失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取图形数据失败');
         }
     }
 
@@ -472,7 +472,7 @@ class Workbench extends BaseController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '图形钻取失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
-            return $this->error('5004', '图形钻取失败: ' . $e->getMessage());
+            return $this->error(ApiCode::WORKBENCH_CHART_DRILL_FAILED, '图形钻取失败: ' . $e->getMessage());
         }
     }
 
@@ -501,7 +501,7 @@ class Workbench extends BaseController
             ]);
         } catch (\Throwable $e) {
             log_message('error', '重置图形钻取失败: ' . $e->getMessage());
-            return $this->error('5005', '重置图形钻取失败');
+            return $this->error(ApiCode::WORKBENCH_CHART_DRILL_RESET_FAILED, '重置图形钻取失败');
         }
     }
 
@@ -517,7 +517,7 @@ class Workbench extends BaseController
             $dataUpkeep = $queryConfig['upkeepModule'] ?? '';
 
             if (empty($dataUpkeep)) {
-                return $this->error('5001', '未配置数据整理模块');
+                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未配置数据整理模块');
             }
 
             $this->contextService->executeUpkeep($dataUpkeep);
@@ -532,10 +532,10 @@ class Workbench extends BaseController
                 return $this->error(ApiCode::AUTH_UNAUTHORIZED, $msg);
             }
             log_message('error', '执行数据整理失败: ' . $msg);
-            return $this->error('5001', '执行数据整理失败: ' . $msg);
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '执行数据整理失败: ' . $msg);
         } catch (\Throwable $e) {
             log_message('error', '执行数据整理失败: ' . $e->getMessage());
-            return $this->error('5001', '执行数据整理失败: ' . $e->getMessage());
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '执行数据整理失败: ' . $e->getMessage());
         }
     }
 }
