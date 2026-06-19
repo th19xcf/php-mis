@@ -462,13 +462,28 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     const { filters, conditionSql: drillConditionSql } = parseDrillParams(params);
     log('debug', `解析钻取参数完成: filters=${JSON.stringify(filters)}, drillConditionSql="${drillConditionSql}"`);
 
-    log('info', `步骤1: 获取页面元数据`);
+    log('info', `步骤1: 并行获取页面元数据与第一页数据`);
     markTrace('数据处理开始');
     const metaTimer = createTimer('获取页面元数据');
-    log('debug', `调用 fetchWorkbenchPage("${functionCode}")`);
-    const pageResult = await fetchWorkbenchPage(functionCode);
-    metaTimer.end();
-    log('info', `获取页面元数据完成，耗时=${metaTimer.elapsed().toFixed(2)}ms`);
+    const firstPageTimer = createTimer('获取第一页数据');
+    log('debug', `并行调用 fetchWorkbenchPage 与 fetchWorkbenchPageData("${functionCode}", size=${CHUNK_SIZE})`);
+
+    const [pageResult, firstPageResult] = await Promise.all([
+      fetchWorkbenchPage(functionCode).finally(() => {
+        metaTimer.end();
+        log('info', `获取页面元数据完成，耗时=${metaTimer.elapsed().toFixed(2)}ms`);
+      }),
+      fetchWorkbenchPageData(functionCode, {
+        current: 1,
+        size: CHUNK_SIZE,
+        fetchTotal: true,
+        filters,
+        drillCondition: drillConditionSql || undefined
+      }).finally(() => {
+        firstPageTimer.end();
+        log('info', `获取第一页数据完成，耗时=${firstPageTimer.elapsed().toFixed(2)}ms`);
+      })
+    ]);
 
     if (pageResult.error) {
       const errorMsg = '工作台初始化失败';
@@ -489,27 +504,6 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       return;
     }
 
-    const data = pageResult.data;
-    pageMeta.value = data.meta;
-    page.value = 1;
-    pageSize.value = PAGE_SIZE_OPTIONS[0];
-    selectedField.value = data.meta.conditions[0]?.fieldKey || '';
-    selectedValue.value = '';
-    log('debug', `页面元数据: pageName=${data.meta.title}, conditionsCount=${data.meta.conditions?.length || 0}`);
-
-    log('info', `步骤2: 获取第一页数据`);
-    const firstPageTimer = createTimer('获取第一页数据');
-    log('debug', `调用 fetchWorkbenchPageData(), size=${CHUNK_SIZE}, fetchTotal=true`);
-    const firstPageResult = await fetchWorkbenchPageData(functionCode, {
-      current: 1,
-      size: CHUNK_SIZE,
-      fetchTotal: true,
-      filters,
-      drillCondition: drillConditionSql || undefined
-    });
-    firstPageTimer.end();
-    log('info', `获取第一页数据完成，耗时=${firstPageTimer.elapsed().toFixed(2)}ms`);
-
     if (firstPageResult.error) {
       const errorMsg = '获取数据失败';
       log('error', `${errorMsg}:`, firstPageResult.error);
@@ -518,6 +512,14 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       log('info', `========== loadPage 结束（数据获取失败）==========`);
       return;
     }
+
+    const data = pageResult.data;
+    pageMeta.value = data.meta;
+    page.value = 1;
+    pageSize.value = PAGE_SIZE_OPTIONS[0];
+    selectedField.value = data.meta.conditions[0]?.fieldKey || '';
+    selectedValue.value = '';
+    log('debug', `页面元数据: pageName=${data.meta.title}, conditionsCount=${data.meta.conditions?.length || 0}`);
 
     const firstPageData = firstPageResult.data;
     total.value = firstPageData.total;

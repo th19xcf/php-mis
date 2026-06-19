@@ -29,15 +29,22 @@ trait WorkbenchResponseTrait
      * 统一成功响应
      *
      * @param array $data
+     * @param float $serverElapsedMs 服务端处理耗时（毫秒），非零时写入响应头
      * @return \CodeIgniter\HTTP\Response
      */
-    protected function success(array $data)
+    protected function success(array $data, float $serverElapsedMs = 0.0)
     {
-        return $this->response->setJSON([
+        $response = $this->response->setJSON([
             'code' => ApiCode::SUCCESS,
             'msg'  => 'success',
             'data' => $data,
         ]);
+
+        if ($serverElapsedMs > 0) {
+            $response->setHeader('X-Server-Time-Ms', (string) round($serverElapsedMs, 2));
+        }
+
+        return $response;
     }
 
     /**

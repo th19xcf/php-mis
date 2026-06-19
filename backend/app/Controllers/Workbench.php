@@ -53,14 +53,18 @@ class Workbench extends BaseController
 
     public function page(string $functionCode = '')
     {
+        $start = hrtime(true);
         try {
             log_message('debug', '[Workbench::page] 开始处理，functionCode: ' . $functionCode);
             [$context, $definition] = $this->contextService->buildWorkbenchContext($functionCode);
             log_message('debug', '[Workbench::page] 上下文构建成功');
 
+            $serverMs = (hrtime(true) - $start) / 1e6;
+            log_message('debug', sprintf('[Workbench::page] 服务端处理完成: %.2fms', $serverMs));
+
             return $this->success([
                 'meta' => $definition,
-            ]);
+            ], $serverMs);
         } catch (\RuntimeException $e) {
             log_message('error', '[Workbench::page] RuntimeException: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
@@ -91,6 +95,7 @@ class Workbench extends BaseController
      */
     public function queryPaged(string $functionCode = '')
     {
+        $start = hrtime(true);
         try {
             $payload = $this->request->getJSON(true) ?? [];
 
@@ -108,6 +113,9 @@ class Workbench extends BaseController
 
             $records = $this->queryService->queryRecordsPaged($context, $payload, $current, $size, $offset);
 
+            $serverMs = (hrtime(true) - $start) / 1e6;
+            log_message('debug', sprintf('[Workbench::queryPaged] 服务端处理完成: %.2fms, total=%d, records=%d', $serverMs, $total, count($records)));
+
             return $this->success([
                 'records'  => $records,
                 'current'  => $current,
@@ -115,7 +123,7 @@ class Workbench extends BaseController
                 'offset'   => $offset,
                 'total'    => $total,
                 'hasMore'  => count($records) === $size,
-            ]);
+            ], $serverMs);
         } catch (\RuntimeException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (\Throwable $e) {

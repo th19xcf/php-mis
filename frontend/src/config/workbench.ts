@@ -5,8 +5,9 @@ export const WORKBENCH_CONFIG = {
   },
 
   PAGINATION: {
-    CHUNK_SIZE: 1000,
-    PAGE_SIZE_OPTIONS: [500, 1000, 2000]
+    // 首屏 chunk 大小：平衡首次加载速度与后台继续加载体验
+    CHUNK_SIZE: 200,
+    PAGE_SIZE_OPTIONS: [200, 500, 1000]
   },
 
   GRID_THEME: {

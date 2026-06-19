@@ -15,7 +15,7 @@ use Config\Services;
 class ContextService
 {
     private const CACHE_PREFIX = 'workbench_context_';
-    private const CACHE_TTL_SECONDS = 60;
+    private const CACHE_TTL_SECONDS = 300;
 
     private Mcommon $model;
     private AuthorizationService $authorizationService;
@@ -38,6 +38,7 @@ class ContextService
      */
     public function buildWorkbenchContext(string $functionCode): array
     {
+        $start = hrtime(true);
         $functionCode = trim($functionCode);
         if ($functionCode === '') {
             throw new \RuntimeException('功能编码不能为空');
@@ -53,7 +54,8 @@ class ContextService
         $cacheKey = $this->buildCacheKey($functionCode, $userWorkId, $companyId);
         $cached = $this->cache->get($cacheKey);
         if (is_array($cached) && isset($cached['context'], $cached['definition'])) {
-            log_message('debug', '[ContextService] 缓存命中: ' . $cacheKey);
+            $elapsed = (hrtime(true) - $start) / 1e6;
+            log_message('debug', sprintf('[ContextService] 缓存命中: %s, 总耗时=%.2fms', $cacheKey, $elapsed));
             $context = $cached['context'];
             $definition = $cached['definition'];
 
@@ -67,21 +69,25 @@ class ContextService
 
         log_message('debug', '[ContextService] 缓存未命中，开始构建上下文: ' . $cacheKey);
 
+        $t1 = hrtime(true);
         log_message('debug', '[ContextService] 步骤2: loadUserAuthorization');
         $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $userPassword);
-        log_message('debug', '[ContextService] 步骤2完成');
+        log_message('debug', sprintf('[ContextService] 步骤2完成: %.2fms', (hrtime(true) - $t1) / 1e6));
 
+        $t2 = hrtime(true);
         log_message('debug', '[ContextService] 步骤3: loadFunctionAuthorization');
         $functionAuth = $this->loadFunctionAuthorization($functionCode, $userAuth);
-        log_message('debug', '[ContextService] 步骤3完成');
+        log_message('debug', sprintf('[ContextService] 步骤3完成: %.2fms', (hrtime(true) - $t2) / 1e6));
 
+        $t3 = hrtime(true);
         log_message('debug', '[ContextService] 步骤4: loadQueryConfig');
         $queryConfig = $this->loadQueryConfig($functionCode, $userAuth['roleCodesRaw']);
-        log_message('debug', '[ContextService] 步骤4完成');
+        log_message('debug', sprintf('[ContextService] 步骤4完成: %.2fms', (hrtime(true) - $t3) / 1e6));
 
+        $t4 = hrtime(true);
         log_message('debug', '[ContextService] 步骤5: loadColumns');
         $columns = $this->loadColumns($functionCode);
-        log_message('debug', '[ContextService] 步骤5完成: columns count=' . count($columns));
+        log_message('debug', sprintf('[ContextService] 步骤5完成: %.2fms, columns count=%d', (hrtime(true) - $t4) / 1e6, count($columns)));
 
         if (!$queryConfig) {
             throw new \RuntimeException('功能未配置查询模块');
@@ -136,6 +142,9 @@ class ContextService
         ];
 
         $this->saveCache($cacheKey, $context, $definition);
+
+        $elapsed = (hrtime(true) - $start) / 1e6;
+        log_message('debug', sprintf('[ContextService] 上下文构建完成: %.2fms', $elapsed));
 
         return [$context, $definition];
     }
