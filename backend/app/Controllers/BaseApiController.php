@@ -14,30 +14,46 @@ class BaseApiController extends BaseController
 {
     protected Mcommon $model;
     protected SessionUserContext $userContext;
+    protected string $traceId;
 
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
         $this->model = new Mcommon();
         $this->userContext = new SessionUserContext();
+
+        // 从请求头获取 traceId，前端未传则自动生成
+        $this->traceId = $request->getHeaderLine('X-Request-Id') ?: 'trace-' . bin2hex(random_bytes(8));
+    }
+
+    /**
+     * 带 traceId 的日志记录，便于前后端日志串联
+     */
+    protected function logTrace(string $level, string $message): void
+    {
+        log_message($level, "[{$this->traceId}] {$message}");
     }
 
     protected function success(mixed $data = null, string $msg = 'Success'): ResponseInterface
     {
-        return $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg' => $msg,
-            'data' => $data
-        ]);
+        return $this->response
+            ->setHeader('X-Request-Id', $this->traceId)
+            ->setJSON([
+                'code' => ApiCode::SUCCESS,
+                'msg' => $msg,
+                'data' => $data
+            ]);
     }
 
     protected function error(int $code, string $msg, mixed $data = null): ResponseInterface
     {
-        return $this->response->setJSON([
-            'code' => $code,
-            'msg' => $msg,
-            'data' => $data
-        ]);
+        return $this->response
+            ->setHeader('X-Request-Id', $this->traceId)
+            ->setJSON([
+                'code' => $code,
+                'msg' => $msg,
+                'data' => $data
+            ]);
     }
 
     protected function paramError(string $msg): ResponseInterface

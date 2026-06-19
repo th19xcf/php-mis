@@ -30,7 +30,13 @@ export const request = createFlatRequest(
     },
     async onRequest(config) {
       const Authorization = getAuthorization();
-      Object.assign(config.headers, { Authorization });
+
+      // 生成并透传 traceId，便于前后端日志串联
+      const traceId = `trace-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      Object.assign(config.headers, { Authorization, 'X-Request-Id': traceId });
+
+      // 将 traceId 暂存到 config 上，供后续错误处理使用
+      (config as any).__traceId = traceId;
 
       // 性能追踪：标记 API 请求发起
       const url = config.url || '';
@@ -129,6 +135,12 @@ export const request = createFlatRequest(
       let message = error.message;
       let backendErrorCode = '';
 
+      // 获取 traceId：优先从请求 config 取，其次从响应头取
+      const traceId =
+        (error.config as any)?.__traceId ||
+        error.response?.headers?.['x-request-id'] ||
+        'unknown';
+
       // get backend error message and code
       if (error.code === BACKEND_ERROR_CODE) {
         message = error.response?.data?.msg || message;
@@ -143,6 +155,12 @@ export const request = createFlatRequest(
       // when the token is expired, refresh token and retry request, so no need to show error message
       if (SERVICE_CODE_CONFIG.expiredTokenCodes.includes(backendErrorCode)) {
         return;
+      }
+
+      // 开发环境打印 traceId，便于前后端日志串联定位
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.error(`[TraceId: ${traceId}] 请求错误: ${message}`);
       }
 
       showErrorMsg(request.state, message);
