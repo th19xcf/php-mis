@@ -294,9 +294,9 @@ class EditService
                 'select 数据表名, 数据模式, 新增前处理模块, 新增后处理模块, 主键字段
                 from def_query_config
                 where 查询模块 in (
-                    select 模块名称 from def_function where 功能编码="%s"
+                    select 模块名称 from def_function where 功能编码=%s
                 )',
-                $functionCode
+                $this->model->quote($functionCode)
             );
 
             $result = $this->model->select($sql);
@@ -363,7 +363,7 @@ class EditService
         foreach ($keys as $key) {
             $key = trim($key);
             if (isset($data[$key])) {
-                $conditions[] = sprintf('%s="%s"', $key, addslashes($data[$key]));
+                $conditions[] = sprintf('%s=%s', $key, $this->model->quote((string) $data[$key]));
             }
         }
 
@@ -692,7 +692,7 @@ class EditService
 
             $currentData = [];
             if (!empty($dataTable) && !empty($primaryKey) && !empty($keyValues)) {
-                $keyStr = implode(',', array_map(fn($v) => sprintf("'%s'", addslashes((string) $v)), $keyValues));
+                $keyStr = implode(',', array_map(fn($v) => $this->model->quote((string) $v), $keyValues));
                 $sql = sprintf(
                     'SELECT * FROM %s WHERE %s IN (%s) LIMIT 1',
                     $dataTable,
@@ -736,13 +736,13 @@ class EditService
         string $userWorkid,
         string $functionCode
     ): int {
-        $keyStr = implode(',', array_map(fn($v) => sprintf("'%s'", addslashes((string) $v)), $keyValues));
+        $keyStr = implode(',', array_map(fn($v) => $this->model->quote((string) $v), $keyValues));
         $where = sprintf('%s in (%s)', $primaryKey, $keyStr);
 
         $updates = [];
         foreach ($formData as $key => $value) {
             if ($key !== $primaryKey) {
-                $updates[] = sprintf('`%s` = "%s"', $key, addslashes((string) $value));
+                $updates[] = sprintf('`%s` = %s', $key, $this->model->quote((string) $value));
             }
         }
 
@@ -789,10 +789,10 @@ class EditService
                 foreach ($originalRow as $key => $val) {
                     if (array_key_exists($key, $formData)) {
                         $fields[] = sprintf('`%s`', $key);
-                        $values[] = sprintf('"%s"', addslashes((string) $formData[$key]));
+                        $values[] = $this->model->quote((string) $formData[$key]);
                     } else {
                         $fields[] = sprintf('`%s`', $key);
-                        $values[] = sprintf('"%s"', addslashes((string) $val));
+                        $values[] = $this->model->quote((string) $val);
                     }
                 }
                 $fields[] = '`操作记录`';
@@ -841,7 +841,7 @@ class EditService
         $updates = [];
         foreach ($formData as $key => $value) {
             if ($key !== $primaryKey) {
-                $updates[] = sprintf('`%s` = "%s"', $key, addslashes((string) $value));
+                $updates[] = sprintf('`%s` = %s', $key, $this->model->quote((string) $value));
             }
         }
 
@@ -853,7 +853,7 @@ class EditService
         switch ($dataModel) {
             case '0':
                 foreach ($keyValues as $keyVal) {
-                    $where = sprintf('%s = "%s"', $primaryKey, addslashes((string) $keyVal));
+                    $where = sprintf('%s = %s', $primaryKey, $this->model->quote((string) $keyVal));
                     $sql = sprintf(
                         'UPDATE %s SET %s WHERE %s',
                         $dataTable,
@@ -868,7 +868,7 @@ class EditService
             case '1':
             case '2':
                 foreach ($keyValues as $keyVal) {
-                    $where = sprintf('%s = "%s"', $primaryKey, addslashes((string) $keyVal));
+                    $where = sprintf('%s = %s', $primaryKey, $this->model->quote((string) $keyVal));
 
                     $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where);
                     $result = $this->model->select($sqlSelect);
@@ -896,10 +896,10 @@ class EditService
                     foreach ($originalRow as $key => $val) {
                         if (array_key_exists($key, $formData)) {
                             $fields[] = sprintf('`%s`', $key);
-                            $values[] = sprintf('"%s"', addslashes((string) $formData[$key]));
+                            $values[] = $this->model->quote((string) $formData[$key]);
                         } else {
                             $fields[] = sprintf('`%s`', $key);
-                            $values[] = sprintf('"%s"', addslashes((string) $val));
+                            $values[] = $this->model->quote((string) $val);
                         }
                     }
                     $fields[] = '`操作记录`';
@@ -946,7 +946,7 @@ class EditService
         string $userWorkid,
         string $functionCode
     ): int {
-        $keyStr = implode(',', array_map(fn($v) => sprintf("'%s'", addslashes((string) $v)), $keyValues));
+        $keyStr = implode(',', array_map(fn($v) => $this->model->quote((string) $v), $keyValues));
         $where = sprintf('%s in (%s)', $primaryKey, $keyStr);
 
         switch ($dataModel) {
@@ -1039,7 +1039,7 @@ class EditService
                         $updates = [];
                         foreach ($row as $key => $value) {
                             if ($key !== $primaryKey && !in_array($key, $skipFields, true)) {
-                                $updates[] = sprintf('`%s` = "%s"', $key, addslashes((string) $value));
+                                $updates[] = sprintf('`%s` = %s', $key, $this->model->quote((string) $value));
                             }
                         }
 
@@ -1053,16 +1053,16 @@ class EditService
                         foreach ($updateFields as $field) {
                             $caseParts = [];
                             foreach ($groupRows as $row) {
-                                $pkValue = addslashes((string) ($row[$primaryKey] ?? ''));
-                                $fieldValue = addslashes((string) ($row[$field] ?? ''));
-                                $caseParts[] = sprintf('WHEN `%s` = "%s" THEN "%s"', $primaryKey, $pkValue, $fieldValue);
+                                $pkValue = $this->model->quote((string) ($row[$primaryKey] ?? ''));
+                                $fieldValue = $this->model->quote((string) ($row[$field] ?? ''));
+                                $caseParts[] = sprintf('WHEN `%s` = %s THEN %s', $primaryKey, $pkValue, $fieldValue);
                                 $primaryKeyValues[] = $pkValue;
                             }
                             $caseStatements[] = sprintf('`%s` = CASE %s ELSE `%s` END', $field, implode(' ', $caseParts), $field);
                         }
 
                         $primaryKeyValues = array_unique($primaryKeyValues);
-                        $whereIn = sprintf('`%s` IN ("%s")', $primaryKey, implode('","', $primaryKeyValues));
+                        $whereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $primaryKeyValues));
 
                         $sql = sprintf(
                             'UPDATE %s SET %s WHERE %s',
@@ -1086,7 +1086,7 @@ class EditService
                     if (empty($where)) {
                         continue;
                     }
-                    $primaryKeyValues[] = addslashes((string) ($row[$primaryKey] ?? ''));
+                    $primaryKeyValues[] = $this->model->quote((string) ($row[$primaryKey] ?? ''));
                     $validRows[] = $row;
                 }
 
@@ -1094,7 +1094,7 @@ class EditService
                     return ['success' => true, 'count' => 0, 'message' => '表级修改提交成功,修改了 0 条记录'];
                 }
 
-                $whereIn = sprintf('`%s` IN ("%s")', $primaryKey, implode('","', $primaryKeyValues));
+                $whereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $primaryKeyValues));
                 $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $whereIn);
                 $result = $this->model->select($sqlSelect);
                 if ($result === false) {
@@ -1131,10 +1131,10 @@ class EditService
                     foreach ($originalRow as $key => $val) {
                         if (isset($row[$key]) && !in_array($key, $skipFields, true)) {
                             $fields[] = sprintf('`%s`', $key);
-                            $values[] = sprintf('"%s"', addslashes((string) $row[$key]));
+                            $values[] = $this->model->quote((string) $row[$key]);
                         } elseif (!in_array($key, $skipFields, true)) {
                             $fields[] = sprintf('`%s`', $key);
-                            $values[] = sprintf('"%s"', addslashes((string) $val));
+                            $values[] = $this->model->quote((string) $val);
                         }
                     }
 
@@ -1202,7 +1202,7 @@ class EditService
         foreach ($keys as $key) {
             $key = trim($key);
             if (isset($data[$key])) {
-                $conditions[] = sprintf('%s="%s"', $key, addslashes((string) $data[$key]));
+                $conditions[] = sprintf('%s=%s', $key, $this->model->quote((string) $data[$key]));
             }
         }
 

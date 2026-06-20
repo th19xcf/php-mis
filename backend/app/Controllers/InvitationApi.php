@@ -106,8 +106,8 @@ class InvitationApi extends BaseApiController
             return $this->paramError('请选择要删除的人员');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
-        $num = $this->deleteRecord('ee_store', sprintf('GUID in ("%s")', $guidStr));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
+        $num = $this->deleteRecord('ee_store', sprintf('GUID in (%s)', $guidStr));
 
         if ($num > 0) {
             return $this->success(null, sprintf('删除成功，共删除 %d 条记录', $num));
@@ -128,7 +128,7 @@ class InvitationApi extends BaseApiController
             return $this->paramError('面试结果不能为空');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
 
         $interview = match ($data['面试结果']) {
             '通过', '未通过' => '已面试',
@@ -142,7 +142,7 @@ class InvitationApi extends BaseApiController
             set 面试信息="%s",
                 操作记录="更新,面试信息",操作来源="页面",操作人员="%s",
                 结束操作时间="%s",操作时间="%s"
-            where GUID in ("%s")',
+            where GUID in (%s)',
             $interview,
             $this->getUserWorkId(),
             date('Y-m-d H:i:s'),
@@ -170,7 +170,7 @@ class InvitationApi extends BaseApiController
                     "邀约表转入","页面","%s","%s",
                     "1","0"
                 from ee_store
-                where GUID in ("%s")',
+                where GUID in (%s)',
                 $data['面试日期'] ?? '',
                 $data['面试人'] ?? '',
                 $data['面试结果'],

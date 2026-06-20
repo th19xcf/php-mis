@@ -240,7 +240,7 @@ class BaseApiController extends BaseController
         foreach ($data as $key => $value) {
             if ($key === '操作') continue;
             $fields[] = $key;
-            $values[] = sprintf('"%s"', addslashes((string)$value));
+            $values[] = $this->model->quote((string)$value);
         }
 
         $sql = sprintf(
@@ -260,7 +260,7 @@ class BaseApiController extends BaseController
         foreach ($data as $key => $value) {
             if (in_array($key, ['guid', '操作', '人员'])) continue;
             if ($value === '') continue;
-            $updateFields[] = sprintf('%s="%s"', $key, addslashes((string)$value));
+            $updateFields[] = sprintf('%s=%s', $key, $this->model->quote((string)$value));
         }
 
         if (empty($updateFields)) {

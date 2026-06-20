@@ -106,8 +106,8 @@ class InterviewApi extends BaseApiController
             return $this->paramError('请选择要删除的人员');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
-        $num = $this->deleteRecord('ee_interview', sprintf('GUID in ("%s")', $guidStr));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
+        $num = $this->deleteRecord('ee_interview', sprintf('GUID in (%s)', $guidStr));
 
         if ($num > 0) {
             return $this->success(null, sprintf('删除成功，共删除 %d 条记录', $num));
@@ -128,14 +128,14 @@ class InterviewApi extends BaseApiController
             return $this->paramError('参培信息不能为空');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
 
         $sql = sprintf('
             update ee_interview
             set 参培信息="%s",
                 操作记录="更新,参培信息",操作来源="页面",操作人员="%s",
                 结束操作时间="%s",操作时间="%s"
-            where GUID in ("%s")',
+            where GUID in (%s)',
             $data['参培信息'],
             $this->getUserWorkId(),
             date('Y-m-d H:i:s'),
@@ -166,7 +166,7 @@ class InterviewApi extends BaseApiController
                     "面试表转入","页面","%s","%s",
                     "1","0"
                 from ee_interview
-                where GUID in ("%s")',
+                where GUID in (%s)',
                 $data['培训业务'] ?? '',
                 $trainStatus,
                 $data['培训批次'] ?? '',

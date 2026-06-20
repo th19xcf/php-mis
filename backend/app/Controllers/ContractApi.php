@@ -153,7 +153,7 @@ class ContractApi extends BaseApiController
 
         foreach ($fieldMappings as $field) {
             if (isset($data[$field])) {
-                $updateFields[] = sprintf('%s = "%s"', $field, addslashes($data[$field]));
+                $updateFields[] = sprintf('%s = %s', $field, $this->model->quote((string)$data[$field]));
             }
         }
 

@@ -514,7 +514,7 @@ class ContextService
             return '';
         }
 
-        $conditions = array_map(fn($code) => sprintf('%s="%s"', $field, addslashes($code)), $deptCodes);
+        $conditions = array_map(fn($code) => sprintf('%s=%s', $field, $this->model->quote((string)$code)), $deptCodes);
         return implode(' or ', $conditions);
     }
 

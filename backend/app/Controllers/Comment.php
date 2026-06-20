@@ -284,9 +284,9 @@ class Comment extends BaseApiController
             from def_comment_config as t1
             left join def_function as t2 on t1.功能编码=t2.功能编码
             left join def_query_config as t3 on t2.模块名称=t3.查询模块
-            where t1.功能编码="%s"
+            where t1.功能编码=%s
             limit 1',
-            $functionCode
+            $this->model->quote($functionCode)
         );
 
         $row = $this->model->select($sql)->getRowArray();
@@ -295,16 +295,16 @@ class Comment extends BaseApiController
         }
 
         $sql = sprintf(
-            'select 
+            'select
                 t2.备注模块,t2.备注表名,t2.功能编码,t2.原表字段,
                 t1.模块名称,
                 t2.备注表名 as 数据表名
             from def_function as t1
             inner join def_query_config as t3 on t1.模块名称=t3.查询模块
             left join def_comment_config as t2 on t3.备注模块=t2.备注模块
-            where t1.功能编码="%s"
+            where t1.功能编码=%s
             limit 1',
-            $functionCode
+            $this->model->quote($functionCode)
         );
 
         $row = $this->model->select($sql)->getRowArray();

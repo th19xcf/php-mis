@@ -48,7 +48,7 @@ class Route extends BaseApiController
                         工号限权,调试赋权,维护赋权,
                         员工属地,员工部门编码,员工部门全称
                     from def_user
-                    where 有效标识="1" and 员工属地="%s" and 工号="%s"
+                    where 有效标识="1" and 员工属地=%s and 工号=%s
                     group by 员工属地,工号
                 ) as t1
                 left join
@@ -57,7 +57,7 @@ class Route extends BaseApiController
                     from def_role_group
                     where 有效标识="1"
                 ) as t2 on t1.角色组=t2.角色组',
-                $company_id, $user_workid);
+                $this->model->quote($company_id), $this->model->quote($user_workid));
 
             $results = $this->model->select($sql)->getResult();
 

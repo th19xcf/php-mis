@@ -123,7 +123,7 @@ class EmployeeApi extends BaseApiController
             if (($oldRecord[$key] ?? '') !== $value) {
                 $updateStr .= ($updateStr ? ',' : '') . $key;
                 $insertFields[] = $key;
-                $insertValues[] = sprintf('"%s"', addslashes($value));
+                $insertValues[] = $this->model->quote((string)$value);
             }
         }
 
@@ -181,14 +181,14 @@ class EmployeeApi extends BaseApiController
             return $this->paramError('请选择要修改的人员');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
         $effectiveDate = $data['生效日期'] ?? date('Y-m-d');
 
         $updateFields = [];
         foreach ($data as $key => $value) {
             if (in_array($key, ['guids', '操作', '生效日期'])) continue;
             if ($value === '') continue;
-            $updateFields[] = sprintf('%s="%s"', $key, addslashes($value));
+            $updateFields[] = sprintf('%s=%s', $key, $this->model->quote((string)$value));
         }
 
         if (empty($updateFields)) {
@@ -198,7 +198,7 @@ class EmployeeApi extends BaseApiController
         $sql = sprintf('
             update ee_onjob
             set %s,操作人员="%s",操作时间="%s"
-            where GUID in ("%s")',
+            where GUID in (%s)',
             implode(',', $updateFields),
             $this->getUserWorkId(),
             date('Y-m-d H:i:s'),
@@ -218,8 +218,8 @@ class EmployeeApi extends BaseApiController
             return $this->paramError('请选择要删除的人员');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
-        $num = $this->deleteRecord('ee_onjob', sprintf('GUID in ("%s")', $guidStr));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
+        $num = $this->deleteRecord('ee_onjob', sprintf('GUID in (%s)', $guidStr));
 
         if ($num > 0) {
             return $this->success(null, sprintf('删除成功，共删除 %d 条记录', $num));

@@ -139,7 +139,7 @@ trait WorkbenchResponseTrait
         foreach ($keys as $key) {
             $key = trim($key);
             if (isset($data[$key])) {
-                $conditions[] = sprintf('%s="%s"', $key, addslashes($data[$key]));
+                $conditions[] = sprintf('%s=%s', $key, $this->model->quote((string)$data[$key]));
             }
         }
 

@@ -277,9 +277,9 @@ class ChartService
                 取数方式,查询表名,查询字段,属地字段,查询条件,汇总条件,排序条件,记录条数,
                 字段模块,页面布局,钻取模块,条件叠加,顺序
             from def_chart_config
-            where 有效标识="1" and 图形模块="%s" and 顺序>0
+            where 有效标识="1" and 图形模块=%s and 顺序>0
             order by 图形模块,图形编号,顺序',
-            $chartModule
+            $this->model->quote($chartModule)
         );
 
         $result = $this->model->select($sql);

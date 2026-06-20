@@ -86,7 +86,7 @@ class TrainApi extends BaseApiController
             return $this->paramError('请选择要修改的人员');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
         $updateFields = [];
 
         $data['操作记录'] = '批量修改';
@@ -97,7 +97,7 @@ class TrainApi extends BaseApiController
         foreach ($data as $key => $value) {
             if (in_array($key, ['guids', '操作', '人员'])) continue;
             if ($value === '') continue;
-            $updateFields[] = sprintf('%s="%s"', $key, addslashes($value));
+            $updateFields[] = sprintf('%s=%s', $key, $this->model->quote((string)$value));
         }
 
         if (empty($updateFields)) {
@@ -105,7 +105,7 @@ class TrainApi extends BaseApiController
         }
 
         $sql = sprintf(
-            'update ee_train set %s where GUID in ("%s")',
+            'update ee_train set %s where GUID in (%s)',
             implode(',', $updateFields),
             $guidStr
         );
@@ -127,8 +127,8 @@ class TrainApi extends BaseApiController
             return $this->paramError('请选择要删除的人员');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
-        $num = $this->deleteRecord('ee_train', sprintf('GUID in ("%s")', $guidStr));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
+        $num = $this->deleteRecord('ee_train', sprintf('GUID in (%s)', $guidStr));
 
         if ($num > 0) {
             return $this->success(null, sprintf('删除成功，共删除 %d 条记录', $num));
@@ -149,7 +149,7 @@ class TrainApi extends BaseApiController
             return $this->paramError('培训状态不能为空');
         }
 
-        $guidStr = implode('","', array_map('addslashes', $data['guids']));
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
         $endTime = date('Y-m-d H:i:s');
         $startTime = date('Y-m-d H:i:s');
 
@@ -158,7 +158,7 @@ class TrainApi extends BaseApiController
                 update ee_train
                 set 培训状态="%s",培训完成日期="%s",
                     结束操作时间="%s",操作时间="%s",操作人员="%s" 
-                where GUID in ("%s")',
+                where GUID in (%s)',
                 $data['培训状态'],
                 $data['培训结束日期'] ?? '',
                 $endTime,
@@ -212,7 +212,7 @@ class TrainApi extends BaseApiController
                         培训批次,培训老师,培训开始日期,预计完成日期,
                         培训完成日期,培训离开日期,培训离开原因,面试信息
                     from ee_train
-                    where GUID in ("%s")
+                    where GUID in (%s)
                 ) as t1
                 left join
                 (
@@ -236,7 +236,7 @@ class TrainApi extends BaseApiController
                 update ee_train
                 set 培训状态="%s",培训离开日期="%s",培训离开原因="%s",
                     结束操作时间="%s",操作时间="%s",操作人员="%s" 
-                where GUID in ("%s")',
+                where GUID in (%s)',
                 $data['培训状态'],
                 $data['培训结束日期'] ?? '',
                 $data['培训离开原因'] ?? '',
