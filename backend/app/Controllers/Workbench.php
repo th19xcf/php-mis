@@ -311,7 +311,7 @@ class Workbench extends BaseApiController
                 ]);
             }
 
-            $this->contextService->clearCache($functionCode, $userWorkId, $companyId);
+            $this->contextService->clearCache($functionCode, $user['roleAuthz'], $companyId);
             return $this->success([
                 'cleared' => true,
                 'scope' => 'self',

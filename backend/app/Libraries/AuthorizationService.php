@@ -138,6 +138,76 @@ class AuthorizationService
     }
 
     /**
+     * 批量加载角色表上的多个赋权字段（一次查询取多个字段）。
+     *
+     * 与 loadRoleAuthField 相同的数据源，但支持一次查询获取多个字段值，
+     * 避免对同一 functionCode + roleAuthz 组合重复查询 view_role。
+     * 使用一次 SQL 查出所有字段，PHP 端拆分逗号分隔值并去重。
+     *
+     * @param string $functionCode 功能编码
+     * @param string[] $fieldDefs  字段定义列表，每项为 ['fieldName' => string, 'aliasName' => string]
+     * @param string $roleAuthz    角色编码列表（逗号分隔）
+     * @return array<string, string> 以 fieldName 为键、规范化后的赋权值为值的字典
+     */
+    public function loadRoleAuthFields(string $functionCode, array $fieldDefs, string $roleAuthz): array
+    {
+        $roleAuthz = trim($roleAuthz);
+        $emptyResult = array_fill_keys(array_column($fieldDefs, 'fieldName'), '');
+
+        if ($roleAuthz === '' || $functionCode === '' || empty($fieldDefs)) {
+            return $emptyResult;
+        }
+
+        // 安全：将角色编码逐个 quote 后再拼入 IN 子句
+        $roleParts = array_map(
+            fn($r) => $this->model->quote(trim($r)),
+            explode(',', $roleAuthz)
+        );
+        $roleList = implode(',', $roleParts);
+
+        // 一次查出所有需要的字段
+        $selectFields = [];
+        $fieldNames = [];
+        foreach ($fieldDefs as $def) {
+            $fn = $def['fieldName'];
+            $fieldNames[] = $fn;
+            // group_concat 使用实际列名(fieldName)，输出别名也用 fieldName
+            $selectFields[] = sprintf(
+                'replace(replace(group_concat(%s separator ","),",",",")," ","") as %s',
+                $fn, $fn
+            );
+        }
+
+        $sql = sprintf(
+            'select %s
+            from view_role
+            where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s',
+            implode(', ', $selectFields),
+            $roleList,
+            $this->model->quote($functionCode)
+        );
+
+        $result = $this->model->select($sql);
+        if ($result === false) {
+            return $emptyResult;
+        }
+
+        $row = $result->getRowArray();
+        if (!$row) {
+            return $emptyResult;
+        }
+
+        // PHP 端拆分逗号分隔值并去重
+        $output = [];
+        foreach ($fieldNames as $fn) {
+            $raw = (string) ($row[$fn] ?? '');
+            $output[$fn] = $this->normalize($raw);
+        }
+
+        return $output;
+    }
+
+    /**
      * 加载角色表上的赋权字段（如 属地赋权 / 部门全称赋权）。
      *
      * 从 view_role 表查询指定功能编码下、当前用户角色对应的赋权字段值，

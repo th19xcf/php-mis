@@ -57,7 +57,8 @@ class ContextService
         $isSuperAdmin = $user['isSuperAdmin'];
         log_message('debug', '[ContextService] 步骤1完成: companyId=' . $companyId . ', userWorkId=' . $userWorkId);
 
-        $cacheKey = $this->buildCacheKey($functionCode, $userWorkId, $companyId);
+        // 缓存键基于 roleCodes + region，同角色用户共享缓存
+        $cacheKey = $this->buildCacheKey($functionCode, $user['roleAuthz'], $companyId);
         $cached = $this->cache->get($cacheKey);
         if (is_array($cached) && isset($cached['context'], $cached['definition'])) {
             $elapsed = (hrtime(true) - $start) / 1e6;
@@ -158,10 +159,12 @@ class ContextService
 
     /**
      * 构建缓存键
+     *
+     * 基于 functionCode + roleAuthz + region，同角色用户共享缓存。
      */
-    private function buildCacheKey(string $functionCode, string $userWorkId, string $region): string
+    private function buildCacheKey(string $functionCode, string $roleAuthz, string $region): string
     {
-        return self::CACHE_PREFIX . md5($functionCode) . '_' . md5(implode('|', [$userWorkId, $region]));
+        return self::CACHE_PREFIX . md5($functionCode) . '_' . md5(implode('|', [$roleAuthz, $region]));
     }
 
     /**
@@ -182,27 +185,27 @@ class ContextService
      * 清除工作台上下文缓存
      *
      * - 三个参数均为空：清空当前缓存驱动的全部数据（慎用）。
-     * - 仅提供 functionCode：清除该功能编码下所有用户/属地的缓存。
+     * - 仅提供 functionCode：清除该功能编码下所有角色/属地的缓存。
      * - 三个参数全部提供：精确删除单条缓存。
      *
      * @param string $functionCode 功能编码
-     * @param string $userWorkId   用户工号
+     * @param string $roleAuthz    角色赋权字符串（逗号分隔）
      * @param string $region       属地/公司编码
      */
-    public function clearCache(string $functionCode = '', string $userWorkId = '', string $region = ''): void
+    public function clearCache(string $functionCode = '', string $roleAuthz = '', string $region = ''): void
     {
-        if ($functionCode === '' && $userWorkId === '' && $region === '') {
+        if ($functionCode === '' && $roleAuthz === '' && $region === '') {
             $this->cache->clean();
             log_message('info', '[ContextService] 已清空全部缓存');
             return;
         }
 
-        if ($functionCode !== '' && $userWorkId === '' && $region === '') {
+        if ($functionCode !== '' && $roleAuthz === '' && $region === '') {
             $this->clearCacheByFunctionCode($functionCode);
             return;
         }
 
-        $targetKey = $this->buildCacheKey($functionCode, $userWorkId, $region);
+        $targetKey = $this->buildCacheKey($functionCode, $roleAuthz, $region);
         $this->cache->delete($targetKey);
         log_message('info', '[ContextService] 已清除工作台上下文缓存: ' . $targetKey);
     }
@@ -346,9 +349,20 @@ class ContextService
             throw new AuthException('当前账号无该功能访问权限');
         }
 
-        $deptCodeAuth = $this->buildFunctionDeptCodeAuth($functionCode, $row, $userAuth);
-        $deptNameAuth = $this->buildFunctionDeptNameAuth($functionCode, $row, $userAuth);
-        $locationAuth = $this->buildFunctionLocationAuth($functionCode, $row, $userAuth, $deptCodeAuth, $deptNameAuth);
+        // 一次查询获取 3 个角色级赋权字段，替代 3 次单独查询
+        $roleAuthFields = $this->authorizationService->loadRoleAuthFields(
+            $functionCode,
+            [
+                ['fieldName' => '部门编码赋权', 'aliasName' => '编码赋权'],
+                ['fieldName' => '部门全称赋权', 'aliasName' => '全称赋权'],
+                ['fieldName' => '属地赋权', 'aliasName' => '角色表属地'],
+            ],
+            $userAuth['roleCodesRaw']
+        );
+
+        $deptCodeAuth = $this->buildFunctionDeptCodeAuth($row, $userAuth, $roleAuthFields['部门编码赋权']);
+        $deptNameAuth = $this->buildFunctionDeptNameAuth($functionCode, $row, $userAuth, $roleAuthFields['部门全称赋权']);
+        $locationAuth = $this->buildFunctionLocationAuth($functionCode, $row, $userAuth, $deptCodeAuth, $deptNameAuth, $roleAuthFields['属地赋权']);
 
         $deptAuthCond = '';
         if ($deptCodeAuth !== '' && $deptNameAuth !== '') {
@@ -472,43 +486,33 @@ class ContextService
     /**
      * 构建功能部门编码授权条件
      *
-     * 委托 AuthorizationService::loadRoleAuthField 查询角色级部门编码赋权，
-     * 再通过 buildExactMatchCondition 生成精确匹配 SQL 条件。
+     * 使用预查询的部门编码赋权值，通过 buildExactMatchCondition 生成精确匹配 SQL 条件。
      */
-    private function buildFunctionDeptCodeAuth(string $functionCode, array $functionRow, array $userAuth): string
+    private function buildFunctionDeptCodeAuth(array $functionRow, array $userAuth, string $deptCodeAuthz): string
     {
         $field = (string) ($functionRow['部门编码字段'] ?? '');
         if ($field === '' || $userAuth['roleCodesQuoted'] === '') {
             return '';
         }
 
-        $deptCodeStr = $this->authorizationService->loadRoleAuthField(
-            $functionCode, '部门编码赋权', '编码赋权', $userAuth['roleCodesRaw']
-        );
-
-        return $this->authorizationService->buildExactMatchCondition($field, $deptCodeStr);
+        return $this->authorizationService->buildExactMatchCondition($field, $deptCodeAuthz);
     }
 
     /**
      * 构建功能部门全称授权条件
      *
-     * 委托 AuthorizationService::loadRoleAuthField 查询角色级部门全称赋权，
-     * 再通过 resolve + buildDeptNameCondition 生成 SQL 条件。
+     * 使用预查询的部门全称赋权值，通过 resolve + buildDeptNameCondition 生成 SQL 条件。
      */
-    private function buildFunctionDeptNameAuth(string $functionCode, array $functionRow, array $userAuth): string
+    private function buildFunctionDeptNameAuth(string $functionCode, array $functionRow, array $userAuth, string $deptNameAuthz): string
     {
         $field = (string) ($functionRow['部门全称字段'] ?? '');
         if ($field === '' || $userAuth['roleCodesQuoted'] === '') {
             return '';
         }
 
-        $roleDeptNameAuth = $this->authorizationService->loadRoleAuthField(
-            $functionCode, '部门全称赋权', '全称赋权', $userAuth['roleCodesRaw']
-        );
-
         $resolvedAuth = $this->authorizationService->resolveDeptName(
             $userAuth['deptNameAuth'],
-            $roleDeptNameAuth,
+            $deptNameAuthz,
             $userAuth['employeeDeptName']
         );
 
@@ -518,11 +522,10 @@ class ContextService
     /**
      * 构建功能属地授权条件
      *
-     * 委托 AuthorizationService::loadRoleAuthField 查询角色级属地赋权，
-     * 再通过 resolve + buildCondition 生成 SQL 条件。
+     * 使用预查询的属地赋权值，通过 resolve + buildCondition 生成 SQL 条件。
      * 当部门级授权已存在时，属地授权条件为空（部门授权优先）。
      */
-    private function buildFunctionLocationAuth(string $functionCode, array $functionRow, array $userAuth, string $deptCodeAuth, string $deptNameAuth): string
+    private function buildFunctionLocationAuth(string $functionCode, array $functionRow, array $userAuth, string $deptCodeAuth, string $deptNameAuth, string $locationAuthz): string
     {
         $field = (string) ($functionRow['属地字段'] ?? '');
         if ($field === '' || $userAuth['roleCodesQuoted'] === '') {
@@ -533,13 +536,9 @@ class ContextService
             return '';
         }
 
-        $roleLocationAuth = $this->authorizationService->loadRoleAuthField(
-            $functionCode, '属地赋权', '角色表属地', $userAuth['roleCodesRaw']
-        );
-
         $resolvedAuth = $this->authorizationService->resolve(
             $userAuth['locationAuth'],
-            $roleLocationAuth,
+            $locationAuthz,
             $userAuth['employeeRegion']
         );
 
