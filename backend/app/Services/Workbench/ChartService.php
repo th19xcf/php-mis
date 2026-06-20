@@ -3,6 +3,7 @@
 namespace App\Services\Workbench;
 
 use App\Models\Mcommon;
+use App\Traits\ChartColumnConfigTrait;
 
 /**
  * 图表服务类
@@ -10,6 +11,8 @@ use App\Models\Mcommon;
  */
 class ChartService
 {
+    use ChartColumnConfigTrait;
+
     private Mcommon $model;
 
     public function __construct()
@@ -154,7 +157,7 @@ class ChartService
         $results = $this->getChartConfigs($chartModule);
 
         // 批量预取所有图表的字段模块列配置，避免循环内 N+1 查询。
-        // createChartsByCode 会按图形编号多次调用 addChartColumnConfigs，
+        // createChartsByCode 会按图形编号多次调用 fillChartColumnConfigs，
         // 同一字段模块可能被查多次，批量预取收益更大。
         $fieldModules = array_map(fn($r) => (string) ($r->字段模块 ?? ''), $results);
         $columnConfigsMap = $this->getChartColumnConfigsBatch($fieldModules);
@@ -200,7 +203,7 @@ class ChartService
     {
         if (empty($dataResults)) {
             $baseChartItem['数据'] = [];
-            $this->addChartColumnConfigs($baseChartItem, $row, $columnConfigsMap);
+            $this->fillChartColumnConfigs($baseChartItem, $row, $columnConfigsMap);
             return [$baseChartItem];
         }
 
@@ -221,7 +224,7 @@ class ChartService
 
         if (empty($chartCodes)) {
             $baseChartItem['数据'] = $dataResults;
-            $this->addChartColumnConfigs($baseChartItem, $row, $columnConfigsMap);
+            $this->fillChartColumnConfigs($baseChartItem, $row, $columnConfigsMap);
             return [$baseChartItem];
         }
 
@@ -251,7 +254,7 @@ class ChartService
                 $newChart['图形名称'] = $matchedItems[0]->图形名称;
             }
 
-            $this->addChartColumnConfigs($newChart, $row, $columnConfigsMap);
+            $this->fillChartColumnConfigs($newChart, $row, $columnConfigsMap);
             $charts[] = $newChart;
         }
 
@@ -455,80 +458,6 @@ class ChartService
     {
         if ($row->取数方式 === '存储过程' && !empty($dataResults) && isset($dataResults[0]->图形名称)) {
             $chartItem['图形名称'] = $dataResults[0]->图形名称;
-        }
-    }
-
-    /**
-     * 批量获取多个字段模块的列配置（避免 N+1 查询）
-     *
-     * 在 getChartData 中，若直接在 foreach 内调用 addChartColumnConfigs()，
-     * 每个图表配置行都会触发一次独立 SQL 查询 def_chart_column 表。
-     * createChartsByCode 还会按图形编号多次调用，同一字段模块可能被查多次。
-     * 本方法用一次 IN 查询批量取回，在内存中按字段模块分组，将 N 次查询降为 1 次。
-     *
-     * @param array $fieldModules 字段模块列表（可含重复值，内部自动去重）
-     * @return array 按字段模块分组的列配置 [字段模块 => [列配置行数组]]
-     */
-    private function getChartColumnConfigsBatch(array $fieldModules): array
-    {
-        $uniqueModules = array_values(array_unique(array_filter($fieldModules, fn($m) => !empty($m))));
-        if (empty($uniqueModules)) {
-            return [];
-        }
-
-        $quotedModules = implode(',', array_map(
-            fn($m) => $this->model->quote((string) $m),
-            $uniqueModules
-        ));
-
-        $sql = sprintf(
-            'select 字段模块, 列名, 字段名, 坐标轴, 图形类型
-             from def_chart_column
-             where 字段模块 in (%s) and 顺序>0
-             order by 字段模块, 顺序',
-            $quotedModules
-        );
-
-        $result = $this->model->select($sql);
-        $grouped = array_fill_keys($uniqueModules, []);
-        if ($result !== false) {
-            foreach ($result->getResult() as $row) {
-                $module = (string) $row->字段模块;
-                if (!isset($grouped[$module])) {
-                    $grouped[$module] = [];
-                }
-                $grouped[$module][] = $row;
-            }
-        }
-        return $grouped;
-    }
-
-    /**
-     * 添加图表列配置（从预取的批量数据中取，不再查库）
-     *
-     * @param array $chartItem 图表数据项
-     * @param object $row 配置行数据
-     * @param array $columnConfigsMap 预取的列配置映射 [字段模块 => [列配置行数组]]
-     */
-    private function addChartColumnConfigs(array &$chartItem, object $row, array $columnConfigsMap = []): void
-    {
-        if (empty($row->字段模块)) {
-            return;
-        }
-
-        $colResults = $columnConfigsMap[(string) $row->字段模块] ?? [];
-        $chartItem['字段'] = [];
-        $chartItem['字段数'] = 0;
-
-        foreach ($colResults as $colRow) {
-            if (!array_key_exists($colRow->字段名, $chartItem['字段'])) {
-                $chartItem['字段'][$colRow->字段名] = [];
-            }
-            $chartItem['字段数']++;
-            $chartItem['字段'][$colRow->字段名]['列名'] = $colRow->列名;
-            $chartItem['字段'][$colRow->字段名]['字段名'] = $colRow->字段名;
-            $chartItem['字段'][$colRow->字段名]['坐标轴'] = $colRow->坐标轴;
-            $chartItem['字段'][$colRow->字段名]['图形类型'] = $colRow->图形类型;
         }
     }
 }
