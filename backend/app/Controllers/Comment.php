@@ -58,7 +58,9 @@ class Comment extends BaseApiController
                 if (is_numeric($value)) {
                     $whereConditions[] = sprintf('%s=%s', $field, $value);
                 } else {
-                    $whereConditions[] = sprintf('%s="%s"', $field, $value);
+                    // 使用 quote() 转义用户输入值，防止 SQL 注入
+                    // quote() 返回值已包含引号（如 'value'），无需再用 sprintf 包裹
+                    $whereConditions[] = sprintf('%s=%s', $field, $this->model->quote((string) $value));
                 }
             }
 
@@ -143,7 +145,8 @@ class Comment extends BaseApiController
                     continue;
                 }
                 $fields[] = $field;
-                $values[] = is_numeric($value) ? $value : sprintf('"%s"', $value);
+                // 使用 quote() 转义用户输入值，防止 SQL 注入
+                $values[] = is_numeric($value) ? $value : $this->model->quote((string) $value);
             }
 
             foreach ($commentData as $field => $value) {
@@ -151,11 +154,11 @@ class Comment extends BaseApiController
                     continue;
                 }
                 $fields[] = $field;
-                $values[] = is_numeric($value) ? $value : sprintf('"%s"', $value);
+                $values[] = is_numeric($value) ? $value : $this->model->quote((string) $value);
             }
 
             $fields[] = '操作人员';
-            $values[] = sprintf('"%s"', $userWorkId);
+            $values[] = $this->model->quote((string) $userWorkId);
 
             $sql = sprintf(
                 'insert into %s (%s) values (%s)',
