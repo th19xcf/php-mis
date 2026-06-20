@@ -174,6 +174,10 @@ class ChartDrillService
         $rows = $this->model->select($sql)->getResult() ?? [];
         $result = [];
 
+        // 批量预取所有图表的字段模块列配置，避免循环内 N+1 查询。
+        $fieldModules = array_map(fn($r) => (string) ($r->字段模块 ?? ''), $rows);
+        $columnConfigsMap = $this->getChartColumnConfigsBatch($fieldModules);
+
         foreach ($rows as $row) {
             $chartItem = $this->buildChartItem($row);
             $chartItem['图形名称'] = $titleStr === ''
@@ -189,7 +193,7 @@ class ChartDrillService
                 // 加载 def_chart_column 列配置（坐标轴 / 图形类型），
                 // split 内部通过 $new = $baseChartItem 浅拷贝继承给每个分桶，
                 // 使前端可以按字段渲染折线 / 柱 / 饼等不同图形
-                $this->addChartColumnConfigs($chartItem, $row);
+                $this->addChartColumnConfigs($chartItem, $row, $columnConfigsMap);
 
                 // 拆分多图形数据（splitChartDataByCode 内部会按"图形编号"分桶，
                 // 并用每桶首行的"图形名称"列覆盖 chartItem['图形名称']，
@@ -199,7 +203,7 @@ class ChartDrillService
                 $chartItem['数据'] = [];
                 $chartItem['错误'] = $e->getMessage();
                 $chartItem['SQL'] = '';
-                $this->addChartColumnConfigs($chartItem, $row);
+                $this->addChartColumnConfigs($chartItem, $row, $columnConfigsMap);
                 $result[] = $chartItem;
             }
         }
@@ -250,29 +254,69 @@ class ChartDrillService
     }
 
     /**
-     * 添加图表列配置
+     * 批量获取多个字段模块的列配置（避免 N+1 查询）
+     *
+     * 在 getChartData 中，若直接在 foreach 内调用 addChartColumnConfigs()，
+     * 每个图表配置行都会触发一次独立 SQL 查询 def_chart_column 表。
+     * 本方法用一次 IN 查询批量取回，在内存中按字段模块分组，将 N 次查询降为 1 次。
+     *
+     * @param array $fieldModules 字段模块列表（可含重复值，内部自动去重）
+     * @return array 按字段模块分组的列配置 [字段模块 => [列配置行数组]]
+     */
+    private function getChartColumnConfigsBatch(array $fieldModules): array
+    {
+        $uniqueModules = array_values(array_unique(array_filter($fieldModules, fn($m) => !empty($m))));
+        if (empty($uniqueModules)) {
+            return [];
+        }
+
+        $quotedModules = implode(',', array_map(
+            fn($m) => $this->model->quote((string) $m),
+            $uniqueModules
+        ));
+
+        $sql = sprintf(
+            'select 字段模块, 列名, 字段名, 坐标轴, 图形类型
+             from def_chart_column
+             where 字段模块 in (%s) and 顺序>0
+             order by 字段模块, 顺序',
+            $quotedModules
+        );
+
+        $result = $this->model->select($sql);
+        $grouped = array_fill_keys($uniqueModules, []);
+        if ($result !== false) {
+            foreach ($result->getResult() as $row) {
+                $module = (string) $row->字段模块;
+                if (!isset($grouped[$module])) {
+                    $grouped[$module] = [];
+                }
+                $grouped[$module][] = $row;
+            }
+        }
+        return $grouped;
+    }
+
+    /**
+     * 添加图表列配置（从预取的批量数据中取，不再查库）
      *
      * 从 def_chart_column 读取"字段模块"对应的列配置（坐标轴 / 图形类型），
      * 填充到 chartItem['字段']，使前端可以按字段渲染不同图形（折线/柱/饼等）。
      *
      * 例如：def_chart_column 中"完成率"字段 图形类型="折线图"，前端会用 line series 渲染；
      *      没有此配置时，前端 fallback 到默认柱图，导致钻取后图形类型与初始不一致。
+     *
+     * @param array $chartItem 图表数据项
+     * @param object $row 配置行数据
+     * @param array $columnConfigsMap 预取的列配置映射 [字段模块 => [列配置行数组]]
      */
-    private function addChartColumnConfigs(array &$chartItem, object $row): void
+    private function addChartColumnConfigs(array &$chartItem, object $row, array $columnConfigsMap = []): void
     {
         if (empty($row->字段模块)) {
             return;
         }
 
-        $colSql = sprintf(
-            'select 字段模块, 列名, 字段名, 坐标轴, 图形类型
-             from def_chart_column
-             where 字段模块=%s and 顺序>0
-             order by 字段模块, 顺序',
-            $this->model->quote((string) $row->字段模块)
-        );
-
-        $colResults = $this->model->select($colSql)->getResult() ?? [];
+        $colResults = $columnConfigsMap[(string) $row->字段模块] ?? [];
         $chartItem['字段'] = [];
         $chartItem['字段数'] = 0;
 
