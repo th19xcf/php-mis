@@ -4,6 +4,7 @@ namespace App\Filters;
 
 use App\Constants\ApiCode;
 use App\Libraries\JwtTokenService;
+use App\Libraries\SessionUserContext;
 use App\Libraries\TokenBlacklistService;
 use CodeIgniter\Filters\FilterInterface;
 use CodeIgniter\HTTP\RequestInterface;
@@ -42,6 +43,9 @@ class JwtAuthFilter implements FilterInterface
                 'msg' => 'token无效或已过期'
             ]);
         }
+
+        // JWT 验证通过，将用户信息注入 SessionUserContext
+        SessionUserContext::setJwtUser($decoded);
 
         return null;
     }

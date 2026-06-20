@@ -6,6 +6,16 @@ use App\Exceptions\AuthException;
 
 class SessionUserContext
 {
+    private static ?object $jwtUser = null;
+
+    /**
+     * 由 JwtAuthFilter 调用，注入当前请求的 JWT 用户数据
+     */
+    public static function setJwtUser(object $user): void
+    {
+        self::$jwtUser = $user;
+    }
+
     public function getSessionValue(string $key, $default = null)
     {
         $value = \Config\Services::session()->get($key);
@@ -15,22 +25,13 @@ class SessionUserContext
 
     public function getSessionUser(): array
     {
-        $session = \Config\Services::session();
+        // 优先从 JWT 获取用户信息
+        if (self::$jwtUser !== null) {
+            return $this->mapJwtUserToSessionFormat(self::$jwtUser);
+        }
 
-        return [
-            'companyId' => trim((string) $session->get('company_id')),
-            'userId' => trim((string) $session->get('user_id')),
-            'workId' => trim((string) $session->get('user_workid')),
-            'userName' => trim((string) $session->get('user_name')),
-            'isSuperAdmin' => (bool) $session->get('is_super_admin'),
-            'location' => trim((string) $session->get('user_location')),
-            'deptCode' => trim((string) $session->get('user_dept_code')),
-            'deptName' => trim((string) $session->get('user_dept_name')),
-            'role' => trim((string) $session->get('user_role')),
-            'roleAuthz' => trim((string) $session->get('user_role_authz')),
-            'deptAuthz' => trim((string) $session->get('dept_authz')),
-            'locationAuthz' => trim((string) $session->get('user_location_authz')),
-        ];
+        // 兜底：从 Session 获取
+        return $this->readFromSession();
     }
 
     public function requireLogin(): array
@@ -74,5 +75,49 @@ class SessionUserContext
     public function getLocationAuthz(): string
     {
         return $this->getSessionUser()['locationAuthz'] ?? '';
+    }
+
+    /**
+     * 将 JWT payload 映射为与 Session 一致的用户信息格式
+     */
+    private function mapJwtUserToSessionFormat(object $jwt): array
+    {
+        return [
+            'companyId' => trim((string) ($jwt->region ?? '')),
+            'userId' => trim((string) ($jwt->userId ?? '')),
+            'workId' => trim((string) ($jwt->workId ?? '')),
+            'userName' => trim((string) ($jwt->userName ?? '')),
+            'isSuperAdmin' => (bool) ($jwt->isSuperAdmin ?? false),
+            'location' => trim((string) ($jwt->region ?? '')),
+            'deptCode' => trim((string) ($jwt->deptCode ?? '')),
+            'deptName' => trim((string) ($jwt->deptName ?? '')),
+            'role' => trim((string) ($jwt->roleAuthz ?? $jwt->role ?? '')),
+            'roleAuthz' => trim((string) ($jwt->roleAuthz ?? '')),
+            'deptAuthz' => trim((string) ($jwt->deptNameAuthz ?? '')),
+            'locationAuthz' => trim((string) ($jwt->locationAuthz ?? '')),
+        ];
+    }
+
+    /**
+     * 从 Session 读取用户信息（兜底逻辑）
+     */
+    private function readFromSession(): array
+    {
+        $session = \Config\Services::session();
+
+        return [
+            'companyId' => trim((string) $session->get('company_id')),
+            'userId' => trim((string) $session->get('user_id')),
+            'workId' => trim((string) $session->get('user_workid')),
+            'userName' => trim((string) $session->get('user_name')),
+            'isSuperAdmin' => (bool) $session->get('is_super_admin'),
+            'location' => trim((string) $session->get('user_location')),
+            'deptCode' => trim((string) $session->get('user_dept_code')),
+            'deptName' => trim((string) $session->get('user_dept_name')),
+            'role' => trim((string) $session->get('user_role')),
+            'roleAuthz' => trim((string) $session->get('user_role_authz')),
+            'deptAuthz' => trim((string) $session->get('dept_authz')),
+            'locationAuthz' => trim((string) $session->get('user_location_authz')),
+        ];
     }
 }

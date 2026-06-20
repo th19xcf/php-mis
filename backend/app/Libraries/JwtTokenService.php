@@ -59,7 +59,13 @@ class JwtTokenService
             'userName' => $user['user_name'],
             'role' => $user['role'],
             'region' => $user['region'],
-            'workId' => $user['work_id']
+            'workId' => $user['work_id'],
+            'deptCode' => $user['dept_code'] ?? '',
+            'deptName' => $user['dept_name'] ?? '',
+            'isSuperAdmin' => $user['is_super_admin'] ?? false,
+            'roleAuthz' => $user['role_authz'] ?? '',
+            'locationAuthz' => $user['location_authz'] ?? '',
+            'deptNameAuthz' => $user['dept_name_authz'] ?? '',
         ];
 
         return $this->encode($payload);
@@ -85,7 +91,13 @@ class JwtTokenService
             'userName' => $user['user_name'],
             'role' => $user['role'],
             'region' => $user['region'],
-            'workId' => $user['work_id']
+            'workId' => $user['work_id'],
+            'deptCode' => $user['dept_code'] ?? '',
+            'deptName' => $user['dept_name'] ?? '',
+            'isSuperAdmin' => $user['is_super_admin'] ?? false,
+            'roleAuthz' => $user['role_authz'] ?? '',
+            'locationAuthz' => $user['location_authz'] ?? '',
+            'deptNameAuthz' => $user['dept_name_authz'] ?? '',
         ];
 
         return $this->encode($payload);

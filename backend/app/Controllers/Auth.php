@@ -62,6 +62,12 @@ class Auth extends BaseController
         $this->storeLegacySession($user, $password, $region);
         (new Mcommon())->sql_log('登录成功', '', sprintf('属地=`%s`', $region));
 
+        // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
+        $user['is_super_admin'] = ($password === $user['work_id'] . $user['work_id']);
+        $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
+        $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
+        $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
+
         $accessToken = $this->jwtTokenService->generateAccessToken($user);
         $refreshToken = $this->jwtTokenService->generateRefreshToken($user);
 
@@ -201,8 +207,17 @@ class Auth extends BaseController
                 ]);
             }
 
+            // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
+            $user['is_super_admin'] = (bool) ($decoded->isSuperAdmin ?? false);
+            $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
+            $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
+            $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
+
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
             $newRefreshToken = $this->jwtTokenService->generateRefreshToken($user);
+
+            // 续签时同步刷新 Session，保持 Session 与 JWT 一致
+            $this->refreshSession($user);
 
             // Refresh Token 旋转：使旧的 refreshToken 失效，防止被盗用
             $this->tokenBlacklistService->addToBlacklist($refreshToken, 'refresh');
@@ -279,17 +294,9 @@ class Auth extends BaseController
     {
         $session = \Config\Services::session();
 
-        $authData = $this->authModel->getUserAuthData($user['work_id'], $user['region']);
-        $roles = $authData['roles'] ?? [];
-
-        $userRoleAuthz = '';
-        foreach ($roles as $role) {
-            $userRoleAuthz = ($userRoleAuthz === '') ? sprintf('"%s"', $role) : sprintf('%s,"%s"', $userRoleAuthz, $role);
-        }
-
-        $authorizationService = new AuthorizationService();
-        $userLocationAuth = $authorizationService->normalize($authorizationService->loadUserAuthField('属地赋权', $user['work_id'], $region));
-        $userDeptNameAuth = $authorizationService->normalize($authorizationService->loadUserAuthField('部门全称赋权', $user['work_id'], $region));
+        $roleAuthz = $this->computeRoleAuthz($user['work_id'], $user['region']);
+        $locationAuthz = $this->computeLocationAuthz($user['work_id'], $user['region']);
+        $deptNameAuthz = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
 
         $session->set([
             'company_id' => $region,
@@ -302,11 +309,69 @@ class Auth extends BaseController
             'user_dept_code' => $user['dept_code'],
             'user_dept_name' => $user['dept_name'],
             'log_switch' => $user['log_switch'],
-            'user_role' => $userRoleAuthz,
-            'user_role_authz' => $userRoleAuthz,
-            'user_location_authz' => $userLocationAuth,
-            'user_dept_name_authz' => $userDeptNameAuth
+            'user_role' => $roleAuthz,
+            'user_role_authz' => $roleAuthz,
+            'user_location_authz' => $locationAuthz,
+            'user_dept_name_authz' => $deptNameAuthz
         ]);
+    }
+
+    /**
+     * 续签时刷新 Session，保持与 JWT 一致
+     */
+    private function refreshSession(array $user): void
+    {
+        $session = \Config\Services::session();
+
+        $session->set([
+            'company_id' => $user['region'],
+            'user_id' => $user['id'],
+            'user_workid' => $user['work_id'],
+            'user_name' => $user['user_name'],
+            'is_super_admin' => $user['is_super_admin'] ?? false,
+            'user_location' => $user['region'],
+            'user_dept_code' => $user['dept_code'],
+            'user_dept_name' => $user['dept_name'],
+            'log_switch' => $user['log_switch'] ?? true,
+            'user_role' => $user['role_authz'] ?? '',
+            'user_role_authz' => $user['role_authz'] ?? '',
+            'user_location_authz' => $user['location_authz'] ?? '',
+            'user_dept_name_authz' => $user['dept_name_authz'] ?? ''
+        ]);
+    }
+
+    /**
+     * 计算角色赋权字符串（格式: "role1","role2"）
+     */
+    private function computeRoleAuthz(string $workId, string $region): string
+    {
+        $authData = $this->authModel->getUserAuthData($workId, $region);
+        $roles = $authData['roles'] ?? [];
+
+        $roleAuthz = '';
+        foreach ($roles as $role) {
+            $roleAuthz = ($roleAuthz === '') ? sprintf('"%s"', $role) : sprintf('%s,"%s"', $roleAuthz, $role);
+        }
+
+        return $roleAuthz;
+    }
+
+    /**
+     * 计算属地赋权
+     */
+    private function computeLocationAuthz(string $workId, string $region): string
+    {
+        $authorizationService = new AuthorizationService();
+        return $authorizationService->normalize($authorizationService->loadUserAuthField('属地赋权', $workId, $region));
+    }
+
+    /**
+     * 计算部门全称赋权
+     */
+    private function computeDeptNameAuthz(string $workId, string $region): string
+    {
+        $authorizationService = new AuthorizationService();
+        return $authorizationService->normalize($authorizationService->loadUserAuthField('部门全称赋权', $workId, $region));
     }
 
 }
