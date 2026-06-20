@@ -433,8 +433,8 @@ class ChartDrillService
                     // 桶内首行命中：用其"图形名称"覆盖 chart item 名称主体，
                     // 使不同"图形编号"对应不同的"图形名称"
                     if (!$bucketHasRow) {
-                        $spName = $this->extractSpChartName([$item]);
-                        if ($spName !== null) {
+                        $spName = isset($item['图形名称']) ? trim((string) $item['图形名称']) : '';
+                        if ($spName !== '') {
                             $new['图形名称'] = $this->mergeSpNameWithSubtitle($new['图形名称'], $spName);
                         }
                         $bucketHasRow = true;

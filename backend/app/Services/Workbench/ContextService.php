@@ -665,8 +665,7 @@ class ContextService
      */
     public function executeUpkeep(string $dataUpkeep): bool
     {
-        $model = new \App\Models\Mcommon();
-        $result = $model->select(sprintf('call %s', $dataUpkeep));
+        $result = $this->model->select(sprintf('call %s', $dataUpkeep));
         return $result !== false;
     }
 
