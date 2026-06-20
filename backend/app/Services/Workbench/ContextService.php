@@ -13,7 +13,10 @@ use Config\Services;
 
 /**
  * 上下文服务类
- * 负责构建工作台上下文信息（用户授权、功能授权、查询配置等）
+ *
+ * 负责构建工作台上下文信息（用户授权、功能授权、查询配置等）。
+ * 角色级授权查询已委托给 AuthorizationService::loadRoleAuthField，
+ * 数据整理执行已迁至 Workbench 控制器，条件变量替换已迁至 ChartService。
  */
 class ContextService
 {
@@ -79,8 +82,6 @@ class ContextService
 
         $t3 = hrtime(true);
         log_message('debug', '[ContextService] 步骤4: loadQueryConfig');
-        // 委托给已注入的 AuthorizationService，消除与 AuthorizationService::loadQueryConfig 的重复实现。
-        // 传入 logger 闭包以保持原有的 debug 日志行为。
         $queryConfig = $this->authorizationService->loadQueryConfig(
             $functionCode,
             $userAuth['roleCodesRaw'],
@@ -191,7 +192,6 @@ class ContextService
     public function clearCache(string $functionCode = '', string $userWorkId = '', string $region = ''): void
     {
         if ($functionCode === '' && $userWorkId === '' && $region === '') {
-            // 注意：clean() 会清空当前缓存驱动的全部数据，不仅限于工作台上下文
             $this->cache->clean();
             log_message('info', '[ContextService] 已清空全部缓存');
             return;
@@ -223,9 +223,6 @@ class ContextService
         }
     }
 
-    /**
-     * 构建功能编码级缓存匹配模式
-     */
     private function buildFunctionCachePattern(string $functionCode): string
     {
         return self::CACHE_PREFIX . md5($functionCode) . '_*';
@@ -238,7 +235,7 @@ class ContextService
     {
         log_message('debug', '[loadUserAuthorization] 开始执行 SQL 查询');
         $sql = sprintf(
-            'select 
+            'select
                 员工编号,姓名,工号,t1.角色组,
                 case
                     when t1.角色组!="" and t1.角色编码="" and t2.角色组 is not null then t2.角色编码
@@ -250,7 +247,7 @@ class ContextService
                 员工属地,员工部门编码,员工部门全称
             from
             (
-                select 
+                select
                     员工编号,姓名,工号,
                     角色组,replace(replace(角色编码,"，",",")," ","") as 角色编码,
                     replace(replace(属地赋权,"，",",")," ","") as 属地赋权,
@@ -310,7 +307,7 @@ class ContextService
 
         log_message('debug', '[loadFunctionAuthorization] 开始执行 SQL 查询, functionCode=' . $functionCode);
         $sql = sprintf(
-            'select 
+            'select
                 t1.功能赋权,
                 t1.备注授权,t1.新增授权,t1.修改授权,t1.删除授权,
                 t1.维护授权,t1.整表授权,
@@ -322,7 +319,7 @@ class ContextService
                 ifnull(t3.部门编码字段,"") as 部门编码字段,
                 ifnull(t3.部门全称字段,"") as 部门全称字段,
                 ifnull(t3.属地字段,"") as 属地字段
-            from 
+            from
             (
                 select 功能编码赋权 as 功能赋权,
                     max(备注授权) as 备注授权,
@@ -473,7 +470,10 @@ class ContextService
     }
 
     /**
-     * 构建功能部门编码授权
+     * 构建功能部门编码授权条件
+     *
+     * 委托 AuthorizationService::loadRoleAuthField 查询角色级部门编码赋权，
+     * 再通过 buildExactMatchCondition 生成精确匹配 SQL 条件。
      */
     private function buildFunctionDeptCodeAuth(string $functionCode, array $functionRow, array $userAuth): string
     {
@@ -482,37 +482,18 @@ class ContextService
             return '';
         }
 
-        $sql = sprintf(
-            'select substring_index(substring_index(编码赋权,",",t2.GUID+1),",",-1) as 部门编码赋权
-            from
-            (
-                select GUID,replace(replace(部门编码赋权,"，",",")," ","") as 编码赋权
-                from view_role
-                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
-            ) as t1
-            inner join def_GUID as t2 on t2.GUID<(length(编码赋权)-length(replace(编码赋权,",",""))+1)
-            group by 部门编码赋权
-            order by 部门编码赋权',
-            $userAuth['roleCodesQuoted'],
-            $this->model->quote($functionCode)
+        $deptCodeStr = $this->authorizationService->loadRoleAuthField(
+            $functionCode, '部门编码赋权', '编码赋权', $userAuth['roleCodesRaw']
         );
 
-        $result = $this->model->select($sql);
-        if ($result === false) {
-            return '';
-        }
-
-        $deptCodes = array_column($result->getResultArray(), '部门编码赋权');
-        if (empty($deptCodes)) {
-            return '';
-        }
-
-        $conditions = array_map(fn($code) => sprintf('%s=%s', $field, $this->model->quote((string)$code)), $deptCodes);
-        return implode(' or ', $conditions);
+        return $this->authorizationService->buildExactMatchCondition($field, $deptCodeStr);
     }
 
     /**
-     * 构建功能部门全称授权
+     * 构建功能部门全称授权条件
+     *
+     * 委托 AuthorizationService::loadRoleAuthField 查询角色级部门全称赋权，
+     * 再通过 resolve + buildDeptNameCondition 生成 SQL 条件。
      */
     private function buildFunctionDeptNameAuth(string $functionCode, array $functionRow, array $userAuth): string
     {
@@ -521,7 +502,9 @@ class ContextService
             return '';
         }
 
-        $roleDeptNameAuth = $this->loadRoleDeptNameAuth($functionCode, $userAuth['roleCodesQuoted']);
+        $roleDeptNameAuth = $this->authorizationService->loadRoleAuthField(
+            $functionCode, '部门全称赋权', '全称赋权', $userAuth['roleCodesRaw']
+        );
 
         $resolvedAuth = $this->authorizationService->resolveDeptName(
             $userAuth['deptNameAuth'],
@@ -532,37 +515,12 @@ class ContextService
         return $this->authorizationService->buildDeptNameCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
     }
 
-    private function loadRoleDeptNameAuth(string $functionCode, string $roleCodesQuoted): string
-    {
-        $sql = sprintf(
-            'select substring_index(substring_index(全称赋权,",",t2.GUID+1),",",-1) as 部门全称赋权
-            from
-            (
-                select GUID,replace(replace(部门全称赋权,"，",",")," ","") as 全称赋权
-                from view_role
-                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
-            ) as t1
-            inner join def_GUID as t2 on t2.GUID<(length(全称赋权)-length(replace(全称赋权,",",""))+1)
-            group by 部门全称赋权
-            order by 部门全称赋权',
-            $roleCodesQuoted,
-            $this->model->quote($functionCode)
-        );
-
-        $results = $this->model->select($sql)->getResultArray();
-        $values = [];
-        foreach ($results as $row) {
-            $value = trim((string) ($row['部门全称赋权'] ?? ''));
-            if ($value !== '') {
-                $values[] = $value;
-            }
-        }
-
-        return implode(',', array_values(array_unique($values)));
-    }
-
     /**
-     * 构建功能属地授权
+     * 构建功能属地授权条件
+     *
+     * 委托 AuthorizationService::loadRoleAuthField 查询角色级属地赋权，
+     * 再通过 resolve + buildCondition 生成 SQL 条件。
+     * 当部门级授权已存在时，属地授权条件为空（部门授权优先）。
      */
     private function buildFunctionLocationAuth(string $functionCode, array $functionRow, array $userAuth, string $deptCodeAuth, string $deptNameAuth): string
     {
@@ -575,7 +533,9 @@ class ContextService
             return '';
         }
 
-        $roleLocationAuth = $this->loadRoleLocationAuth($functionCode, $userAuth['roleCodesQuoted']);
+        $roleLocationAuth = $this->authorizationService->loadRoleAuthField(
+            $functionCode, '属地赋权', '角色表属地', $userAuth['roleCodesRaw']
+        );
 
         $resolvedAuth = $this->authorizationService->resolve(
             $userAuth['locationAuth'],
@@ -583,46 +543,7 @@ class ContextService
             $userAuth['employeeRegion']
         );
 
-        $this->storeLocationAuthToSession($functionCode, $resolvedAuth);
-
         return $this->authorizationService->buildCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
-    }
-
-    private function loadRoleLocationAuth(string $functionCode, string $roleCodesQuoted): string
-    {
-        $sql = sprintf(
-            'select substring_index(substring_index(角色表属地,",",t2.GUID+1),",",-1) as 属地赋权
-            from
-            (
-                select GUID,replace(replace(属地赋权,"，",",")," ","") as 角色表属地
-                from view_role
-                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
-            ) as t1
-            inner join def_GUID as t2 on t2.GUID<(length(角色表属地)-length(replace(角色表属地,",",""))+1)
-            group by 属地赋权
-            order by 属地赋权',
-            $roleCodesQuoted,
-            $this->model->quote($functionCode)
-        );
-
-        $results = $this->model->select($sql)->getResultArray();
-        $values = [];
-        foreach ($results as $row) {
-            $value = trim((string) ($row['属地赋权'] ?? ''));
-            if ($value !== '') {
-                $values[] = $value;
-            }
-        }
-
-        return implode(',', array_values(array_unique($values)));
-    }
-
-    private function storeLocationAuthToSession(string $functionCode, string $resolvedAuth): void
-    {
-        $session = \Config\Services::session();
-        $session->set([
-            $functionCode . '-location_authz_resolved' => $resolvedAuth
-        ]);
     }
 
     /**
@@ -648,18 +569,6 @@ class ContextService
     }
 
     /**
-     * 执行数据整理存储过程
-     *
-     * @param string $dataUpkeep 存储过程名
-     * @return bool 是否成功执行
-     */
-    public function executeUpkeep(string $dataUpkeep): bool
-    {
-        $result = $this->model->select(sprintf('call %s', $dataUpkeep));
-        return $result !== false;
-    }
-
-    /**
      * 替换条件字符串中的工作台变量
      *
      * 支持占位符：
@@ -671,7 +580,7 @@ class ContextService
      * @param array $context 工作台上下文
      * @return string 替换后的条件字符串
      */
-    public function replaceConditionVariables(string $condition, array $context): string
+    public static function replaceConditionVariables(string $condition, array $context): string
     {
         if (strpos($condition, '$属地授权') !== false) {
             $locationCond = (string) ($context['locationAuthzCond'] ?? '1=1');

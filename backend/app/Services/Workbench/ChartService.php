@@ -4,6 +4,7 @@ namespace App\Services\Workbench;
 
 use App\Exceptions\BusinessException;
 use App\Models\Mcommon;
+use App\Services\Workbench\ContextService;
 use App\Traits\ChartColumnConfigTrait;
 
 /**
@@ -15,13 +16,10 @@ class ChartService
     use ChartColumnConfigTrait;
 
     private Mcommon $model;
-    private ContextService $contextService;
 
     public function __construct()
     {
         $this->model = new Mcommon();
-        // 复用 ContextService::replaceConditionVariables，消除重复实现
-        $this->contextService = new ContextService();
     }
 
     /**
@@ -373,7 +371,7 @@ class ChartService
 
         if (!empty($row->查询条件)) {
             $queryCond = $row->查询条件;
-            $queryCond = $this->contextService->replaceConditionVariables($queryCond, $context);
+            $queryCond = ContextService::replaceConditionVariables($queryCond, $context);
             $whereParts[] = $queryCond;
         }
 

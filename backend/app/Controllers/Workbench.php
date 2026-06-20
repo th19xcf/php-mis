@@ -561,7 +561,8 @@ class Workbench extends BaseApiController
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未配置数据整理模块');
             }
 
-            $this->contextService->executeUpkeep($dataUpkeep);
+            $model = new \App\Models\Mcommon();
+            $model->select(sprintf('call %s', $dataUpkeep));
 
             return $this->success([
                 'success' => true,

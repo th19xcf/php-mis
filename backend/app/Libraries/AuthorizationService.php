@@ -282,6 +282,32 @@ class AuthorizationService
         return $config;
     }
 
+    /**
+     * 构建精确匹配条件（field='val1' or field='val2'）
+     *
+     * @param string $field       字段名
+     * @param string $resolvedAuth 逗号分隔的授权值
+     * @return string SQL 条件表达式，无数据返回空字符串
+     */
+    public function buildExactMatchCondition(string $field, string $resolvedAuth): string
+    {
+        if ($field === '' || $resolvedAuth === '') {
+            return '';
+        }
+
+        $values = $this->split($resolvedAuth);
+        if (empty($values)) {
+            return '';
+        }
+
+        $clauses = array_map(
+            fn(string $value): string => sprintf('%s=%s', $field, $this->model->quote($value)),
+            $values
+        );
+
+        return implode(' or ', $clauses);
+    }
+
     private function isUnlimited(string $value): bool
     {
         return trim($value) === '不限';
