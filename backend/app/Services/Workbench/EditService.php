@@ -59,6 +59,19 @@ class EditService
             $columns = $result->getResultArray();
             log_message('info', "getAddFields: found " . count($columns) . " columns");
 
+            // 批量预取所有"固定值/多选"列的对象选项，避免循环内 N+1 查询。
+            $objectNames = [];
+            foreach ($columns as $col) {
+                $赋值类型 = $col['赋值类型'] ?? '';
+                $对象 = $col['对象'] ?? '';
+                if (!empty($对象)
+                    && (strpos($赋值类型, '固定值') !== false || strpos($赋值类型, '多选') !== false)
+                ) {
+                    $objectNames[] = $对象;
+                }
+            }
+            $optionsMap = $this->getObjectOptionsBatch($objectNames);
+
             $fields = [];
 
             foreach ($columns as $col) {
@@ -79,7 +92,7 @@ class EditService
 
                 if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
                     $field['objectName'] = $对象;
-                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                    $field['objectOptions'] = $optionsMap[$对象] ?? [];
                 }
 
                 // 多选：从 def_object 取值，前端渲染为 multiple NSelect，
@@ -88,7 +101,7 @@ class EditService
                 if (strpos($赋值类型, '多选') !== false && !empty($对象)) {
                     $field['inputType'] = 'multiSelect';
                     $field['objectName'] = $对象;
-                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                    $field['objectOptions'] = $optionsMap[$对象] ?? [];
                 }
 
                 if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
@@ -193,6 +206,71 @@ class EditService
             return $options;
         } catch (\Throwable $e) {
             return [];
+        }
+    }
+
+    /**
+     * 批量获取多个对象的选项（避免 N+1 查询）
+     *
+     * 在 getAddFields / getBatchEditFields / getUpdateFields 中，
+     * 若直接在 foreach 内调用 getObjectOptions()，每个"固定值/多选"列都会
+     * 触发一次独立 SQL 查询 def_object 表。本方法用一次 IN 查询批量取回，
+     * 在内存中按对象名分组，将 N 次查询降为 1 次。
+     *
+     * @param array $objectNames 对象名称列表（可含重复值，内部自动去重）
+     * @return array 按对象名分组的选项 [对象名 => [['label' => x, 'value' => x], ...]]
+     */
+    private function getObjectOptionsBatch(array $objectNames): array
+    {
+        if (empty($objectNames)) {
+            return [];
+        }
+
+        try {
+            $uniqueNames = array_values(array_unique($objectNames));
+            $session = \Config\Services::session();
+            $userLocation = $session->get('user_location') ?? '';
+
+            $quotedNames = implode(',', array_map(
+                fn($name) => $this->model->quote($name),
+                $uniqueNames
+            ));
+
+            $sql = sprintf(
+                'select 对象名称, 对象值 from def_object
+                 where 对象名称 in (%s)
+                 and (属地="" or locate(属地, %s))',
+                $quotedNames,
+                $this->model->quote($userLocation)
+            );
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return array_fill_keys($uniqueNames, []);
+            }
+
+            $grouped = [];
+            foreach ($result->getResultArray() as $row) {
+                $name = $row['对象名称'];
+                $value = $row['对象值'];
+                $grouped[$name][] = [
+                    'label' => $value,
+                    'value' => $value,
+                ];
+            }
+
+            // 为请求过的每个对象名都补一个键（即使没数据也是空数组），
+            // 避免调用方需要做 isset 判断。
+            foreach ($uniqueNames as $name) {
+                if (!isset($grouped[$name])) {
+                    $grouped[$name] = [];
+                }
+            }
+
+            return $grouped;
+        } catch (\Throwable $e) {
+            log_message('error', 'getObjectOptionsBatch 失败: ' . $e->getMessage());
+            return array_fill_keys(array_values(array_unique($objectNames)), []);
         }
     }
 
@@ -478,6 +556,19 @@ class EditService
             $columns = $result->getResultArray();
             $fields = [];
 
+            // 批量预取所有"固定值/多选"列的对象选项，避免循环内 N+1 查询。
+            $objectNames = [];
+            foreach ($columns as $col) {
+                $赋值类型 = $col['赋值类型'] ?? '';
+                $对象 = $col['对象'] ?? '';
+                if (!empty($对象)
+                    && (strpos($赋值类型, '固定值') !== false || strpos($赋值类型, '多选') !== false)
+                ) {
+                    $objectNames[] = $对象;
+                }
+            }
+            $optionsMap = $this->getObjectOptionsBatch($objectNames);
+
             foreach ($columns as $col) {
                 $field = [
                     'columnName'   => $col['列名'],
@@ -506,7 +597,7 @@ class EditService
 
                 if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
                     $field['objectName']   = $对象;
-                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                    $field['objectOptions'] = $optionsMap[$对象] ?? [];
                 }
 
                 // 多选：从 def_object 取值，前端渲染为 multiple NSelect，
@@ -514,7 +605,7 @@ class EditService
                 if (strpos($赋值类型, '多选') !== false && !empty($对象)) {
                     $field['inputType']    = 'multiSelect';
                     $field['objectName']   = $对象;
-                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                    $field['objectOptions'] = $optionsMap[$对象] ?? [];
                 }
 
                 if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
@@ -562,6 +653,19 @@ class EditService
             $columns = $result->getResultArray();
             $fields = [];
 
+            // 批量预取所有"固定值/多选"列的对象选项，避免循环内 N+1 查询。
+            $objectNames = [];
+            foreach ($columns as $col) {
+                $赋值类型 = $col['赋值类型'] ?? '';
+                $对象     = $col['对象']     ?? '';
+                if (!empty($对象)
+                    && (strpos($赋值类型, '固定值') !== false || strpos($赋值类型, '多选') !== false)
+                ) {
+                    $objectNames[] = $对象;
+                }
+            }
+            $optionsMap = $this->getObjectOptionsBatch($objectNames);
+
             foreach ($columns as $col) {
                 $field = [
                     'columnName' => $col['列名'],
@@ -580,7 +684,7 @@ class EditService
                     && (strpos($赋值类型, '固定值') !== false || strpos($赋值类型, '多选') !== false)
                 ) {
                     $field['objectName']   = $对象;
-                    $field['objectOptions'] = $this->getObjectOptions($对象);
+                    $field['objectOptions'] = $optionsMap[$对象] ?? [];
                 }
 
                 $fields[] = $field;
