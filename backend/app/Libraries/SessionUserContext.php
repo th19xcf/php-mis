@@ -43,4 +43,36 @@ class SessionUserContext
 
         return $user;
     }
+
+    /**
+     * 获取当前用户工号
+     */
+    public function getWorkId(): string
+    {
+        return $this->getSessionUser()['workId'] ?? 'system';
+    }
+
+    /**
+     * 获取当前用户姓名
+     */
+    public function getUserName(): string
+    {
+        return $this->getSessionUser()['userName'] ?? 'system';
+    }
+
+    /**
+     * 获取当前用户部门赋权
+     */
+    public function getDeptAuthz(): string
+    {
+        return $this->getSessionUser()['deptAuthz'] ?? '';
+    }
+
+    /**
+     * 获取当前用户属地赋权
+     */
+    public function getLocationAuthz(): string
+    {
+        return $this->getSessionUser()['locationAuthz'] ?? '';
+    }
 }

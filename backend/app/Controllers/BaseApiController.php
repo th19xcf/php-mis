@@ -6,15 +6,20 @@ use App\Constants\ApiCode;
 use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
+use App\Traits\AuditFieldsTrait;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
 use Psr\Log\LoggerInterface;
 
 class BaseApiController extends BaseController
 {
+    use AuditFieldsTrait;
+
     protected Mcommon $model;
     protected SessionUserContext $userContext;
     protected string $traceId;
+
+    private ?AuthorizationService $authService = null;
 
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
@@ -102,22 +107,22 @@ class BaseApiController extends BaseController
 
     protected function getUserWorkId(): string
     {
-        return $this->userContext->getSessionUser()['workId'] ?? 'system';
+        return $this->userContext->getWorkId();
     }
 
     protected function getUserName(): string
     {
-        return $this->userContext->getSessionUser()['userName'] ?? 'system';
+        return $this->userContext->getUserName();
     }
 
     protected function getDeptAuthz(): string
     {
-        return $this->userContext->getSessionUser()['deptAuthz'] ?? '';
+        return $this->userContext->getDeptAuthz();
     }
 
     protected function getLocationAuthz(): string
     {
-        return $this->userContext->getSessionUser()['locationAuthz'] ?? '';
+        return $this->userContext->getLocationAuthz();
     }
 
     protected function resolveLocationAuthz(string $functionCode): string
@@ -125,17 +130,21 @@ class BaseApiController extends BaseController
         $user = $this->userContext->getSessionUser();
         $employeeRegion = (string) ($user['location'] ?? '');
 
-        $service = new AuthorizationService();
+        $service = $this->getAuthorizationService();
         $userLocationAuth = $service->loadUserAuthField('属地赋权');
-        $roleLocationAuth = $this->loadRoleAuthField($functionCode, '属地赋权', '角色表属地');
+        $roleLocationAuth = $service->loadRoleAuthField(
+            $functionCode,
+            '属地赋权',
+            '角色表属地',
+            (string) ($user['roleAuthz'] ?? '')
+        );
 
         return $service->resolve($userLocationAuth, $roleLocationAuth, $employeeRegion);
     }
 
     protected function buildLocationCondition(string $field, string $resolvedAuth, bool $upkeepAuth = false): string
     {
-        $service = new AuthorizationService();
-        return $service->buildCondition($field, $resolvedAuth, $upkeepAuth);
+        return $this->getAuthorizationService()->buildCondition($field, $resolvedAuth, $upkeepAuth);
     }
 
     protected function resolveDeptNameAuthz(string $functionCode): string
@@ -143,55 +152,29 @@ class BaseApiController extends BaseController
         $user = $this->userContext->getSessionUser();
         $employeeDeptName = (string) ($user['deptName'] ?? '');
 
-        $service = new AuthorizationService();
+        $service = $this->getAuthorizationService();
         $userDeptNameAuth = $service->loadUserAuthField('部门全称赋权');
-        $roleDeptNameAuth = $this->loadRoleAuthField($functionCode, '部门全称赋权', '全称赋权');
+        $roleDeptNameAuth = $service->loadRoleAuthField(
+            $functionCode,
+            '部门全称赋权',
+            '全称赋权',
+            (string) ($user['roleAuthz'] ?? '')
+        );
 
         return $service->resolveDeptName($userDeptNameAuth, $roleDeptNameAuth, $employeeDeptName);
     }
 
     protected function buildDeptNameCondition(string $field, string $resolvedAuth, bool $upkeepAuth = false): string
     {
-        $service = new AuthorizationService();
-        return $service->buildDeptNameCondition($field, $resolvedAuth, $upkeepAuth);
+        return $this->getAuthorizationService()->buildDeptNameCondition($field, $resolvedAuth, $upkeepAuth);
     }
 
-    private function loadRoleAuthField(string $functionCode, string $fieldName, string $aliasName): string
+    /**
+     * 获取 AuthorizationService 单例（请求内缓存，避免重复实例化）
+     */
+    protected function getAuthorizationService(): AuthorizationService
     {
-        $user = $this->userContext->getSessionUser();
-        $roleAuthz = trim((string) ($user['roleAuthz'] ?? ''));
-        if ($roleAuthz === '' || $functionCode === '') {
-            return '';
-        }
-
-        $sql = sprintf(
-            'select substring_index(substring_index(%s,",",t2.GUID+1),",",-1) as %s
-            from
-            (
-                select GUID,replace(replace(%s,"，",",")," ","") as %s
-                from view_role
-                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
-            ) as t1
-            inner join def_GUID as t2 on t2.GUID<(length(%s)-length(replace(%s,",",""))+1)
-            group by %s
-            order by %s',
-            $aliasName, $fieldName,
-            $fieldName, $aliasName,
-            $roleAuthz, $this->model->quote($functionCode),
-            $aliasName, $aliasName,
-            $fieldName, $fieldName
-        );
-
-        $results = $this->model->select($sql)->getResultArray();
-        $values = [];
-        foreach ($results as $row) {
-            $value = trim((string) ($row[$fieldName] ?? ''));
-            if ($value !== '') {
-                $values[] = $value;
-            }
-        }
-
-        return implode(',', array_values(array_unique($values)));
+        return $this->authService ??= new AuthorizationService();
     }
 
     protected function getJsonInput(): array
@@ -205,52 +188,28 @@ class BaseApiController extends BaseController
         return $json['guid'] ?? '';
     }
 
-    protected function buildInsertData(array $data, string $operation = '新增'): array
-    {
-        $data['操作记录'] = $operation;
-        $data['操作来源'] = '页面' . $operation;
-        $data['操作人员'] = $this->getUserWorkId();
-        $data['开始操作时间'] = date('Y-m-d H:i:s');
-        $data['操作时间'] = date('Y-m-d H:i:s');
-        $data['有效标识'] = '1';
-        $data['删除标识'] = '0';
-        return $data;
-    }
-
-    protected function buildUpdateData(array $data, string $operation = '修改'): array
-    {
-        $data['操作记录'] = $operation;
-        $data['操作来源'] = '页面' . $operation;
-        $data['操作人员'] = $this->getUserWorkId();
-        $data['操作时间'] = date('Y-m-d H:i:s');
-        return $data;
-    }
-
-    protected function buildDeleteData(): array
-    {
-        return [
-            '操作记录' => '删除',
-            '操作来源' => '页面删除',
-            '操作人员' => $this->getUserWorkId(),
-            '结束操作时间' => date('Y-m-d H:i:s'),
-            '删除标识' => '1',
-            '有效标识' => '0'
-        ];
-    }
-
     protected function insertRecord(string $table, array $data): int
     {
+        if (!$this->isValidIdentifier($table)) {
+            throw new \InvalidArgumentException("非法表名: {$table}");
+        }
+
         $fields = [];
         $values = [];
 
         foreach ($data as $key => $value) {
             if ($key === '操作') continue;
-            $fields[] = $key;
+            if (!$this->isValidIdentifier($key)) continue;
+            $fields[] = sprintf('`%s`', $key);
             $values[] = $this->model->quote((string)$value);
         }
 
+        if (empty($fields)) {
+            return 0;
+        }
+
         $sql = sprintf(
-            'INSERT INTO %s (%s) VALUES (%s)',
+            'INSERT INTO `%s` (%s) VALUES (%s)',
             $table,
             implode(',', $fields),
             implode(',', $values)
@@ -261,12 +220,17 @@ class BaseApiController extends BaseController
 
     protected function updateRecord(string $table, array $data, string $where): int
     {
+        if (!$this->isValidIdentifier($table)) {
+            throw new \InvalidArgumentException("非法表名: {$table}");
+        }
+
         $updateFields = [];
 
         foreach ($data as $key => $value) {
             if (in_array($key, ['guid', '操作', '人员'])) continue;
+            if (!$this->isValidIdentifier($key)) continue;
             if ($value === '') continue;
-            $updateFields[] = sprintf('%s=%s', $key, $this->model->quote((string)$value));
+            $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote((string)$value));
         }
 
         if (empty($updateFields)) {
@@ -274,7 +238,7 @@ class BaseApiController extends BaseController
         }
 
         $sql = sprintf(
-            'UPDATE %s SET %s WHERE %s',
+            'UPDATE `%s` SET %s WHERE %s',
             $table,
             implode(',', $updateFields),
             $where
@@ -285,21 +249,43 @@ class BaseApiController extends BaseController
 
     protected function deleteRecord(string $table, string $where): int
     {
+        if (!$this->isValidIdentifier($table)) {
+            throw new \InvalidArgumentException("非法表名: {$table}");
+        }
+
         $deleteData = $this->buildDeleteData();
         $updateFields = [];
 
         foreach ($deleteData as $key => $value) {
-            $updateFields[] = sprintf('%s="%s"', $key, $value);
+            $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote($value));
         }
 
         $sql = sprintf(
-            'UPDATE %s SET %s, 记录结束日期="%s" WHERE %s',
+            'UPDATE `%s` SET %s, `记录结束日期`=%s WHERE %s',
             $table,
             implode(',', $updateFields),
-            date('Y-m-d'),
+            $this->model->quote(date('Y-m-d')),
             $where
         );
 
         return $this->model->exec($sql);
+    }
+
+    /**
+     * 校验 SQL 标识符（表名/字段名）合法性
+     *
+     * 允许：中文、英文字母、数字、下划线，首字符不能为数字
+     * 阻止：SQL 注入特殊字符（引号、分号、空格、注释符等）
+     *
+     * @param string $identifier 待校验的表名或字段名
+     * @return bool 合法返回 true
+     */
+    private function isValidIdentifier(string $identifier): bool
+    {
+        if ($identifier === '') {
+            return false;
+        }
+        // 允许中文(\p{Han})、字母、数字、下划线，首字符不能为数字
+        return preg_match('/^[\p{Han}a-zA-Z_][\p{Han}a-zA-Z0-9_]*$/u', $identifier) === 1;
     }
 }

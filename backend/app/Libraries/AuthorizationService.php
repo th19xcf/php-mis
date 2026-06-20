@@ -138,6 +138,66 @@ class AuthorizationService
     }
 
     /**
+     * 加载角色表上的赋权字段（如 属地赋权 / 部门全称赋权）。
+     *
+     * 从 view_role 表查询指定功能编码下、当前用户角色对应的赋权字段值，
+     * 使用 def_GUID 辅助表对逗号分隔的值进行拆行，最终去重并返回。
+     *
+     * @param string $functionCode 功能编码
+     * @param string $fieldName    字段名（如 "属地赋权"、"部门全称赋权"）
+     * @param string $aliasName    SQL 别名（如 "角色表属地"、"全称赋权"）
+     * @param string $roleAuthz    角色编码列表（逗号分隔，来自 session）
+     * @return string              规范化后的赋权值（逗号分隔），无数据返回空字符串
+     */
+    public function loadRoleAuthField(string $functionCode, string $fieldName, string $aliasName, string $roleAuthz): string
+    {
+        $roleAuthz = trim($roleAuthz);
+        if ($roleAuthz === '' || $functionCode === '') {
+            return '';
+        }
+
+        // 安全：将角色编码逐个 quote 后再拼入 IN 子句，防止 SQL 注入
+        $roleParts = array_map(
+            fn($r) => $this->model->quote(trim($r)),
+            explode(',', $roleAuthz)
+        );
+        $roleList = implode(',', $roleParts);
+
+        $sql = sprintf(
+            'select substring_index(substring_index(%s,",",t2.GUID+1),",",-1) as %s
+            from
+            (
+                select GUID,replace(replace(%s,"，",",")," ","") as %s
+                from view_role
+                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
+            ) as t1
+            inner join def_GUID as t2 on t2.GUID<(length(%s)-length(replace(%s,",",""))+1)
+            group by %s
+            order by %s',
+            $aliasName, $fieldName,
+            $fieldName, $aliasName,
+            $roleList, $this->model->quote($functionCode),
+            $aliasName, $aliasName,
+            $fieldName, $fieldName
+        );
+
+        $result = $this->model->select($sql);
+        if ($result === false) {
+            return '';
+        }
+
+        $values = [];
+        foreach ($result->getResultArray() as $row) {
+            $value = trim((string) ($row[$fieldName] ?? ''));
+            if ($value !== '') {
+                $values[] = $value;
+            }
+        }
+
+        return implode(',', array_values(array_unique($values)));
+    }
+
+    /**
      * 加载工作台查询配置（统一入口）。
      *
      * 取代 WorkbenchResponseTrait::loadQueryConfig 与 ContextService::loadQueryConfig
