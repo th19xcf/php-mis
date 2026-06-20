@@ -26,27 +26,26 @@ class TokenBlacklistService
     public function addToBlacklist(string $token, string $type = 'access'): bool
     {
         $jti = $this->jwtTokenService->extractJti($token);
-        
+
         if (!$jti) {
             return false;
         }
 
         $decoded = $this->jwtTokenService->decode($token);
         $exp = $decoded->exp ?? time() + 7200;
-        $ttl = max(0, $exp - time());
 
         $blacklistFile = $this->getBlacklistFilePath($type);
-        $blacklist = $this->loadBlacklist($blacklistFile);
-        
-        $blacklist[$jti] = [
-            'expired_at' => $exp,
-            'blacklisted_at' => time()
-        ];
-        
-        $this->saveBlacklist($blacklistFile, $blacklist);
-        
+
+        $this->withFileLock($blacklistFile, function (array $blacklist) use ($jti, $exp): array {
+            $blacklist[$jti] = [
+                'expired_at' => $exp,
+                'blacklisted_at' => time()
+            ];
+            return $blacklist;
+        });
+
         log_message('info', "[TokenBlacklist] Token 已加入黑名单: {$type} - {$jti}");
-        
+
         return true;
     }
 
@@ -60,27 +59,33 @@ class TokenBlacklistService
     public function isBlacklisted(string $token, string $type = 'access'): bool
     {
         $jti = $this->jwtTokenService->extractJti($token);
-        
+
         if (!$jti) {
             return true;
         }
 
         $blacklistFile = $this->getBlacklistFilePath($type);
-        $blacklist = $this->loadBlacklist($blacklistFile);
-        
-        if (!isset($blacklist[$jti])) {
-            return false;
-        }
+        $blacklisted = false;
 
-        $entry = $blacklist[$jti];
-        
-        if (time() > $entry['expired_at']) {
-            unset($blacklist[$jti]);
-            $this->saveBlacklist($blacklistFile, $blacklist);
-            return false;
-        }
-        
-        return true;
+        $this->withFileLock($blacklistFile, function (array $blacklist) use ($jti, &$blacklisted): ?array {
+            if (!isset($blacklist[$jti])) {
+                $blacklisted = false;
+                return null;
+            }
+
+            $entry = $blacklist[$jti];
+
+            if (time() > $entry['expired_at']) {
+                unset($blacklist[$jti]);
+                $blacklisted = false;
+                return $blacklist;
+            }
+
+            $blacklisted = true;
+            return null;
+        });
+
+        return $blacklisted;
     }
 
     /**
@@ -111,34 +116,35 @@ class TokenBlacklistService
     {
         $count = 0;
         $now = time();
-        
+
         foreach (['access', 'refresh'] as $type) {
             $blacklistFile = $this->getBlacklistFilePath($type);
-            
+
             if (!file_exists($blacklistFile)) {
                 continue;
             }
-            
-            $blacklist = $this->loadBlacklist($blacklistFile);
-            $updated = false;
-            
-            foreach ($blacklist as $jti => $entry) {
-                if ($now > $entry['expired_at']) {
-                    unset($blacklist[$jti]);
-                    $updated = true;
-                    $count++;
+
+            $removed = 0;
+
+            $this->withFileLock($blacklistFile, function (array $blacklist) use ($now, &$removed): ?array {
+                $updated = false;
+                foreach ($blacklist as $jti => $entry) {
+                    if ($now > $entry['expired_at']) {
+                        unset($blacklist[$jti]);
+                        $updated = true;
+                        $removed++;
+                    }
                 }
-            }
-            
-            if ($updated) {
-                $this->saveBlacklist($blacklistFile, $blacklist);
-            }
+                return $updated ? $blacklist : null;
+            });
+
+            $count += $removed;
         }
-        
+
         if ($count > 0) {
             log_message('info', "[TokenBlacklist] 清理了 {$count} 个过期条目");
         }
-        
+
         return $count;
     }
 
@@ -151,30 +157,50 @@ class TokenBlacklistService
     }
 
     /**
-     * 加载黑名单
+     * 在文件排他锁保护下执行读-改-写操作
+     *
+     * 使用 fopen + flock(LOCK_EX) 包裹整个读取-修改-写入过程，
+     * 消除高并发场景下"读-改-写"竞态导致黑名单条目丢失的问题。
+     *
+     * @param string   $filePath  黑名单文件路径
+     * @param callable $callback  接收当前黑名单数组，返回修改后的数组（写入）或 null（跳过写入）
      */
-    private function loadBlacklist(string $filePath): array
+    private function withFileLock(string $filePath, callable $callback): void
     {
-        if (!file_exists($filePath)) {
-            return [];
+        $fp = fopen($filePath, 'c+');
+        if ($fp === false) {
+            log_message('error', "[TokenBlacklist] 无法打开黑名单文件: {$filePath}");
+            return;
         }
-        
-        $content = file_get_contents($filePath);
-        
-        if ($content === false || $content === '') {
-            return [];
-        }
-        
-        $data = json_decode($content, true);
-        
-        return is_array($data) ? $data : [];
-    }
 
-    /**
-     * 保存黑名单
-     */
-    private function saveBlacklist(string $filePath, array $blacklist): void
-    {
-        file_put_contents($filePath, json_encode($blacklist, JSON_PRETTY_PRINT));
+        flock($fp, LOCK_EX);
+
+        try {
+            $content = '';
+            while (!feof($fp)) {
+                $chunk = fread($fp, 8192);
+                if ($chunk === false) {
+                    break;
+                }
+                $content .= $chunk;
+            }
+
+            $data = ($content === '') ? [] : json_decode($content, true);
+            if (!is_array($data)) {
+                $data = [];
+            }
+
+            $result = $callback($data);
+
+            if ($result !== null) {
+                ftruncate($fp, 0);
+                rewind($fp);
+                fwrite($fp, json_encode($result, JSON_PRETTY_PRINT));
+                fflush($fp);
+            }
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
     }
 }
