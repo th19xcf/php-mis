@@ -14,10 +14,13 @@ class ChartService
     use ChartColumnConfigTrait;
 
     private Mcommon $model;
+    private ContextService $contextService;
 
     public function __construct()
     {
         $this->model = new Mcommon();
+        // 复用 ContextService::replaceConditionVariables，消除重复实现
+        $this->contextService = new ContextService();
     }
 
     /**
@@ -369,7 +372,7 @@ class ChartService
 
         if (!empty($row->查询条件)) {
             $queryCond = $row->查询条件;
-            $queryCond = $this->replaceConditionVariables($queryCond, $context);
+            $queryCond = $this->contextService->replaceConditionVariables($queryCond, $context);
             $whereParts[] = $queryCond;
         }
 
@@ -400,36 +403,6 @@ class ChartService
         }
 
         return $dataSql;
-    }
-
-    /**
-     * 替换条件变量
-     *
-     * @param string $condition 条件字符串
-     * @param array $context 上下文信息
-     * @return string 替换后的条件
-     */
-    private function replaceConditionVariables(string $condition, array $context): string
-    {
-        // 替换属地授权条件
-        if (strpos($condition, '$属地授权') !== false) {
-            $locationCond = $context['locationAuthzCond'] ?? '1=1';
-            $condition = str_replace('$属地授权', $locationCond, $condition);
-        }
-
-        // 替换部门授权条件
-        if (strpos($condition, '$部门授权') !== false) {
-            $deptCond = $context['deptAuthzCond'] ?? '1=1';
-            $condition = str_replace('$部门授权', $deptCond, $condition);
-        }
-
-        // 替换查询表名
-        if (strpos($condition, '$查询表名') !== false) {
-            $queryTable = $context['queryTable'] ?? '';
-            $condition = str_replace('$查询表名', $queryTable, $condition);
-        }
-
-        return $condition;
     }
 
     /**
