@@ -34,18 +34,24 @@ class BaseApiController extends BaseController
         log_message($level, "[{$this->traceId}] {$message}");
     }
 
-    protected function success(mixed $data = null, string $msg = 'Success'): ResponseInterface
+    protected function success(mixed $data = null, string $msg = 'Success', float $serverElapsedMs = 0.0): ResponseInterface
     {
-        return $this->response
+        $response = $this->response
             ->setHeader('X-Request-Id', $this->traceId)
             ->setJSON([
                 'code' => ApiCode::SUCCESS,
                 'msg' => $msg,
                 'data' => $data
             ]);
+
+        if ($serverElapsedMs > 0) {
+            $response->setHeader('X-Server-Time-Ms', (string) round($serverElapsedMs, 2));
+        }
+
+        return $response;
     }
 
-    protected function error(int $code, string $msg, mixed $data = null): ResponseInterface
+    protected function error(string $code, string $msg, mixed $data = null): ResponseInterface
     {
         return $this->response
             ->setHeader('X-Request-Id', $this->traceId)

@@ -2,66 +2,17 @@
 
 namespace App\Controllers\Workbench;
 
-use App\Constants\ApiCode;
 use App\Libraries\AuthorizationService;
-use App\Models\Mcommon;
 
 /**
  * 工作台控制器共享能力
  *
- * 提供响应封装、SQL 引用、查询配置加载等公用逻辑，
+ * 提供查询配置加载、主键解析、WHERE 条件构建等工作台特有逻辑，
  * 供 Workbench、WorkbenchImportController、WorkbenchEditController 等使用。
+ * 响应封装（success/error）统一由 BaseApiController 提供。
  */
 trait WorkbenchResponseTrait
 {
-    /** @var Mcommon */
-    protected Mcommon $common;
-
-    /**
-     * 注入 Mcommon 实例（由使用方的 initController 调用）
-     */
-    protected function initWorkbenchTrait(Mcommon $common): void
-    {
-        $this->common = $common;
-    }
-
-    /**
-     * 统一成功响应
-     *
-     * @param array $data
-     * @param float $serverElapsedMs 服务端处理耗时（毫秒），非零时写入响应头
-     * @return \CodeIgniter\HTTP\Response
-     */
-    protected function success(array $data, float $serverElapsedMs = 0.0)
-    {
-        $response = $this->response->setJSON([
-            'code' => ApiCode::SUCCESS,
-            'msg'  => 'success',
-            'data' => $data,
-        ]);
-
-        if ($serverElapsedMs > 0) {
-            $response->setHeader('X-Server-Time-Ms', (string) round($serverElapsedMs, 2));
-        }
-
-        return $response;
-    }
-
-    /**
-     * 统一失败响应
-     *
-     * @param string $code
-     * @param string $message
-     * @return \CodeIgniter\HTTP\Response
-     */
-    protected function error(string $code, string $message)
-    {
-        return $this->response->setJSON([
-            'code' => $code,
-            'msg'  => $message,
-        ]);
-    }
-
     /**
      * 加载工作台查询配置（统一委托到 AuthorizationService::loadQueryConfig）。
      *
@@ -107,16 +58,16 @@ trait WorkbenchResponseTrait
             'SELECT t1.主键字段 FROM def_query_config t1
             INNER JOIN def_function t2 ON t2.模块名称 = t1.查询模块
             WHERE t2.功能编码 = %s',
-            $this->common->quote($functionCode)
+            $this->model->quote($functionCode)
         );
 
-        $result = $this->common->select($sql);
+        $result = $this->model->select($sql);
         if ($result !== false && ($row = $result->getRowArray()) && !empty($row['主键字段'])) {
             return $row['主键字段'];
         }
 
         $sql = sprintf('SHOW INDEX FROM %s WHERE Key_name = "PRIMARY"', $dataTable);
-        $result = $this->common->select($sql);
+        $result = $this->model->select($sql);
         if ($result !== false && ($row = $result->getRowArray())) {
             return $row['Column_name'] ?? '';
         }

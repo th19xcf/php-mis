@@ -3,7 +3,7 @@
 namespace App\Controllers\Workbench;
 
 use App\Constants\ApiCode;
-use App\Controllers\BaseController;
+use App\Controllers\BaseApiController;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
@@ -16,7 +16,7 @@ use App\Services\Workbench\EditService;
  * 所有业务逻辑均下沉至 App\Services\Workbench\EditService，
  * 本控制器仅负责请求/响应编排。
  */
-class WorkbenchEditController extends BaseController
+class WorkbenchEditController extends BaseApiController
 {
     use WorkbenchResponseTrait;
 
@@ -28,7 +28,6 @@ class WorkbenchEditController extends BaseController
         \Psr\Log\LoggerInterface $logger
     ) {
         parent::initController($request, $response, $logger);
-        $this->initWorkbenchTrait(new \App\Models\Mcommon());
         $this->editService = new EditService();
     }
 

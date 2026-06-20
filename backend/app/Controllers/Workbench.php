@@ -8,8 +8,6 @@ use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
-use App\Libraries\SessionUserContext;
-use App\Models\Mcommon;
 use App\Services\Workbench\ChartService;
 use App\Services\Workbench\ChartDrillService;
 use App\Services\Workbench\DrillService;
@@ -25,11 +23,10 @@ use App\Services\Workbench\ContextService;
  * 导入相关接口迁出至 Workbench\WorkbenchImportController；
  * 字段配置与记录增删改迁出至 Workbench\WorkbenchEditController。
  */
-class Workbench extends BaseController
+class Workbench extends BaseApiController
 {
     use WorkbenchResponseTrait;
 
-    private SessionUserContext $userContext;
     private AuthorizationService $authorizationService;
     private ChartService $chartService;
     private ChartDrillService $chartDrillService;
@@ -42,8 +39,6 @@ class Workbench extends BaseController
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
-        $this->initWorkbenchTrait(new Mcommon());
-        $this->userContext = new SessionUserContext();
         $this->authorizationService = new AuthorizationService();
         $this->chartService = new ChartService();
         $this->chartDrillService = new ChartDrillService();
@@ -67,7 +62,7 @@ class Workbench extends BaseController
 
             return $this->success([
                 'meta' => $definition,
-            ], $serverMs);
+            ], 'Success', $serverMs);
         } catch (AuthException $e) {
             log_message('error', '[Workbench::page] RuntimeException: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
@@ -134,7 +129,7 @@ class Workbench extends BaseController
                 'offset'   => $offset,
                 'total'    => $total,
                 'hasMore'  => count($records) === $size,
-            ], $serverMs);
+            ], 'Success', $serverMs);
         } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (ValidationException $e) {
