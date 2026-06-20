@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AuthException;
 use App\Services\RouteService;
 
 class Route extends BaseApiController
@@ -30,7 +31,7 @@ class Route extends BaseApiController
 
         try {
             $user = $this->userContext->requireLogin();
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(4011, 'Session expired, please login again');
         }
 

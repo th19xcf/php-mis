@@ -4,6 +4,9 @@ namespace App\Controllers;
 
 use App\Constants\ApiCode;
 use App\Controllers\Workbench\WorkbenchResponseTrait;
+use App\Exceptions\AuthException;
+use App\Exceptions\BusinessException;
+use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
@@ -65,9 +68,13 @@ class Workbench extends BaseController
             return $this->success([
                 'meta' => $definition,
             ], $serverMs);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             log_message('error', '[Workbench::page] RuntimeException: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '[Workbench::page] Throwable: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')');
@@ -83,8 +90,12 @@ class Workbench extends BaseController
             $records = $this->queryService->queryRecords($context, $payload);
 
             return $this->success($records);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '工作台查询失败');
         }
@@ -124,8 +135,12 @@ class Workbench extends BaseController
                 'total'    => $total,
                 'hasMore'  => count($records) === $size,
             ], $serverMs);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '分页查询失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '分页查询失败: ' . $e->getMessage());
@@ -204,8 +219,12 @@ class Workbench extends BaseController
                     ];
                 }, $columns),
             ]);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取调试信息失败: ' . $e->getMessage());
             log_message('error', '错误堆栈: ' . $e->getTraceAsString());
@@ -243,8 +262,12 @@ class Workbench extends BaseController
                 'options' => $drillOptions,
                 'debug'   => $debugInfo,
             ]);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '工作台钻取失败: ' . $e->getMessage());
         }
@@ -300,8 +323,12 @@ class Workbench extends BaseController
                 'scope' => 'self',
                 'functionCode' => $functionCode,
             ]);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '清除工作台上下文缓存失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '清除工作台上下文缓存失败');
@@ -388,7 +415,7 @@ class Workbench extends BaseController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                throw new \RuntimeException('功能编码不能为空');
+                throw new ValidationException('功能编码不能为空');
             }
 
             $rows = $this->request->getJSON(true) ?? [];
@@ -424,8 +451,12 @@ class Workbench extends BaseController
                 'message'      => $result['message'],
                 'updatedCount' => $result['count'],
             ]);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '表级修改提交失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '表级修改提交失败: ' . $e->getMessage());
@@ -451,8 +482,12 @@ class Workbench extends BaseController
             return $this->success([
                 'charts' => $chartData,
             ]);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取图形数据失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取图形数据失败');
@@ -476,8 +511,12 @@ class Workbench extends BaseController
                 'drillLevel' => $drillLevel + 1,
                 'message'    => '钻取成功',
             ]);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '图形钻取失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return $this->error(ApiCode::WORKBENCH_CHART_DRILL_FAILED, '图形钻取失败: ' . $e->getMessage());
@@ -534,13 +573,12 @@ class Workbench extends BaseController
                 'success' => true,
                 'message' => '数据整理执行成功',
             ]);
-        } catch (\RuntimeException $e) {
-            $msg = $e->getMessage();
-            if (strpos($msg, '登录态已失效') !== false || strpos($msg, '未配置角色') !== false || strpos($msg, '无该功能访问权限') !== false) {
-                return $this->error(ApiCode::AUTH_UNAUTHORIZED, $msg);
-            }
-            log_message('error', '执行数据整理失败: ' . $msg);
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '执行数据整理失败: ' . $msg);
+        } catch (AuthException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '执行数据整理失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '执行数据整理失败: ' . $e->getMessage());

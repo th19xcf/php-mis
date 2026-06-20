@@ -2,6 +2,9 @@
 
 namespace App\Services\Workbench;
 
+use App\Exceptions\AuthException;
+use App\Exceptions\BusinessException;
+use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
@@ -41,7 +44,7 @@ class ContextService
         $start = hrtime(true);
         $functionCode = trim($functionCode);
         if ($functionCode === '') {
-            throw new \RuntimeException('功能编码不能为空');
+            throw new ValidationException('功能编码不能为空');
         }
 
         log_message('debug', '[ContextService] 步骤1: requireLogin');
@@ -98,11 +101,11 @@ class ContextService
         log_message('debug', sprintf('[ContextService] 步骤5完成: %.2fms, columns count=%d', (hrtime(true) - $t4) / 1e6, count($columns)));
 
         if (!$queryConfig) {
-            throw new \RuntimeException('功能未配置查询模块');
+            throw new BusinessException('功能未配置查询模块');
         }
 
         if (!$columns) {
-            throw new \RuntimeException('功能未配置列信息');
+            throw new BusinessException('功能未配置列信息');
         }
 
         $columnDefinitions = $this->buildColumnDefinitions($columns);
@@ -281,7 +284,7 @@ class ContextService
 
         $row = $this->model->select($sql)->getRowArray();
         if (!$row) {
-            throw new \RuntimeException('用户权限信息不存在');
+            throw new AuthException('用户权限信息不存在');
         }
 
         $roleCodes = $this->splitCsv((string) ($row['角色编码'] ?? ''));
@@ -312,7 +315,7 @@ class ContextService
     private function loadFunctionAuthorization(string $functionCode, array $userAuth): array
     {
         if ($userAuth['roleCodesQuoted'] === '') {
-            throw new \RuntimeException('用户未配置角色');
+            throw new AuthException('用户未配置角色');
         }
 
         log_message('debug', '[loadFunctionAuthorization] 开始执行 SQL 查询, functionCode=' . $functionCode);
@@ -353,7 +356,7 @@ class ContextService
 
         $row = $this->model->select($sql)->getRowArray();
         if (!$row) {
-            throw new \RuntimeException('当前账号无该功能访问权限');
+            throw new AuthException('当前账号无该功能访问权限');
         }
 
         $deptCodeAuth = $this->buildFunctionDeptCodeAuth($functionCode, $row, $userAuth);

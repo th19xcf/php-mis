@@ -4,6 +4,9 @@ namespace App\Controllers\Workbench;
 
 use App\Constants\ApiCode;
 use App\Controllers\BaseController;
+use App\Exceptions\AuthException;
+use App\Exceptions\BusinessException;
+use App\Exceptions\ValidationException;
 use App\Services\Workbench\ImportService;
 
 /**
@@ -37,7 +40,7 @@ class WorkbenchImportController extends BaseController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                throw new \RuntimeException('功能编码不能为空');
+                throw new ValidationException('功能编码不能为空');
             }
 
             $payload = $this->request->getJSON(true) ?? [];
@@ -48,7 +51,7 @@ class WorkbenchImportController extends BaseController
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
-                throw new \RuntimeException('未找到数据表配置');
+                throw new BusinessException('未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $importModule = $queryConfig['importModule'] ?? '';
@@ -64,8 +67,12 @@ class WorkbenchImportController extends BaseController
             );
 
             return $this->success($debugResult);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取导入调试 SQL 失败: ' . $e->getMessage());
             return $this->error(ApiCode::SERVER_ERROR, '获取导入调试 SQL 失败');
@@ -80,14 +87,18 @@ class WorkbenchImportController extends BaseController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                throw new \RuntimeException('功能编码不能为空');
+                throw new ValidationException('功能编码不能为空');
             }
 
             $result = $this->importService->getImportColumns($functionCode);
 
             return $this->success(['columns' => $result['columns'] ?? []]);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取导入列配置失败: ' . $e->getMessage());
             return $this->error(ApiCode::SERVER_ERROR, '获取导入列配置失败');
@@ -102,14 +113,14 @@ class WorkbenchImportController extends BaseController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                throw new \RuntimeException('功能编码不能为空');
+                throw new ValidationException('功能编码不能为空');
             }
 
             // 1. 解析请求
             $payload = $this->request->getJSON(true) ?? [];
             $importData = $payload['data'] ?? [];
             if (empty($importData)) {
-                throw new \RuntimeException('导入数据不能为空');
+                throw new ValidationException('导入数据不能为空');
             }
 
             $session = \Config\Services::session();
@@ -127,7 +138,7 @@ class WorkbenchImportController extends BaseController
             // 2. 加载查询配置
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
-                throw new \RuntimeException('未找到数据表配置');
+                throw new BusinessException('未找到数据表配置');
             }
             $dataTable    = $queryConfig['dataTable'];
             $importModule = $queryConfig['importModule'] ?? '';
@@ -234,8 +245,12 @@ class WorkbenchImportController extends BaseController
                 'errorCount'   => $importResult['count'],
                 'errors'       => $importResult['errors'] ?? [],
             ]);
-        } catch (\RuntimeException $e) {
+        } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '导入数据失败: ' . $e->getMessage());
             return $this->error(ApiCode::SERVER_ERROR, '导入数据失败');

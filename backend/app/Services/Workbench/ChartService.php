@@ -2,6 +2,7 @@
 
 namespace App\Services\Workbench;
 
+use App\Exceptions\BusinessException;
 use App\Models\Mcommon;
 use App\Traits\ChartColumnConfigTrait;
 
@@ -415,7 +416,7 @@ class ChartService
     {
         $queryResult = $this->model->select($dataSql);
         if ($queryResult === false) {
-            throw new \RuntimeException('数据库查询返回 false');
+            throw new BusinessException('数据库查询返回 false');
         }
         return $queryResult->getResult() ?? [];
     }

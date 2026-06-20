@@ -2,6 +2,8 @@
 
 namespace App\Libraries;
 
+use App\Exceptions\AuthException;
+
 class SessionUserContext
 {
     public function getSessionValue(string $key, $default = null)
@@ -36,7 +38,7 @@ class SessionUserContext
         $user = $this->getSessionUser();
 
         if ($user['companyId'] === '' || $user['workId'] === '') {
-            throw new \RuntimeException('登录态已失效，请重新登录');
+            throw new AuthException('登录态已失效，请重新登录');
         }
 
         return $user;

@@ -2,6 +2,7 @@
 
 namespace App\Services\Workbench;
 
+use App\Exceptions\ValidationException;
 use App\Models\Mcommon;
 use App\Services\Workbench\ContextService;
 use App\Traits\ChartColumnConfigTrait;
@@ -56,7 +57,7 @@ class ChartDrillService
         $drillData   = $payload[2] ?? [];
 
         if ($drillOption === '') {
-            throw new \RuntimeException('钻取选项不能为空');
+            throw new ValidationException('钻取选项不能为空');
         }
 
         // 解析钻取选项：option^chart_module^drill_module
@@ -69,7 +70,7 @@ class ChartDrillService
         $drillId    = $parts[2] ?? '';
 
         if ($option === '' || $chartId === '' || $drillId === '') {
-            throw new \RuntimeException('钻取选项格式错误：应为 option^chartModule^drillModule');
+            throw new ValidationException('钻取选项格式错误：应为 option^chartModule^drillModule');
         }
 
         // 1. 取出当前钻取配置（用户点击的图形对应的下一级钻取定义）
