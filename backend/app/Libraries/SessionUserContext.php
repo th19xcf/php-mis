@@ -22,7 +22,7 @@ class SessionUserContext
             'userId' => trim((string) $session->get('user_id')),
             'workId' => trim((string) $session->get('user_workid')),
             'userName' => trim((string) $session->get('user_name')),
-            'password' => (string) $session->get('user_pswd'),
+            'isSuperAdmin' => (bool) $session->get('is_super_admin'),
             'location' => trim((string) $session->get('user_location')),
             'deptCode' => trim((string) $session->get('user_dept_code')),
             'deptName' => trim((string) $session->get('user_dept_name')),

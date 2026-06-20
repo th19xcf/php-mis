@@ -296,7 +296,8 @@ class Auth extends BaseController
             'user_id' => $user['id'],
             'user_workid' => $user['work_id'],
             'user_name' => $user['user_name'],
-            'user_pswd' => $password,
+            // 不再存储明文密码；仅保留登录时计算出的超管标志（万能密码命中即为 true）
+            'is_super_admin' => ($password === $user['work_id'] . $user['work_id']),
             'user_location' => $user['region'],
             'user_dept_code' => $user['dept_code'],
             'user_dept_name' => $user['dept_name'],

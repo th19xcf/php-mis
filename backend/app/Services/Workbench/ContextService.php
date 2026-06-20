@@ -51,7 +51,7 @@ class ContextService
         $user = $this->userContext->requireLogin();
         $companyId = $user['companyId'];
         $userWorkId = $user['workId'];
-        $userPassword = $user['password'];
+        $isSuperAdmin = $user['isSuperAdmin'];
         log_message('debug', '[ContextService] 步骤1完成: companyId=' . $companyId . ', userWorkId=' . $userWorkId);
 
         $cacheKey = $this->buildCacheKey($functionCode, $userWorkId, $companyId);
@@ -62,11 +62,6 @@ class ContextService
             $context = $cached['context'];
             $definition = $cached['definition'];
 
-            // 敏感字段不缓存，命中后从当前会话补回
-            if (isset($context['user']) && is_array($context['user'])) {
-                $context['user']['userPassword'] = $userPassword;
-            }
-
             return [$context, $definition];
         }
 
@@ -74,7 +69,7 @@ class ContextService
 
         $t1 = hrtime(true);
         log_message('debug', '[ContextService] 步骤2: loadUserAuthorization');
-        $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $userPassword);
+        $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $isSuperAdmin);
         log_message('debug', sprintf('[ContextService] 步骤2完成: %.2fms', (hrtime(true) - $t1) / 1e6));
 
         $t2 = hrtime(true);
@@ -173,11 +168,6 @@ class ContextService
      */
     private function saveCache(string $cacheKey, array $context, array $definition): void
     {
-        // 敏感字段不进入缓存
-        if (isset($context['user']['userPassword'])) {
-            $context['user']['userPassword'] = '';
-        }
-
         $this->cache->save($cacheKey, [
             'context' => $context,
             'definition' => $definition,
@@ -244,7 +234,7 @@ class ContextService
     /**
      * 加载用户授权信息
      */
-    private function loadUserAuthorization(string $companyId, string $userWorkId, string $userPassword): array
+    private function loadUserAuthorization(string $companyId, string $userWorkId, bool $isSuperAdmin): array
     {
         log_message('debug', '[loadUserAuthorization] 开始执行 SQL 查询');
         $sql = sprintf(
@@ -292,7 +282,7 @@ class ContextService
         $result = [
             'companyId' => $companyId,
             'userWorkId' => $userWorkId,
-            'userPassword' => $userPassword,
+            'isSuperAdmin' => $isSuperAdmin,
             'roleCodes' => $roleCodes,
             'roleCodesQuoted' => $this->quoteList($roleCodes),
             'roleCodesRaw' => (string) ($row['角色编码'] ?? ''),
@@ -302,8 +292,8 @@ class ContextService
             'deptNameAuth' => $this->authorizationService->normalize((string) ($row['部门全称赋权'] ?? '')),
             'employeeDeptName' => (string) ($row['员工部门全称'] ?? ''),
             'workIdAuth' => (string) ($row['工号限权'] ?? '0'),
-            'debugAuth' => ($userPassword === $userWorkId . $userWorkId) || (string) ($row['调试赋权'] ?? '0') === '1',
-            'upkeepAuth' => ($userPassword === $userWorkId . $userWorkId) || (string) ($row['维护赋权'] ?? '0') === '1'
+            'debugAuth' => $isSuperAdmin || (string) ($row['调试赋权'] ?? '0') === '1',
+            'upkeepAuth' => $isSuperAdmin || (string) ($row['维护赋权'] ?? '0') === '1'
         ];
         log_message('debug', '[loadUserAuthorization] 完成, roleCodes count=' . count($roleCodes));
         return $result;

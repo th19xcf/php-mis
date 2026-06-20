@@ -283,10 +283,9 @@ class Workbench extends BaseApiController
             $user = $this->userContext->requireLogin();
             $companyId = $user['companyId'];
             $userWorkId = $user['workId'];
-            $userPassword = $user['password'];
 
-            // 仅允许本人缓存清理；系统维护身份可执行功能级/全量清理
-            $canMaintain = ($userPassword === $userWorkId . $userWorkId);
+            // 仅允许本人缓存清理；系统维护身份（万能密码登录）可执行功能级/全量清理
+            $canMaintain = $user['isSuperAdmin'];
 
             if ($scope === 'all') {
                 if (!$canMaintain) {
