@@ -357,6 +357,16 @@ declare namespace App {
         update: string;
         updateSuccess: string;
         userCenter: string;
+        empty: {
+          title: string;
+          description: string;
+          noPermission: string;
+          noPermissionDesc: string;
+          loadFailed: string;
+          loadFailedDesc: string;
+          retry: string;
+        };
+        loading: string;
         yesOrNo: {
           yes: string;
           no: string;

@@ -45,6 +45,16 @@ const local: App.I18n.Schema = {
     update: 'Update',
     updateSuccess: 'Update Success',
     userCenter: 'User Center',
+    empty: {
+      title: 'No data',
+      description: 'There is nothing to display under the current conditions',
+      noPermission: 'No permission',
+      noPermissionDesc: 'You do not have permission to access this content',
+      loadFailed: 'Load failed',
+      loadFailedDesc: 'Failed to load data, please try again later',
+      retry: 'Retry'
+    },
+    loading: 'Loading…',
     yesOrNo: {
       yes: 'Yes',
       no: 'No'

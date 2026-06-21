@@ -45,6 +45,16 @@ const local: App.I18n.Schema = {
     update: '更新',
     updateSuccess: '更新成功',
     userCenter: '个人中心',
+    empty: {
+      title: '暂无数据',
+      description: '当前条件下没有可显示的内容',
+      noPermission: '暂无权限',
+      noPermissionDesc: '您没有访问此内容的权限',
+      loadFailed: '加载失败',
+      loadFailedDesc: '数据加载失败，请稍后重试',
+      retry: '重试'
+    },
+    loading: '加载中…',
     yesOrNo: {
       yes: '是',
       no: '否'

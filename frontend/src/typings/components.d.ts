@@ -12,11 +12,13 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AgGridEmptyOverlay: typeof import('./../components/common/ag-grid-empty-overlay.vue')['default']
     AppProvider: typeof import('./../components/common/app-provider.vue')['default']
     BetterScroll: typeof import('./../components/custom/better-scroll.vue')['default']
     ButtonIcon: typeof import('./../components/custom/button-icon.vue')['default']
     CountTo: typeof import('./../components/custom/count-to.vue')['default']
     DarkModeContainer: typeof import('./../components/common/dark-mode-container.vue')['default']
+    EmptyState: typeof import('./../components/common/empty-state.vue')['default']
     ExceptionBase: typeof import('./../components/common/exception-base.vue')['default']
     FullScreen: typeof import('./../components/common/full-screen.vue')['default']
     IconAntDesignEnterOutlined: typeof import('~icons/ant-design/enter-outlined')['default']
@@ -103,11 +105,13 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const AgGridEmptyOverlay: typeof import('./../components/common/ag-grid-empty-overlay.vue')['default']
   const AppProvider: typeof import('./../components/common/app-provider.vue')['default']
   const BetterScroll: typeof import('./../components/custom/better-scroll.vue')['default']
   const ButtonIcon: typeof import('./../components/custom/button-icon.vue')['default']
   const CountTo: typeof import('./../components/custom/count-to.vue')['default']
   const DarkModeContainer: typeof import('./../components/common/dark-mode-container.vue')['default']
+  const EmptyState: typeof import('./../components/common/empty-state.vue')['default']
   const ExceptionBase: typeof import('./../components/common/exception-base.vue')['default']
   const FullScreen: typeof import('./../components/common/full-screen.vue')['default']
   const IconAntDesignEnterOutlined: typeof import('~icons/ant-design/enter-outlined')['default']
