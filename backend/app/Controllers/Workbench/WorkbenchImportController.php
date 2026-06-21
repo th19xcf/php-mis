@@ -49,11 +49,22 @@ class WorkbenchImportController extends BaseApiController
             $sampleData = $payload['sampleData'] ?? [];
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
-            if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
-                throw new BusinessException('未找到数据表配置');
-            }
-            $dataTable = $queryConfig['dataTable'];
+            $dataTable = $queryConfig['dataTable'] ?? '';
             $importModule = $queryConfig['importModule'] ?? '';
+
+            if ($dataTable === '') {
+                return $this->success([
+                    'success' => true,
+                    'message' => '当前功能未配置数据表，无导入调试信息',
+                    'dataTable' => '',
+                    'importModule' => $importModule,
+                    'tmpTableName' => '',
+                    'importColumns' => [],
+                    'createTempTableSql' => '',
+                    'insertToTempTableSql' => '',
+                    'importFromTempTableSql' => ''
+                ]);
+            }
 
             $debugResult = $this->importService->buildDebugImport(
                 $functionCode,

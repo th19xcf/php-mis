@@ -162,8 +162,12 @@ export function useWorkbenchPageDebug(options: UseWorkbenchPageDebugOptions) {
       logger.groupEnd();
       options.notify('success', '调试信息已输出到控制台');
 
-      // 导入调试 SQL（不依赖具体样本数据，仅展示结构与配置）
-      await handleImportDebug(functionCode);
+      // 导入调试 SQL：仅当功能配置了导入模块/数据表时才请求
+      if (data.importModule) {
+        await handleImportDebug(functionCode);
+      } else {
+        logger.info('\n📥 导入调试: 当前功能未配置导入模块，跳过');
+      }
     } catch (err) {
       options.notify('error', '获取调试信息失败');
       console.error('调试信息获取错误:', err);
