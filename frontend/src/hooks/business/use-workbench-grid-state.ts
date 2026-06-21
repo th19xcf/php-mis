@@ -124,6 +124,37 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     return `${getFunctionCode()}_${getParams()}`;
   }
 
+  function restoreSelection() {
+    if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
+      return;
+    }
+
+    const functionCode = getFunctionCode();
+    const params = getParams();
+    const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
+
+    if (!cachedSelectedRows.length || cachedSelectedRows.length > 10) {
+      return;
+    }
+
+    options.isRestoringSelection.value = true;
+
+    const rowsToRestore = cachedSelectedRows.slice(0, 10);
+    const guidSet = new Set(rowsToRestore.filter((r: any) => r.GUID).map((r: any) => r.GUID));
+    const idSet = new Set(rowsToRestore.filter((r: any) => r.id).map((r: any) => r.id));
+
+    options.gridApi.value.forEachNode(node => {
+      const rowData = node.data;
+      if (!rowData) return;
+      const isSelected = (rowData.GUID && guidSet.has(rowData.GUID)) || (rowData.id && idSet.has(rowData.id));
+      if (isSelected) {
+        node.setSelected(true);
+      }
+    });
+
+    options.isRestoringSelection.value = false;
+  }
+
   function restoreGridStateOnActivated() {
     const restoreStart = performance.now();
     const currentKey = getRestoreKey();
@@ -135,6 +166,10 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     if (isRestoringState) {
       return;
     }
+
+    // 每次激活都尝试恢复行选择状态（不受 lastRestoreKey 限制，
+    // 避免首次激活时 lastRestoreKey 被设置后，切换标签页回来无法恢复新选中的行）
+    restoreSelection();
 
     if (lastRestoreKey === currentKey) {
       return;
@@ -161,20 +196,22 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     const cachedColumnState = workbenchStore.getColumnState(functionCode, params);
     const cachedPage = workbenchStore.getPage(functionCode, params);
     const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
-    const cachedSelectedRows = workbenchStore.getSelectedRows(functionCode, params);
 
     const hasFilter = cachedFilterModel && Object.keys(cachedFilterModel).length > 0;
     const hasColumnState = cachedColumnState && Array.isArray(cachedColumnState) && cachedColumnState.length > 0;
     const hasPageChange = cachedPage > 1 || cachedPageSize !== options.defaultPageSize;
-    const hasSelection = cachedSelectedRows.length > 0;
 
     if (hasColumnState && options.pageMeta.value?.columns) {
       const colStateMap = new Map(cachedColumnState.map((c: any) => [c.colId, c]));
       options.pageMeta.value.columns = options.pageMeta.value.columns.map(column => {
         // GUID 列恒隐藏：忽略缓存，恢复时强制 hidden=true
         const isGuidColumn =
-          String(column.field || '').trim().toUpperCase() === 'GUID' ||
-          String(column.title || '').trim().toUpperCase() === 'GUID';
+          String(column.field || '')
+            .trim()
+            .toUpperCase() === 'GUID' ||
+          String(column.title || '')
+            .trim()
+            .toUpperCase() === 'GUID';
         if (isGuidColumn) {
           return { ...column, hidden: true };
         }
@@ -194,10 +231,6 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
       options.isRestoringPage.value = true;
       options.page.value = cachedPage;
       options.pageSize.value = cachedPageSize;
-    }
-
-    if (hasSelection) {
-      options.isRestoringSelection.value = true;
     }
 
     let pendingOperations = 0;
@@ -265,32 +298,6 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
           options.isRestoringColumnState.value = false;
           markOperationComplete();
         }, 100);
-      });
-    }
-
-    if (hasSelection && cachedSelectedRows.length <= 10) {
-      pendingOperations++;
-      queueMicrotask(() => {
-        if (!options.gridApi.value || options.gridApi.value.isDestroyed()) {
-          markOperationComplete();
-          return;
-        }
-
-        const rowsToRestore = cachedSelectedRows.slice(0, 10);
-        const guidSet = new Set(rowsToRestore.filter((r: any) => r.GUID).map((r: any) => r.GUID));
-        const idSet = new Set(rowsToRestore.filter((r: any) => r.id).map((r: any) => r.id));
-
-        options.gridApi.value.forEachNode(node => {
-          const rowData = node.data;
-          if (!rowData) return;
-          const isSelected = (rowData.GUID && guidSet.has(rowData.GUID)) || (rowData.id && idSet.has(rowData.id));
-          if (isSelected) {
-            node.setSelected(true);
-          }
-        });
-
-        options.isRestoringSelection.value = false;
-        markOperationComplete();
       });
     }
 
