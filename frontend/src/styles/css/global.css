@@ -14,12 +14,25 @@ html {
   color: rgb(var(--base-text-color));
 }
 
-.system-dark :deep(.n-checkbox:not(.n-checkbox--disabled) .n-checkbox-box) {
+.system-dark .n-checkbox:not(.n-checkbox--disabled) .n-checkbox-box {
   border-color: #7f95ac !important;
   background-color: var(--wb-dark-bg) !important;
 }
 
-.system-dark :deep(.n-checkbox.n-checkbox--checked:not(.n-checkbox--disabled) .n-checkbox-box) {
+.system-dark .n-checkbox.n-checkbox--checked:not(.n-checkbox--disabled) .n-checkbox-box {
   border-color: #4ea4f3 !important;
   background-color: #2f7fc5 !important;
+}
+
+.system-dark .n-checkbox.n-checkbox--checked:not(.n-checkbox--disabled) .n-checkbox-icon .check-icon {
+  fill: #fff !important;
+}
+
+.system-dark .n-checkbox.n-checkbox--indeterminate:not(.n-checkbox--disabled) .n-checkbox-box {
+  border-color: #4ea4f3 !important;
+  background-color: #2f7fc5 !important;
+}
+
+.system-dark .n-checkbox.n-checkbox--indeterminate:not(.n-checkbox--disabled) .n-checkbox-icon .line-icon {
+  fill: #fff !important;
 }
