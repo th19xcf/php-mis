@@ -26,13 +26,13 @@ class Route extends BaseApiController
         }
 
         if (empty($authHeader)) {
-            return $this->error(4010, 'Token required');
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, 'Token required');
         }
 
         try {
             $user = $this->userContext->requireLogin();
         } catch (AuthException $e) {
-            return $this->error(4011, 'Session expired, please login again');
+            return $this->error(ApiCode::AUTH_TOKEN_EXPIRED, 'Session expired, please login again');
         }
 
         try {

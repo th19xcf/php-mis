@@ -20,6 +20,13 @@ final class ApiCode
     public const AUTH_UNAUTHORIZED = '8888';
     public const AUTH_REFRESH_TOKEN_INVALID = '8889';
     public const AUTH_TOKEN_EXPIRED = '9999';
+    // 已废弃：历史 token 失效的替代码，保留以兼容旧客户端
+    public const AUTH_TOKEN_EXPIRED_ALT = '9998';
+    public const AUTH_TOKEN_EXPIRED_LEGACY = '3333';
+
+    // 兼容历史错误码：客户端 (≤1.x) 使用此码判定"未登录 / 会话失效"
+    public const AUTH_TOKEN_REQUIRED_LEGACY = '4010';
+    public const AUTH_SESSION_EXPIRED_LEGACY = '4011';
 
     // System errors
     public const PARAM_ERROR = '2001';
@@ -50,7 +57,7 @@ final class ApiCode
     /** @var string[] */
     public const EXPIRED_TOKEN_CODES = [
         self::AUTH_TOKEN_EXPIRED,
-        '9998',
-        '3333',
+        self::AUTH_TOKEN_EXPIRED_ALT,
+        self::AUTH_TOKEN_EXPIRED_LEGACY,
     ];
 }
