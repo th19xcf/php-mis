@@ -14,6 +14,18 @@ html {
   color: rgb(var(--base-text-color));
 }
 
+/* Light mode: NTree checkbox 选中/半选背景色与表格视图一致 */
+.n-tree .n-checkbox.n-checkbox--checked:not(.n-checkbox--disabled) .n-checkbox-box,
+.n-tree .n-checkbox.n-checkbox--indeterminate:not(.n-checkbox--disabled) .n-checkbox-box {
+  border-color: #2a90e8 !important;
+  background-color: #2a90e8 !important;
+}
+
+.n-tree .n-checkbox.n-checkbox--checked:not(.n-checkbox--disabled) .n-checkbox-icon .check-icon,
+.n-tree .n-checkbox.n-checkbox--indeterminate:not(.n-checkbox--disabled) .n-checkbox-icon .line-icon {
+  fill: #fff !important;
+}
+
 .system-dark .n-checkbox:not(.n-checkbox--disabled) .n-checkbox-box {
   border-color: #7f95ac !important;
   background-color: var(--wb-dark-bg) !important;
