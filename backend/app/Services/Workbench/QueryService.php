@@ -101,7 +101,7 @@ class QueryService
 
         if ($fetchAll) {
             $querySql = sprintf(
-                'select (@i:=@i+1) as 序号, %s%s, (select @i:=0) as xh%s%s%s',
+                'select %s%s%s%s%s',
                 implode(',', $selectParts),
                 $baseFromSql,
                 $whereSql,
@@ -114,10 +114,9 @@ class QueryService
             $total = (int) ($totalRow['total'] ?? 0);
 
             $querySql = sprintf(
-                'select (@i:=@i+1) as 序号, %s%s, (select @i:=%d) as xh%s%s%s limit %d offset %d',
+                'select %s%s%s%s%s limit %d offset %d',
                 implode(',', $selectParts),
                 $baseFromSql,
-                $offset,
                 $whereSql,
                 $groupSql,
                 $orderSql,
@@ -180,10 +179,9 @@ class QueryService
         $orderSql = $queryConfig['queryOrder'] !== '' ? ' order by ' . $queryConfig['queryOrder'] : '';
 
         $querySql = sprintf(
-            'select (@i:=@i+1) as 序号, %s%s, (select @i:=%d) as xh%s%s%s limit %d offset %d',
+            'select %s%s%s%s%s limit %d offset %d',
             implode(',', $selectParts),
             $baseFromSql,
-            $offset,
             $whereSql,
             $groupSql,
             $orderSql,
@@ -331,9 +329,6 @@ class QueryService
     private function processDataTypes(array $rows, array $columns): array
     {
         foreach ($rows as &$row) {
-            if (isset($row['序号'])) {
-                $row['序号'] = (int) $row['序号'];
-            }
             foreach ($columns as $column) {
                 $title = (string) ($column['列名'] ?? '');
                 if ($title !== '' && array_key_exists($title, $row) && (string) ($column['列类型'] ?? '') === '数值' && is_numeric($row[$title])) {
@@ -398,7 +393,7 @@ class QueryService
 
         if ($fetchAll) {
             $querySql = sprintf(
-                'select (@i:=@i+1) as 序号, %s%s, (select @i:=0) as xh%s%s%s',
+                'select %s%s%s%s%s',
                 implode(',', $selectParts),
                 $baseFromSql,
                 $whereSql,
@@ -413,10 +408,9 @@ class QueryService
                 $groupSql
             );
             $querySql = sprintf(
-                'select (@i:=@i+1) as 序号, %s%s, (select @i:=%d) as xh%s%s%s limit %d offset %d',
+                'select %s%s%s%s%s limit %d offset %d',
                 implode(',', $selectParts),
                 $baseFromSql,
-                $offset,
                 $whereSql,
                 $groupSql,
                 $orderSql,

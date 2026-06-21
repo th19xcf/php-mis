@@ -78,7 +78,9 @@ class AuthorizationService
         $values = $this->split($resolvedAuth);
         $clauses = [];
         foreach ($values as $value) {
-            $clauses[] = sprintf('instr(%s,"%s")', $field, $value);
+            // 使用前缀模糊匹配替代 instr，使字段索引可被利用
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+            $clauses[] = sprintf('%s like "%s%%" escape char(92)', $field, $escaped);
         }
 
         if (!$clauses) {

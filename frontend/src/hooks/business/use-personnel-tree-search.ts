@@ -92,16 +92,20 @@ export function usePersonnelTreeSearch(
   }
 
   // 实时根据输入过滤（immediate 确保组件重建时能恢复搜索状态）
-  watch(searchKeyword, newValue => {
-    if (!newValue.trim()) {
-      filteredTreeData.value = sourceTree.value;
-      // 不清空 expandedKeys，保留用户之前的展开状态（组件重建时从 store 恢复）
-    } else {
-      const { nodes, expanded } = filterTreeData(sourceTree.value, newValue);
-      filteredTreeData.value = nodes;
-      expandedKeys.value = expanded;
-    }
-  }, { immediate: true });
+  watch(
+    searchKeyword,
+    newValue => {
+      if (!newValue.trim()) {
+        filteredTreeData.value = sourceTree.value;
+        // 不清空 expandedKeys，保留用户之前的展开状态（组件重建时从 store 恢复）
+      } else {
+        const { nodes, expanded } = filterTreeData(sourceTree.value, newValue);
+        filteredTreeData.value = nodes;
+        expandedKeys.value = expanded;
+      }
+    },
+    { immediate: true }
+  );
 
   // 源树变化时，若未在搜索中，同步过滤树（immediate 确保组件重建时能从 store 恢复已有数据）
   watch(

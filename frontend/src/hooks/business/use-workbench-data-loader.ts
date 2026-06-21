@@ -48,6 +48,16 @@ interface QueryFilter {
   value: string;
 }
 
+/**
+ * 为查询结果分配全局序号（替代后端 SQL 中的 @i:=@i+1）
+ */
+function assignRowNumbers(records: Api.Workbench.QueryRecord[], current: number, size: number) {
+  const offset = (current - 1) * size;
+  records.forEach((row, index) => {
+    row['序号'] = offset + index + 1;
+  });
+}
+
 export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
   const {
     workbenchStore,
@@ -243,6 +253,8 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
               }
 
               const records = result.data.records;
+              // 为后台分片数据分配全局序号
+              assignRowNumbers(records, current, PAGE_SIZE);
               loadedRows += records.length;
               loadedCount.value = firstChunkSize + loadedRows;
               const progress = ((loadedCount.value / totalRecords) * 100).toFixed(1);
@@ -531,6 +543,9 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
     log('info', `步骤3: 首屏渲染`);
     const renderTimer = createTimer('首屏渲染');
+
+    // 将序号生成从后端 SQL 移到前端应用层
+    assignRowNumbers(firstPageData.records, firstPageData.current, firstPageData.size);
 
     if (thisLoadId !== currentLoadId) {
       log('info', `加载已过期（thisLoadId=${thisLoadId}, currentLoadId=${currentLoadId}），跳过数据更新`);
