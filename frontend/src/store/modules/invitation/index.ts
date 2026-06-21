@@ -70,6 +70,7 @@ export const useInvitationStore = defineStore('invitation-store', () => {
     checkedKeys: tree.checkedKeys,
     selectedGuids: tree.selectedGuids,
     expandedKeys: tree.expandedKeys,
+    searchKeyword: tree.searchKeyword,
     options: tree.options,
     isLoaded: tree.isLoaded,
     loading: tree.loading,

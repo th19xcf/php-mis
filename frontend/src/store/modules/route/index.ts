@@ -93,14 +93,14 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
   }
 
   /** Cache routes */
-  const cacheRoutes = ref<RouteKey[]>([]);
+  const cacheRoutes = ref<string[]>([]);
 
   /**
    * Exclude cache routes
    *
    * for reset route cache
    */
-  const excludeCacheRoutes = ref<RouteKey[]>([]);
+  const excludeCacheRoutes = ref<string[]>([]);
 
   /**
    * Get cache routes
@@ -109,6 +109,12 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
    */
   function getCacheRoutes(routes: RouteRecordRaw[]) {
     cacheRoutes.value = getCacheRouteNames(routes);
+
+    // menu-bridge 是所有动态菜单页面的宿主组件，必须加入缓存列表
+    // KeepAlive 的 include 按组件 name 匹配，而动态路由名（如 dyn_2035）与组件名不一致
+    if (!cacheRoutes.value.includes('menu-bridge')) {
+      cacheRoutes.value.push('menu-bridge');
+    }
   }
 
   /**
@@ -117,10 +123,15 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
    * @default router.currentRoute.value.name current route name
    * @param routeKey
    */
-  async function resetRouteCache(routeKey?: RouteKey) {
+  async function resetRouteCache(routeKey?: RouteKey | string) {
     const routeName = routeKey || (router.currentRoute.value.name as RouteKey);
 
-    excludeCacheRoutes.value.push(routeName);
+    excludeCacheRoutes.value.push(routeName as string);
+
+    // 动态菜单路由的组件名是 menu-bridge，需一并排除才能清除缓存
+    if (String(routeName).startsWith('dyn_')) {
+      excludeCacheRoutes.value.push('menu-bridge');
+    }
 
     await nextTick();
 
@@ -256,6 +267,7 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
             order: Number(menu2?.order) || menu2Index + 1,
             hideInMenu: false,
             multiTab: true,
+            keepAlive: true,
             query: [
               { key: 'functionCode', value: funcCode },
               { key: 'menu1', value: String(menu1?.name || '') },

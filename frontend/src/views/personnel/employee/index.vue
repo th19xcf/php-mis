@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, toRef } from 'vue';
 import { useRoute } from 'vue-router';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
@@ -58,9 +58,12 @@ const { handleCheck } = useTreeCheck<Api.Employee.EmployeeTreeNode>({
   setSelectedGuids: employeeStore.setSelectedGuids
 });
 
-// 公共：左侧树搜索/过滤/展开
-const { searchKeyword, filteredTreeData, expandedKeys, handleSearch, clearSearch, handleExpandedKeysChange } =
-  usePersonnelTreeSearch(treeData);
+// 公共：左侧树搜索/过滤/展开（使用 store 持久化的 searchKeyword/expandedKeys）
+const { filteredTreeData, handleSearch, clearSearch, handleExpandedKeysChange } =
+  usePersonnelTreeSearch(treeData, {
+    searchKeyword: toRef(employeeStore, 'searchKeyword'),
+    expandedKeys: toRef(employeeStore, 'expandedKeys')
+  });
 
 // 公共：树节点图标
 const renderPrefix = usePersonnelTreeIcon({
@@ -202,8 +205,12 @@ watch([isEditingDetail, isBatchMode], newValues => {
 });
 
 onMounted(async () => {
-  await loadTree();
-  await employeeStore.loadOptions();
+  if (!employeeStore.isLoaded) {
+    await employeeStore.loadTreeData();
+  }
+  if (!employeeStore.options) {
+    await employeeStore.loadOptions();
+  }
 
   await loadFields(functionCode.value);
 
@@ -231,7 +238,7 @@ onMounted(async () => {
       <div class="panel-content">
         <div class="mb-2">
           <NInput
-            v-model:value="searchKeyword"
+            v-model:value="employeeStore.searchKeyword"
             placeholder="搜索人员或分类..."
             clearable
             @keyup.enter="handleSearch"
@@ -255,8 +262,7 @@ onMounted(async () => {
           block-line
           block-node
           :checked-keys="employeeStore.checkedKeys"
-          :expanded-keys="expandedKeys"
-          default-expand-all
+          :expanded-keys="employeeStore.expandedKeys"
           @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
           @update:expanded-keys="handleExpandedKeysChange"

@@ -1,5 +1,5 @@
 import type { RouteLocationNormalizedLoaded, RouteRecordRaw, _RouteRecordBase } from 'vue-router';
-import type { ElegantConstRoute, LastLevelRouteKey, RouteKey, RouteMap } from '@elegant-router/types';
+import type { ElegantConstRoute, RouteKey, RouteMap } from '@elegant-router/types';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { $t } from '@/locales';
 
@@ -149,14 +149,14 @@ function getGlobalMenuByBaseRoute(route: RouteLocationNormalizedLoaded | Elegant
  *
  * @param routes Vue routes (two levels)
  */
-export function getCacheRouteNames(routes: RouteRecordRaw[]) {
-  const cacheNames: LastLevelRouteKey[] = [];
+export function getCacheRouteNames(routes: RouteRecordRaw[]): string[] {
+  const cacheNames: string[] = [];
 
   routes.forEach(route => {
     // only get last two level route, which has component
     route.children?.forEach(child => {
       if (child.component && child.meta?.keepAlive) {
-        cacheNames.push(child.name as LastLevelRouteKey);
+        cacheNames.push(child.name as string);
       }
     });
   });

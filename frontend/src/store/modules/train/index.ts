@@ -26,6 +26,7 @@ export const useTrainStore = defineStore('train-store', () => {
     checkedKeys: tree.checkedKeys,
     selectedGuids: tree.selectedGuids,
     expandedKeys: tree.expandedKeys,
+    searchKeyword: tree.searchKeyword,
     options: tree.options,
     isLoaded: tree.isLoaded,
     loading: tree.loading,

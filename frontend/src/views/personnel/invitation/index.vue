@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, onActivated, computed } from 'vue';
+import { ref, onMounted, computed, toRef } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
-import { fetchAddInvitation, fetchUpdateInvitation, fetchDeleteInvitation, fetchTransferInvitation, fetchAddFields, fetchDetailFields, fetchBatchEditFields } from '@/service/api';
+import {
+  fetchAddInvitation,
+  fetchUpdateInvitation,
+  fetchDeleteInvitation,
+  fetchTransferInvitation,
+  fetchAddFields,
+  fetchDetailFields,
+  fetchBatchEditFields
+} from '@/service/api';
 import { useInvitationStore } from '@/store/modules/invitation';
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
@@ -11,7 +19,6 @@ import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 import { usePersonnelTreeSearch } from '@/hooks/business/use-personnel-tree-search';
 import { usePersonnelTreeIcon } from '@/hooks/business/use-personnel-tree-icon';
 import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
-
 
 const message = useMessage();
 const route = useRoute();
@@ -41,7 +48,7 @@ const isTransferMode = ref(false);
 const isAddingMode = computed(() => invitationStore.isAddingMode);
 const addFormDynamic = computed({
   get: () => invitationStore.addFormDynamic,
-  set: (val) => invitationStore.setAddFormDynamic(val)
+  set: val => invitationStore.setAddFormDynamic(val)
 });
 const addFields = computed(() => invitationStore.addFields);
 const detailFields = ref<Api.Workbench.DetailField[]>([]);
@@ -51,7 +58,7 @@ const editDetailForm = ref<Record<string, any>>({});
 const isBatchEditMode = computed(() => invitationStore.isBatchEditMode);
 const batchEditForm = computed({
   get: () => invitationStore.batchEditForm,
-  set: (val) => invitationStore.setBatchEditForm(val)
+  set: val => invitationStore.setBatchEditForm(val)
 });
 const batchEditFields = computed(() => invitationStore.batchEditFields);
 
@@ -60,15 +67,12 @@ const { handleCheck } = useTreeCheck<Api.Invitation.InvitationTreeNode>({
   setSelectedGuids: invitationStore.setSelectedGuids
 });
 
-// 公共：左侧树搜索/过滤/展开
-const {
-  searchKeyword,
-  filteredTreeData,
-  expandedKeys,
-  handleSearch,
-  clearSearch,
-  handleExpandedKeysChange
-} = usePersonnelTreeSearch(treeData);
+// 公共：左侧树搜索/过滤/展开（使用 store 持久化的 searchKeyword/expandedKeys）
+const { filteredTreeData, handleSearch, clearSearch, handleExpandedKeysChange } =
+  usePersonnelTreeSearch(treeData, {
+    searchKeyword: toRef(invitationStore, 'searchKeyword'),
+    expandedKeys: toRef(invitationStore, 'expandedKeys')
+  });
 
 // 公共：树节点图标
 const renderPrefix = usePersonnelTreeIcon({
@@ -129,7 +133,9 @@ function cancelAddMode() {
 
 async function saveAddMode() {
   // 验证必填字段
-  const requiredField = addFields.value.find((f: Api.Workbench.AddField) => f.required && !addFormDynamic.value[f.columnName]);
+  const requiredField = addFields.value.find(
+    (f: Api.Workbench.AddField) => f.required && !addFormDynamic.value[f.columnName]
+  );
   if (requiredField) {
     message.error(`${requiredField.fieldName}不能为空`);
     return;
@@ -320,7 +326,7 @@ function handleDelete() {
     return;
   }
 
-  confirmDelete(selectedGuids.value.length, '人员').then(async (confirmed) => {
+  confirmDelete(selectedGuids.value.length, '人员').then(async confirmed => {
     if (!confirmed) return;
 
     const { error } = await fetchDeleteInvitation(selectedGuids.value);
@@ -333,23 +339,18 @@ function handleDelete() {
 }
 
 onMounted(async () => {
-  await invitationStore.loadTreeData();
-  invitationStore.loadOptions();
-
-  // 从 store 恢复展开状态
-  expandedKeys.value = invitationStore.expandedKeys;
+  if (!invitationStore.isLoaded) {
+    await invitationStore.loadTreeData();
+  }
+  if (!invitationStore.options) {
+    invitationStore.loadOptions();
+  }
 
   // 加载详情字段配置
   const { data } = await fetchDetailFields(functionCode.value);
   if (data?.fields) {
     detailFields.value = data.fields;
   }
-});
-
-// 组件重新激活时恢复状态（KeepAlive 缓存）
-onActivated(() => {
-  // 恢复展开状态
-  expandedKeys.value = invitationStore.expandedKeys;
 });
 </script>
 
@@ -371,7 +372,7 @@ onActivated(() => {
       <div class="panel-content">
         <div class="mb-2">
           <NInput
-            v-model:value="searchKeyword"
+            v-model:value="invitationStore.searchKeyword"
             placeholder="搜索人员或分类..."
             clearable
             @keyup.enter="handleSearch"
@@ -395,8 +396,7 @@ onActivated(() => {
           block-line
           block-node
           :checked-keys="invitationStore.checkedKeys"
-          :expanded-keys="expandedKeys"
-          default-expand-all
+          :expanded-keys="invitationStore.expandedKeys"
           @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
           @update:expanded-keys="handleExpandedKeysChange"
@@ -487,11 +487,7 @@ onActivated(() => {
                     @click="handlePopupSelect(field)"
                   />
                   <!-- 文本输入 -->
-                  <NInput
-                    v-else
-                    v-model:value="batchEditForm[field.columnName]"
-                    size="small"
-                  />
+                  <NInput v-else v-model:value="batchEditForm[field.columnName]" size="small" />
                 </td>
               </tr>
             </tbody>
@@ -641,11 +637,7 @@ onActivated(() => {
                     @click="handlePopupSelect(field)"
                   />
                   <!-- 文本输入 -->
-                  <NInput
-                    v-else
-                    v-model:value="addFormDynamic[field.columnName]"
-                    size="small"
-                  />
+                  <NInput v-else v-model:value="addFormDynamic[field.columnName]" size="small" />
                 </td>
               </tr>
             </tbody>
@@ -730,11 +722,7 @@ onActivated(() => {
                           :autosize="{ minRows: 2, maxRows: 10 }"
                         />
                         <!-- 普通文本输入 -->
-                        <NInput
-                          v-else
-                          v-model:value="editDetailForm[field.columnName]"
-                          size="small"
-                        />
+                        <NInput v-else v-model:value="editDetailForm[field.columnName]" size="small" />
                       </template>
                     </template>
                   </template>
@@ -746,7 +734,7 @@ onActivated(() => {
                       </NTag>
                     </template>
                     <template v-else-if="field.columnName === '工作履历'">
-                      <span style="white-space: pre-wrap; word-break: break-all; line-height: 1.6;">
+                      <span style="white-space: pre-wrap; word-break: break-all; line-height: 1.6">
                         {{ invitationDetail[field.columnName] || '-' }}
                       </span>
                     </template>

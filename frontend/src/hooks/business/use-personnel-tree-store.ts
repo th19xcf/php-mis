@@ -4,9 +4,7 @@ import type { TreeOption } from 'naive-ui';
 /**
  * 递归把后端树节点（id / value / items）转成 naive-ui 用的 TreeOption。
  */
-function convertToTreeOptions<T extends { id: string; value: string; items?: T[] }>(
-  nodes: T[]
-): TreeOption[] {
+function convertToTreeOptions<T extends { id: string; value: string; items?: T[] }>(nodes: T[]): TreeOption[] {
   return nodes.map(n => ({
     key: n.id,
     label: n.value,
@@ -38,10 +36,7 @@ function convertToTreeOptions<T extends { id: string; value: string; items?: T[]
  * return { ...tree, interviewDetail, loadInterviewDetail, clearSelection };
  * ```
  */
-export function usePersonnelTreeStore<
-  TNode extends { id: string; value: string; items?: TNode[] },
-  TOptions
->(
+export function usePersonnelTreeStore<TNode extends { id: string; value: string; items?: TNode[] }, TOptions>(
   fetchTree: () => Promise<{ data: TNode[] | null; error?: unknown }>,
   fetchOptions: () => Promise<{ data: TOptions | null }>
 ) {
@@ -49,6 +44,7 @@ export function usePersonnelTreeStore<
   const checkedKeys = ref<string[]>([]);
   const selectedGuids = ref<string[]>([]);
   const expandedKeys = ref<string[]>([]);
+  const searchKeyword = ref('');
   const options = ref<TOptions | null>(null);
   const isLoaded = ref(false);
   const loading = ref(false);
@@ -61,6 +57,7 @@ export function usePersonnelTreeStore<
     if (!error && data) {
       treeData.value = convertToTreeOptions(data);
       isLoaded.value = true;
+      // 首次加载时保持折叠（expandedKeys 为空即可）
     }
   }
 
@@ -79,11 +76,12 @@ export function usePersonnelTreeStore<
     selectedGuids.value = [];
   }
 
-  function refreshTree() {
+  async function refreshTree() {
     isLoaded.value = false;
     treeData.value = [];
     checkedKeys.value = [];
     selectedGuids.value = [];
+    expandedKeys.value = [];
     return loadTreeData();
   }
 
@@ -104,6 +102,7 @@ export function usePersonnelTreeStore<
     checkedKeys,
     selectedGuids,
     expandedKeys,
+    searchKeyword,
     options,
     isLoaded,
     loading,

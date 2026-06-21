@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, toRef } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
 import { useRoute } from 'vue-router';
@@ -12,7 +12,6 @@ import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 import { usePersonnelTreeSearch } from '@/hooks/business/use-personnel-tree-search';
 import { usePersonnelTreeIcon } from '@/hooks/business/use-personnel-tree-icon';
 import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
-
 
 const message = useMessage();
 const route = useRoute();
@@ -69,15 +68,12 @@ const { handleCheck } = useTreeCheck<Api.Interview.InterviewTreeNode>({
   setSelectedGuids: interviewStore.setSelectedGuids
 });
 
-// 公共：左侧树搜索/过滤/展开
-const {
-  searchKeyword,
-  filteredTreeData,
-  expandedKeys,
-  handleSearch,
-  clearSearch,
-  handleExpandedKeysChange
-} = usePersonnelTreeSearch(treeData);
+// 公共：左侧树搜索/过滤/展开（使用 store 持久化的 searchKeyword/expandedKeys）
+const { filteredTreeData, handleSearch, clearSearch, handleExpandedKeysChange } =
+  usePersonnelTreeSearch(treeData, {
+    searchKeyword: toRef(interviewStore, 'searchKeyword'),
+    expandedKeys: toRef(interviewStore, 'expandedKeys')
+  });
 
 // 公共：树节点图标
 const renderPrefix = usePersonnelTreeIcon({
@@ -118,7 +114,8 @@ async function openAddModal() {
   const initialForm: Record<string, any> = {};
   addFields.value.forEach(field => {
     if (field.fieldType === '日期') {
-      initialForm[field.columnName] = field.columnName === '预约培训日期' ? undefined : new Date().toISOString().split('T')[0];
+      initialForm[field.columnName] =
+        field.columnName === '预约培训日期' ? undefined : new Date().toISOString().split('T')[0];
     } else {
       initialForm[field.columnName] = '';
     }
@@ -132,7 +129,9 @@ function cancelAdd() {
 }
 
 async function handleAdd() {
-  const requiredField = addFields.value.find(field => field.required && !addFormDynamic.value[field.columnName]?.trim());
+  const requiredField = addFields.value.find(
+    field => field.required && !addFormDynamic.value[field.columnName]?.trim()
+  );
   if (requiredField) {
     message.error(`${requiredField.fieldName}不能为空`);
     return;
@@ -257,7 +256,7 @@ function handleDelete() {
     return;
   }
 
-  confirmDelete(selectedGuids.value.length, '人员').then(async (confirmed) => {
+  confirmDelete(selectedGuids.value.length, '人员').then(async confirmed => {
     if (!confirmed) return;
 
     const { error } = await fetchDeleteInterview(selectedGuids.value);
@@ -317,8 +316,12 @@ async function handleSecondInterviewConfirm() {
 }
 
 onMounted(async () => {
-  interviewStore.loadTreeData();
-  interviewStore.loadOptions();
+  if (!interviewStore.isLoaded) {
+    interviewStore.loadTreeData();
+  }
+  if (!interviewStore.options) {
+    interviewStore.loadOptions();
+  }
 
   await loadFields(functionCode.value);
 
@@ -333,7 +336,7 @@ onMounted(async () => {
   });
 });
 
-watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (newValues) => {
+watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], newValues => {
   if (newValues.every(v => !v) && interviewDetail.value) {
     interviewStore.loadInterviewDetail(interviewDetail.value.GUID);
   }
@@ -358,7 +361,7 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (n
       <div class="panel-content">
         <div class="mb-2">
           <NInput
-            v-model:value="searchKeyword"
+            v-model:value="interviewStore.searchKeyword"
             placeholder="搜索人员或分类..."
             clearable
             @keyup.enter="handleSearch"
@@ -382,8 +385,7 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (n
           block-line
           block-node
           :checked-keys="interviewStore.checkedKeys"
-          :expanded-keys="expandedKeys"
-          default-expand-all
+          :expanded-keys="interviewStore.expandedKeys"
           @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
           @update:expanded-keys="handleExpandedKeysChange"
@@ -468,11 +470,7 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (n
                     size="small"
                     class="w-full"
                   />
-                  <NInput
-                    v-else
-                    v-model:value="addFormDynamic[field.columnName]"
-                    size="small"
-                  />
+                  <NInput v-else v-model:value="addFormDynamic[field.columnName]" size="small" />
                 </td>
               </tr>
             </tbody>
@@ -564,7 +562,9 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (n
           <div class="flex justify-between items-center mb-2">
             <span class="text-lg font-600">二次面试 (已选择 {{ selectedGuids.length }} 人)</span>
             <NSpace>
-              <NButton type="primary" size="small" :loading="submitting" @click="handleSecondInterviewConfirm">确认</NButton>
+              <NButton type="primary" size="small" :loading="submitting" @click="handleSecondInterviewConfirm">
+                确认
+              </NButton>
               <NButton size="small" @click="cancelSecondInterviewMode">取消</NButton>
             </NSpace>
           </div>
@@ -694,11 +694,7 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], (n
                           size="small"
                           class="w-full"
                         />
-                        <NInput
-                          v-else
-                          v-model:value="editDetailForm[field.columnName]"
-                          size="small"
-                        />
+                        <NInput v-else v-model:value="editDetailForm[field.columnName]" size="small" />
                       </template>
                     </template>
                   </template>

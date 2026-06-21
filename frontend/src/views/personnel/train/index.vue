@@ -1,15 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, toRef } from 'vue';
 import { useRoute } from 'vue-router';
 import type { TreeOption } from 'naive-ui';
 import { useMessage } from 'naive-ui';
 import { useTrainStore } from '@/store/modules/train';
-import {
-  fetchUpdateTrain,
-  fetchBatchUpdateTrain,
-  fetchDeleteTrain,
-  fetchTransferTrain
-} from '@/service/api';
+import { fetchUpdateTrain, fetchBatchUpdateTrain, fetchDeleteTrain, fetchTransferTrain } from '@/service/api';
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
@@ -67,15 +62,12 @@ const { handleCheck } = useTreeCheck<Api.Train.TrainTreeNode>({
   setSelectedGuids: trainStore.setSelectedGuids
 });
 
-// 公共：左侧树搜索/过滤/展开
-const {
-  searchKeyword,
-  filteredTreeData,
-  expandedKeys,
-  handleSearch,
-  clearSearch,
-  handleExpandedKeysChange
-} = usePersonnelTreeSearch(treeData);
+// 公共：左侧树搜索/过滤/展开（使用 store 持久化的 searchKeyword/expandedKeys）
+const { filteredTreeData, handleSearch, clearSearch, handleExpandedKeysChange } =
+  usePersonnelTreeSearch(treeData, {
+    searchKeyword: toRef(trainStore, 'searchKeyword'),
+    expandedKeys: toRef(trainStore, 'expandedKeys')
+  });
 
 // 公共：树节点图标
 const renderPrefix = usePersonnelTreeIcon({
@@ -119,11 +111,7 @@ async function startEditDetail() {
     await loadFields(String(functionCode.value));
   }
 
-  editDetailForm.value = buildEditForm(
-    trainDetail.value as Record<string, any>,
-    addFields.value,
-    detailFields.value
-  );
+  editDetailForm.value = buildEditForm(trainDetail.value as Record<string, any>, addFields.value, detailFields.value);
   isEditingDetail.value = true;
 }
 
@@ -244,7 +232,7 @@ function handleDelete() {
     return;
   }
 
-  confirmDelete(selectedGuids.value.length, '人员').then(async (confirmed) => {
+  confirmDelete(selectedGuids.value.length, '人员').then(async confirmed => {
     if (!confirmed) return;
 
     const { error } = await fetchDeleteTrain(selectedGuids.value);
@@ -256,16 +244,19 @@ function handleDelete() {
   });
 }
 
-watch([isEditingDetail, isBatchMode, isTransferMode], (newValues) => {
+watch([isEditingDetail, isBatchMode, isTransferMode], newValues => {
   if (newValues.every(v => !v) && trainDetail.value) {
     trainStore.loadTrainDetail(trainDetail.value.GUID);
   }
 });
 
 onMounted(async () => {
-  loadTree();
-  await trainStore.loadOptions();
-
+  if (!trainStore.isLoaded) {
+    await trainStore.loadTreeData();
+  }
+  if (!trainStore.options) {
+    await trainStore.loadOptions();
+  }
   await loadFields(String(functionCode.value));
 });
 </script>
@@ -286,7 +277,7 @@ onMounted(async () => {
       <div class="panel-content">
         <div class="mb-2">
           <NInput
-            v-model:value="searchKeyword"
+            v-model:value="trainStore.searchKeyword"
             placeholder="搜索人员或分类..."
             clearable
             @keyup.enter="handleSearch"
@@ -310,8 +301,7 @@ onMounted(async () => {
           block-line
           block-node
           :checked-keys="trainStore.checkedKeys"
-          :expanded-keys="expandedKeys"
-          default-expand-all
+          :expanded-keys="trainStore.expandedKeys"
           @update:checked-keys="handleCheck"
           @update:selected-keys="handleSelect"
           @update:expanded-keys="handleExpandedKeysChange"
@@ -360,7 +350,12 @@ onMounted(async () => {
               <tr>
                 <td>培训业务</td>
                 <td>
-                  <NSelect v-model:value="batchForm.培训业务" :options="options?.trainBiz || []" placeholder="请选择培训业务" size="small" />
+                  <NSelect
+                    v-model:value="batchForm.培训业务"
+                    :options="options?.trainBiz || []"
+                    placeholder="请选择培训业务"
+                    size="small"
+                  />
                 </td>
               </tr>
               <tr>
@@ -432,19 +427,34 @@ onMounted(async () => {
                   <span class="text-red-500 ml-1">*</span>
                 </td>
                 <td>
-                  <NSelect v-model:value="transferForm.培训状态" :options="options?.trainStatus || []" placeholder="请选择培训状态" size="small" />
+                  <NSelect
+                    v-model:value="transferForm.培训状态"
+                    :options="options?.trainStatus || []"
+                    placeholder="请选择培训状态"
+                    size="small"
+                  />
                 </td>
               </tr>
               <tr>
                 <td>岗位类型</td>
                 <td>
-                  <NSelect v-model:value="transferForm.岗位类型" :options="options?.positionType || []" placeholder="请选择岗位类型" size="small" />
+                  <NSelect
+                    v-model:value="transferForm.岗位类型"
+                    :options="options?.positionType || []"
+                    placeholder="请选择岗位类型"
+                    size="small"
+                  />
                 </td>
               </tr>
               <tr>
                 <td>结算类型</td>
                 <td>
-                  <NSelect v-model:value="transferForm.结算类型" :options="options?.settlementType || []" placeholder="请选择结算类型" size="small" />
+                  <NSelect
+                    v-model:value="transferForm.结算类型"
+                    :options="options?.settlementType || []"
+                    placeholder="请选择结算类型"
+                    size="small"
+                  />
                 </td>
               </tr>
               <tr>
@@ -531,7 +541,12 @@ onMounted(async () => {
         <div v-else-if="trainDetail" class="space-y-4">
           <div class="flex justify-between items-center mb-2">
             <span class="text-lg font-600">培训信息</span>
-            <NButton type="info" size="small" :disabled="!trainStore.selectedGuids.includes(String(trainDetail.GUID))" @click="startEditDetail">
+            <NButton
+              type="info"
+              size="small"
+              :disabled="!trainStore.selectedGuids.includes(String(trainDetail.GUID))"
+              @click="startEditDetail"
+            >
               <template #icon><icon-mdi-pencil /></template>
               编辑
             </NButton>
@@ -552,7 +567,10 @@ onMounted(async () => {
                   <NTag v-else type="default" size="small">否</NTag>
                 </td>
                 <td>
-                  <span v-if="field.fieldName === '培训状态'" :class="trainDetail.培训状态 === '通过' ? 'text-green-500' : ''">
+                  <span
+                    v-if="field.fieldName === '培训状态'"
+                    :class="trainDetail.培训状态 === '通过' ? 'text-green-500' : ''"
+                  >
                     {{ trainDetail[field.fieldName] || '-' }}
                   </span>
                   <span v-else :class="{ 'text-gray-400': !trainDetail[field.fieldName] }">
