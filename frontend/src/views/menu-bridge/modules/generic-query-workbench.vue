@@ -781,6 +781,11 @@ function handleCloseRightPanel() {
   if (chartVisible.value) {
     chartVisible.value = false;
     chartMaximized.value = false;
+    // 关闭图形时静默重置钻取状态：
+    // 1) 前端 drillLevel 立即归零，避免下次打开仍显示"钻取第 N 级"徽章
+    // 2) 同步清理后端 session 钻取栈（chart_drill_arr / cond / title），
+    //    防止用户重新钻取时叠加错误的条件
+    void silentResetDrill();
   }
 }
 
@@ -841,7 +846,7 @@ watch(chartVisible, val => {
   if (!val && rightPanelMode.value === 'chart') rightPanelMode.value = null;
 });
 
-const { drillLevel, isDrilled, handleChartClick, resetDrill } = useWorkbenchChartDrill({
+const { drillLevel, isDrilled, handleChartClick, resetDrill, silentResetDrill } = useWorkbenchChartDrill({
   getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
   getDrillOptionsForChart: (sid: string) => {
     // 图形钻取对话框使用图表自身的钻取选项（chart.钻取选项，源自 def_chart_drill_config）

@@ -234,11 +234,39 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
     }
   }
 
+  /**
+   * 静默重置钻取状态
+   *
+   * 与 resetDrill 的区别：
+   *  - 不显示成功 / 失败通知（适用于关闭图形时的自动清理）
+   *  - 不切换外部 loading 状态
+   *  - 前端 drillLevel 立即归零（不等后端响应），保证头部徽章
+   *    `钻取第 N 级 / 初始图形` 在关闭瞬间就反映正确状态
+   *  - 后端 session 清理 fire-and-forget，不阻塞关闭动作
+   */
+  async function silentResetDrill(): Promise<void> {
+    const functionCode = options.getFunctionCode();
+    if (!functionCode) return;
+
+    log('info', `静默重置钻取状态`);
+
+    // 立即归零前端状态
+    drillLevel.value = 0;
+
+    try {
+      await resetWorkbenchChartDrill(functionCode);
+    } catch (err) {
+      log('error', `静默重置后端钻取状态失败:`, err);
+      // 不弹错误通知，避免干扰用户关闭操作
+    }
+  }
+
   return {
     drillLevel,
     isDrilled,
     handleChartClick,
-    resetDrill
+    resetDrill,
+    silentResetDrill
   };
 }
 
