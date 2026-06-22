@@ -490,6 +490,13 @@ class Workbench extends BaseApiController
 
     /**
      * 图形钻取
+     *
+     * 支持多级钻取：
+     *  - 请求 payload[0].钻取级别 = 当前级别（0=初始；1=第一级钻取中；2=第二级钻取中 ...）
+     *  - ChartDrillService 通过 session 累加各级钻取条件（chart_drill_cond_str / chart_drill_title_str）
+     *  - 响应中 drillLevel = 当前级别 + 1，作为前端新的钻取级别
+     *  - 钻取层数无前端硬性限制，由 def_chart_drill_config 中"目标图形"是否再带 钻取选项 决定
+     *  - 关闭图形 / 退出钻取 时需调用 chartDrillReset 清空 session
      */
     public function chartDrill(string $functionCode = '')
     {

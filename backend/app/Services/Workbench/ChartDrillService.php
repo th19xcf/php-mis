@@ -188,6 +188,10 @@ class ChartDrillService
                 ? $row->图形名称
                 : sprintf('%s(%s)', $row->图形名称, $titleStr);
 
+            // 加载图表自身的钻取选项（与初始图形数据来源一致：def_chart_drill_config）
+            // 使第 1 级钻取后的图形也能继续钻取第 2 级
+            $chartItem['钻取选项'] = $this->loadChartDrillOptions((string) ($row->钻取模块 ?? ''));
+
             try {
                 $dataSql = $this->buildChartQuerySql($row, $drillParam, $condStr, $menuId);
                 $dataResults = $this->model->select($dataSql);
@@ -551,5 +555,53 @@ class ChartDrillService
     private function escapeParam(string $value): string
     {
         return str_replace(['^', ';'], ['', ','], $value);
+    }
+
+    /**
+     * 加载图表自身的钻取选项（参考 ChartService.loadChartDrillOptions）
+     *
+     * 数据来源：def_chart_drill_config（按 钻取模块 匹配）
+     * 与初始图形数据来源一致，使第 1 级钻取后的图形也能继续钻取第 2 级。
+     *
+     * @param string $drillModule 图表的钻取模块（def_chart_config.钻取模块）
+     * @return array
+     */
+    private function loadChartDrillOptions(string $drillModule): array
+    {
+        if ($drillModule === '') {
+            return [];
+        }
+
+        $sql = sprintf(
+            'select 钻取模块, 钻取选项, 钻取字段, 钻取条件, 图形模块
+             from def_chart_drill_config
+             where 顺序>0 and 钻取模块=%s
+             order by 钻取模块, 顺序',
+            $this->model->quote($drillModule)
+        );
+
+        $results = $this->model->select($sql)->getResultArray() ?? [];
+        $options = [];
+
+        foreach ($results as $row) {
+            $option = (string) ($row['钻取选项'] ?? '');
+            $chartModule = (string) ($row['图形模块'] ?? '');
+            $module = (string) ($row['钻取模块'] ?? '');
+            if ($option === '') {
+                continue;
+            }
+            $options[] = [
+                'label' => $option,
+                'value' => $option . '^' . $chartModule . '^' . $module,
+                'functionCode' => $module,
+                'module' => $module,
+                'chartModule' => $chartModule,
+                'drillOption' => $option,
+                'drillFields' => (string) ($row['钻取字段'] ?? ''),
+                'drillCondition' => (string) ($row['钻取条件'] ?? '')
+            ];
+        }
+
+        return $options;
     }
 }

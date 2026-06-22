@@ -67,9 +67,7 @@ export function useWorkbenchDrillOptions(options: UseWorkbenchDrillOptionsOption
     if (!chartCode) return null;
 
     // 1) 优先：dataItem.图形模块 + 图形编号 同时匹配
-    let chart = options.chartData.value.find(
-      (c: any) => c['图形模块'] === chartModule && c['图形编号'] === chartCode
-    );
+    let chart = options.chartData.value.find((c: any) => c['图形模块'] === chartModule && c['图形编号'] === chartCode);
 
     // 2) 兜底：仅按 图形编号 匹配
     if (!chart) {
@@ -93,13 +91,11 @@ export function useWorkbenchDrillOptions(options: UseWorkbenchDrillOptionsOption
     if (opts.length === 0) {
       console.info(`[CHART-DRILL] 图表字段列表: ${Object.keys(chart).join(', ')}`);
     }
+    // 只有图表级钻取选项存在时才返回；
+    // 不使用页面级钻取选项作为兜底——表格级钻取（def_drill_config）用于表格行跳转，
+    // 与图形钻取（def_chart_drill_config）是不同的配置体系，混用会导致弹出错误的钻取条件。
     if (opts.length > 0) return opts;
-
-    // 兜底：使用页面级钻取选项（如未加载则触发预热）
-    if (drillOptionsCache.value === null && !loadPromise) {
-      void load();
-    }
-    return drillOptionsCache.value;
+    return null;
   }
 
   // 首次拿到图形时，若所有图表都未带图表级钻取选项，触发页面级预热

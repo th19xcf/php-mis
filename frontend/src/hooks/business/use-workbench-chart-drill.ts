@@ -48,6 +48,12 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
 
   /**
    * 处理图表点击事件
+   *
+   * 多级钻取说明：
+   *  - 不在前端硬性限制级别数；钻取层数由后端 def_chart_drill_config 中各级目标图形的 钻取选项 决定
+   *  - 当前图形的钻取选项由 options.getDrillOptionsForChart(sid) 动态返回（来源：当前展示的 chartData）
+   *  - 若当前图形未配置钻取选项，会提示"当前图形未配置钻取选项"
+   *
    * @param params ECharts click 回调参数
    */
   function handleChartClick(params: any) {
@@ -167,6 +173,11 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
 
   /**
    * 执行图形钻取
+   *
+   * 多级钻取：
+   *  - 请求体里 钻取级别 = 当前级别（0=初始，1=第一级钻取中，2=第二级钻取中 ...）
+   *  - 后端通过 session 累加各级钻取条件，并在响应中以 drillLevel = 当前级别 + 1 作为新级别
+   *  - 前端在 resetDrill / silentResetDrill 时会清空 session，重新从 0 开始
    */
   async function executeChartDrill(optionValue: string, dataItem: Record<string, any>) {
     const functionCode = options.getFunctionCode();
@@ -175,7 +186,7 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
       return;
     }
 
-    log('info', `执行钻取: optionValue=${optionValue}, functionCode=${functionCode}`);
+    log('info', `执行钻取: optionValue=${optionValue}, currentLevel=${drillLevel.value}, functionCode=${functionCode}`);
 
     options.loading.value = true;
 
@@ -196,7 +207,10 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
         return;
       }
 
-      drillLevel.value = data.drillLevel ?? drillLevel.value + 1;
+      // 优先采用后端返回的 drillLevel（后端以 session 累加为权威）
+      // 兜底：前端 drillLevel + 1
+      const newLevel = typeof data.drillLevel === 'number' ? data.drillLevel : drillLevel.value + 1;
+      drillLevel.value = newLevel;
       log('info', `钻取成功, 新级别=${drillLevel.value}, 返回图表数=${data.charts.length}`);
 
       // 通知外部更新图表

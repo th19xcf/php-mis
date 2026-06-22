@@ -803,11 +803,9 @@ const {
   notify,
   onChartClick: (clickParams: any) => {
     // 图表点击事件转发给图形钻取 hook
-    if (drillLevel.value >= 1) {
-      // 钻取状态下点击，提示用户先返回
-      notify('info', '当前为钻取结果，如需继续钻取请先点击"初始图形"');
-      return;
-    }
+    // 不在前端硬性限制钻取级别：钻取层级数由后端 def_chart_drill_config 配置决定，
+    // 即"下一级目标图形"上是否再带 钻取选项；缺钻取选项的图形点击会由 hook 内部
+    // 提示"当前图形未配置钻取选项"或静默 noop。
     handleChartClick(clickParams);
   }
 });
@@ -851,12 +849,9 @@ const { drillLevel, isDrilled, handleChartClick, resetDrill, silentResetDrill } 
   getDrillOptionsForChart: (sid: string) => {
     // 图形钻取对话框使用图表自身的钻取选项（chart.钻取选项，源自 def_chart_drill_config）
     // 与旧版 Vgrid_aggrid.php::chart_drill 中的 chart_data[chartModule][chartCode]['钻取模块'] 等价
-    const ownOpts = getDrillOptionsForChart(sid);
-    if (ownOpts) {
-      return ownOpts;
-    }
-    // 兜底：使用页面级钻取选项（来自 def_drill_config）
-    return drillOptions.value ?? null;
+    // 不使用页面级钻取选项作为兜底——表格级钻取（def_drill_config）用于表格行跳转，
+    // 与图形钻取（def_chart_drill_config）是不同的配置体系，混用会导致弹出错误的钻取条件。
+    return getDrillOptionsForChart(sid);
   },
   notify,
   loading: ref(false), // 图形钻取 loading 与其他操作解耦

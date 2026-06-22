@@ -252,7 +252,8 @@ const local: App.I18n.Schema = {
     personnel_interview: 'Interview Personnel',
     personnel_train: 'Training Personnel',
     personnel_employee: 'Employee Management',
-    contract: 'Contract Management'
+    contract: 'Contract Management',
+    'room-status': 'Room Status'
   },
   page: {
     login: {
