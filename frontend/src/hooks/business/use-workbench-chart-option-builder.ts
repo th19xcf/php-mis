@@ -18,7 +18,7 @@ import { getChartThemeColors } from './use-workbench-chart-theme';
  * @returns ECharts option 对象；data 为空时返回 null
  */
 export function generateChartOption(chart: any, isDarkMode: boolean): any {
-  const { CHART } = WORKBENCH_CONFIG;
+  const { CHART, CHART: { CHART_TYPE } } = WORKBENCH_CONFIG;
   const chartData = chart['数据'] || [];
   const chartType = chart['图形类型'] || CHART.DEFAULT_TYPE;
   const chartName = chart['图形名称'] || CHART.DEFAULT_NAME;
@@ -29,7 +29,19 @@ export function generateChartOption(chart: any, isDarkMode: boolean): any {
     return null;
   }
 
-  if (chartType === 'pie') {
+  // 图形类型归一化：兼容 def_chart_config.图形类型 使用中文（饼图/折线图/柱状图）
+  // 或英文（pie/line/bar）两种写法。CHART_TYPE 在 src/config/workbench.ts 中
+  // 定义为中文枚举值，数据库历史数据全部为中文。
+  const normalizedType =
+    chartType === CHART_TYPE.PIE || String(chartType).toLowerCase() === 'pie'
+      ? 'pie'
+      : chartType === CHART_TYPE.BAR || String(chartType).toLowerCase() === 'bar'
+        ? 'bar'
+        : chartType === CHART_TYPE.LINE || String(chartType).toLowerCase() === 'line'
+          ? 'line'
+          : String(chartType).toLowerCase();
+
+  if (normalizedType === 'pie') {
     const dataKeys = Object.keys(chartData[0]);
     const categoryKey = dataKeys[0];
     const valueKeys = dataKeys.slice(1).filter(key => {
@@ -134,12 +146,22 @@ export function generateChartOption(chart: any, isDarkMode: boolean): any {
 
     const xAxisData = (chartData as Record<string, any>[]).map(item => item[categoryKey]);
 
-    const { AXIS_POSITION, CHART_TYPE } = WORKBENCH_CONFIG.CHART;
+    const { AXIS_POSITION } = WORKBENCH_CONFIG.CHART;
 
     for (const key of valueKeys) {
       const fieldConfig = fieldsConfig[key];
       const axisPosition = fieldConfig?.['坐标轴'] || AXIS_POSITION.LEFT;
-      const fieldChartType = fieldConfig?.['图形类型'] || chartType;
+      // 字段级图形类型同样需要中文 → ECharts type 归一化：
+      //   饼图/柱状图/折线图 → pie/bar/line
+      const rawFieldType = fieldConfig?.['图形类型'] || normalizedType;
+      const fieldChartType =
+        rawFieldType === CHART_TYPE.PIE || String(rawFieldType).toLowerCase() === 'pie'
+          ? 'pie'
+          : rawFieldType === CHART_TYPE.BAR || String(rawFieldType).toLowerCase() === 'bar'
+            ? 'bar'
+            : rawFieldType === CHART_TYPE.LINE || String(rawFieldType).toLowerCase() === 'line'
+              ? 'line'
+              : String(rawFieldType).toLowerCase();
 
       if (axisPosition === AXIS_POSITION.LEFT && !yLeft) {
         yAxis.push({ type: 'value', position: 'left' });
@@ -164,7 +186,7 @@ export function generateChartOption(chart: any, isDarkMode: boolean): any {
         }))
       };
 
-      if (fieldChartType !== CHART_TYPE.BAR) {
+      if (fieldChartType !== 'bar') {
         seriesItem.smooth = true;
       }
 
