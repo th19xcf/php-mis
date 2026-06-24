@@ -166,7 +166,8 @@ export const generatedRoutes: GeneratedRoute[] = [
     component: 'layout.base$view.room-status',
     meta: {
       title: 'room-status',
-      i18nKey: 'route.room-status'
+      i18nKey: 'route.room-status',
+      hideInMenu: true
     }
   },
   {
