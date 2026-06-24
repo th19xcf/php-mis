@@ -57,8 +57,11 @@ class ContextService
         $isSuperAdmin = $user['isSuperAdmin'];
         log_message('debug', '[ContextService] 步骤1完成: companyId=' . $companyId . ', userWorkId=' . $userWorkId);
 
-        // 缓存键基于 roleCodes + region，同角色用户共享缓存
-        $cacheKey = $this->buildCacheKey($functionCode, $user['roleAuthz'], $companyId);
+        // 缓存键基于 roleCodes + region + isSuperAdmin
+        // 必须把 isSuperAdmin 纳入：万能密码登录时会得到 isSuperAdmin=true，
+        // 此时 userAuth.debugAuth 自动为 true；如果只按 roleAuthz+region 缓存，
+        // 同一用户之前用普通密码登录写入的 false 版本会被复用，导致"调试"按钮永不出现。
+        $cacheKey = $this->buildCacheKey($functionCode, $user['roleAuthz'], $companyId, $isSuperAdmin);
         $cached = $this->cache->get($cacheKey);
         if (is_array($cached) && isset($cached['context'], $cached['definition'])) {
             $elapsed = (hrtime(true) - $start) / 1e6;
@@ -158,13 +161,17 @@ class ContextService
     }
 
     /**
-     * 构建缓存键
+     * 基于 functionCode + roleAuthz + region + isSuperAdmin，同角色用户共享缓存。
      *
-     * 基于 functionCode + roleAuthz + region，同角色用户共享缓存。
+     * isSuperAdmin 必须纳入键空间：万能密码（工号+工号）登录时
+     * isSuperAdmin=true，userAuth.debugAuth 会被强制置为 true；
+     * 同用户之前用普通密码登录时 isSuperAdmin=false，缓存里
+     * debugSql=false。两者会通过 userAuth.debugAuth → definition.toolbar.debugSql
+     * 产生不同结果，必须分别缓存，否则超管身份命中旧缓存看不到"调试"按钮。
      */
-    private function buildCacheKey(string $functionCode, string $roleAuthz, string $region): string
+    private function buildCacheKey(string $functionCode, string $roleAuthz, string $region, bool $isSuperAdmin = false): string
     {
-        return self::CACHE_PREFIX . md5($functionCode) . '_' . md5(implode('|', [$roleAuthz, $region]));
+        return self::CACHE_PREFIX . md5($functionCode) . '_' . md5(implode('|', [$roleAuthz, $region, $isSuperAdmin ? '1' : '0']));
     }
 
     /**
