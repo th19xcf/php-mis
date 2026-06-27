@@ -67,6 +67,7 @@ class Auth extends BaseController
         $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
         $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
         $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
+        $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
 
         $accessToken = $this->jwtTokenService->generateAccessToken($user);
         $refreshToken = $this->jwtTokenService->generateRefreshToken($user);
@@ -212,6 +213,7 @@ class Auth extends BaseController
             $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
             $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
             $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
+            $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
 
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
             $newRefreshToken = $this->jwtTokenService->generateRefreshToken($user);
@@ -297,6 +299,7 @@ class Auth extends BaseController
         $roleAuthz = $this->computeRoleAuthz($user['work_id'], $user['region']);
         $locationAuthz = $this->computeLocationAuthz($user['work_id'], $user['region']);
         $deptNameAuthz = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
+        $deptCodeAuthz = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
 
         $session->set([
             'company_id' => $region,
@@ -312,7 +315,8 @@ class Auth extends BaseController
             'user_role' => $roleAuthz,
             'user_role_authz' => $roleAuthz,
             'user_location_authz' => $locationAuthz,
-            'user_dept_name_authz' => $deptNameAuthz
+            'user_dept_name_authz' => $deptNameAuthz,
+            'user_dept_code_authz' => $deptCodeAuthz
         ]);
     }
 
@@ -336,7 +340,8 @@ class Auth extends BaseController
             'user_role' => $user['role_authz'] ?? '',
             'user_role_authz' => $user['role_authz'] ?? '',
             'user_location_authz' => $user['location_authz'] ?? '',
-            'user_dept_name_authz' => $user['dept_name_authz'] ?? ''
+            'user_dept_name_authz' => $user['dept_name_authz'] ?? '',
+            'user_dept_code_authz' => $user['dept_code_authz'] ?? ''
         ]);
     }
 
@@ -372,6 +377,15 @@ class Auth extends BaseController
     {
         $authorizationService = new AuthorizationService();
         return $authorizationService->normalize($authorizationService->loadUserAuthField('部门全称赋权', $workId, $region));
+    }
+
+    /**
+     * 计算部门编码赋权
+     */
+    private function computeDeptCodeAuthz(string $workId, string $region): string
+    {
+        $authorizationService = new AuthorizationService();
+        return $authorizationService->normalize($authorizationService->loadUserAuthField('部门编码赋权', $workId, $region));
     }
 
 }

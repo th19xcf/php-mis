@@ -66,6 +66,7 @@ class JwtTokenService
             'roleAuthz' => $user['role_authz'] ?? '',
             'locationAuthz' => $user['location_authz'] ?? '',
             'deptNameAuthz' => $user['dept_name_authz'] ?? '',
+            'deptCodeAuthz' => $user['dept_code_authz'] ?? '',
         ];
 
         return $this->encode($payload);
@@ -98,6 +99,7 @@ class JwtTokenService
             'roleAuthz' => $user['role_authz'] ?? '',
             'locationAuthz' => $user['location_authz'] ?? '',
             'deptNameAuthz' => $user['dept_name_authz'] ?? '',
+            'deptCodeAuthz' => $user['dept_code_authz'] ?? '',
         ];
 
         return $this->encode($payload);

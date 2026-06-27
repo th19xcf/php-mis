@@ -93,7 +93,7 @@ class SessionUserContext
             'deptName' => trim((string) ($jwt->deptName ?? '')),
             'role' => trim((string) ($jwt->roleAuthz ?? $jwt->role ?? '')),
             'roleAuthz' => trim((string) ($jwt->roleAuthz ?? '')),
-            'deptAuthz' => trim((string) ($jwt->deptNameAuthz ?? '')),
+            'deptAuthz' => trim((string) ($jwt->deptCodeAuthz ?? '')),
             'locationAuthz' => trim((string) ($jwt->locationAuthz ?? '')),
         ];
     }
@@ -116,7 +116,7 @@ class SessionUserContext
             'deptName' => trim((string) $session->get('user_dept_name')),
             'role' => trim((string) $session->get('user_role')),
             'roleAuthz' => trim((string) $session->get('user_role_authz')),
-            'deptAuthz' => trim((string) $session->get('dept_authz')),
+            'deptAuthz' => trim((string) $session->get('user_dept_code_authz')),
             'locationAuthz' => trim((string) $session->get('user_location_authz')),
         ];
     }

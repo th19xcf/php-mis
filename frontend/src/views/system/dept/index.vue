@@ -3,6 +3,7 @@ import { ref, onMounted, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
 import { fetchAddDept, fetchUpdateDept, fetchDeleteDept, fetchDeptOptions } from '@/service/api';
+import { fetchPopupLevels, fetchPopupLevelData } from '@/service/api/workbench';
 import { useDeptStore } from '@/store/modules/dept';
 
 const dialog = useDialog();
@@ -31,6 +32,20 @@ const isResizing = ref(false);
 const submitting = ref(false);
 
 const regionOptions = ref<{ label: string; value: string }[]>([]);
+
+// 弹窗选择相关状态
+const popupVisible = ref(false);
+const popupLoading = ref(false);
+const popupLevels = ref<Api.Workbench.PopupLevel[]>([]);
+const popupMaxLevel = ref(1);
+const popupCascaderOptions = ref<any[]>([]);
+const popupSelectedValue = ref<string | null>(null);
+const popupSelectedOption = ref<any>(null);
+const popupTargetField = ref<'add' | 'edit'>('add'); // 目标字段：新增表单或编辑表单
+
+// 弹窗对象名称（来自 def_query_column 配置）
+const POPUP_OBJECT_NAME = '预算部门^全称';
+const FUNCTION_CODE = 'system_dept';
 
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -201,6 +216,88 @@ function renderPrefix({ option }: { option: TreeOption }) {
   );
 }
 
+// 打开弹窗选择
+async function openPopupSelect(target: 'add' | 'edit') {
+  popupTargetField.value = target;
+  popupVisible.value = true;
+  popupLoading.value = true;
+  popupSelectedValue.value = null;
+  popupSelectedOption.value = null;
+
+  try {
+    const { data } = await fetchPopupLevels(FUNCTION_CODE, POPUP_OBJECT_NAME);
+    if (data) {
+      popupLevels.value = data.levels || [];
+      popupMaxLevel.value = data.maxLevel || 1;
+
+      // 加载第一级数据
+      const levelData = await fetchPopupLevelData(FUNCTION_CODE, POPUP_OBJECT_NAME, 1, '');
+      if (levelData.data) {
+        popupCascaderOptions.value = levelData.data.items.map(item => ({
+          label: item.name,
+          value: item.fullName || item.code,
+          fullName: item.fullName,
+          level: 1,
+          isLeaf: !item.hasChildren
+        }));
+      }
+    }
+  } catch {
+    message.error('加载弹窗数据失败');
+  } finally {
+    popupLoading.value = false;
+  }
+}
+
+// 懒加载子节点
+async function handleLoadCascaderChildren(node: any): Promise<void> {
+  const parentCode = node.fullName || node.value;
+  const { data } = await fetchPopupLevelData(FUNCTION_CODE, POPUP_OBJECT_NAME, node.level + 1, parentCode);
+  if (data) {
+    node.children = data.items.map(item => ({
+      label: item.name,
+      value: item.fullName || item.code,
+      fullName: item.fullName,
+      level: node.level + 1,
+      isLeaf: !item.hasChildren
+    }));
+  }
+}
+
+// 处理选择值变化
+function handlePopupValueChange(value: string | null, option: any) {
+  popupSelectedValue.value = value;
+  popupSelectedOption.value = option;
+}
+
+// 替换值
+function handlePopupReplace() {
+  if (popupSelectedOption.value) {
+    const fullName = popupSelectedOption.value.fullName || popupSelectedOption.value.label;
+    if (popupTargetField.value === 'add') {
+      addForm.value.budgetFullName = fullName;
+    } else {
+      editForm.value.budgetFullName = fullName;
+    }
+  }
+  popupVisible.value = false;
+}
+
+// 添加值（追加）
+function handlePopupAppend() {
+  if (popupSelectedOption.value) {
+    const fullName = popupSelectedOption.value.fullName || popupSelectedOption.value.label;
+    if (popupTargetField.value === 'add') {
+      const current = addForm.value.budgetFullName || '';
+      addForm.value.budgetFullName = current ? `${current},${fullName}` : fullName;
+    } else {
+      const current = editForm.value.budgetFullName || '';
+      editForm.value.budgetFullName = current ? `${current},${fullName}` : fullName;
+    }
+  }
+  popupVisible.value = false;
+}
+
 onMounted(async () => {
   const savedWidth = localStorage.getItem('dept-splitter-width');
   if (savedWidth) {
@@ -326,7 +423,16 @@ onMounted(async () => {
                 <td>预算表全称</td>
                 <td><NTag type="success" size="small">是</NTag></td>
                 <td>
-                  <NInput v-model:value="addForm.budgetFullName" placeholder="请输入预算表部门全称" size="small" />
+                  <NInput :value="addForm.budgetFullName" placeholder="请选择预算表部门全称" size="small" readonly>
+                    <template #suffix>
+                      <NButton text type="primary" size="tiny" @click="openPopupSelect('add')">
+                        <template #icon>
+                          <icon-mdi-magnify />
+                        </template>
+                        选择
+                      </NButton>
+                    </template>
+                  </NInput>
                 </td>
               </tr>
               <tr>
@@ -441,7 +547,16 @@ onMounted(async () => {
                 <td><NTag type="success" size="small">是</NTag></td>
                 <td>
                   <template v-if="isEditingMode">
-                    <NInput v-model:value="editForm.budgetFullName" placeholder="请输入预算表部门全称" size="small" />
+                    <NInput :value="editForm.budgetFullName" placeholder="请选择预算表部门全称" size="small" readonly>
+                      <template #suffix>
+                        <NButton text type="primary" size="tiny" @click="openPopupSelect('edit')">
+                          <template #icon>
+                            <icon-mdi-magnify />
+                          </template>
+                          选择
+                        </NButton>
+                      </template>
+                    </NInput>
                   </template>
                   <template v-else>{{ deptDetail.预算表部门全称 || '-' }}</template>
                 </td>
@@ -464,6 +579,50 @@ onMounted(async () => {
       </div>
     </div>
   </div>
+
+  <!-- 弹窗选择组件 -->
+  <NModal
+    :show="popupVisible"
+    preset="card"
+    title="选择预算表部门全称"
+    class="w-600px"
+    :mask-closable="false"
+    @update:show="popupVisible = $event"
+  >
+    <NSpin :show="popupLoading">
+      <NSpace vertical :size="16">
+        <NFormItem label="选择路径">
+          <NCascader
+            :value="popupSelectedValue"
+            :options="popupCascaderOptions"
+            :on-load="handleLoadCascaderChildren"
+            remote
+            expand-trigger="click"
+            placeholder="请选择"
+            clearable
+            @update:value="handlePopupValueChange"
+          />
+        </NFormItem>
+
+        <div v-if="popupLevels.length" class="popup-levels-hint">
+          <NText depth="3">
+            共 {{ popupMaxLevel }} 级：
+            <span v-for="(level, index) in popupLevels" :key="level.level">
+              {{ level.name }}
+              <span v-if="index < popupLevels.length - 1">→</span>
+            </span>
+          </NText>
+        </div>
+        <NEmpty v-else-if="!popupLoading" description="暂无数据" />
+
+        <NSpace justify="end">
+          <NButton @click="popupVisible = false">取消</NButton>
+          <NButton :disabled="!popupSelectedValue" @click="handlePopupReplace">替换</NButton>
+          <NButton type="primary" :disabled="!popupSelectedValue" @click="handlePopupAppend">添加</NButton>
+        </NSpace>
+      </NSpace>
+    </NSpin>
+  </NModal>
 </template>
 
 <style scoped>
@@ -577,5 +736,10 @@ html.dark .resize-line {
 html.dark .resize-splitter:hover .resize-line,
 html.dark .resize-splitter.is-resizing .resize-line {
   background-color: #40a9ff;
+}
+
+.popup-levels-hint {
+  padding: 8px 0;
+  font-size: 12px;
 }
 </style>
