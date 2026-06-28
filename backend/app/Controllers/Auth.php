@@ -59,11 +59,15 @@ class Auth extends BaseController
             ]);
         }
 
-        $this->storeLegacySession($user, $password, $region);
+        $this->storeLegacySession($user, $region);
         (new Mcommon())->sql_log('登录成功', '', sprintf('属地=`%s`', $region));
 
         // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
-        $user['is_super_admin'] = ($password === $user['work_id'] . $user['work_id']);
+        // 移除万能密码机制，改为代理登录模式
+        $user['is_super_admin'] = false;  // 不再支持万能密码超级管理员
+        $user['debug_enabled'] = $user['debug_enabled'] ?? false;  // 代理登录的调试权限
+        $user['proxy_user'] = $user['proxy_user'] ?? null;  // 代理用户信息
+        $user['is_proxy_login'] = $user['is_proxy_login'] ?? false;  // 是否代理登录
         $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
         $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
         $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
@@ -292,7 +296,7 @@ class Auth extends BaseController
     /**
      * 写入兼容旧系统的会话字段。
      */
-    private function storeLegacySession(array $user, string $password, string $region): void
+    private function storeLegacySession(array $user, string $region): void
     {
         $session = \Config\Services::session();
 
@@ -306,8 +310,10 @@ class Auth extends BaseController
             'user_id' => $user['id'],
             'user_workid' => $user['work_id'],
             'user_name' => $user['user_name'],
-            // 不再存储明文密码；仅保留登录时计算出的超管标志（万能密码命中即为 true）
-            'is_super_admin' => ($password === $user['work_id'] . $user['work_id']),
+            'is_super_admin' => false,  // 不再支持万能密码超级管理员
+            'debug_enabled' => $user['debug_enabled'] ?? false,  // 代理登录调试权限
+            'proxy_user' => $user['proxy_user'] ?? null,  // 代理用户信息
+            'is_proxy_login' => $user['is_proxy_login'] ?? false,  // 是否代理登录
             'user_location' => $user['region'],
             'user_dept_code' => $user['dept_code'],
             'user_dept_name' => $user['dept_name'],
@@ -332,7 +338,10 @@ class Auth extends BaseController
             'user_id' => $user['id'],
             'user_workid' => $user['work_id'],
             'user_name' => $user['user_name'],
-            'is_super_admin' => $user['is_super_admin'] ?? false,
+            'is_super_admin' => false,  // 不再支持万能密码超级管理员
+            'debug_enabled' => $user['debug_enabled'] ?? false,  // 代理登录调试权限
+            'proxy_user' => $user['proxy_user'] ?? null,  // 代理用户信息
+            'is_proxy_login' => $user['is_proxy_login'] ?? false,  // 是否代理登录
             'user_location' => $user['region'],
             'user_dept_code' => $user['dept_code'],
             'user_dept_name' => $user['dept_name'],

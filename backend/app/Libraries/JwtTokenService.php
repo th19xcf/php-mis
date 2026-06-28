@@ -62,7 +62,10 @@ class JwtTokenService
             'workId' => $user['work_id'],
             'deptCode' => $user['dept_code'] ?? '',
             'deptName' => $user['dept_name'] ?? '',
-            'isSuperAdmin' => $user['is_super_admin'] ?? false,
+            'isSuperAdmin' => false,  // 不再支持万能密码超级管理员
+            'debugEnabled' => $user['debug_enabled'] ?? false,  // 代理登录调试权限
+            'proxyUser' => $user['proxy_user'] ?? null,  // 代理用户信息
+            'isProxyLogin' => $user['is_proxy_login'] ?? false,  // 是否代理登录
             'roleAuthz' => $user['role_authz'] ?? '',
             'locationAuthz' => $user['location_authz'] ?? '',
             'deptNameAuthz' => $user['dept_name_authz'] ?? '',
@@ -95,7 +98,10 @@ class JwtTokenService
             'workId' => $user['work_id'],
             'deptCode' => $user['dept_code'] ?? '',
             'deptName' => $user['dept_name'] ?? '',
-            'isSuperAdmin' => $user['is_super_admin'] ?? false,
+            'isSuperAdmin' => false,  // 不再支持万能密码超级管理员
+            'debugEnabled' => $user['debug_enabled'] ?? false,  // 代理登录调试权限
+            'proxyUser' => $user['proxy_user'] ?? null,  // 代理用户信息
+            'isProxyLogin' => $user['is_proxy_login'] ?? false,  // 是否代理登录
             'roleAuthz' => $user['role_authz'] ?? '',
             'locationAuthz' => $user['location_authz'] ?? '',
             'deptNameAuthz' => $user['dept_name_authz'] ?? '',

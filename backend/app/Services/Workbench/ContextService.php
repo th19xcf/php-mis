@@ -54,14 +54,13 @@ class ContextService
         $user = $this->userContext->requireLogin();
         $companyId = $user['companyId'];
         $userWorkId = $user['workId'];
-        $isSuperAdmin = $user['isSuperAdmin'];
+        $debugEnabled = $user['debugEnabled'] ?? false;  // 代理登录调试权限
         log_message('debug', '[ContextService] 步骤1完成: companyId=' . $companyId . ', userWorkId=' . $userWorkId);
 
-        // 缓存键基于 roleCodes + region + isSuperAdmin
-        // 必须把 isSuperAdmin 纳入：万能密码登录时会得到 isSuperAdmin=true，
-        // 此时 userAuth.debugAuth 自动为 true；如果只按 roleAuthz+region 缓存，
-        // 同一用户之前用普通密码登录写入的 false 版本会被复用，导致"调试"按钮永不出现。
-        $cacheKey = $this->buildCacheKey($functionCode, $user['roleAuthz'], $companyId, $isSuperAdmin);
+        // 缓存键基于 roleCodes + region + debugEnabled
+        // 必须把 debugEnabled 纳入缓存键：代理登录时 debugEnabled=true，
+        // 调试按钮可用；普通登录时 debugEnabled=false，调试按钮不可用。
+        $cacheKey = $this->buildCacheKey($functionCode, $user['roleAuthz'], $companyId, $debugEnabled);
         $cached = $this->cache->get($cacheKey);
         if (is_array($cached) && isset($cached['context'], $cached['definition'])) {
             $elapsed = (hrtime(true) - $start) / 1e6;
@@ -76,7 +75,7 @@ class ContextService
 
         $t1 = hrtime(true);
         log_message('debug', '[ContextService] 步骤2: loadUserAuthorization');
-        $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $isSuperAdmin);
+        $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $debugEnabled);
         log_message('debug', sprintf('[ContextService] 步骤2完成: %.2fms', (hrtime(true) - $t1) / 1e6));
 
         $t2 = hrtime(true);
@@ -241,7 +240,7 @@ class ContextService
     /**
      * 加载用户授权信息
      */
-    private function loadUserAuthorization(string $companyId, string $userWorkId, bool $isSuperAdmin): array
+    private function loadUserAuthorization(string $companyId, string $userWorkId, bool $debugEnabled): array
     {
         log_message('debug', '[loadUserAuthorization] 开始执行 SQL 查询');
         $sql = sprintf(
@@ -289,7 +288,7 @@ class ContextService
         $result = [
             'companyId' => $companyId,
             'userWorkId' => $userWorkId,
-            'isSuperAdmin' => $isSuperAdmin,
+            'debugEnabled' => $debugEnabled,  // 代理登录调试权限
             'roleCodes' => $roleCodes,
             'roleCodesQuoted' => $this->quoteList($roleCodes),
             'roleCodesRaw' => (string) ($row['角色编码'] ?? ''),
@@ -299,8 +298,9 @@ class ContextService
             'deptNameAuth' => $this->authorizationService->normalize((string) ($row['部门全称赋权'] ?? '')),
             'employeeDeptName' => (string) ($row['员工部门全称'] ?? ''),
             'workIdAuth' => (string) ($row['工号限权'] ?? '0'),
-            'debugAuth' => $isSuperAdmin || (string) ($row['调试赋权'] ?? '0') === '1',
-            'upkeepAuth' => $isSuperAdmin || (string) ($row['维护赋权'] ?? '0') === '1'
+            // debugAuth：代理登录时强制为 true，否则看数据库调试赋权字段
+            'debugAuth' => $debugEnabled || (string) ($row['调试赋权'] ?? '0') === '1',
+            'upkeepAuth' => (string) ($row['维护赋权'] ?? '0') === '1'
         ];
         log_message('debug', '[loadUserAuthorization] 完成, roleCodes count=' . count($roleCodes));
         return $result;

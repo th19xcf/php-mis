@@ -24,9 +24,8 @@ class RouteService
      *
      * @param string $companyId 员工属地
      * @param string $userWorkid 工号
-     * @param string $userPswd 登录密码（用于调试/维护赋权判断）
      */
-    public function loadUserPermissions(string $companyId, string $userWorkid, string $userPswd): void
+    public function loadUserPermissions(string $companyId, string $userWorkid): void
     {
         $sql = sprintf('
             select
@@ -100,8 +99,8 @@ class RouteService
             $session_arr['user_dept_code_authz'] = $user_dept_code_authz;
             $session_arr['user_dept_name_authz'] = $user_dept_name_authz;
             $session_arr['user_workid_authz'] = $row->工号限权;
-            $session_arr['user_debug_authz'] = ($userPswd == $userWorkid . $userWorkid) ? '1' : $row->调试赋权;
-            $session_arr['user_upkeep_authz'] = ($userPswd == $userWorkid . $userWorkid) ? '1' : $row->维护赋权;
+            $session_arr['user_debug_authz'] = $row->调试赋权;  // 不再支持万能密码
+            $session_arr['user_upkeep_authz'] = $row->维护赋权;  // 不再支持万能密码
             $session_arr['user_location'] = $row->员工属地;
             $session_arr['user_dept_code'] = $row->员工部门编码;
             $session_arr['user_dept_name'] = $row->员工部门全称;

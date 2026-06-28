@@ -87,7 +87,10 @@ class SessionUserContext
             'userId' => trim((string) ($jwt->userId ?? '')),
             'workId' => trim((string) ($jwt->workId ?? '')),
             'userName' => trim((string) ($jwt->userName ?? '')),
-            'isSuperAdmin' => (bool) ($jwt->isSuperAdmin ?? false),
+            'isSuperAdmin' => false,  // 不再支持万能密码超级管理员
+            'debugEnabled' => (bool) ($jwt->debugEnabled ?? false),  // 代理登录调试权限
+            'proxyUser' => $jwt->proxyUser ?? null,  // 代理用户信息
+            'isProxyLogin' => (bool) ($jwt->isProxyLogin ?? false),  // 是否代理登录
             'location' => trim((string) ($jwt->region ?? '')),
             'deptCode' => trim((string) ($jwt->deptCode ?? '')),
             'deptName' => trim((string) ($jwt->deptName ?? '')),
@@ -110,7 +113,10 @@ class SessionUserContext
             'userId' => trim((string) $session->get('user_id')),
             'workId' => trim((string) $session->get('user_workid')),
             'userName' => trim((string) $session->get('user_name')),
-            'isSuperAdmin' => (bool) $session->get('is_super_admin'),
+            'isSuperAdmin' => false,  // 不再支持万能密码超级管理员
+            'debugEnabled' => (bool) $session->get('debug_enabled'),  // 代理登录调试权限
+            'proxyUser' => $session->get('proxy_user'),  // 代理用户信息
+            'isProxyLogin' => (bool) $session->get('is_proxy_login'),  // 是否代理登录
             'location' => trim((string) $session->get('user_location')),
             'deptCode' => trim((string) $session->get('user_dept_code')),
             'deptName' => trim((string) $session->get('user_dept_name')),

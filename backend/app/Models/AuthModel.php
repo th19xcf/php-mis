@@ -13,21 +13,21 @@ class AuthModel
 
     public function verifyUser(string $userWorkId, string $password, string $region): ?array
     {
-        $logSwitch = true;
-        $passwordSql = '';
-        if ($password === $userWorkId . $userWorkId) {
-            $logSwitch = false;
-        } else {
-            $passwordSql = sprintf(' and 密码=%s', $this->common->quote($password));
+        // 解析代理登录格式：原用户名&代理用户名
+        $proxyInfo = $this->parseProxyLogin($userWorkId);
+        if ($proxyInfo !== null) {
+            // 代理登录模式：验证代理用户的密码
+            return $this->verifyProxyLogin($proxyInfo, $password, $region);
         }
 
+        // 正常登录模式
         $sql = sprintf(
-            'select 员工编号,工号,姓名,员工属地,员工部门编码,员工部门全称,日志标识
+            'select 员工编号,工号,姓名,员工属地,员工部门编码,员工部门全称,日志标识,调试赋权
             from def_user
-            where 有效标识="1" and 员工属地=%s and 工号=%s%s',
+            where 有效标识="1" and 员工属地=%s and 工号=%s and 密码=%s',
             $this->common->quote($region),
             $this->common->quote($userWorkId),
-            $passwordSql
+            $this->common->quote($password)
         );
 
         $row = $this->common->select($sql)->getRowArray();
@@ -36,7 +36,95 @@ class AuthModel
             return null;
         }
 
+        $logSwitch = ($row['日志标识'] ?? '1') !== '0';
         return $this->mapUserRow($row, $logSwitch);
+    }
+
+    /**
+     * 解析代理登录格式的用户名
+     * 格式：原用户名&代理用户名
+     * 
+     * @return array{targetWorkId: string, proxyWorkId: string}|null
+     */
+    private function parseProxyLogin(string $userWorkId): ?array
+    {
+        if (!str_contains($userWorkId, '&')) {
+            return null;
+        }
+
+        $parts = explode('&', $userWorkId, 2);
+        $targetWorkId = trim($parts[0]);
+        $proxyWorkId = trim($parts[1]);
+
+        if ($targetWorkId === '' || $proxyWorkId === '') {
+            return null;
+        }
+
+        return [
+            'targetWorkId' => $targetWorkId,
+            'proxyWorkId' => $proxyWorkId
+        ];
+    }
+
+    /**
+     * 代理登录验证
+     * 
+     * @param array{targetWorkId: string, proxyWorkId: string} $proxyInfo
+     * @return array|null 返回目标用户信息，附加 proxy_user 和 debug_enabled 字段
+     */
+    private function verifyProxyLogin(array $proxyInfo, string $password, string $region): ?array
+    {
+        $targetWorkId = $proxyInfo['targetWorkId'];
+        $proxyWorkId = $proxyInfo['proxyWorkId'];
+
+        // 1. 验证代理用户的密码
+        $proxySql = sprintf(
+            'select 员工编号,工号,姓名,员工属地,调试赋权
+            from def_user
+            where 有效标识="1" and 员工属地=%s and 工号=%s and 密码=%s',
+            $this->common->quote($region),
+            $this->common->quote($proxyWorkId),
+            $this->common->quote($password)
+        );
+
+        $proxyRow = $this->common->select($proxySql)->getRowArray();
+        if (!$proxyRow) {
+            return null;
+        }
+
+        // 2. 检查代理用户是否有调试赋权
+        $proxyDebugAuth = (string) ($proxyRow['调试赋权'] ?? '0') === '1';
+        if (!$proxyDebugAuth) {
+            return null;
+        }
+
+        // 3. 获取目标用户信息（不验证密码）
+        $targetSql = sprintf(
+            'select 员工编号,工号,姓名,员工属地,员工部门编码,员工部门全称,日志标识
+            from def_user
+            where 有效标识="1" and 员工属地=%s and 工号=%s',
+            $this->common->quote($region),
+            $this->common->quote($targetWorkId)
+        );
+
+        $targetRow = $this->common->select($targetSql)->getRowArray();
+        if (!$targetRow) {
+            return null;
+        }
+
+        $logSwitch = false;  // 代理登录不记录日志
+        $user = $this->mapUserRow($targetRow, $logSwitch);
+
+        // 附加代理登录信息
+        $user['proxy_user'] = [
+            'work_id' => (string) $proxyRow['工号'],
+            'user_name' => (string) $proxyRow['姓名']
+        ];
+        $user['debug_enabled'] = true;  // 调试按钮可用
+        $user['is_proxy_login'] = true;  // 标记为代理登录
+        $user['log_switch'] = false;  // 代理登录不记录日志
+
+        return $user;
     }
 
     public function getUserById(int $userId): ?array

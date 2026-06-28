@@ -36,11 +36,10 @@ class Route extends BaseApiController
         }
 
         try {
-            // 1. 查询用户权限并写入 session
+            // 1. 查询用户权限并写入 session（不再需要 password 参数）
             $this->routeService->loadUserPermissions(
                 $user['companyId'],
-                $user['workId'],
-                $user['password']
+                $user['workId']
             );
 
             // 2. 构建菜单树（内部同步将功能权限写入 session）
