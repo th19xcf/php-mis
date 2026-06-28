@@ -2,6 +2,7 @@
 
 namespace App\Services\Workbench;
 
+use App\Libraries\MetadataCache;
 use App\Models\Mcommon;
 
 /**
@@ -11,10 +12,12 @@ use App\Models\Mcommon;
 class EditService
 {
     private Mcommon $model;
+    private MetadataCache $metadataCache;
 
     public function __construct()
     {
         $this->model = new Mcommon();
+        $this->metadataCache = new MetadataCache();
     }
 
     /**
@@ -291,51 +294,14 @@ class EditService
     }
 
     /**
-     * 从 def_query_column 表获取弹窗配置映射
+     * 从 def_query_column 表获取弹窗配置映射（使用长缓存）
      * 当 view_function 中没有弹窗配置时，回退到此查询
      *
      * @return array [列名/查询名/字段名 => 对象名]
      */
     private function getPopupColumnMap(): array
     {
-        try {
-            $sql = 'select 对象, 对象表名, 查询名, 列名, 字段名
-                    from def_query_column
-                    where 赋值类型="弹窗"
-                    group by 对象';
-
-            $result = $this->model->select($sql);
-            if ($result === false) {
-                return [];
-            }
-
-            $map = [];
-            foreach ($result->getResultArray() as $row) {
-                $object = $row['对象'] ?? '';
-                $queryName = $row['查询名'] ?? '';
-                $columnName = $row['列名'] ?? '';
-                $fieldName = $row['字段名'] ?? '';
-                if (!empty($object)) {
-                    if (!empty($queryName)) {
-                        $map[$queryName] = $object;
-                    }
-                    if (!empty($columnName)) {
-                        $map[$columnName] = $object;
-                    }
-                    if (!empty($fieldName)) {
-                        $map[$fieldName] = $object;
-                    }
-                    $map[$object] = $object;
-                }
-            }
-
-            log_message('info', "getPopupColumnMap: found " . count($map) . " popup mappings");
-
-            return $map;
-        } catch (\Throwable $e) {
-            log_message('error', 'getPopupColumnMap 失败: ' . $e->getMessage());
-            return [];
-        }
+        return $this->metadataCache->getPopupColumnMap();
     }
 
     /**

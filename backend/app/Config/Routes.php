@@ -131,3 +131,9 @@ $routes->group('contract', static function ($routes) {
 	$routes->get('flow', 'ContractApi::flow');
 	$routes->get('flow/(:segment)', 'ContractApi::flow/$1');
 });
+
+$routes->group('cache', static function ($routes) {
+	$routes->post('invalidate-table', 'CacheController::invalidateTable');
+	$routes->post('invalidate-all', 'CacheController::invalidateAll');
+	$routes->get('status', 'CacheController::status');
+});

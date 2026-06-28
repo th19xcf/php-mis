@@ -2,6 +2,7 @@
 
 namespace App\Services\Workbench;
 
+use App\Libraries\MetadataCache;
 use App\Models\Mcommon;
 
 /**
@@ -16,10 +17,12 @@ use App\Models\Mcommon;
 class PopupService
 {
     private Mcommon $model;
+    private MetadataCache $metadataCache;
 
     public function __construct()
     {
         $this->model = new Mcommon();
+        $this->metadataCache = new MetadataCache();
     }
 
     /**
@@ -49,29 +52,7 @@ class PopupService
             return $row;
         }
 
-        $sql2 = sprintf(
-            'select 对象, 对象表名
-            from def_query_column
-            where 赋值类型="弹窗" and 对象=%s
-            group by 对象
-            limit 1',
-            $this->model->quote($objectName)
-        );
-
-        $result2 = $this->model->select($sql2);
-        if ($result2 === false) {
-            return null;
-        }
-        $row2 = $result2->getRowArray();
-        if ($row2 === null) {
-            return null;
-        }
-
-        return [
-            '对象'     => $row2['对象'],
-            '对象名称' => $objectName,
-            '对象表名' => $row2['对象表名'],
-        ];
+        return $this->metadataCache->getPopupConfigByObject($objectName);
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Services\Workbench;
 
 use App\Exceptions\BusinessException;
+use App\Libraries\MetadataCache;
 use App\Models\Mcommon;
 use App\Services\Workbench\ContextService;
 use App\Traits\ChartColumnConfigTrait;
@@ -16,10 +17,12 @@ class ChartService
     use ChartColumnConfigTrait;
 
     private Mcommon $model;
+    private MetadataCache $metadataCache;
 
     public function __construct()
     {
         $this->model = new Mcommon();
+        $this->metadataCache = new MetadataCache();
     }
 
     /**
@@ -108,22 +111,14 @@ class ChartService
             return [];
         }
 
-        $sql = sprintf(
-            'select 钻取模块, 钻取选项, 钻取字段, 钻取条件, 图形模块
-             from def_chart_drill_config
-             where 顺序>0 and 钻取模块=%s
-             order by 钻取模块, 顺序',
-            $this->model->quote($drillModule)
-        );
-
-        $results = $this->model->select($sql)->getResultArray() ?? [];
+        $configs = $this->metadataCache->getChartDrillConfig($drillModule);
         log_message('info', sprintf(
             '[ChartDrill] 钻取模块=%s, def_chart_drill_config 返回 %d 行',
-            $drillModule, count($results)
+            $drillModule, count($configs)
         ));
         $options = [];
 
-        foreach ($results as $row) {
+        foreach ($configs as $row) {
             $option = (string) ($row['钻取选项'] ?? '');
             $chartModule = (string) ($row['图形模块'] ?? '');
             $module = (string) ($row['钻取模块'] ?? '');

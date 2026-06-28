@@ -10,6 +10,8 @@ class Mcommon extends Model
 
     private ?object $dbInstance = null;
 
+    private array $requestCache = [];
+
     private function getDb(): object
     {
         if ($this->dbInstance === null) {
@@ -20,8 +22,16 @@ class Mcommon extends Model
 
     public function select(string $sql)
     {
+        $cacheKey = md5($sql);
+        if (isset($this->requestCache[$cacheKey])) {
+            log_message('debug', '[Mcommon] 请求级缓存命中: ' . substr($sql, 0, 50) . '...');
+            return $this->requestCache[$cacheKey];
+        }
+
         $db = $this->getDb();
-        return $db->query($sql);
+        $result = $db->query($sql);
+        $this->requestCache[$cacheKey] = $result;
+        return $result;
     }
 
     /**
@@ -37,9 +47,30 @@ class Mcommon extends Model
     public function query(string $sql, array $bindings = [])
     {
         $db = $this->getDb();
-        // 将历史遗留的 %s 占位符规范化为 ?，由驱动层完成安全绑定
         $normalized = preg_replace('/%s/', '?', $sql);
         return $db->query($normalized, $bindings);
+    }
+
+    /**
+     * 执行 SQL 并返回结果（带请求级缓存，用于读操作）
+     *
+     * @param string $sql SQL 语句
+     * @param array  $bindings 绑定的参数数组
+     * @return object|\CodeIgniter\Database\BaseResult
+     */
+    public function queryCached(string $sql, array $bindings = [])
+    {
+        $cacheKey = md5($sql . json_encode($bindings));
+        if (isset($this->requestCache[$cacheKey])) {
+            log_message('debug', '[Mcommon] 请求级缓存命中(queryCached): ' . substr($sql, 0, 50) . '...');
+            return $this->requestCache[$cacheKey];
+        }
+
+        $db = $this->getDb();
+        $normalized = preg_replace('/%s/', '?', $sql);
+        $result = $db->query($normalized, $bindings);
+        $this->requestCache[$cacheKey] = $result;
+        return $result;
     }
 
     /**

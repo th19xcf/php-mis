@@ -3,6 +3,7 @@
 namespace App\Services\Workbench;
 
 use App\Exceptions\ValidationException;
+use App\Libraries\MetadataCache;
 use App\Models\Mcommon;
 use App\Services\Workbench\ContextService;
 use App\Traits\ChartColumnConfigTrait;
@@ -23,6 +24,7 @@ class ChartDrillService
 
     private Mcommon $model;
     private ContextService $contextService;
+    private MetadataCache $metadataCache;
 
     public function __construct()
     {
@@ -30,6 +32,7 @@ class ChartDrillService
         // 用于兜底获取 queryTable / deptNameStr：旧版走 Frame::init 会预置 session；
         // 新版 Workbench 不经过 init，因此需要按需重新构建上下文
         $this->contextService = new ContextService();
+        $this->metadataCache = new MetadataCache();
     }
 
     /**
@@ -572,18 +575,10 @@ class ChartDrillService
             return [];
         }
 
-        $sql = sprintf(
-            'select 钻取模块, 钻取选项, 钻取字段, 钻取条件, 图形模块
-             from def_chart_drill_config
-             where 顺序>0 and 钻取模块=%s
-             order by 钻取模块, 顺序',
-            $this->model->quote($drillModule)
-        );
-
-        $results = $this->model->select($sql)->getResultArray() ?? [];
+        $configs = $this->metadataCache->getChartDrillConfig($drillModule);
         $options = [];
 
-        foreach ($results as $row) {
+        foreach ($configs as $row) {
             $option = (string) ($row['钻取选项'] ?? '');
             $chartModule = (string) ($row['图形模块'] ?? '');
             $module = (string) ($row['钻取模块'] ?? '');
