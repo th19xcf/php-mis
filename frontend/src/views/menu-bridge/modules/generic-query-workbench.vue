@@ -867,7 +867,7 @@ const { drillLevel, isDrilled, handleChartClick, resetDrill, silentResetDrill } 
 });
 
 // 钻取选项缓存（页面级 + 图表级）
-const { options: drillOptions, getOptionsForChart: getDrillOptionsForChart } = useWorkbenchDrillOptions({
+const { options: _drillOptions, getOptionsForChart: getDrillOptionsForChart } = useWorkbenchDrillOptions({
   chartData
 });
 
@@ -909,7 +909,19 @@ const {
 const { handleExport } = useWorkbenchExport({
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  notify
+  notify,
+  getFilters: () => {
+    if (!selectedField.value || !selectedValue.value.trim()) {
+      return [];
+    }
+    return [
+      {
+        fieldKey: selectedField.value,
+        operator: selectedOperator.value,
+        value: selectedValue.value.trim()
+      }
+    ];
+  }
 });
 
 // 钻取选项对话框（数据行 → 跳转新功能页）
@@ -1091,7 +1103,7 @@ const { handleGridReady } = useWorkbenchGridReady({
       @delete="handleDelete"
       @table-edit-submit="handleTableEditSubmit"
       @handle-import="handleImport"
-      @handle-export="handleExport"
+      @handle-export="(exportAll: boolean) => handleExport({ exportAll })"
       @handle-debug="handleDebug"
       @upkeep="handleUpkeep"
     />

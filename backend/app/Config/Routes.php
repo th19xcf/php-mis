@@ -59,6 +59,8 @@ $routes->group('workbench', static function ($routes) {
 	$routes->get('popup-data/(:segment)', 'Workbench::popupData/$1');
 	$routes->get('popup-levels/(:segment)', 'Workbench::popupLevels/$1');
 	$routes->get('popup-level-data/(:segment)', 'Workbench::popupLevelData/$1');
+	$routes->post('export/(:segment)', 'Workbench::export/$1');
+	$routes->get('export-status/(:segment)', 'Workbench::exportStatus/$1');
 });
 
 $routes->group('comment', static function ($routes) {

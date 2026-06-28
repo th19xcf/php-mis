@@ -46,6 +46,7 @@
   "dependencies": {
     "@ag-grid-community/locale": "35.2.1",
     "@better-scroll/core": "2.5.1",
+    "@e965/xlsx": "^0.20.3",
     "@iconify/vue": "5.0.0",
     "@sa/axios": "workspace:*",
     "@sa/color": "workspace:*",
@@ -67,8 +68,7 @@
     "vue": "3.5.32",
     "vue-draggable-plus": "0.6.1",
     "vue-i18n": "11.3.2",
-    "vue-router": "5.0.4",
-    "xlsx": "^0.18.5"
+    "vue-router": "5.0.4"
   },
   "devDependencies": {
     "@elegant-router/vue": "0.3.8",

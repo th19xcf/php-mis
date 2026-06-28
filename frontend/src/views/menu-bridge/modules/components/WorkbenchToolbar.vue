@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from 'vue';
-import { NButton, NInput, NTag, NCard } from 'naive-ui';
+import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue';
+import { NButton, NInput, NTag, NCard, NSelect } from 'naive-ui';
 import SvgIcon from '@/components/custom/svg-icon.vue';
 
 defineProps<{
@@ -33,10 +33,21 @@ const emit = defineEmits<{
   delete: [];
   tableEditSubmit: [];
   handleImport: [];
-  handleExport: [];
+  handleExport: [exportAll: boolean];
   handleDebug: [];
   upkeep: [];
 }>();
+
+const exportAll = ref<string>('true');
+
+const exportOptions = [
+  { label: '导出全部', value: 'true' },
+  { label: '导出筛选', value: 'false' }
+];
+
+function handleExport() {
+  emit('handleExport', exportAll.value === 'true');
+}
 
 // 在子组件内部管理滚动状态，ref 指向自己的 DOM
 const toolbarScrollRef = ref<HTMLDivElement | null>(null);
@@ -132,7 +143,20 @@ defineExpose({ checkScrollPosition });
           </NButton>
           <NButton v-if="pageMeta?.toolbar.upkeep" @click="emit('upkeep')">数据整理</NButton>
           <NButton v-if="pageMeta?.toolbar.import" @click="emit('handleImport')">导入</NButton>
-          <NButton :disabled="!pageMeta?.toolbar.export" @click="emit('handleExport')">导出</NButton>
+          <NSelect
+            :disabled="!pageMeta?.toolbar.export"
+            v-model:value="exportAll"
+            :options="exportOptions"
+            size="small"
+            :style="{ minWidth: '120px' }"
+            placeholder="导出方式"
+          />
+          <NButton
+            :disabled="!pageMeta?.toolbar.export"
+            @click="handleExport"
+          >
+            导出
+          </NButton>
           <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="emit('handleDebug')">
             调试
           </NButton>

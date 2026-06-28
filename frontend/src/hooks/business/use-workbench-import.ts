@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue';
 import type { Ref } from 'vue';
 import type { GridApi } from 'ag-grid-community';
-import * as XLSX from 'xlsx';
+import * as XLSX from '@e965/xlsx';
 
 import { fetchImportColumns, importData } from '@/service/api/workbench';
 
