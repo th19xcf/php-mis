@@ -43,9 +43,7 @@ function getMultiSelectValue(fieldName: string): string[] {
 }
 
 function handleMultiFieldChange(fieldName: string, value: string[] | null | undefined) {
-  const parts = (value || [])
-    .map(s => (s == null ? '' : String(s).trim()))
-    .filter(Boolean);
+  const parts = (value || []).map(s => (s == null ? '' : String(s).trim())).filter(Boolean);
   handleFieldChange(fieldName, parts.join(','));
 }
 
@@ -98,8 +96,20 @@ const dark = computed(() => !!props.isDarkMode);
                   :path="field.fieldName"
                   :required="field.required"
                 >
+                  <div v-if="field.inputType === 'popup'" class="popup-select-wrapper">
+                    <NInput
+                      :value="formData[field.fieldName] || ''"
+                      :placeholder="`请选择${field.columnName}`"
+                      readonly
+                      class="popup-input"
+                    >
+                      <template #suffix>
+                        <NButton text type="primary" @click="emit('openPopup', field)">选择</NButton>
+                      </template>
+                    </NInput>
+                  </div>
                   <NSelect
-                    v-if="field.editorType === '多选'"
+                    v-else-if="field.inputType === 'multiSelect'"
                     :value="getMultiSelectValue(field.fieldName)"
                     :options="getFieldOptions(field)"
                     :placeholder="`请选择${field.columnName}（可多选）`"
@@ -109,7 +119,7 @@ const dark = computed(() => !!props.isDarkMode);
                     @update:value="handleMultiFieldChange(field.fieldName, $event)"
                   />
                   <NSelect
-                    v-else-if="field.editorType === '下拉框' || field.fieldType === '选项'"
+                    v-else-if="field.objectName && field.objectName !== ''"
                     :value="formData[field.fieldName]"
                     :options="getFieldOptions(field)"
                     :placeholder="`请选择${field.columnName}`"
@@ -118,7 +128,7 @@ const dark = computed(() => !!props.isDarkMode);
                     @update:value="handleFieldChange(field.fieldName, $event)"
                   />
                   <NDatePicker
-                    v-else-if="field.editorType === '日期时间' || field.fieldType === '日期时间'"
+                    v-else-if="field.fieldType === '日期时间'"
                     :formatted-value="formData[field.fieldName]"
                     value-format="yyyy-MM-dd HH:mm:ss"
                     type="datetime"
@@ -146,18 +156,6 @@ const dark = computed(() => !!props.isDarkMode);
                     clearable
                     @update:value="handleFieldChange(field.fieldName, $event)"
                   />
-                  <div v-else-if="field.editorType === '弹窗选择'" class="popup-select-wrapper">
-                    <NInput
-                      :value="formData[field.fieldName] || ''"
-                      :placeholder="`请选择${field.columnName}`"
-                      readonly
-                      class="popup-input"
-                    >
-                      <template #suffix>
-                        <NButton text type="primary" @click="emit('openPopup', field)">选择</NButton>
-                      </template>
-                    </NInput>
-                  </div>
                   <NInput
                     v-else
                     :value="formData[field.fieldName]"

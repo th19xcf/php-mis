@@ -21,7 +21,8 @@ function normalizeFields(fields: any[]) {
     required: field.required,
     readonly: field.readonly,
     objectName: field.objectName,
-    objectOptions: field.objectOptions
+    objectOptions: field.objectOptions,
+    inputType: field.inputType
   }));
 }
 
@@ -113,7 +114,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
         return;
       }
 
-      addFormFields.value = data.fields || [];
+      addFormFields.value = normalizeFields(data.fields || []);
       addFormFields.value.forEach((field: any) => {
         if (field.fieldType === '日期') {
           addFormData.value[field.fieldName] = field.defaultValue || null;

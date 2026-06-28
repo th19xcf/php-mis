@@ -59,6 +59,9 @@ class EditService
             $columns = $result->getResultArray();
             log_message('info', "getAddFields: found " . count($columns) . " columns");
 
+            $popupColumnMap = $this->getPopupColumnMap();
+            log_message('info', "getAddFields: popupColumnMap keys: " . json_encode(array_keys($popupColumnMap), JSON_UNESCAPED_UNICODE));
+
             // 批量预取所有"固定值/多选"列的对象选项，避免循环内 N+1 查询。
             $objectNames = [];
             foreach ($columns as $col) {
@@ -95,9 +98,6 @@ class EditService
                     $field['objectOptions'] = $optionsMap[$对象] ?? [];
                 }
 
-                // 多选：从 def_object 取值，前端渲染为 multiple NSelect，
-                // 最终值以 "," 分隔写入字段。
-                // 注意：多选与固定值是互斥语义，如果同时出现以多选为准。
                 if (strpos($赋值类型, '多选') !== false && !empty($对象)) {
                     $field['inputType'] = 'multiSelect';
                     $field['objectName'] = $对象;
@@ -107,13 +107,29 @@ class EditService
                 if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
                     $field['inputType'] = 'popup';
                     $field['objectName'] = $对象;
-                } elseif (empty($field['inputType'])) {
-                    // 只有当 inputType 还没被多选分支设过时才回退到 text，
-                    // 避免被覆盖回 text。
+                }
+
+                $columnName = $col['列名'] ?? '';
+                $inPopupMap = isset($popupColumnMap[$columnName]);
+                if ($inPopupMap) {
+                    $field['inputType'] = 'popup';
+                    $field['objectName'] = $popupColumnMap[$columnName];
+                    log_message('info', "getAddFields: columnName={$columnName} found in popupColumnMap, objectName={$field['objectName']}");
+                }
+
+                if (empty($field['inputType'])) {
                     $field['inputType'] = 'text';
                 }
 
                 $fields[] = $field;
+            }
+
+            log_message('info', "getAddFields: returning " . count($fields) . " fields");
+            // 调试日志：打印所有字段的 inputType 和 objectName
+            foreach ($fields as $f) {
+                if (($f['inputType'] ?? '') === 'popup') {
+                    log_message('info', "  popup field: columnName={$f['columnName']}, objectName={$f['objectName']}");
+                }
             }
 
             return ['fields' => $fields];
@@ -271,6 +287,54 @@ class EditService
         } catch (\Throwable $e) {
             log_message('error', 'getObjectOptionsBatch 失败: ' . $e->getMessage());
             return array_fill_keys(array_values(array_unique($objectNames)), []);
+        }
+    }
+
+    /**
+     * 从 def_query_column 表获取弹窗配置映射
+     * 当 view_function 中没有弹窗配置时，回退到此查询
+     *
+     * @return array [列名/查询名/字段名 => 对象名]
+     */
+    private function getPopupColumnMap(): array
+    {
+        try {
+            $sql = 'select 对象, 对象表名, 查询名, 列名, 字段名
+                    from def_query_column
+                    where 赋值类型="弹窗"
+                    group by 对象';
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return [];
+            }
+
+            $map = [];
+            foreach ($result->getResultArray() as $row) {
+                $object = $row['对象'] ?? '';
+                $queryName = $row['查询名'] ?? '';
+                $columnName = $row['列名'] ?? '';
+                $fieldName = $row['字段名'] ?? '';
+                if (!empty($object)) {
+                    if (!empty($queryName)) {
+                        $map[$queryName] = $object;
+                    }
+                    if (!empty($columnName)) {
+                        $map[$columnName] = $object;
+                    }
+                    if (!empty($fieldName)) {
+                        $map[$fieldName] = $object;
+                    }
+                    $map[$object] = $object;
+                }
+            }
+
+            log_message('info', "getPopupColumnMap: found " . count($map) . " popup mappings");
+
+            return $map;
+        } catch (\Throwable $e) {
+            log_message('error', 'getPopupColumnMap 失败: ' . $e->getMessage());
+            return [];
         }
     }
 
@@ -556,6 +620,8 @@ class EditService
             $columns = $result->getResultArray();
             $fields = [];
 
+            $popupColumnMap = $this->getPopupColumnMap();
+
             // 批量预取所有"固定值/多选"列的对象选项，避免循环内 N+1 查询。
             $objectNames = [];
             foreach ($columns as $col) {
@@ -600,8 +666,6 @@ class EditService
                     $field['objectOptions'] = $optionsMap[$对象] ?? [];
                 }
 
-                // 多选：从 def_object 取值，前端渲染为 multiple NSelect，
-                // 最终值以 "," 分隔写入字段。
                 if (strpos($赋值类型, '多选') !== false && !empty($对象)) {
                     $field['inputType']    = 'multiSelect';
                     $field['objectName']   = $对象;
@@ -611,6 +675,12 @@ class EditService
                 if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
                     $field['inputType']  = 'popup';
                     $field['objectName'] = $对象;
+                }
+
+                $columnName = $col['列名'] ?? '';
+                if (!empty($columnName) && isset($popupColumnMap[$columnName])) {
+                    $field['inputType'] = 'popup';
+                    $field['objectName'] = $popupColumnMap[$columnName];
                 }
 
                 $fields[] = $field;
@@ -653,6 +723,8 @@ class EditService
             $columns = $result->getResultArray();
             $fields = [];
 
+            $popupColumnMap = $this->getPopupColumnMap();
+
             // 批量预取所有"固定值/多选"列的对象选项，避免循环内 N+1 查询。
             $objectNames = [];
             foreach ($columns as $col) {
@@ -674,17 +746,33 @@ class EditService
                     'editorType' => $col['赋值类型'] ?? '',
                     'required'   => (string) ($col['不可为空'] ?? '0') === '1',
                     'readonly'   => (string) ($col['可修改'] ?? '0') === '2',
+                    'objectName' => '',
+                    'inputType'  => 'text',
                 ];
 
-                // 多选 / 固定值 都从 def_object 拉选项，editorType 保持原样
-                // （更新/批量表单会通过 editorType 字符串来分支渲染）。
                 $赋值类型 = $col['赋值类型'] ?? '';
                 $对象     = $col['对象']     ?? '';
-                if (!empty($对象)
-                    && (strpos($赋值类型, '固定值') !== false || strpos($赋值类型, '多选') !== false)
-                ) {
+
+                if (strpos($赋值类型, '固定值') !== false && !empty($对象)) {
                     $field['objectName']   = $对象;
                     $field['objectOptions'] = $optionsMap[$对象] ?? [];
+                }
+
+                if (strpos($赋值类型, '多选') !== false && !empty($对象)) {
+                    $field['inputType']    = 'multiSelect';
+                    $field['objectName']   = $对象;
+                    $field['objectOptions'] = $optionsMap[$对象] ?? [];
+                }
+
+                if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
+                    $field['inputType']  = 'popup';
+                    $field['objectName'] = $对象;
+                }
+
+                $columnName = $col['列名'] ?? '';
+                if (!empty($columnName) && isset($popupColumnMap[$columnName])) {
+                    $field['inputType'] = 'popup';
+                    $field['objectName'] = $popupColumnMap[$columnName];
                 }
 
                 $fields[] = $field;
