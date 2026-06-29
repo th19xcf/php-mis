@@ -165,7 +165,6 @@ declare global {
   const NListItem: typeof import('naive-ui')['NListItem']
   const NLoadingBarProvider: typeof import('naive-ui')['NLoadingBarProvider']
   const NMenu: typeof import('naive-ui')['NMenu']
-  const 'NMenu.Item': typeof import('naive-ui')['NMenu.Item']
   const NMessageProvider: typeof import('naive-ui')['NMessageProvider']
   const NModal: typeof import('naive-ui')['NModal']
   const NNotificationProvider: typeof import('naive-ui')['NNotificationProvider']
