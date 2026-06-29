@@ -120,10 +120,10 @@ class WorkbenchEditController extends BaseApiController
                     $num = $this->editService->addRowMode0($config['dataTable'], $request);
                     break;
                 case '1':
-                    $num = $this->editService->addRowMode1($config['dataTable'], $request, $session->get('user_workid') ?? 'system');
+                    $num = $this->editService->addRowMode1($config['dataTable'], $request, $this->userContext->getWorkId());
                     break;
                 case '2':
-                    $num = $this->editService->addRowMode2($config['dataTable'], $request, $session->get('user_workid') ?? 'system');
+                    $num = $this->editService->addRowMode2($config['dataTable'], $request, $this->userContext->getWorkId());
                     break;
                 default:
                     return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, sprintf('新增失败,数据模式[-%s-]错误', $config['dataModel']));
@@ -200,8 +200,7 @@ class WorkbenchEditController extends BaseApiController
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未指定要修改的记录');
             }
 
-            $session = \Config\Services::session();
-            $userWorkid = $session->get('user_workid') ?? 'system';
+            $userWorkid = $this->userContext->getWorkId();
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
@@ -262,8 +261,7 @@ class WorkbenchEditController extends BaseApiController
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：没有要更新的字段');
             }
 
-            $session = \Config\Services::session();
-            $userWorkid = $session->get('user_workid') ?? 'system';
+            $userWorkid = $this->userContext->getWorkId();
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
@@ -320,8 +318,7 @@ class WorkbenchEditController extends BaseApiController
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '删除失败：未指定要删除的记录');
             }
 
-            $session = \Config\Services::session();
-            $userWorkid = $session->get('user_workid') ?? 'system';
+            $userWorkid = $this->userContext->getWorkId();
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {

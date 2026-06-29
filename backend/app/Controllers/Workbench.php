@@ -12,6 +12,7 @@ use App\Services\Workbench\ChartService;
 use App\Services\Workbench\ChartDrillService;
 use App\Services\Workbench\DrillService;
 use App\Services\Workbench\EditService;
+use App\Services\Workbench\ExportService;
 use App\Services\Workbench\PopupService;
 use App\Services\Workbench\QueryService;
 use App\Services\Workbench\ContextService;
@@ -32,6 +33,7 @@ class Workbench extends BaseApiController
     private ChartDrillService $chartDrillService;
     private DrillService $drillService;
     private EditService $editService;
+    private ExportService $exportService;
     private PopupService $popupService;
     private QueryService $queryService;
     private ContextService $contextService;
@@ -44,6 +46,7 @@ class Workbench extends BaseApiController
         $this->chartDrillService = new ChartDrillService();
         $this->drillService = new DrillService();
         $this->editService = new EditService();
+        $this->exportService = new ExportService();
         $this->popupService = new PopupService();
         $this->queryService = new QueryService();
         $this->contextService = new ContextService();
@@ -417,8 +420,7 @@ class Workbench extends BaseApiController
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '没有要提交的修改数据');
             }
 
-            $session = \Config\Services::session();
-            $userWorkid = $session->get('user_workid') ?? 'system';
+            $userWorkid = $this->userContext->getWorkId();
 
             $queryConfig = $this->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
@@ -584,6 +586,145 @@ class Workbench extends BaseApiController
         } catch (\Throwable $e) {
             log_message('error', '执行数据整理失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '执行数据整理失败: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 数据导出
+     *
+     * @param string $functionCode 功能编码
+     * @return \CodeIgniter\HTTP\JSONResponse|\CodeIgniter\HTTP\ResponseInterface
+     */
+    public function export(string $functionCode = '')
+    {
+        try {
+            $payload = $this->request->getJSON(true) ?? [];
+
+            $format = strtolower(trim($payload['format'] ?? 'xlsx'));
+            if (!in_array($format, ['xlsx', 'csv'])) {
+                throw new ValidationException('不支持的导出格式，仅支持 xlsx 和 csv');
+            }
+
+            $allData = filter_var($payload['allData'] ?? true, FILTER_VALIDATE_BOOLEAN);
+            $selectedColumns = $payload['columns'] ?? [];
+
+            [$context, $definition] = $this->contextService->buildWorkbenchContext($functionCode);
+
+            $queryConfig = $context['query'];
+            $columns = $context['columns'];
+
+            if ($queryConfig['mode'] === '存储过程') {
+                throw new BusinessException('存储过程模式暂不支持导出');
+            }
+
+            if (!empty($selectedColumns)) {
+                $columns = array_filter($columns, function ($col) use ($selectedColumns) {
+                    $colName = $col['列名'] ?? $col['字段名'] ?? '';
+                    return in_array($colName, $selectedColumns);
+                });
+            }
+
+            $columns = array_values($columns);
+
+            if (empty($columns)) {
+                throw new ValidationException('没有可导出的列');
+            }
+
+            if ($allData) {
+                $payload['all'] = true;
+                $payload['size'] = 50000;
+            }
+
+            $queryResult = $this->queryService->queryRecords($context, $payload);
+            $records = $queryResult['records'] ?? [];
+
+            if (empty($records)) {
+                throw new BusinessException('没有数据可导出');
+            }
+
+            if ($format === 'csv') {
+                $filePath = $this->exportService->exportToCsv($columns, $records);
+            } else {
+                $filePath = $this->exportService->exportToExcel($columns, $records, $functionCode);
+            }
+
+            $filename = basename($filePath);
+
+            log_message('info', sprintf('[Workbench::export] 导出成功: functionCode=%s, format=%s, records=%d', $functionCode, $format, count($records)));
+
+            $this->outputRawFile($filePath, $filename);
+            exit;
+        } catch (AuthException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '导出失败: ' . $e->getMessage());
+            return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '导出失败: ' . $e->getMessage());
+        }
+    }
+
+    private function outputRawFile(string $filePath, string $filename): void
+    {
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        $mimeTypes = [
+            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'xls'  => 'application/vnd.ms-excel',
+            'csv'  => 'text/csv; charset=utf-8',
+        ];
+        $mimeType = $mimeTypes[$ext] ?? 'application/octet-stream';
+
+        header('Content-Type: ' . $mimeType);
+        header('Content-Disposition: attachment; filename="' . rawurlencode($filename) . '"');
+        header('Content-Transfer-Encoding: binary');
+        header('Content-Length: ' . filesize($filePath));
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        readfile($filePath);
+    }
+
+    /**
+     * 获取导出状态（异步导出时使用）
+     */
+    public function exportStatus(string $taskId = '')
+    {
+        try {
+            $taskId = trim($taskId);
+            if (empty($taskId)) {
+                throw new ValidationException('任务ID不能为空');
+            }
+
+            $session = \Config\Services::session();
+            $exportTasks = $session->get('export_tasks') ?? [];
+
+            if (!isset($exportTasks[$taskId])) {
+                throw new BusinessException('任务不存在');
+            }
+
+            $task = $exportTasks[$taskId];
+
+            return $this->success([
+                'taskId' => $taskId,
+                'status' => $task['status'],
+                'progress' => $task['progress'] ?? 0,
+                'message' => $task['message'] ?? '',
+                'filePath' => $task['filePath'] ?? '',
+                'createdAt' => $task['createdAt'] ?? '',
+            ]);
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '获取导出状态失败: ' . $e->getMessage());
+            return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '获取导出状态失败');
         }
     }
 }

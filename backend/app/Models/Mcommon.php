@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Libraries\SessionUserContext;
 use CodeIgniter\Model;
 
 class Mcommon extends Model
@@ -93,10 +94,11 @@ class Mcommon extends Model
 
     public function sql_log(string $option, string $func_id = '', string $info = ''): int
     {
-        $session = \Config\Services::session();
-        $user_name = $session->get('user_name');
-        $user_workid = $session->get('user_workid');
-        $log_switch = $session->get('log_switch');
+        $userContext = new SessionUserContext();
+        $user = $userContext->getSessionUser();
+        $user_name = $user['userName'] ?? '';
+        $user_workid = $user['workId'] ?? '';
+        $log_switch = $userContext->getLogSwitch();
 
         if (!$log_switch) {
             return 0;
@@ -106,11 +108,11 @@ class Mcommon extends Model
 
         $insert = sprintf(
             'insert into sys_sql_log (姓名,用户名,动作,功能编码,信息) values ("%s","%s","%s","%s","%s")',
-            $user_name,
-            $user_workid,
-            $option,
-            $func_id,
-            $info
+            $db->escape($user_name),
+            $db->escape($user_workid),
+            $db->escape($option),
+            $db->escape($func_id),
+            $db->escape($info)
         );
 
         $db->query($insert);

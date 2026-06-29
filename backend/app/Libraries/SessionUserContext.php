@@ -25,13 +25,11 @@ class SessionUserContext
 
     public function getSessionUser(): array
     {
-        // 优先从 JWT 获取用户信息
         if (self::$jwtUser !== null) {
             return $this->mapJwtUserToSessionFormat(self::$jwtUser);
         }
 
-        // 兜底：从 Session 获取
-        return $this->readFromSession();
+        throw new AuthException('登录态已失效，请重新登录');
     }
 
     public function requireLogin(): array
@@ -50,7 +48,7 @@ class SessionUserContext
      */
     public function getWorkId(): string
     {
-        return $this->getSessionUser()['workId'] ?? 'system';
+        return $this->getSessionUser()['workId'] ?? '';
     }
 
     /**
@@ -58,7 +56,7 @@ class SessionUserContext
      */
     public function getUserName(): string
     {
-        return $this->getSessionUser()['userName'] ?? 'system';
+        return $this->getSessionUser()['userName'] ?? '';
     }
 
     /**
@@ -78,7 +76,39 @@ class SessionUserContext
     }
 
     /**
-     * 将 JWT payload 映射为与 Session 一致的用户信息格式
+     * 获取当前用户属地
+     */
+    public function getLocation(): string
+    {
+        return $this->getSessionUser()['location'] ?? '';
+    }
+
+    /**
+     * 获取当前用户部门编码
+     */
+    public function getDeptCode(): string
+    {
+        return $this->getSessionUser()['deptCode'] ?? '';
+    }
+
+    /**
+     * 获取当前用户部门名称
+     */
+    public function getDeptName(): string
+    {
+        return $this->getSessionUser()['deptName'] ?? '';
+    }
+
+    /**
+     * 获取当前用户日志开关
+     */
+    public function getLogSwitch(): bool
+    {
+        return (bool) ($this->getSessionUser()['logSwitch'] ?? true);
+    }
+
+    /**
+     * 将 JWT payload 映射为统一的用户信息格式
      */
     private function mapJwtUserToSessionFormat(object $jwt): array
     {
@@ -87,10 +117,10 @@ class SessionUserContext
             'userId' => trim((string) ($jwt->userId ?? '')),
             'workId' => trim((string) ($jwt->workId ?? '')),
             'userName' => trim((string) ($jwt->userName ?? '')),
-            'isSuperAdmin' => false,  // 不再支持万能密码超级管理员
-            'debugEnabled' => (bool) ($jwt->debugEnabled ?? false),  // 代理登录调试权限
-            'proxyUser' => $jwt->proxyUser ?? null,  // 代理用户信息
-            'isProxyLogin' => (bool) ($jwt->isProxyLogin ?? false),  // 是否代理登录
+            'isSuperAdmin' => false,
+            'debugEnabled' => (bool) ($jwt->debugEnabled ?? false),
+            'proxyUser' => $jwt->proxyUser ?? null,
+            'isProxyLogin' => (bool) ($jwt->isProxyLogin ?? false),
             'location' => trim((string) ($jwt->region ?? '')),
             'deptCode' => trim((string) ($jwt->deptCode ?? '')),
             'deptName' => trim((string) ($jwt->deptName ?? '')),
@@ -98,32 +128,7 @@ class SessionUserContext
             'roleAuthz' => trim((string) ($jwt->roleAuthz ?? '')),
             'deptAuthz' => trim((string) ($jwt->deptCodeAuthz ?? '')),
             'locationAuthz' => trim((string) ($jwt->locationAuthz ?? '')),
-        ];
-    }
-
-    /**
-     * 从 Session 读取用户信息（兜底逻辑）
-     */
-    private function readFromSession(): array
-    {
-        $session = \Config\Services::session();
-
-        return [
-            'companyId' => trim((string) $session->get('company_id')),
-            'userId' => trim((string) $session->get('user_id')),
-            'workId' => trim((string) $session->get('user_workid')),
-            'userName' => trim((string) $session->get('user_name')),
-            'isSuperAdmin' => false,  // 不再支持万能密码超级管理员
-            'debugEnabled' => (bool) $session->get('debug_enabled'),  // 代理登录调试权限
-            'proxyUser' => $session->get('proxy_user'),  // 代理用户信息
-            'isProxyLogin' => (bool) $session->get('is_proxy_login'),  // 是否代理登录
-            'location' => trim((string) $session->get('user_location')),
-            'deptCode' => trim((string) $session->get('user_dept_code')),
-            'deptName' => trim((string) $session->get('user_dept_name')),
-            'role' => trim((string) $session->get('user_role')),
-            'roleAuthz' => trim((string) $session->get('user_role_authz')),
-            'deptAuthz' => trim((string) $session->get('user_dept_code_authz')),
-            'locationAuthz' => trim((string) $session->get('user_location_authz')),
+            'logSwitch' => (bool) ($jwt->logSwitch ?? true),
         ];
     }
 }

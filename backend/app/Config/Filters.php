@@ -109,6 +109,8 @@ class Filters extends BaseFilters
         'jwt' => [
             'before' => [
                 'auth/getUserInfo',
+                'auth/logout',
+                'route/getUserRoutes',
                 'workbench/*',
                 'comment/*',
                 'dept/*',
@@ -117,6 +119,7 @@ class Filters extends BaseFilters
                 'train/*',
                 'employee/*',
                 'contract/*',
+                'cache/*',
             ],
         ],
     ];

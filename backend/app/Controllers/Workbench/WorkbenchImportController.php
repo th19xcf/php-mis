@@ -133,9 +133,9 @@ class WorkbenchImportController extends BaseApiController
                 throw new ValidationException('导入数据不能为空');
             }
 
+            $userWorkid   = $this->userContext->getWorkId();
+            $userLocation = $this->userContext->getLocation();
             $session = \Config\Services::session();
-            $userWorkid   = $session->get('user_workid') ?? 'system';
-            $userLocation = $session->get('user_location') ?? '';
             $menu1 = $session->get($functionCode . '-menu_1') ?? '';
             $menu2 = $session->get($functionCode . '-menu_2') ?? '';
 

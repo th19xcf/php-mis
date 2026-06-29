@@ -7,7 +7,7 @@ use App\Models\Mcommon;
 /**
  * 路由与菜单服务
  *
- * 负责用户权限查询、session 权限写入、菜单树构建等业务逻辑。
+ * 负责用户权限查询、菜单树构建等业务逻辑。
  * 从 Route 控制器下沉，使控制器仅负责请求解析和响应封装。
  */
 class RouteService
@@ -20,12 +20,13 @@ class RouteService
     }
 
     /**
-     * 查询用户权限并写入 session
+     * 查询用户权限
      *
      * @param string $companyId 员工属地
      * @param string $userWorkid 工号
+     * @return array{user_role: string, user_role_authz: string, user_location_authz: string, user_dept_code_authz: string, user_dept_name_authz: string, user_workid_authz: string, user_debug_authz: string, user_upkeep_authz: string, user_location: string, user_dept_code: string, user_dept_name: string}
      */
-    public function loadUserPermissions(string $companyId, string $userWorkid): void
+    public function loadUserPermissions(string $companyId, string $userWorkid): array
     {
         $sql = sprintf('
             select
@@ -62,6 +63,20 @@ class RouteService
 
         $results = $this->model->select($sql)->getResult();
 
+        $permissions = [
+            'user_role' => '',
+            'user_role_authz' => '',
+            'user_location_authz' => '',
+            'user_dept_code_authz' => '',
+            'user_dept_name_authz' => '',
+            'user_workid_authz' => '',
+            'user_debug_authz' => '',
+            'user_upkeep_authz' => '',
+            'user_location' => '',
+            'user_dept_code' => '',
+            'user_dept_name' => '',
+        ];
+
         foreach ($results as $row) {
             $role_arr = explode(',', $row->角色编码);
             $role_arr = array_unique($role_arr);
@@ -92,34 +107,32 @@ class RouteService
                 $user_dept_name_authz = ($user_dept_name_authz == '') ? sprintf('"%s"', $dept_name) : sprintf('%s,"%s"', $user_dept_name_authz, $dept_name);
             }
 
-            $session_arr = [];
-            $session_arr['user_role'] = $row->角色编码;
-            $session_arr['user_role_authz'] = $user_role_authz;
-            $session_arr['user_location_authz'] = $user_location_authz;
-            $session_arr['user_dept_code_authz'] = $user_dept_code_authz;
-            $session_arr['user_dept_name_authz'] = $user_dept_name_authz;
-            $session_arr['user_workid_authz'] = $row->工号限权;
-            $session_arr['user_debug_authz'] = $row->调试赋权;  // 不再支持万能密码
-            $session_arr['user_upkeep_authz'] = $row->维护赋权;  // 不再支持万能密码
-            $session_arr['user_location'] = $row->员工属地;
-            $session_arr['user_dept_code'] = $row->员工部门编码;
-            $session_arr['user_dept_name'] = $row->员工部门全称;
-
-            $session = \Config\Services::session();
-            $session->set($session_arr);
+            $permissions = [
+                'user_role' => $row->角色编码,
+                'user_role_authz' => $user_role_authz,
+                'user_location_authz' => $user_location_authz,
+                'user_dept_code_authz' => $user_dept_code_authz,
+                'user_dept_name_authz' => $user_dept_name_authz,
+                'user_workid_authz' => $row->工号限权,
+                'user_debug_authz' => $row->调试赋权,
+                'user_upkeep_authz' => $row->维护赋权,
+                'user_location' => $row->员工属地,
+                'user_dept_code' => $row->员工部门编码,
+                'user_dept_name' => $row->员工部门全称,
+            ];
         }
+
+        return $permissions;
     }
 
     /**
-     * 查询菜单数据并构建菜单树，同时将功能权限写入 session
+     * 查询菜单数据并构建菜单树
      *
+     * @param string $userRoleAuthz 角色赋权字符串（格式: "role1","role2"）
      * @return array 菜单列表
      */
-    public function buildMenuList(): array
+    public function buildMenuList(string $userRoleAuthz): array
     {
-        $session = \Config\Services::session();
-        $user_role_authz = $session->get('user_role_authz');
-
         $sql = sprintf(
             'select
                 t1.角色编码,t1.角色名称,
@@ -187,16 +200,13 @@ class RouteService
                 from def_query_config
             ) as t3 on if(t2.功能类型="查询",t2.模块名称,"")=t3.查询模块
             group by t1.功能赋权
-            order by t2.一级菜单顺序,t2.二级菜单顺序', $user_role_authz);
+            order by t2.一级菜单顺序,t2.二级菜单顺序', $userRoleAuthz);
 
         $results = $this->model->select($sql)->getResult();
 
-        $function_authz_arr = [];
         $menuMap = [];
 
         foreach ($results as $row) {
-            $function_authz_arr[$row->功能赋权] = $row->功能赋权;
-
             if ($row->菜单显示 != 1) {
                 continue;
             }
@@ -246,9 +256,6 @@ class RouteService
 
             $menuMap[$row->一级菜单]['children'][] = $menuItem;
         }
-
-        // 将功能权限写入 session
-        $session->set(['function_authz' => $function_authz_arr]);
 
         return array_values($menuMap);
     }

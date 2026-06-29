@@ -70,6 +70,7 @@ class JwtTokenService
             'locationAuthz' => $user['location_authz'] ?? '',
             'deptNameAuthz' => $user['dept_name_authz'] ?? '',
             'deptCodeAuthz' => $user['dept_code_authz'] ?? '',
+            'logSwitch' => $user['log_switch'] ?? true,
         ];
 
         return $this->encode($payload);
@@ -106,6 +107,7 @@ class JwtTokenService
             'locationAuthz' => $user['location_authz'] ?? '',
             'deptNameAuthz' => $user['dept_name_authz'] ?? '',
             'deptCodeAuthz' => $user['dept_code_authz'] ?? '',
+            'logSwitch' => $user['log_switch'] ?? true,
         ];
 
         return $this->encode($payload);

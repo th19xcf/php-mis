@@ -5,6 +5,7 @@ namespace App\Controllers;
 use App\Constants\ApiCode;
 use App\Libraries\JwtTokenService;
 use App\Libraries\AuthorizationService;
+use App\Libraries\SessionUserContext;
 use App\Libraries\TokenBlacklistService;
 use App\Models\AuthModel;
 use App\Models\Mcommon;
@@ -59,8 +60,7 @@ class Auth extends BaseController
             ]);
         }
 
-        $this->storeLegacySession($user, $region);
-        (new Mcommon())->sql_log('登录成功', '', sprintf('属地=`%s`', $region));
+        $this->initSession();
 
         // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
         // 移除万能密码机制，改为代理登录模式
@@ -75,6 +75,12 @@ class Auth extends BaseController
 
         $accessToken = $this->jwtTokenService->generateAccessToken($user);
         $refreshToken = $this->jwtTokenService->generateRefreshToken($user);
+
+        // 将用户信息注入 SessionUserContext，供后续 sql_log 等使用
+        $decoded = $this->jwtTokenService->decode($accessToken);
+        SessionUserContext::setJwtUser($decoded);
+
+        (new Mcommon())->sql_log('登录成功', '', sprintf('属地=`%s`', $region));
 
         return $this->response->setJSON([
             'code' => ApiCode::SUCCESS,
@@ -222,9 +228,6 @@ class Auth extends BaseController
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
             $newRefreshToken = $this->jwtTokenService->generateRefreshToken($user);
 
-            // 续签时同步刷新 Session，保持 Session 与 JWT 一致
-            $this->refreshSession($user);
-
             // Refresh Token 旋转：使旧的 refreshToken 失效，防止被盗用
             $this->tokenBlacklistService->addToBlacklist($refreshToken, 'refresh');
             log_message('info', '[RefreshToken] 已旋转 Refresh Token，旧 Token 已失效');
@@ -294,64 +297,14 @@ class Auth extends BaseController
     }
 
     /**
-     * 写入兼容旧系统的会话字段。
+     * 初始化 Session（用于存储业务状态，如图表钻取栈等）
      */
-    private function storeLegacySession(array $user, string $region): void
+    private function initSession(): void
     {
         $session = \Config\Services::session();
-
-        $roleAuthz = $this->computeRoleAuthz($user['work_id'], $user['region']);
-        $locationAuthz = $this->computeLocationAuthz($user['work_id'], $user['region']);
-        $deptNameAuthz = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-        $deptCodeAuthz = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
-
-        $session->set([
-            'company_id' => $region,
-            'user_id' => $user['id'],
-            'user_workid' => $user['work_id'],
-            'user_name' => $user['user_name'],
-            'is_super_admin' => false,  // 不再支持万能密码超级管理员
-            'debug_enabled' => $user['debug_enabled'] ?? false,  // 代理登录调试权限
-            'proxy_user' => $user['proxy_user'] ?? null,  // 代理用户信息
-            'is_proxy_login' => $user['is_proxy_login'] ?? false,  // 是否代理登录
-            'user_location' => $user['region'],
-            'user_dept_code' => $user['dept_code'],
-            'user_dept_name' => $user['dept_name'],
-            'log_switch' => $user['log_switch'],
-            'user_role' => $roleAuthz,
-            'user_role_authz' => $roleAuthz,
-            'user_location_authz' => $locationAuthz,
-            'user_dept_name_authz' => $deptNameAuthz,
-            'user_dept_code_authz' => $deptCodeAuthz
-        ]);
-    }
-
-    /**
-     * 续签时刷新 Session，保持与 JWT 一致
-     */
-    private function refreshSession(array $user): void
-    {
-        $session = \Config\Services::session();
-
-        $session->set([
-            'company_id' => $user['region'],
-            'user_id' => $user['id'],
-            'user_workid' => $user['work_id'],
-            'user_name' => $user['user_name'],
-            'is_super_admin' => false,  // 不再支持万能密码超级管理员
-            'debug_enabled' => $user['debug_enabled'] ?? false,  // 代理登录调试权限
-            'proxy_user' => $user['proxy_user'] ?? null,  // 代理用户信息
-            'is_proxy_login' => $user['is_proxy_login'] ?? false,  // 是否代理登录
-            'user_location' => $user['region'],
-            'user_dept_code' => $user['dept_code'],
-            'user_dept_name' => $user['dept_name'],
-            'log_switch' => $user['log_switch'] ?? true,
-            'user_role' => $user['role_authz'] ?? '',
-            'user_role_authz' => $user['role_authz'] ?? '',
-            'user_location_authz' => $user['location_authz'] ?? '',
-            'user_dept_name_authz' => $user['dept_name_authz'] ?? '',
-            'user_dept_code_authz' => $user['dept_code_authz'] ?? ''
-        ]);
+        if (session_status() === PHP_SESSION_NONE) {
+            $session->start();
+        }
     }
 
     /**

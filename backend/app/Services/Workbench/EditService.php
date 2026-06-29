@@ -3,6 +3,7 @@
 namespace App\Services\Workbench;
 
 use App\Libraries\MetadataCache;
+use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 
 /**
@@ -13,11 +14,13 @@ class EditService
 {
     private Mcommon $model;
     private MetadataCache $metadataCache;
+    private SessionUserContext $userContext;
 
     public function __construct()
     {
         $this->model = new Mcommon();
         $this->metadataCache = new MetadataCache();
+        $this->userContext = new SessionUserContext();
     }
 
     /**
@@ -150,17 +153,15 @@ class EditService
      */
     private function processSystemDefaultValue(string $defaultValue): string
     {
-        $session = \Config\Services::session();
-
         switch ($defaultValue) {
             case '$当日日期':
                 return date('Y-m-d');
             case '$时间戳':
                 return date('Y-m-d H:i:s');
             case '$工号':
-                return $session->get('user_workid') ?? '';
+                return $this->userContext->getWorkId();
             case '$属地':
-                return $session->get('user_location') ?? '';
+                return $this->userContext->getLocation();
             default:
                 return $defaultValue;
         }
@@ -199,8 +200,7 @@ class EditService
     public function getObjectOptions(string $objectName): array
     {
         try {
-            $session = \Config\Services::session();
-            $userLocation = $session->get('user_location') ?? '';
+            $userLocation = $this->userContext->getLocation();
 
             $sql = sprintf(
                 'select 对象值 from def_object where 对象名称=%s and (属地="" or locate(属地, %s))',
@@ -247,8 +247,7 @@ class EditService
 
         try {
             $uniqueNames = array_values(array_unique($objectNames));
-            $session = \Config\Services::session();
-            $userLocation = $session->get('user_location') ?? '';
+            $userLocation = $this->userContext->getLocation();
 
             $quotedNames = implode(',', array_map(
                 fn($name) => $this->model->quote($name),
