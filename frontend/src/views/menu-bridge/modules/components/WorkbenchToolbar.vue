@@ -45,8 +45,9 @@ const exportOptions = [
   { label: '导出筛选', key: 'false' }
 ];
 
-function handleExport() {
-  emit('handleExport', exportAll.value === 'true');
+function handleSelectExport(key: string) {
+  exportAll.value = key;
+  emit('handleExport', key === 'true');
 }
 
 // 在子组件内部管理滚动状态，ref 指向自己的 DOM
@@ -145,19 +146,15 @@ defineExpose({ checkScrollPosition });
           <NButton v-if="pageMeta?.toolbar.import" @click="emit('handleImport')">导入</NButton>
           <NDropdown
             :options="exportOptions"
-            @select="(key: string) => exportAll = key"
+            trigger="click"
+            :disabled="!pageMeta?.toolbar.export"
+            @select="handleSelectExport"
           >
             <NButton :disabled="!pageMeta?.toolbar.export">
-              {{ exportAll === 'true' ? '导出全部' : '导出筛选' }}
+              导出
               <SvgIcon icon="ant-design:down-outlined" class="ml-4px" />
             </NButton>
           </NDropdown>
-          <NButton
-            :disabled="!pageMeta?.toolbar.export"
-            @click="handleExport"
-          >
-            导出
-          </NButton>
           <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="emit('handleDebug')">
             调试
           </NButton>
