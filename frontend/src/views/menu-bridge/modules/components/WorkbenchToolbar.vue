@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue';
-import { NButton, NInput, NTag, NCard, NSelect } from 'naive-ui';
+import { NButton, NInput, NTag, NCard, NDropdown } from 'naive-ui';
 import SvgIcon from '@/components/custom/svg-icon.vue';
 
 defineProps<{
@@ -41,8 +41,8 @@ const emit = defineEmits<{
 const exportAll = ref<string>('true');
 
 const exportOptions = [
-  { label: '导出全部', value: 'true' },
-  { label: '导出筛选', value: 'false' }
+  { label: '导出全部', key: 'true' },
+  { label: '导出筛选', key: 'false' }
 ];
 
 function handleExport() {
@@ -143,14 +143,15 @@ defineExpose({ checkScrollPosition });
           </NButton>
           <NButton v-if="pageMeta?.toolbar.upkeep" @click="emit('upkeep')">数据整理</NButton>
           <NButton v-if="pageMeta?.toolbar.import" @click="emit('handleImport')">导入</NButton>
-          <NSelect
-            :disabled="!pageMeta?.toolbar.export"
-            v-model:value="exportAll"
+          <NDropdown
             :options="exportOptions"
-            size="small"
-            :style="{ minWidth: '120px' }"
-            placeholder="导出方式"
-          />
+            @select="(key: string) => exportAll = key"
+          >
+            <NButton :disabled="!pageMeta?.toolbar.export">
+              {{ exportAll === 'true' ? '导出全部' : '导出筛选' }}
+              <SvgIcon icon="ant-design:down-outlined" class="ml-4px" />
+            </NButton>
+          </NDropdown>
           <NButton
             :disabled="!pageMeta?.toolbar.export"
             @click="handleExport"
