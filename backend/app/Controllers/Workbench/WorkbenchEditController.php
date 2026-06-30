@@ -4,9 +4,6 @@ namespace App\Controllers\Workbench;
 
 use App\Constants\ApiCode;
 use App\Controllers\BaseApiController;
-use App\Exceptions\AuthException;
-use App\Exceptions\BusinessException;
-use App\Exceptions\ValidationException;
 use App\Services\Workbench\EditService;
 
 /**
@@ -189,7 +186,7 @@ class WorkbenchEditController extends BaseApiController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                throw new ValidationException('功能编码不能为空');
+                throw new \App\Exceptions\ValidationException('功能编码不能为空');
             }
 
             $payload = $this->request->getJSON(true) ?? [];
@@ -227,12 +224,6 @@ class WorkbenchEditController extends BaseApiController
                 'message'      => sprintf('修改成功,修改了 %d 条记录', $num),
                 'updatedCount' => $num,
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '修改记录失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败');
@@ -247,7 +238,7 @@ class WorkbenchEditController extends BaseApiController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                throw new ValidationException('功能编码不能为空');
+                throw new \App\Exceptions\ValidationException('功能编码不能为空');
             }
 
             $payload = $this->request->getJSON(true) ?? [];
@@ -288,12 +279,6 @@ class WorkbenchEditController extends BaseApiController
                 'message'      => sprintf('批量修改成功,修改了 %d 条记录', $num),
                 'updatedCount' => $num,
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '批量修改记录失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '批量修改失败');
@@ -308,7 +293,7 @@ class WorkbenchEditController extends BaseApiController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                throw new ValidationException('功能编码不能为空');
+                throw new \App\Exceptions\ValidationException('功能编码不能为空');
             }
 
             $payload = $this->request->getJSON(true) ?? [];
@@ -345,12 +330,6 @@ class WorkbenchEditController extends BaseApiController
                 'message'      => sprintf('删除成功,删除了 %d 条记录', $num),
                 'deletedCount' => $num,
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '删除记录失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '删除失败');

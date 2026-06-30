@@ -4,9 +4,6 @@ namespace App\Controllers;
 
 use App\Constants\ApiCode;
 use App\Controllers\Workbench\WorkbenchResponseTrait;
-use App\Exceptions\AuthException;
-use App\Exceptions\BusinessException;
-use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
 use App\Services\Workbench\ChartService;
 use App\Services\Workbench\ChartDrillService;
@@ -66,13 +63,6 @@ class Workbench extends BaseApiController
             return $this->success([
                 'meta' => $definition,
             ], 'Success', $serverMs);
-        } catch (AuthException $e) {
-            log_message('error', '[Workbench::page] RuntimeException: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '[Workbench::page] Throwable: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')');
@@ -88,12 +78,6 @@ class Workbench extends BaseApiController
             $records = $this->queryService->queryRecords($context, $payload);
 
             return $this->success($records);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '工作台查询失败');
         }
@@ -133,12 +117,6 @@ class Workbench extends BaseApiController
                 'total'    => $total,
                 'hasMore'  => count($records) === $size,
             ], 'Success', $serverMs);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '分页查询失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '分页查询失败: ' . $e->getMessage());
@@ -217,12 +195,6 @@ class Workbench extends BaseApiController
                     ];
                 }, $columns),
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取调试信息失败: ' . $e->getMessage());
             log_message('error', '错误堆栈: ' . $e->getTraceAsString());
@@ -260,12 +232,6 @@ class Workbench extends BaseApiController
                 'options' => $drillOptions,
                 'debug'   => $debugInfo,
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '工作台钻取失败: ' . $e->getMessage());
         }
@@ -412,7 +378,7 @@ class Workbench extends BaseApiController
         try {
             $functionCode = trim($functionCode);
             if ($functionCode === '') {
-                throw new ValidationException('功能编码不能为空');
+                throw new \App\Exceptions\ValidationException('功能编码不能为空');
             }
 
             $rows = $this->request->getJSON(true) ?? [];
@@ -447,12 +413,6 @@ class Workbench extends BaseApiController
                 'message'      => $result['message'],
                 'updatedCount' => $result['count'],
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '表级修改提交失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '表级修改提交失败: ' . $e->getMessage());
@@ -478,12 +438,6 @@ class Workbench extends BaseApiController
             return $this->success([
                 'charts' => $chartData,
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取图形数据失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取图形数据失败');
@@ -514,12 +468,6 @@ class Workbench extends BaseApiController
                 'drillLevel' => $drillLevel + 1,
                 'message'    => '钻取成功',
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '图形钻取失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return $this->error(ApiCode::WORKBENCH_CHART_DRILL_FAILED, '图形钻取失败: ' . $e->getMessage());
@@ -577,12 +525,6 @@ class Workbench extends BaseApiController
                 'success' => true,
                 'message' => '数据整理执行成功',
             ]);
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '执行数据整理失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '执行数据整理失败: ' . $e->getMessage());
@@ -602,7 +544,7 @@ class Workbench extends BaseApiController
 
             $format = strtolower(trim($payload['format'] ?? 'xlsx'));
             if (!in_array($format, ['xlsx', 'csv'])) {
-                throw new ValidationException('不支持的导出格式，仅支持 xlsx 和 csv');
+                throw new \App\Exceptions\ValidationException('不支持的导出格式，仅支持 xlsx 和 csv');
             }
 
             $allData = filter_var($payload['allData'] ?? true, FILTER_VALIDATE_BOOLEAN);
@@ -614,7 +556,7 @@ class Workbench extends BaseApiController
             $columns = $context['columns'];
 
             if ($queryConfig['mode'] === '存储过程') {
-                throw new BusinessException('存储过程模式暂不支持导出');
+                throw new \App\Exceptions\BusinessException('存储过程模式暂不支持导出');
             }
 
             if (!empty($selectedColumns)) {
@@ -627,7 +569,7 @@ class Workbench extends BaseApiController
             $columns = array_values($columns);
 
             if (empty($columns)) {
-                throw new ValidationException('没有可导出的列');
+                throw new \App\Exceptions\ValidationException('没有可导出的列');
             }
 
             if ($allData) {
@@ -639,7 +581,7 @@ class Workbench extends BaseApiController
             $records = $queryResult['records'] ?? [];
 
             if (empty($records)) {
-                throw new BusinessException('没有数据可导出');
+                throw new \App\Exceptions\BusinessException('没有数据可导出');
             }
 
             if ($format === 'csv') {
@@ -654,12 +596,6 @@ class Workbench extends BaseApiController
 
             $this->outputRawFile($filePath, $filename);
             exit;
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '导出失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '导出失败: ' . $e->getMessage());
@@ -698,14 +634,14 @@ class Workbench extends BaseApiController
         try {
             $taskId = trim($taskId);
             if (empty($taskId)) {
-                throw new ValidationException('任务ID不能为空');
+                throw new \App\Exceptions\ValidationException('任务ID不能为空');
             }
 
             $session = \Config\Services::session();
             $exportTasks = $session->get('export_tasks') ?? [];
 
             if (!isset($exportTasks[$taskId])) {
-                throw new BusinessException('任务不存在');
+                throw new \App\Exceptions\BusinessException('任务不存在');
             }
 
             $task = $exportTasks[$taskId];
@@ -718,10 +654,6 @@ class Workbench extends BaseApiController
                 'filePath' => $task['filePath'] ?? '',
                 'createdAt' => $task['createdAt'] ?? '',
             ]);
-        } catch (ValidationException $e) {
-            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
-        } catch (BusinessException $e) {
-            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取导出状态失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '获取导出状态失败');

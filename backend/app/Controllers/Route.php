@@ -2,7 +2,6 @@
 
 namespace App\Controllers;
 
-use App\Exceptions\AuthException;
 use App\Services\RouteService;
 
 class Route extends BaseApiController
@@ -29,11 +28,7 @@ class Route extends BaseApiController
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, 'Token required');
         }
 
-        try {
-            $user = $this->userContext->requireLogin();
-        } catch (AuthException $e) {
-            return $this->error(ApiCode::AUTH_TOKEN_EXPIRED, 'Session expired, please login again');
-        }
+        $user = $this->userContext->requireLogin();
 
         try {
             // 1. 查询用户权限
