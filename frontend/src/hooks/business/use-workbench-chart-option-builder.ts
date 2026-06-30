@@ -18,7 +18,10 @@ import { getChartThemeColors } from './use-workbench-chart-theme';
  * @returns ECharts option 对象；data 为空时返回 null
  */
 export function generateChartOption(chart: any, isDarkMode: boolean): any {
-  const { CHART, CHART: { CHART_TYPE } } = WORKBENCH_CONFIG;
+  const {
+    CHART,
+    CHART: { CHART_TYPE }
+  } = WORKBENCH_CONFIG;
   const chartData = chart['数据'] || [];
   const chartType = chart['图形类型'] || CHART.DEFAULT_TYPE;
   const chartName = chart['图形名称'] || CHART.DEFAULT_NAME;
@@ -177,7 +180,7 @@ export function generateChartOption(chart: any, isDarkMode: boolean): any {
 
       const seriesItem: any = {
         name: key,
-        type: fieldChartType === CHART_TYPE.BAR ? 'bar' : 'line',
+        type: fieldChartType === 'bar' ? 'bar' : 'line',
         // 使用对象数组而非纯数值，以保留 SID 等原始字段供图形钻取
         data: (chartData as Record<string, any>[]).map((item: Record<string, any>) => ({
           ...item,
@@ -232,9 +235,7 @@ export function generateChartOption(chart: any, isDarkMode: boolean): any {
         padding: [10, 15],
         // 通过 extraCssText 注入 box-shadow：setOption 会覆盖默认主题的 tooltip 样式，
         // 这里手动补回阴影，避免 light 模式下白底白图表背景下信息框"消失"
-        extraCssText: themeColors.tooltipBoxShadow
-          ? `box-shadow: ${themeColors.tooltipBoxShadow};`
-          : undefined,
+        extraCssText: themeColors.tooltipBoxShadow ? `box-shadow: ${themeColors.tooltipBoxShadow};` : undefined,
         formatter: function (params: any) {
           let result = `<div style="font-weight: bold; margin-bottom: 8px;">${params[0].axisValue}</div>`;
           params.forEach((item: any) => {

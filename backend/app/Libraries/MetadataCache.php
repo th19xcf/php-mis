@@ -162,7 +162,7 @@ class MetadataCache
         }
 
         $sql = sprintf(
-            'select 图形模块, 钻取模块, 钻取选项, 目标图形, 钻取条件, 显示字段
+            'select 图形模块, 钻取模块, 钻取选项, 钻取字段, 钻取条件
             from def_chart_drill_config
             where 钻取模块=%s',
             $this->model->quote($drillModule)
