@@ -113,6 +113,24 @@ class AuthorizationService
      */
     public function loadUserAuthField(string $fieldName, ?string $workId = null, ?string $region = null): string
     {
+        $result = $this->loadUserAuthFields([$fieldName], $workId, $region);
+        return $result[$fieldName] ?? '';
+    }
+
+    /**
+     * 批量加载 def_user 上多个赋权字段（一次 SQL 查询取多个字段）。
+     *
+     * 与 loadUserAuthField 相同的数据源，但支持一次查询获取多个字段值，
+     * 避免对同一 workId + region 组合重复查询 def_user。
+     * 使用一次 SQL 查出所有字段，PHP 端分别做规范化处理。
+     *
+     * @param string[] $fieldNames def_user 上的字段名列表
+     * @param string|null $workId  工号；为空时从 session 取
+     * @param string|null $region  员工属地；为空时从 session 取
+     * @return array<string, string> 以 fieldName 为键、规范化后的赋权值为值的字典
+     */
+    public function loadUserAuthFields(array $fieldNames, ?string $workId = null, ?string $region = null): array
+    {
         if ($workId === null || $region === null) {
             $sessionUser = (new SessionUserContext())->getSessionUser();
             if ($workId === null) {
@@ -123,20 +141,40 @@ class AuthorizationService
             }
         }
 
-        if ($workId === '' || $region === '') {
-            return '';
+        $fieldNames = array_values(array_filter(array_map('trim', $fieldNames)));
+        $emptyResult = array_fill_keys($fieldNames, '');
+
+        if ($workId === '' || $region === '' || empty($fieldNames)) {
+            return $emptyResult;
         }
 
-        $model = new Mcommon();
+        $selectFields = [];
+        foreach ($fieldNames as $fn) {
+            $selectFields[] = sprintf(
+                'replace(replace(%s,"，",",")," ","") as %s',
+                $fn, $fn
+            );
+        }
+
         $sql = sprintf(
-            'select replace(replace(%s,"，",",")," ","") as %s from def_user where 有效标识="1" and 员工属地=%s and 工号=%s',
-            $fieldName, $fieldName,
-            $model->quote($region),
-            $model->quote($workId)
+            'select %s from def_user where 有效标识="1" and 员工属地=%s and 工号=%s',
+            implode(', ', $selectFields),
+            $this->model->quote($region),
+            $this->model->quote($workId)
         );
 
-        $row = $model->select($sql)->getRowArray();
-        return (string) ($row[$fieldName] ?? '');
+        $row = $this->model->select($sql)->getRowArray();
+        if (!$row) {
+            return $emptyResult;
+        }
+
+        $output = [];
+        foreach ($fieldNames as $fn) {
+            $raw = (string) ($row[$fn] ?? '');
+            $output[$fn] = $this->normalize($raw);
+        }
+
+        return $output;
     }
 
     /**

@@ -15,6 +15,7 @@ class Auth extends BaseController
     private AuthModel $authModel;
     private JwtTokenService $jwtTokenService;
     private TokenBlacklistService $tokenBlacklistService;
+    private AuthorizationService $authorizationService;
 
     /**
      * 初始化认证控制器并装载认证模型。
@@ -24,6 +25,7 @@ class Auth extends BaseController
         $this->authModel = new AuthModel();
         $this->jwtTokenService = new JwtTokenService();
         $this->tokenBlacklistService = new TokenBlacklistService();
+        $this->authorizationService = new AuthorizationService();
     }
 
     /**
@@ -69,9 +71,16 @@ class Auth extends BaseController
         $user['proxy_user'] = $user['proxy_user'] ?? null;  // 代理用户信息
         $user['is_proxy_login'] = $user['is_proxy_login'] ?? false;  // 是否代理登录
         $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
-        $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
-        $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-        $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
+
+        // 批量加载用户授权字段（属地赋权、部门全称赋权、部门编码赋权），一次 SQL 查询替代 3 次
+        $userAuthFields = $this->authorizationService->loadUserAuthFields(
+            ['属地赋权', '部门全称赋权', '部门编码赋权'],
+            $user['work_id'],
+            $user['region']
+        );
+        $user['location_authz'] = $userAuthFields['属地赋权'] ?? '';
+        $user['dept_name_authz'] = $userAuthFields['部门全称赋权'] ?? '';
+        $user['dept_code_authz'] = $userAuthFields['部门编码赋权'] ?? '';
 
         $accessToken = $this->jwtTokenService->generateAccessToken($user);
         $refreshToken = $this->jwtTokenService->generateRefreshToken($user);
@@ -221,9 +230,16 @@ class Auth extends BaseController
             // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
             $user['is_super_admin'] = (bool) ($decoded->isSuperAdmin ?? false);
             $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
-            $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
-            $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-            $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
+
+            // 批量加载用户授权字段（属地赋权、部门全称赋权、部门编码赋权），一次 SQL 查询替代 3 次
+            $userAuthFields = $this->authorizationService->loadUserAuthFields(
+                ['属地赋权', '部门全称赋权', '部门编码赋权'],
+                $user['work_id'],
+                $user['region']
+            );
+            $user['location_authz'] = $userAuthFields['属地赋权'] ?? '';
+            $user['dept_name_authz'] = $userAuthFields['部门全称赋权'] ?? '';
+            $user['dept_code_authz'] = $userAuthFields['部门编码赋权'] ?? '';
 
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
             $newRefreshToken = $this->jwtTokenService->generateRefreshToken($user);
@@ -321,33 +337,6 @@ class Auth extends BaseController
         }
 
         return $roleAuthz;
-    }
-
-    /**
-     * 计算属地赋权
-     */
-    private function computeLocationAuthz(string $workId, string $region): string
-    {
-        $authorizationService = new AuthorizationService();
-        return $authorizationService->normalize($authorizationService->loadUserAuthField('属地赋权', $workId, $region));
-    }
-
-    /**
-     * 计算部门全称赋权
-     */
-    private function computeDeptNameAuthz(string $workId, string $region): string
-    {
-        $authorizationService = new AuthorizationService();
-        return $authorizationService->normalize($authorizationService->loadUserAuthField('部门全称赋权', $workId, $region));
-    }
-
-    /**
-     * 计算部门编码赋权
-     */
-    private function computeDeptCodeAuthz(string $workId, string $region): string
-    {
-        $authorizationService = new AuthorizationService();
-        return $authorizationService->normalize($authorizationService->loadUserAuthField('部门编码赋权', $workId, $region));
     }
 
 }
