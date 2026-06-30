@@ -233,7 +233,7 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
 
     // 一级菜单图标映射
     const zhTitleIconMap: Record<string, string> = {
-      系统管理: 'mdi:settings',
+      系统管理: 'mdi:cog-outline',
       管理信息: 'mdi:database',
       人员管理: 'mdi:account-heart',
       收入成本: 'mdi:cash',

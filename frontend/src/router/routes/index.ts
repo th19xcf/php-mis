@@ -27,7 +27,7 @@ export function createStaticRoutes() {
 
     // 一级菜单图标补充
     const menuIconMap: Record<string, string> = {
-      system: 'mdi:settings',
+      system: 'mdi:cog-outline',
       info: 'mdi:database',
       personnel: 'mdi:account-heart',
       income: 'mdi:cash',
@@ -36,7 +36,7 @@ export function createStaticRoutes() {
     };
     // 兼容中文 title
     const zhTitleIconMap: Record<string, string> = {
-      系统管理: 'mdi:settings',
+      系统管理: 'mdi:cog-outline',
       管理信息: 'mdi:database',
       人员管理: 'mdi:account-heart',
       收入成本: 'mdi:cash',
@@ -55,6 +55,15 @@ export function createStaticRoutes() {
 
     // 隐藏通用页面、动态菜单、权限演示菜单
     if (route.name === 'common' || route.name === 'menu-bridge' || route.name === 'permission-demo') {
+      route.meta = {
+        ...route.meta,
+        title: route.meta?.title || String(route.name),
+        hideInMenu: true
+      };
+    }
+
+    // 隐藏与后端动态菜单重复的静态菜单（合同管理、人员管理）
+    if (route.name === 'contract' || route.name === 'personnel') {
       route.meta = {
         ...route.meta,
         title: route.meta?.title || String(route.name),
