@@ -19,6 +19,8 @@ class BaseApiController extends BaseController
     protected SessionUserContext $userContext;
     protected string $traceId;
 
+    protected array $serverTrace = [];
+
     private ?AuthorizationService $authService = null;
 
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
@@ -29,6 +31,16 @@ class BaseApiController extends BaseController
 
         // 从请求头获取 traceId，前端未传则自动生成
         $this->traceId = $request->getHeaderLine('X-Request-Id') ?: 'trace-' . bin2hex(random_bytes(8));
+    }
+
+    protected function setServerTrace(array $trace): void
+    {
+        $this->serverTrace = $trace;
+    }
+
+    protected function addServerTrace(string $key, float $ms): void
+    {
+        $this->serverTrace[$key] = round($ms, 2);
     }
 
     /**
@@ -51,6 +63,13 @@ class BaseApiController extends BaseController
 
         if ($serverElapsedMs > 0) {
             $response->setHeader('X-Server-Time-Ms', (string) round($serverElapsedMs, 2));
+        }
+
+        if (!empty($this->serverTrace)) {
+            $traceJson = json_encode($this->serverTrace, JSON_UNESCAPED_UNICODE);
+            if ($traceJson !== false) {
+                $response->setHeader('X-Server-Trace', $traceJson);
+            }
         }
 
         return $response;

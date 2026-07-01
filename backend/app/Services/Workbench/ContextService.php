@@ -50,37 +50,42 @@ class ContextService
             throw new ValidationException('功能编码不能为空');
         }
 
+        $trace = [];
+        $tAuthStart = hrtime(true);
         log_message('debug', '[ContextService] 步骤1: requireLogin');
         $user = $this->userContext->requireLogin();
         $companyId = $user['companyId'];
         $userWorkId = $user['workId'];
-        $debugEnabled = $user['debugEnabled'] ?? false;  // 代理登录调试权限
+        $debugEnabled = $user['debugEnabled'] ?? false;
+        $trace['requireLogin'] = round((hrtime(true) - $tAuthStart) / 1e6, 2);
         log_message('debug', '[ContextService] 步骤1完成: companyId=' . $companyId . ', userWorkId=' . $userWorkId);
 
-        // 缓存键基于 roleCodes + region + debugEnabled
-        // 必须把 debugEnabled 纳入缓存键：代理登录时 debugEnabled=true，
-        // 调试按钮可用；普通登录时 debugEnabled=false，调试按钮不可用。
         $cacheKey = $this->buildCacheKey($functionCode, $user['roleAuthz'], $companyId, $debugEnabled);
         $cached = $this->cache->get($cacheKey);
         if (is_array($cached) && isset($cached['context'], $cached['definition'])) {
             $elapsed = (hrtime(true) - $start) / 1e6;
+            $trace['contextBuild'] = round($elapsed, 2);
+            $trace['contextCacheHit'] = true;
             log_message('debug', sprintf('[ContextService] 缓存命中: %s, 总耗时=%.2fms', $cacheKey, $elapsed));
             $context = $cached['context'];
             $definition = $cached['definition'];
 
-            return [$context, $definition];
+            return [$context, $definition, $trace];
         }
 
         log_message('debug', '[ContextService] 缓存未命中，开始构建上下文: ' . $cacheKey);
+        $trace['contextCacheHit'] = false;
 
         $t1 = hrtime(true);
         log_message('debug', '[ContextService] 步骤2: loadUserAuthorization');
         $userAuth = $this->loadUserAuthorization($companyId, $userWorkId, $debugEnabled);
+        $trace['loadUserAuthorization'] = round((hrtime(true) - $t1) / 1e6, 2);
         log_message('debug', sprintf('[ContextService] 步骤2完成: %.2fms', (hrtime(true) - $t1) / 1e6));
 
         $t2 = hrtime(true);
         log_message('debug', '[ContextService] 步骤3: loadFunctionAuthorization');
         $functionAuth = $this->loadFunctionAuthorization($functionCode, $userAuth);
+        $trace['loadFunctionAuthorization'] = round((hrtime(true) - $t2) / 1e6, 2);
         log_message('debug', sprintf('[ContextService] 步骤3完成: %.2fms', (hrtime(true) - $t2) / 1e6));
 
         $t3 = hrtime(true);
@@ -92,11 +97,13 @@ class ContextService
                 log_message($level, $msg);
             }
         );
+        $trace['loadQueryConfig'] = round((hrtime(true) - $t3) / 1e6, 2);
         log_message('debug', sprintf('[ContextService] 步骤4完成: %.2fms', (hrtime(true) - $t3) / 1e6));
 
         $t4 = hrtime(true);
         log_message('debug', '[ContextService] 步骤5: loadColumns');
         $columns = $this->loadColumns($functionCode);
+        $trace['loadColumns'] = round((hrtime(true) - $t4) / 1e6, 2);
         log_message('debug', sprintf('[ContextService] 步骤5完成: %.2fms, columns count=%d', (hrtime(true) - $t4) / 1e6, count($columns)));
 
         if (!$queryConfig) {
@@ -158,9 +165,10 @@ class ContextService
         $this->saveCache($cacheKey, $context, $definition);
 
         $elapsed = (hrtime(true) - $start) / 1e6;
+        $trace['contextBuild'] = round($elapsed, 2);
         log_message('debug', sprintf('[ContextService] 上下文构建完成: %.2fms', $elapsed));
 
-        return [$context, $definition];
+        return [$context, $definition, $trace];
     }
 
     /**

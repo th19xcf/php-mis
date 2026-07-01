@@ -18,7 +18,7 @@ export const request = createFlatRequest(
   {
     baseURL,
     headers: defaultHeaders,
-    timeout: 30000 // 30秒超时
+    timeout: 60000 // 60秒超时（MySQL冷连接时首次请求可能较慢）
   },
   {
     defaultState: {
@@ -49,10 +49,39 @@ export const request = createFlatRequest(
       // to change this logic by yourself, you can modify the `VITE_SERVICE_SUCCESS_CODE` in `.env` file
       const isSuccess = String(response.data.code) === SERVICE_CODE_CONFIG.successCode;
 
-      // 性能追踪：标记 API 响应接收
+      // 性能追踪：标记 API 响应接收 + 后端分段耗时
       if (isSuccess) {
         const url = response.config?.url || '';
         markTrace(`API响应接收: ${url}`);
+
+        const serverTrace = response.headers?.['x-server-trace'];
+        if (serverTrace) {
+          try {
+            const traceData = typeof serverTrace === 'string' ? JSON.parse(serverTrace) : serverTrace;
+            const labelMap: Record<string, string> = {
+              requireLogin: '用户认证',
+              contextBuild: '上下文构建',
+              contextCacheHit: '上下文缓存',
+              loadUserAuthorization: '用户授权查询',
+              loadFunctionAuthorization: '功能授权查询',
+              loadQueryConfig: '查询配置加载',
+              loadColumns: '列配置加载',
+              queryTotal: 'COUNT统计',
+              queryRecords: '数据查询',
+              total: '服务端总耗时'
+            };
+            Object.entries(traceData as Record<string, number | boolean>).forEach(([key, value]) => {
+              const label = labelMap[key] || key;
+              if (typeof value === 'number') {
+                markTrace(`  ↳ ${label}: ${value.toFixed(2)}ms`);
+              } else if (typeof value === 'boolean') {
+                markTrace(`  ↳ ${label}: ${value ? '命中' : '未命中'}`);
+              }
+            });
+          } catch {
+            // 解析失败忽略
+          }
+        }
       }
 
       return isSuccess;
@@ -136,10 +165,7 @@ export const request = createFlatRequest(
       let backendErrorCode = '';
 
       // 获取 traceId：优先从请求 config 取，其次从响应头取
-      const traceId =
-        (error.config as any)?.__traceId ||
-        error.response?.headers?.['x-request-id'] ||
-        'unknown';
+      const traceId = (error.config as any)?.__traceId || error.response?.headers?.['x-request-id'] || 'unknown';
 
       // get backend error message and code
       if (error.code === BACKEND_ERROR_CODE) {

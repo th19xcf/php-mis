@@ -55,11 +55,14 @@ class Workbench extends BaseApiController
         $start = hrtime(true);
         try {
             log_message('debug', '[Workbench::page] 开始处理，functionCode: ' . $functionCode);
-            [$context, $definition] = $this->contextService->buildWorkbenchContext($functionCode);
+            [$context, $definition, $trace] = $this->contextService->buildWorkbenchContext($functionCode);
             log_message('debug', '[Workbench::page] 上下文构建成功');
 
             $serverMs = (hrtime(true) - $start) / 1e6;
             log_message('debug', sprintf('[Workbench::page] 服务端处理完成: %.2fms', $serverMs));
+
+            $trace['total'] = round($serverMs, 2);
+            $this->setServerTrace($trace);
 
             return $this->success([
                 'meta' => $definition,
@@ -111,17 +114,24 @@ class Workbench extends BaseApiController
             $offset = max(0, (int) ($payload['offset'] ?? (($current - 1) * $size)));
             $fetchTotal = filter_var($payload['fetchTotal'] ?? true, FILTER_VALIDATE_BOOLEAN);
 
-            [$context] = $this->contextService->buildWorkbenchContext($functionCode);
+            [$context, , $trace] = $this->contextService->buildWorkbenchContext($functionCode);
 
             $total = 0;
             if ($fetchTotal) {
+                $tCount = hrtime(true);
                 $total = $this->queryService->queryTotalCount($context, $payload);
+                $trace['queryTotal'] = round((hrtime(true) - $tCount) / 1e6, 2);
             }
 
+            $tQuery = hrtime(true);
             $records = $this->queryService->queryRecordsPaged($context, $payload, $current, $size, $offset);
+            $trace['queryRecords'] = round((hrtime(true) - $tQuery) / 1e6, 2);
 
             $serverMs = (hrtime(true) - $start) / 1e6;
             log_message('debug', sprintf('[Workbench::queryPaged] 服务端处理完成: %.2fms, total=%d, records=%d', $serverMs, $total, count($records)));
+
+            $trace['total'] = round($serverMs, 2);
+            $this->setServerTrace($trace);
 
             return $this->success([
                 'records'  => $records,
