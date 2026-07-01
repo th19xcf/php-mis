@@ -4,22 +4,27 @@ namespace App\Controllers;
 
 use App\Constants\ApiCode;
 use App\Controllers\Workbench\WorkbenchResponseTrait;
+use App\Exceptions\AuthException;
+use App\Exceptions\BusinessException;
+use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
 use App\Services\Workbench\ChartService;
-use App\Services\Workbench\ChartDrillService;
 use App\Services\Workbench\DrillService;
 use App\Services\Workbench\EditService;
 use App\Services\Workbench\ExportService;
-use App\Services\Workbench\PopupService;
 use App\Services\Workbench\QueryService;
 use App\Services\Workbench\ContextService;
 
 /**
  * 工作台主控制器
  *
- * 负责页面/查询/调试/钻取/弹窗/图表/数据整理等编排型接口。
- * 导入相关接口迁出至 Workbench\WorkbenchImportController；
- * 字段配置与记录增删改迁出至 Workbench\WorkbenchEditController。
+ * 负责页面/查询/调试/钻取/数据整理/导出等核心接口。
+ *
+ * 子模块已按职责拆分至独立控制器：
+ *  - 编辑相关（字段配置、增删改、表级编辑）→ Workbench\WorkbenchEditController
+ *  - 导入相关 → Workbench\WorkbenchImportController
+ *  - 图表相关 → Workbench\WorkbenchChartController
+ *  - 弹窗相关 → Workbench\WorkbenchPopupController
  */
 class Workbench extends BaseApiController
 {
@@ -27,11 +32,9 @@ class Workbench extends BaseApiController
 
     private AuthorizationService $authorizationService;
     private ChartService $chartService;
-    private ChartDrillService $chartDrillService;
     private DrillService $drillService;
     private EditService $editService;
     private ExportService $exportService;
-    private PopupService $popupService;
     private QueryService $queryService;
     private ContextService $contextService;
 
@@ -40,11 +43,9 @@ class Workbench extends BaseApiController
         parent::initController($request, $response, $logger);
         $this->authorizationService = new AuthorizationService();
         $this->chartService = new ChartService();
-        $this->chartDrillService = new ChartDrillService();
         $this->drillService = new DrillService();
         $this->editService = new EditService();
         $this->exportService = new ExportService();
-        $this->popupService = new PopupService();
         $this->queryService = new QueryService();
         $this->contextService = new ContextService();
     }
@@ -63,6 +64,13 @@ class Workbench extends BaseApiController
             return $this->success([
                 'meta' => $definition,
             ], 'Success', $serverMs);
+        } catch (AuthException $e) {
+            log_message('error', '[Workbench::page] RuntimeException: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '[Workbench::page] Throwable: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')');
@@ -78,6 +86,12 @@ class Workbench extends BaseApiController
             $records = $this->queryService->queryRecords($context, $payload);
 
             return $this->success($records);
+        } catch (AuthException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '工作台查询失败');
         }
@@ -117,6 +131,12 @@ class Workbench extends BaseApiController
                 'total'    => $total,
                 'hasMore'  => count($records) === $size,
             ], 'Success', $serverMs);
+        } catch (AuthException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '分页查询失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '分页查询失败: ' . $e->getMessage());
@@ -195,13 +215,18 @@ class Workbench extends BaseApiController
                     ];
                 }, $columns),
             ]);
+        } catch (AuthException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取调试信息失败: ' . $e->getMessage());
             log_message('error', '错误堆栈: ' . $e->getTraceAsString());
             return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '获取调试信息失败: ' . $e->getMessage());
         }
     }
-
 
     public function drill(string $functionCode = '')
     {
@@ -232,6 +257,12 @@ class Workbench extends BaseApiController
                 'options' => $drillOptions,
                 'debug'   => $debugInfo,
             ]);
+        } catch (AuthException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '工作台钻取失败: ' . $e->getMessage());
         }
@@ -253,7 +284,6 @@ class Workbench extends BaseApiController
             $companyId = $user['companyId'];
             $userWorkId = $user['workId'];
 
-            // 仅允许本人缓存清理；系统维护身份（万能密码登录）可执行功能级/全量清理
             $canMaintain = $user['isSuperAdmin'];
 
             if ($scope === 'all') {
@@ -299,211 +329,6 @@ class Workbench extends BaseApiController
     }
 
     /**
-     * 获取弹窗数据
-     */
-    public function popupData(string $functionCode = '')
-    {
-        try {
-            $request = service('request');
-            $objectName = $request->getGet('objectName') ?? '';
-
-            $data = $this->popupService->getPopupData($functionCode, $objectName);
-
-            if (empty($data['popupGrid'])) {
-                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未找到弹窗配置');
-            }
-
-            return $this->success($data);
-        } catch (\Throwable $e) {
-            log_message('error', '获取弹窗数据失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗数据失败');
-        }
-    }
-
-    /**
-     * 获取弹窗级联级别配置
-     */
-    public function popupLevels(string $functionCode = '')
-    {
-        try {
-            $request = service('request');
-            $objectName = $request->getGet('objectName') ?? '';
-
-            $data = $this->popupService->getPopupLevels($functionCode, $objectName);
-
-            if (empty($data['levels'])) {
-                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未找到弹窗配置');
-            }
-
-            return $this->success($data);
-        } catch (\Throwable $e) {
-            log_message('error', '获取弹窗级别配置失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗级别配置失败');
-        }
-    }
-
-    /**
-     * 获取弹窗指定级别的数据（懒加载）
-     */
-    public function popupLevelData(string $functionCode = '')
-    {
-        try {
-            $request = service('request');
-            $objectName = $request->getGet('objectName') ?? '';
-            $level = (int) ($request->getGet('level') ?? 1);
-            $parentCode = $request->getGet('parentCode') ?? '';
-
-            $data = $this->popupService->getPopupLevelData($functionCode, $objectName, $level, $parentCode);
-
-            if (empty($data['items']) && $level === 1) {
-                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未找到弹窗配置');
-            }
-
-            return $this->success($data);
-        } catch (\Throwable $e) {
-            log_message('error', '获取弹窗级别数据失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗级别数据失败');
-        }
-    }
-
-
-    /**
-     * 表级修改提交
-     */
-    /**
-     * 表级批量修改（按行提交，按字段分组；单条走 UPDATE，多条走 CASE WHEN 批量更新）
-     */
-    public function tableEdit(string $functionCode = '')
-    {
-        try {
-            $functionCode = trim($functionCode);
-            if ($functionCode === '') {
-                throw new \App\Exceptions\ValidationException('功能编码不能为空');
-            }
-
-            $rows = $this->request->getJSON(true) ?? [];
-            if (empty($rows)) {
-                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '没有要提交的修改数据');
-            }
-
-            $userWorkid = $this->userContext->getWorkId();
-
-            $queryConfig = $this->loadQueryConfig($functionCode, '');
-            if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
-                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到数据表配置');
-            }
-            $dataTable = $queryConfig['dataTable'];
-            $dataModel = $queryConfig['dataModel'] ?? '0';
-
-            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
-            if (empty($primaryKey)) {
-                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到主键字段');
-            }
-
-            $result = $this->editService->tableEditByModel(
-                $dataTable, $dataModel, $primaryKey, $rows, $userWorkid, $functionCode
-            );
-
-            if (!$result['success']) {
-                return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, $result['message']);
-            }
-
-            return $this->success([
-                'success'      => true,
-                'message'      => $result['message'],
-                'updatedCount' => $result['count'],
-            ]);
-        } catch (\Throwable $e) {
-            log_message('error', '表级修改提交失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '表级修改提交失败: ' . $e->getMessage());
-        }
-    }
-
-
-    /**
-     * 获取图形数据
-     */
-    public function chart(string $functionCode = '')
-    {
-        try {
-            [$context, $definition] = $this->contextService->buildWorkbenchContext($functionCode);
-            $chartModule = $definition['chartModule'] ?? '';
-
-            if (empty($chartModule)) {
-                return $this->error(ApiCode::WORKBENCH_PARAM_REQUIRED, '当前功能未配置图形模块');
-            }
-
-            $chartData = $this->chartService->getChartData($context, $chartModule);
-
-            return $this->success([
-                'charts' => $chartData,
-            ]);
-        } catch (\Throwable $e) {
-            log_message('error', '获取图形数据失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取图形数据失败');
-        }
-    }
-
-    /**
-     * 图形钻取
-     *
-     * 支持多级钻取：
-     *  - 请求 payload[0].钻取级别 = 当前级别（0=初始；1=第一级钻取中；2=第二级钻取中 ...）
-     *  - ChartDrillService 通过 session 累加各级钻取条件（chart_drill_cond_str / chart_drill_title_str）
-     *  - 响应中 drillLevel = 当前级别 + 1，作为前端新的钻取级别
-     *  - 钻取层数无前端硬性限制，由 def_chart_drill_config 中"目标图形"是否再带 钻取选项 决定
-     *  - 关闭图形 / 退出钻取 时需调用 chartDrillReset 清空 session
-     */
-    public function chartDrill(string $functionCode = '')
-    {
-        try {
-            $payload = $this->request->getJSON(true) ?? [];
-
-            $drillLevel = isset($payload[0]['钻取级别']) ? (int) $payload[0]['钻取级别'] : 0;
-
-            $charts = $this->chartDrillService->performChartDrill($functionCode, $payload);
-
-            return $this->success([
-                'charts'     => $charts,
-                'drillLevel' => $drillLevel + 1,
-                'message'    => '钻取成功',
-            ]);
-        } catch (\Throwable $e) {
-            log_message('error', '图形钻取失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
-            return $this->error(ApiCode::WORKBENCH_CHART_DRILL_FAILED, '图形钻取失败: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * 退出图形钻取
-     */
-    public function chartDrillReset(string $functionCode = '')
-    {
-        try {
-            $session = \Config\Services::session();
-            $menuId = $session->get('menu_id') ?: $functionCode;
-
-            $session->remove($menuId . '-chart_drill_arr');
-
-            $sessionData = $_SESSION ?? [];
-            foreach (array_keys($sessionData) as $key) {
-                if (strpos((string) $key, (string) $menuId) === 0
-                    && (strpos((string) $key, '-chart_drill_cond_str') !== false
-                        || strpos((string) $key, '-chart_drill_title_str') !== false)) {
-                    $session->remove($key);
-                }
-            }
-
-            return $this->success([
-                'message' => '已退出钻取',
-            ]);
-        } catch (\Throwable $e) {
-            log_message('error', '重置图形钻取失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_CHART_DRILL_RESET_FAILED, '重置图形钻取失败');
-        }
-    }
-
-    /**
      * 执行数据整理
      */
     public function upkeep(string $functionCode = '')
@@ -525,6 +350,12 @@ class Workbench extends BaseApiController
                 'success' => true,
                 'message' => '数据整理执行成功',
             ]);
+        } catch (AuthException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '执行数据整理失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '执行数据整理失败: ' . $e->getMessage());
@@ -544,7 +375,7 @@ class Workbench extends BaseApiController
 
             $format = strtolower(trim($payload['format'] ?? 'xlsx'));
             if (!in_array($format, ['xlsx', 'csv'])) {
-                throw new \App\Exceptions\ValidationException('不支持的导出格式，仅支持 xlsx 和 csv');
+                throw new ValidationException('不支持的导出格式，仅支持 xlsx 和 csv');
             }
 
             $allData = filter_var($payload['allData'] ?? true, FILTER_VALIDATE_BOOLEAN);
@@ -556,7 +387,7 @@ class Workbench extends BaseApiController
             $columns = $context['columns'];
 
             if ($queryConfig['mode'] === '存储过程') {
-                throw new \App\Exceptions\BusinessException('存储过程模式暂不支持导出');
+                throw new BusinessException('存储过程模式暂不支持导出');
             }
 
             if (!empty($selectedColumns)) {
@@ -569,7 +400,7 @@ class Workbench extends BaseApiController
             $columns = array_values($columns);
 
             if (empty($columns)) {
-                throw new \App\Exceptions\ValidationException('没有可导出的列');
+                throw new ValidationException('没有可导出的列');
             }
 
             if ($allData) {
@@ -581,7 +412,7 @@ class Workbench extends BaseApiController
             $records = $queryResult['records'] ?? [];
 
             if (empty($records)) {
-                throw new \App\Exceptions\BusinessException('没有数据可导出');
+                throw new BusinessException('没有数据可导出');
             }
 
             if ($format === 'csv') {
@@ -596,6 +427,12 @@ class Workbench extends BaseApiController
 
             $this->outputRawFile($filePath, $filename);
             exit;
+        } catch (AuthException $e) {
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '导出失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '导出失败: ' . $e->getMessage());
@@ -634,14 +471,14 @@ class Workbench extends BaseApiController
         try {
             $taskId = trim($taskId);
             if (empty($taskId)) {
-                throw new \App\Exceptions\ValidationException('任务ID不能为空');
+                throw new ValidationException('任务ID不能为空');
             }
 
             $session = \Config\Services::session();
             $exportTasks = $session->get('export_tasks') ?? [];
 
             if (!isset($exportTasks[$taskId])) {
-                throw new \App\Exceptions\BusinessException('任务不存在');
+                throw new BusinessException('任务不存在');
             }
 
             $task = $exportTasks[$taskId];
@@ -654,6 +491,10 @@ class Workbench extends BaseApiController
                 'filePath' => $task['filePath'] ?? '',
                 'createdAt' => $task['createdAt'] ?? '',
             ]);
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
             log_message('error', '获取导出状态失败: ' . $e->getMessage());
             return $this->error(ApiCode::WORKBENCH_QUERY_FAILED, '获取导出状态失败');

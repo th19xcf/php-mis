@@ -51,14 +51,16 @@ $routes->group('workbench', static function ($routes) {
 	$routes->post('update-row/(:segment)', 'Workbench\WorkbenchEditController::updateRow/$1');
 	$routes->post('batch-update-row/(:segment)', 'Workbench\WorkbenchEditController::batchUpdateRow/$1');
 	$routes->post('delete-row/(:segment)', 'Workbench\WorkbenchEditController::deleteRow/$1');
-	$routes->post('table-edit/(:segment)', 'Workbench::tableEdit/$1');
+	$routes->post('table-edit/(:segment)', 'Workbench\WorkbenchEditController::tableEdit/$1');
 	$routes->post('upkeep/(:segment)', 'Workbench::upkeep/$1');
-	$routes->get('chart/(:segment)', 'Workbench::chart/$1');
-	$routes->post('chart-drill/(:segment)', 'Workbench::chartDrill/$1');
-	$routes->post('chart-drill-reset/(:segment)', 'Workbench::chartDrillReset/$1');
-	$routes->get('popup-data/(:segment)', 'Workbench::popupData/$1');
-	$routes->get('popup-levels/(:segment)', 'Workbench::popupLevels/$1');
-	$routes->get('popup-level-data/(:segment)', 'Workbench::popupLevelData/$1');
+	// 图表接口：迁出至 Workbench\WorkbenchChartController
+	$routes->get('chart/(:segment)', 'Workbench\WorkbenchChartController::chart/$1');
+	$routes->post('chart-drill/(:segment)', 'Workbench\WorkbenchChartController::chartDrill/$1');
+	$routes->post('chart-drill-reset/(:segment)', 'Workbench\WorkbenchChartController::chartDrillReset/$1');
+	// 弹窗接口：迁出至 Workbench\WorkbenchPopupController
+	$routes->get('popup-data/(:segment)', 'Workbench\WorkbenchPopupController::popupData/$1');
+	$routes->get('popup-levels/(:segment)', 'Workbench\WorkbenchPopupController::popupLevels/$1');
+	$routes->get('popup-level-data/(:segment)', 'Workbench\WorkbenchPopupController::popupLevelData/$1');
 	$routes->post('export/(:segment)', 'Workbench::export/$1');
 	$routes->get('export-status/(:segment)', 'Workbench::exportStatus/$1');
 });
