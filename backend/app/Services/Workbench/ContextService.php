@@ -21,7 +21,7 @@ use Config\Services;
 class ContextService
 {
     private const CACHE_PREFIX = 'workbench_context_';
-    private const CACHE_TTL_SECONDS = 300;
+    private const CACHE_TTL_SECONDS = 1800;
 
     private Mcommon $model;
     private AuthorizationService $authorizationService;
