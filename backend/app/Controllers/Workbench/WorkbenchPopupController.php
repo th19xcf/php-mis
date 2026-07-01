@@ -28,6 +28,21 @@ class WorkbenchPopupController extends BaseApiController
     }
 
     /**
+     * 截断错误信息，避免把整条 SQL 全部抛到前端
+     */
+    private function shortError(\Throwable $e, int $maxLen = 200): string
+    {
+        $msg = trim($e->getMessage());
+        if ($msg === '') {
+            $msg = get_class($e);
+        }
+        if (mb_strlen($msg) > $maxLen) {
+            $msg = mb_substr($msg, 0, $maxLen) . '...(已截断)';
+        }
+        return $msg;
+    }
+
+    /**
      * 获取弹窗数据
      */
     public function popupData(string $functionCode = '')
@@ -43,8 +58,9 @@ class WorkbenchPopupController extends BaseApiController
 
             return $this->success($data);
         } catch (\Throwable $e) {
+            $short = $this->shortError($e);
             log_message('error', '获取弹窗数据失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗数据失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗数据失败: ' . $short);
         }
     }
 
@@ -64,8 +80,9 @@ class WorkbenchPopupController extends BaseApiController
 
             return $this->success($data);
         } catch (\Throwable $e) {
+            $short = $this->shortError($e);
             log_message('error', '获取弹窗级别配置失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗级别配置失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗级别配置失败: ' . $short);
         }
     }
 
@@ -87,8 +104,9 @@ class WorkbenchPopupController extends BaseApiController
 
             return $this->success($data);
         } catch (\Throwable $e) {
+            $short = $this->shortError($e);
             log_message('error', '获取弹窗级别数据失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗级别数据失败');
+            return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '获取弹窗级别数据失败: ' . $short);
         }
     }
 }

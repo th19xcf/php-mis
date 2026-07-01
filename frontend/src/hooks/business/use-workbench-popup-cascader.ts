@@ -37,15 +37,25 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
     popupLevels.value = [];
     popupMaxLevel.value = 1;
 
+    console.log('[POPUP-CASCADER] ========== handleOpenPopup 开始 ==========');
+    console.log('[POPUP-CASCADER] 字段:', field);
+
     try {
       const functionCode = options.getFunctionCode();
       if (!functionCode || !field.objectName) {
+        console.warn('[POPUP-CASCADER] 缺少 functionCode 或 objectName，跳过加载', {
+          functionCode,
+          objectName: field?.objectName
+        });
         popupLoading.value = false;
         return;
       }
 
+      console.log('[POPUP-CASCADER] 请求 fetchPopupLevels:', { functionCode, objectName: field.objectName });
       const { data: levelsData, error: levelsError } = await fetchPopupLevels(functionCode, field.objectName);
+      console.log('[POPUP-CASCADER] fetchPopupLevels 响应:', { data: levelsData, error: levelsError });
       if (levelsError) {
+        console.error('[POPUP-CASCADER] 获取弹窗级别配置失败:', levelsError);
         options.notifyError(levelsError.message || '获取弹窗级别配置失败');
         popupLoading.value = false;
         return;
@@ -54,8 +64,11 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
       popupLevels.value = levelsData.levels;
       popupMaxLevel.value = levelsData.maxLevel;
 
+      console.log('[POPUP-CASCADER] 请求 fetchPopupLevelData(第1级):', { functionCode, objectName: field.objectName, level: 1 });
       const { data: levelData, error: levelError } = await fetchPopupLevelData(functionCode, field.objectName, 1, '');
+      console.log('[POPUP-CASCADER] fetchPopupLevelData(第1级) 响应:', { data: levelData, error: levelError });
       if (levelError) {
+        console.error('[POPUP-CASCADER] 获取弹窗数据失败:', levelError);
         options.notifyError(levelError.message || '获取弹窗数据失败');
         popupLoading.value = false;
         return;
@@ -71,10 +84,14 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
           isLeaf: !item.hasChildren
         };
       });
+      console.log('[POPUP-CASCADER] 弹窗首屏数据 items:', levelData.items);
+      console.log('[POPUP-CASCADER] cascaderOptions:', popupCascaderOptions.value);
     } catch (e: any) {
+      console.error('[POPUP-CASCADER] handleOpenPopup 异常:', e);
       options.notifyError(e.message || '获取弹窗数据失败');
     } finally {
       popupLoading.value = false;
+      console.log('[POPUP-CASCADER] ========== handleOpenPopup 结束 ==========');
     }
   }
 
@@ -97,9 +114,12 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
     const parentCode = option.fullName || option.value;
     // 必须在 fetch 完成、把 children / isLeaf 全部写到 option 之后才调用 resolve，
     // 这样 NCascader 才会把节点登记为已加载的叶子节点，末级节点也才能被点击选中。
+    console.log('[POPUP-CASCADER] 请求 fetchPopupLevelData(子级):', { functionCode, objectName, level: nextLevel, parentCode });
     fetchPopupLevelData(functionCode, objectName, nextLevel, parentCode)
       .then(({ data, error }) => {
+        console.log('[POPUP-CASCADER] fetchPopupLevelData(子级) 响应:', { data, error, level: nextLevel });
         if (error) {
+          console.error('[POPUP-CASCADER] 加载子节点失败:', error);
           options.notifyError(error.message || '加载子节点失败');
           return;
         }
@@ -115,8 +135,10 @@ export function useWorkbenchPopupCascader(options: UseWorkbenchPopupCascaderOpti
             isLeaf: !item.hasChildren || isLastLevel
           };
         });
+        console.log('[POPUP-CASCADER] 子级 items:', data.items, '父级 fullName:', parentCode);
       })
       .catch((e: any) => {
+        console.error('[POPUP-CASCADER] 加载子节点异常:', e);
         options.notifyError(e.message || '加载子节点失败');
       })
       .finally(() => {
