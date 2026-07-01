@@ -20,11 +20,40 @@ interface UseWorkbenchTableEditOptions {
   isDarkMode: Ref<boolean>;
 }
 
-function getRowId(row: Api.Workbench.QueryRecord, index: number): string {
+function getRowId(row: Api.Workbench.QueryRecord, index: number, primaryKey?: string): string {
+  if (primaryKey) {
+    const parts = primaryKey.split(';').map(p => p.trim()).filter(Boolean);
+    if (parts.length > 0) {
+      const values = parts.map(p => row[p]).filter(v => v !== undefined && v !== null && v !== '');
+      if (values.length === parts.length) {
+        return values.map(v => String(v)).join('|');
+      }
+    }
+  }
   if (row.GUID) return String(row.GUID);
   if (row.id) return String(row.id);
   if (row.ID) return String(row.ID);
   return String(index);
+}
+
+function pickPrimaryKeyValue(row: Api.Workbench.QueryRecord, primaryKey?: string): Record<string, any> {
+  if (primaryKey) {
+    const parts = primaryKey.split(';').map(p => p.trim()).filter(Boolean);
+    const result: Record<string, any> = {};
+    for (const part of parts) {
+      if (row[part] !== undefined) {
+        result[part] = row[part];
+      }
+    }
+    if (Object.keys(result).length > 0) {
+      return result;
+    }
+  }
+  const fallback: Record<string, any> = {};
+  if (row.GUID !== undefined) fallback.GUID = row.GUID;
+  if (row.id !== undefined) fallback.id = row.id;
+  if (row.ID !== undefined) fallback.ID = row.ID;
+  return fallback;
 }
 
 /**
@@ -55,6 +84,8 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
   const originalRowsData = ref<Map<string | number, Api.Workbench.QueryRecord>>(new Map());
   const isRestoringCellValue = ref(false);
   const processedRows = shallowRef<Api.Workbench.QueryRecord[]>([]);
+
+  const resolvePrimaryKey = (): string => options.pageMeta.value?.primaryKey ?? '';
 
   const hasTableModifications = computed(() => tableModifiedRows.value.size > 0);
 
@@ -106,7 +137,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
         const data = params.data || {};
         const rowIndex = params.rowIndex;
 
-        const rowId = getRowId(data, rowIndex);
+        const rowId = getRowId(data, rowIndex, resolvePrimaryKey());
         const modifiedFields = modifiedRowsData.value.get(rowId);
         if (modifiedFields && column.field in modifiedFields) {
           if (options.isDarkMode.value) {
@@ -168,7 +199,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
 
   function updateProcessedRows() {
     const rows = options.serverRows.value.map((row, index) => {
-      const rowId = getRowId(row, index);
+      const rowId = getRowId(row, index, resolvePrimaryKey());
       if (modifiedRowsData.value.has(rowId)) {
         return { ...row, ...modifiedRowsData.value.get(rowId) };
       }
@@ -203,7 +234,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
 
     const rowData = event.data;
     const rowIndex = event.rowIndex;
-    const rowId = getRowId(rowData, rowIndex);
+    const rowId = getRowId(rowData, rowIndex, resolvePrimaryKey());
 
     log('info', `行ID: ${rowId}, 字段: ${event.colDef.field}`);
     log('info', `值变化: ${event.oldValue} -> ${event.newValue}`);
@@ -274,7 +305,7 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
       if (updatedRowIds.size > 0) {
         const updatedRows: Api.Workbench.QueryRecord[] = [];
         options.serverRows.value.forEach((row, index) => {
-          const rowId = getRowId(row, index);
+          const rowId = getRowId(row, index, resolvePrimaryKey());
           if (updatedRowIds.has(rowId)) {
             const modifiedFields = newModified.get(rowId);
             updatedRows.push(modifiedFields ? { ...row, ...modifiedFields } : row);
@@ -310,16 +341,13 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
     log('info', `功能编码: ${functionCode}`);
 
     const modifiedData: Api.Workbench.QueryRecord[] = [];
+    const primaryKey = resolvePrimaryKey();
     tableModifiedRows.value.forEach(rowId => {
       const originalRow = originalRowsData.value.get(rowId);
       const modifiedFields = modifiedRowsData.value.get(rowId);
 
       if (originalRow && modifiedFields) {
-        const submitData: Record<string, any> = {};
-
-        if (originalRow.GUID !== undefined) submitData.GUID = originalRow.GUID;
-        if (originalRow.id !== undefined) submitData.id = originalRow.id;
-        if (originalRow.ID !== undefined) submitData.ID = originalRow.ID;
+        const submitData: Record<string, any> = pickPrimaryKeyValue(originalRow, primaryKey);
 
         Object.keys(modifiedFields).forEach(field => {
           if (field !== '序号' && !field.startsWith('序号')) {

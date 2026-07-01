@@ -159,7 +159,29 @@ class BatchEditService
             return ['success' => false, 'count' => 0, 'message' => '没有要提交的修改数据'];
         }
 
-        $skipFields = ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识', '有效标识', '记录开始日期', '记录结束日期'];
+        $primaryKeyFields = array_map('trim', explode(';', $primaryKey));
+        $missingKeys = [];
+        foreach ($primaryKeyFields as $pk) {
+            $has = false;
+            foreach ($rows as $row) {
+                if (array_key_exists($pk, $row) && $row[$pk] !== '' && $row[$pk] !== null) {
+                    $has = true;
+                    break;
+                }
+            }
+            if (!$has) {
+                $missingKeys[] = $pk;
+            }
+        }
+        if (!empty($missingKeys)) {
+            return [
+                'success' => false,
+                'count'   => 0,
+                'message' => sprintf('表级修改失败:payload 中缺少主键字段 [%s],无法定位待修改记录', implode(', ', $missingKeys)),
+            ];
+        }
+
+        $skipFields = ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识'];
 
         $num = 0;
         switch ($dataModel) {
@@ -253,7 +275,7 @@ class BatchEditService
                 }
 
                 if (empty($validRows)) {
-                    return ['success' => true, 'count' => 0, 'message' => '表级修改提交成功,修改了 0 条记录'];
+                    return ['success' => false, 'count' => 0, 'message' => '表级修改失败:payload 中缺少有效的主键值,无法定位待修改记录'];
                 }
 
                 $whereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $primaryKeyValues));
@@ -342,7 +364,9 @@ class BatchEditService
                     $num += $this->model->exec($sqlInsert);
                 }
 
-                return ['success' => true, 'count' => $num, 'message' => sprintf('表级修改提交成功,修改了 %d 条记录', $num)];
+                return ['success' => $num > 0, 'count' => $num, 'message' => $num > 0
+                    ? sprintf('表级修改提交成功,修改了 %d 条记录', $num)
+                    : sprintf('表级修改失败:未命中任何记录,请检查主键值是否正确(主键=%s,表=%s,共提交 %d 行)', $primaryKey, $dataTable, count($rows))];
 
             default:
                 return ['success' => false, 'count' => 0, 'message' => sprintf('修改失败,数据模式[-%s-]错误', $dataModel)];
