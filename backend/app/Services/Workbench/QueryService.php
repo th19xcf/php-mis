@@ -34,10 +34,7 @@ class QueryService
             return 0;
         }
 
-        $columnMap = [];
-        foreach ($columns as $column) {
-            $columnMap[(string) ($column['列名'] ?? '')] = $column;
-        }
+        $columnMap = $this->buildColumnMap($columns);
 
         $whereParts = $this->buildWhereConditions($queryConfig, $functionAuth, $payload, $columnMap);
         $this->addDrillCondition($whereParts, $payload);
@@ -83,10 +80,7 @@ class QueryService
             ];
         }
 
-        $columnMap = [];
-        foreach ($columns as $column) {
-            $columnMap[(string) ($column['列名'] ?? '')] = $column;
-        }
+        $columnMap = $this->buildColumnMap($columns);
 
         $selectParts = $this->buildSelectParts($columns, $functionAuth, $userAuth);
         $whereParts = $this->buildWhereConditions($queryConfig, $functionAuth, $payload, $columnMap);
@@ -164,10 +158,7 @@ class QueryService
             return [];
         }
 
-        $columnMap = [];
-        foreach ($columns as $column) {
-            $columnMap[(string) ($column['列名'] ?? '')] = $column;
-        }
+        $columnMap = $this->buildColumnMap($columns);
 
         $selectParts = $this->buildSelectParts($columns, $functionAuth, $userAuth);
         $whereParts = $this->buildWhereConditions($queryConfig, $functionAuth, $payload, $columnMap);
@@ -277,6 +268,30 @@ class QueryService
             if (!is_array($filter)) {
                 continue;
             }
+
+            // 跨字段快速检索（对应前端 ag-grid quickFilterText / 工具栏"金"等场景）
+            // 与条件面板 fieldKey 筛选并存，二者都会拼到 WHERE 上（AND 关系）
+            if (isset($filter['globalSearch'])) {
+                $searchTerm = trim((string) $filter['globalSearch']);
+                if ($searchTerm !== '') {
+                    $orParts = $this->buildGlobalSearchOrParts($columnMap, $searchTerm);
+                    if (!empty($orParts)) {
+                        $whereParts[] = '(' . implode(' or ', $orParts) . ')';
+                    }
+                }
+                continue;
+            }
+
+            // 单字段 OR 组合（对应 ag-grid 列筛选 operator=OR 场景）
+            // 形如：{ fieldOrFilter: { fieldKey: '工号', conditions: [
+            //     { operator: 'contains', value: '金凯龙' },
+            //     { operator: 'contains', value: '总经理' }
+            // ] } }
+            if (isset($filter['fieldOrFilter']) && is_array($filter['fieldOrFilter'])) {
+                $this->appendFieldOrFilter($whereParts, $columnMap, $filter['fieldOrFilter']);
+                continue;
+            }
+
             $fieldKey = trim((string) ($filter['fieldKey'] ?? ''));
             $operator = trim((string) ($filter['operator'] ?? 'contains'));
             $value = trim((string) ($filter['value'] ?? ''));
@@ -289,20 +304,136 @@ class QueryService
                 continue;
             }
 
-            switch ($operator) {
-                case 'equals':
-                    $whereParts[] = sprintf('%s=%s', $fieldName, $this->model->quote($value));
-                    break;
-                case 'startsWith':
-                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->model->quote($value . '%'));
-                    break;
-                default:
-                    $whereParts[] = sprintf('%s like %s', $fieldName, $this->model->quote('%' . $value . '%'));
-                    break;
-            }
+            $whereParts[] = $this->buildSingleCondition($fieldName, $operator, $value);
         }
 
         return $whereParts;
+    }
+
+    /**
+     * 追加单字段 OR 组合的 WHERE 片段。
+     *
+     * - fieldKey 不在 columnMap 中：跳过整组（不抛错，避免破坏导出）
+     * - 任一 condition 字段名为空：跳过该 condition
+     * - 至少一条 condition 有效：才生成 (cond1 OR cond2 OR ...) 包裹的片段
+     */
+    private function appendFieldOrFilter(array &$whereParts, array $columnMap, array $fieldOrFilter): void
+    {
+        $fieldKey = trim((string) ($fieldOrFilter['fieldKey'] ?? ''));
+        if ($fieldKey === '' || !isset($columnMap[$fieldKey])) {
+            return;
+        }
+        $fieldName = trim((string) ($columnMap[$fieldKey]['字段名'] ?? ''));
+        if ($fieldName === '') {
+            return;
+        }
+
+        $conditions = is_array($fieldOrFilter['conditions'] ?? null) ? $fieldOrFilter['conditions'] : [];
+        $orParts = [];
+        foreach ($conditions as $cond) {
+            if (!is_array($cond)) {
+                continue;
+            }
+            $op = trim((string) ($cond['operator'] ?? 'contains'));
+            $val = trim((string) ($cond['value'] ?? ''));
+            if ($val === '') {
+                continue;
+            }
+            $orParts[] = $this->buildSingleCondition($fieldName, $op, $val);
+        }
+
+        if (!empty($orParts)) {
+            $whereParts[] = '(' . implode(' or ', $orParts) . ')';
+        }
+    }
+
+    /**
+     * 构建单条 WHERE 条件（fieldName OP value）
+     *
+     * - equals    -> fieldName = 'value'
+     * - startsWith-> fieldName like 'value%'
+     * - endsWith  -> fieldName like '%value'
+     * - 其他      -> fieldName like '%value%'
+     */
+    private function buildSingleCondition(string $fieldName, string $operator, string $value): string
+    {
+        switch ($operator) {
+            case 'equals':
+                return sprintf('%s=%s', $fieldName, $this->model->quote($value));
+            case 'startsWith':
+                return sprintf('%s like %s', $fieldName, $this->model->quote($value . '%'));
+            case 'endsWith':
+                return sprintf('%s like %s', $fieldName, $this->model->quote('%' . $value));
+            default:
+                return sprintf('%s like %s', $fieldName, $this->model->quote('%' . $value . '%'));
+        }
+    }
+
+    /**
+     * 构建跨字段快速检索的 OR LIKE 列表
+     *
+     * 只对文本类字段（列类型 = 字符 / 文本 / 空）参与检索，
+     * 自动转义用户输入的 LIKE 元字符（% _ \），避免被当作通配符。
+     *
+     * @param array $columnMap 列定义数组（key=列名, value=列配置）
+     * @param string $searchTerm 用户输入的关键词
+     * @return array OR LIKE 片段数组
+     */
+    private function buildGlobalSearchOrParts(array $columnMap, string $searchTerm): array
+    {
+        $escaped = $this->escapeLikeWildcards($searchTerm);
+        $likeValue = $this->model->quote('%' . $escaped . '%') . " ESCAPE '\\\\'";
+
+        $orParts = [];
+        foreach ($columnMap as $column) {
+            $fieldName = trim((string) ($column['字段名'] ?? ''));
+            if ($fieldName === '') {
+                continue;
+            }
+            $fieldType = (string) ($column['列类型'] ?? '字符');
+            if (!in_array($fieldType, ['字符', '文本', ''], true)) {
+                continue;
+            }
+            $orParts[] = sprintf('%s like %s', $fieldName, $likeValue);
+        }
+        return $orParts;
+    }
+
+    /**
+     * 转义 LIKE 元字符：% _ \
+     *
+     * 转义后用户输入的"50%"会被当作字面量"50%"，不会匹配"50xx"。
+     * 同时使用 ESCAPE '\\' 让 MySQL 知道反斜杠是转义符。
+     */
+    private function escapeLikeWildcards(string $value): string
+    {
+        return addcslashes($value, '%_\\');
+    }
+
+    /**
+     * 构建列映射：按"列名"和"字段名"双键索引同一份列配置
+     *
+     * 设计原因：ag-grid 列筛选的 colId 实际是"字段名"（SQL 字段），
+     * 而工作台配置（条件面板/全局检索）通常以"列名"作为业务键。
+     * 为兼容两种来源的 key，统一放入同一张映射。
+     *
+     * @param array $columns 列配置（来自 query_columns 表）
+     * @return array 列名/字段名 -> 列配置
+     */
+    private function buildColumnMap(array $columns): array
+    {
+        $columnMap = [];
+        foreach ($columns as $column) {
+            $columnName = (string) ($column['列名'] ?? '');
+            $fieldName = (string) ($column['字段名'] ?? '');
+            if ($columnName !== '') {
+                $columnMap[$columnName] = $column;
+            }
+            if ($fieldName !== '' && $fieldName !== $columnName) {
+                $columnMap[$fieldName] = $column;
+            }
+        }
+        return $columnMap;
     }
 
     /**
@@ -367,10 +498,7 @@ class QueryService
         $functionAuth = $context['function'] ?? [];
         $userAuth = $context['user'] ?? [];
 
-        $columnMap = [];
-        foreach ($columns as $column) {
-            $columnMap[(string) ($column['列名'] ?? '')] = $column;
-        }
+        $columnMap = $this->buildColumnMap($columns);
 
         $selectParts = $this->buildSelectParts($columns, $functionAuth, $userAuth);
         $whereParts = $this->buildWhereConditions($queryConfig, $functionAuth, $payload, $columnMap);

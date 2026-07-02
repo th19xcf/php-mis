@@ -413,10 +413,13 @@ class Workbench extends BaseApiController
                 throw new ValidationException('没有可导出的列');
             }
 
-            if ($allData) {
-                $payload['all'] = true;
-                $payload['size'] = 50000;
-            }
+            // 无论导出全部还是导出筛选，都需要把全部匹配记录一次性取出：
+            //   - 导出全部：payload['filters'] 由前端置为空，命中 queryConfig['queryWhere'] 的所有记录
+            //   - 导出筛选：payload['filters'] 由条件面板提供，需匹配全部筛选后记录
+            // 之前只对 allData=true 设置 all=true / size=50000，导致导出筛选只返回
+            // 第一页（默认 size=20）的记录，与页面显示的完整筛选结果不一致。
+            $payload['all'] = true;
+            $payload['size'] = 50000;
 
             $queryResult = $this->queryService->queryRecords($context, $payload);
             $records = $queryResult['records'] ?? [];

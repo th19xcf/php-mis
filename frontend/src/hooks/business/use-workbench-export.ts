@@ -16,6 +16,92 @@ interface UseWorkbenchExportOptions {
   getFilters?: () => any[];
 }
 
+/**
+ * ag-grid 文本筛选条件转后端筛选格式
+ *
+ * ag-grid v32+ 的文本筛选 model 形如：
+ *   - 单条件：{ filterType: 'text', type: 'contains', filter: 'value' }
+ *   - 组合  ：{ filterType: 'text', operator: 'AND' | 'OR',
+ *              type: 'contains', filter: 'value1',
+ *              condition1: { type: 'contains', filter: 'value2' },
+ *              condition2: { type: 'contains', filter: 'value3' } }
+ *
+ * 后端 buildWhereConditions 支持三种：
+ *   - { fieldKey, operator, value }                       单条件
+ *   - 多条 { fieldKey, operator, value }                  同字段 AND（多条 = 多条 WHERE AND）
+ *   - { fieldOrFilter: { fieldKey, conditions: [...] } }  同字段 OR
+ */
+export function convertAgGridTextFilterToBackend(colId: string, model: any): any[] {
+  if (!model || model.filterType !== 'text') {
+    return [];
+  }
+
+  const typeMap: Record<string, string> = {
+    contains: 'contains',
+    equals: 'equals',
+    notEqual: 'equals',
+    startsWith: 'startsWith',
+    endsWith: 'endsWith'
+  };
+
+  const fieldKey = colId;
+  const combineOp: string | undefined = model.operator;
+  const hasCondition1 = !!model.condition1;
+  const hasCondition2 = !!model.condition2;
+
+  // 单条件：没有 operator + condition1
+  if (!combineOp && !hasCondition1) {
+    if (model.filter === undefined || model.filter === null || model.filter === '') {
+      return [];
+    }
+    const op = typeMap[model.type] || 'contains';
+    return [{ fieldKey, operator: op, value: String(model.filter) }];
+  }
+
+  // 组合条件：收集所有非空条件
+  const conditions: Array<{ operator: string; value: string }> = [];
+  const collect = (m: any) => {
+    if (!m) return;
+    if (m.filter === undefined || m.filter === null || m.filter === '') return;
+    conditions.push({
+      operator: typeMap[m.type] || 'contains',
+      value: String(m.filter)
+    });
+  };
+  collect(model);
+  collect(model.condition1);
+  collect(model.condition2);
+
+  if (conditions.length === 0) {
+    return [];
+  }
+
+  if (combineOp === 'OR' && conditions.length > 1) {
+    return [{ fieldOrFilter: { fieldKey, conditions } }];
+  }
+
+  // AND（或单条 condition）展开成多条独立 filter
+  return conditions.map(c => ({ fieldKey, ...c }));
+}
+
+/**
+ * 收集 gridApi 当前的列筛选，转换为后端筛选格式
+ */
+export function collectColumnFilters(gridApi: GridApi<Api.Workbench.QueryRecord> | null): any[] {
+  if (!gridApi || gridApi.isDestroyed()) {
+    return [];
+  }
+  const model = gridApi.getFilterModel() ?? {};
+  const result: any[] = [];
+  for (const colId of Object.keys(model)) {
+    const filters = convertAgGridTextFilterToBackend(colId, model[colId]);
+    if (filters.length > 0) {
+      result.push(...filters);
+    }
+  }
+  return result;
+}
+
 export interface ExportOptions {
   format?: 'xlsx' | 'csv';
   /** 是否导出全部数据（忽略筛选条件），默认 true */

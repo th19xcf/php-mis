@@ -24,7 +24,7 @@ import { useWorkbenchChart } from '@/hooks/business/use-workbench-chart';
 import { useWorkbenchChartDrill } from '@/hooks/business/use-workbench-chart-drill';
 import { useWorkbenchTableEdit } from '@/hooks/business/use-workbench-table-edit';
 import { useWorkbenchDataLoader } from '@/hooks/business/use-workbench-data-loader';
-import { useWorkbenchExport } from '@/hooks/business/use-workbench-export';
+import { collectColumnFilters, useWorkbenchExport } from '@/hooks/business/use-workbench-export';
 import { useWorkbenchDrillDialog } from '@/hooks/business/use-workbench-drill-dialog';
 import { useWorkbenchPageDebug } from '@/hooks/business/use-workbench-page-debug';
 import { useWorkbenchChartDebug } from '@/hooks/business/use-workbench-chart-debug';
@@ -911,16 +911,35 @@ const { handleExport } = useWorkbenchExport({
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   notify,
   getFilters: () => {
-    if (!selectedField.value || !selectedValue.value.trim()) {
-      return [];
+    // 组合：ag-grid 列筛选 + 条件面板筛选 + 工具栏快速检索
+    // 让"导出筛选"与页面显示完全对齐：
+    //   - 列筛选（每列 floating filter/menu filter）
+    //   - 条件面板（fieldKey / operator / value 结构化筛选）
+    //   - 工具栏快速检索（跨所有文本列）
+    const filters: any[] = [];
+
+    // 1. ag-grid 列筛选（最高优先级，先收集）
+    if (gridApi.value && !gridApi.value.isDestroyed()) {
+      filters.push(...collectColumnFilters(gridApi.value));
     }
-    return [
-      {
+
+    // 2. 条件面板筛选
+    if (selectedField.value && selectedValue.value.trim()) {
+      filters.push({
         fieldKey: selectedField.value,
         operator: selectedOperator.value,
         value: selectedValue.value.trim()
-      }
-    ];
+      });
+    }
+
+    // 3. 工具栏快速检索
+    if (quickKeyword.value && quickKeyword.value.trim()) {
+      filters.push({
+        globalSearch: quickKeyword.value.trim()
+      });
+    }
+
+    return filters;
   }
 });
 
