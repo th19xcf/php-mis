@@ -11,9 +11,10 @@ import type { IHeaderParams } from 'ag-grid-community';
  *      - 部分选中 → "-"（indeterminate）
  *      - 全部选中 → 实心
  *  - 点击：
- *      - 当前是"全不选"或"部分选中" → 全选所有已加载行
+ *      - 当前是"全不选"或"部分选中" → 全选所有过滤后可见行
  *      - 当前是"全部选中" → 全不选
- *  - 仅作用于 gridApi 当前可见/已加载的节点（不含尚未分片拉取的远端数据）
+ *  - 仅作用于过滤后可见的行（被列筛选/快速检索过滤掉的行不参与全选）
+ *  - 仅作用于已加载到 grid 的行（不含尚未分片拉取的远端数据）
  */
 const props = defineProps<{
   params: IHeaderParams;
@@ -23,10 +24,9 @@ const props = defineProps<{
 const tick = ref(0);
 
 const allCount = computed(() => {
-  // 依赖 tick：每次 grid 选择/数据变化都重新统计
   void tick.value;
   let count = 0;
-  props.params.api.forEachNode(() => {
+  props.params.api.forEachNodeAfterFilter(() => {
     count += 1;
   });
   return count;
@@ -34,7 +34,13 @@ const allCount = computed(() => {
 
 const selectedCount = computed(() => {
   void tick.value;
-  return props.params.api.getSelectedRows().length;
+  let count = 0;
+  props.params.api.forEachNodeAfterFilter(node => {
+    if (node.isSelected()) {
+      count += 1;
+    }
+  });
+  return count;
 });
 
 const headerState = computed<'checked' | 'unchecked' | 'indeterminate'>(() => {
@@ -45,16 +51,16 @@ const headerState = computed<'checked' | 'unchecked' | 'indeterminate'>(() => {
 });
 
 function handleWrapperClick(e: MouseEvent) {
-  // 阻止列头点击默认行为（排序 / 菜单等）
   e.stopPropagation();
   if (headerState.value === 'checked') {
     props.params.api.deselectAll();
   } else {
-    props.params.api.selectAll();
+    props.params.api.deselectAll();
+    props.params.api.forEachNodeAfterFilter(node => node.setSelected(true, false));
   }
 }
 
-// 监听 grid 的选择 / 数据变化，刷新 tick 触发 computed 重算
+// 监听 grid 的选择 / 数据 / 过滤变化，刷新 tick 触发 computed 重算
 let removeSelectionListener: (() => void) | null = null;
 onMounted(() => {
   const handler = () => {
@@ -62,9 +68,11 @@ onMounted(() => {
   };
   props.params.api.addEventListener('selectionChanged', handler);
   props.params.api.addEventListener('modelUpdated', handler);
+  props.params.api.addEventListener('filterChanged', handler);
   removeSelectionListener = () => {
     props.params.api.removeEventListener('selectionChanged', handler);
     props.params.api.removeEventListener('modelUpdated', handler);
+    props.params.api.removeEventListener('filterChanged', handler);
   };
 });
 
