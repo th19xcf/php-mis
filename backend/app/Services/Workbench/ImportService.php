@@ -637,6 +637,41 @@ class ImportService
     }
 
     /**
+     * 执行导入前处理模块
+     *
+     * @param string $importModule 导入模块
+     * @return array ['success' => bool, 'message' => string]
+     */
+    public function executeBeforeProcess(string $importModule): array
+    {
+        try {
+            $sql = sprintf(
+                'select 前处理模块 from def_import_config where 导入模块=%s',
+                $this->model->quote($importModule)
+            );
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return ['success' => true, 'message' => ''];
+            }
+
+            $row = $result->getRowArray();
+            if (!$row || empty($row['前处理模块'])) {
+                return ['success' => true, 'message' => ''];
+            }
+
+            $beforeProcess = $row['前处理模块'];
+            $spSql = sprintf('call %s', $beforeProcess);
+            $this->model->select($spSql);
+
+            return ['success' => true, 'message' => '前处理执行成功'];
+        } catch (\Throwable $e) {
+            log_message('error', '执行前处理模块失败: ' . $e->getMessage());
+            return ['success' => false, 'message' => '执行前处理模块失败: ' . $e->getMessage()];
+        }
+    }
+
+    /**
      * 执行导入后处理模块
      *
      * @param string $importModule 导入模块
