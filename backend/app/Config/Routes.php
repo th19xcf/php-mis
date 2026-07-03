@@ -34,6 +34,7 @@ $routes->group('route', static function ($routes) {
 
 $routes->group('workbench', static function ($routes) {
 	$routes->get('page/(:segment)', 'Workbench::page/$1');
+	$routes->post('pageWithData/(:segment)', 'Workbench::pageWithData/$1');
 	$routes->post('query/(:segment)', 'Workbench::query/$1');
 	$routes->post('queryPaged/(:segment)', 'Workbench::queryPaged/$1');
 	$routes->post('drill/(:segment)', 'Workbench::drill/$1');

@@ -8,6 +8,32 @@ export function fetchWorkbenchPage(functionCode: string) {
   return request<{ meta: Api.Workbench.PageMeta }>({ url: `/workbench/page/${encodeURIComponent(functionCode)}` });
 }
 
+export function fetchWorkbenchPageWithData(
+  functionCode: string,
+  params: {
+    current: number;
+    size: number;
+    offset?: number;
+    fetchTotal?: boolean;
+    drillCondition?: string;
+    filters?: any[];
+  }
+) {
+  return request<{
+    meta: Api.Workbench.PageMeta;
+    records: Api.Workbench.QueryRecord[];
+    current: number;
+    size: number;
+    offset?: number;
+    total: number;
+    hasMore: boolean;
+  }>({
+    url: `/workbench/pageWithData/${encodeURIComponent(functionCode)}`,
+    method: 'post',
+    data: params
+  });
+}
+
 export function fetchWorkbenchQuery(functionCode: string, data: Api.Workbench.QueryPayload) {
   return request<Api.Common.PaginatingQueryRecord<Api.Workbench.QueryRecord>>({
     url: `/workbench/query/${encodeURIComponent(functionCode)}`,

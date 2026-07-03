@@ -1,0 +1,9 @@
+"*.php"     eol=lf
+"*.html"    eol=lf
+"*.css"     eol=lf
+"*.js"      eol=lf
+"*.json"    eol=lf
+"*.md"      eol=lf
+"*.sql"     eol=lf
+"*.env"     eol=lf
+"*.txt"     eol=lf

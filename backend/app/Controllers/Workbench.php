@@ -86,6 +86,82 @@ class Workbench extends BaseApiController
         }
     }
 
+    /**
+     * 合并接口：一次返回页面元数据 + 首屏分页数据
+     *
+     * 性能优化：替代原来前端并行调用 /page 和 /queryPaged 两个接口，
+     * 在单线程 PHP 服务器下会串行排队，多等一次框架启动（~450ms）
+     * + 一次上下文构建（~120ms）。合并后只走一次框架启动和上下文构建，
+     * 预计节省约 500~600ms。
+     */
+    public function pageWithData(string $functionCode = '')
+    {
+        $start = hrtime(true);
+        try {
+            $payload = $this->request->getJSON(true) ?? [];
+
+            $current = max(1, (int) ($payload['current'] ?? 1));
+            $size = max(1, min(5000, (int) ($payload['size'] ?? 1000)));
+            $offset = max(0, (int) ($payload['offset'] ?? (($current - 1) * $size)));
+            $fetchTotal = filter_var($payload['fetchTotal'] ?? true, FILTER_VALIDATE_BOOLEAN);
+
+            [$context, $definition, $trace] = $this->contextService->buildWorkbenchContext($functionCode);
+            $tContextDone = hrtime(true);
+
+            $total = 0;
+            $tCountDone = $tContextDone;
+            if ($fetchTotal) {
+                $tCount = hrtime(true);
+                $total = $this->queryService->queryTotalCount($context, $payload);
+                $tCountDone = hrtime(true);
+                $trace['queryTotal'] = round(($tCountDone - $tCount) / 1e6, 2);
+            }
+
+            $tQuery = hrtime(true);
+            $records = $this->queryService->queryRecordsPaged($context, $payload, $current, $size, $offset);
+            $tQueryDone = hrtime(true);
+            $trace['queryRecords'] = round(($tQueryDone - $tQuery) / 1e6, 2);
+
+            $serverMs = (hrtime(true) - $start) / 1e6;
+
+            $steps = [
+                'buildContext' => $tContextDone,
+            ];
+            if ($fetchTotal) {
+                $steps['queryTotal'] = $tCountDone;
+            }
+            $steps['queryRecords'] = $tQueryDone;
+
+            $logMsg = $this->buildPerformanceTable('[PageWithData]', '成功',
+                'functionCode=' . $functionCode . ' total=' . $total . ' records=' . count($records),
+                $steps, $start);
+            log_message('info', $logMsg);
+
+            $trace['total'] = round($serverMs, 2);
+            $this->setServerTrace($trace);
+
+            return $this->success([
+                'meta'    => $definition,
+                'records' => $records,
+                'current' => $current,
+                'size'    => $size,
+                'offset'  => $offset,
+                'total'   => $total,
+                'hasMore' => count($records) === $size,
+            ], 'Success', $serverMs);
+        } catch (AuthException $e) {
+            log_message('error', '[Workbench::pageWithData] AuthException: ' . $e->getMessage());
+            return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
+        } catch (ValidationException $e) {
+            return $this->error(ApiCode::PARAM_ERROR, $e->getMessage());
+        } catch (BusinessException $e) {
+            return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[Workbench::pageWithData] Throwable: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
+            return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '页面初始化失败: ' . $e->getMessage());
+        }
+    }
+
     public function query(string $functionCode = '')
     {
         try {

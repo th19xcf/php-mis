@@ -2,7 +2,7 @@ import { ref, watch, onMounted, onActivated, onDeactivated, nextTick } from 'vue
 import type { Ref, ComputedRef } from 'vue';
 import type { GridApi } from 'ag-grid-community';
 
-import { fetchWorkbenchPage, fetchWorkbenchPageData } from '@/service/api/workbench';
+import { fetchWorkbenchPageWithData, fetchWorkbenchPageData } from '@/service/api/workbench';
 import type { WorkbenchStore } from './use-workbench-grid-state';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import { logger } from '@/utils/logger';
@@ -474,34 +474,25 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     const { filters, conditionSql: drillConditionSql } = parseDrillParams(params);
     log('debug', `解析钻取参数完成: filters=${JSON.stringify(filters)}, drillConditionSql="${drillConditionSql}"`);
 
-    log('info', `步骤1: 并行获取页面元数据与第一页数据`);
+    log('info', `步骤1: 合并接口获取页面元数据与第一页数据`);
     markTrace('数据处理开始');
-    const metaTimer = createTimer('获取页面元数据');
-    const firstPageTimer = createTimer('获取第一页数据');
-    log('debug', `并行调用 fetchWorkbenchPage 与 fetchWorkbenchPageData("${functionCode}", size=${CHUNK_SIZE})`);
+    const pageDataTimer = createTimer('合并接口获取页面元数据+首屏数据');
+    log('debug', `调用 fetchWorkbenchPageWithData("${functionCode}", size=${CHUNK_SIZE})`);
 
-    const [pageResult, firstPageResult] = await Promise.all([
-      fetchWorkbenchPage(functionCode).finally(() => {
-        metaTimer.end();
-        log('info', `获取页面元数据完成，耗时=${metaTimer.elapsed().toFixed(2)}ms`);
-      }),
-      fetchWorkbenchPageData(functionCode, {
-        current: 1,
-        size: CHUNK_SIZE,
-        fetchTotal: true,
-        filters,
-        drillCondition: drillConditionSql || undefined
-      }).finally(() => {
-        firstPageTimer.end();
-        log('info', `获取第一页数据完成，耗时=${firstPageTimer.elapsed().toFixed(2)}ms`);
-      })
-    ]);
+    const pageWithDataResult = await fetchWorkbenchPageWithData(functionCode, {
+      current: 1,
+      size: CHUNK_SIZE,
+      fetchTotal: true,
+      filters,
+      drillCondition: drillConditionSql || undefined
+    });
+    pageDataTimer.end();
+    log('info', `合并接口完成，耗时=${pageDataTimer.elapsed().toFixed(2)}ms`);
 
-    if (pageResult.error) {
+    if (pageWithDataResult.error) {
       const errorMsg = '工作台初始化失败';
-      log('error', `${errorMsg}:`, pageResult.error);
-      // 输出详细错误信息
-      const error = pageResult.error;
+      log('error', `${errorMsg}:`, pageWithDataResult.error);
+      const error = pageWithDataResult.error;
       log('error', `错误类型: ${error.constructor.name}`);
       log('error', `错误消息: ${error.message}`);
       if (error.code) {
@@ -512,40 +503,30 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       }
       options.notify('error', errorMsg);
       loading.value = false;
-      log('info', `========== loadPage 结束（元数据获取失败）==========`);
+      log('info', `========== loadPage 结束（获取失败）==========`);
       return;
     }
 
-    if (firstPageResult.error) {
-      const errorMsg = '获取数据失败';
-      log('error', `${errorMsg}:`, firstPageResult.error);
-      options.notify('error', errorMsg);
-      loading.value = false;
-      log('info', `========== loadPage 结束（数据获取失败）==========`);
-      return;
-    }
-
-    const data = pageResult.data;
-    pageMeta.value = data.meta;
-    page.value = 1;
+    const pageData = pageWithDataResult.data;
+    pageMeta.value = pageData.meta;
+    page.value = pageData.current;
     pageSize.value = PAGE_SIZE_OPTIONS[0];
-    selectedField.value = data.meta.conditions[0]?.fieldKey || '';
+    selectedField.value = pageData.meta.conditions[0]?.fieldKey || '';
     selectedValue.value = '';
-    log('debug', `页面元数据: pageName=${data.meta.title}, conditionsCount=${data.meta.conditions?.length || 0}`);
+    log('debug', `页面元数据: pageName=${pageData.meta.title}, conditionsCount=${pageData.meta.conditions?.length || 0}`);
 
-    const firstPageData = firstPageResult.data;
-    total.value = firstPageData.total;
-    totalCount.value = firstPageData.total;
+    total.value = pageData.total;
+    totalCount.value = pageData.total;
     log(
       'info',
-      `获取数据成功: total=${firstPageData.total}, records.length=${firstPageData.records.length}, hasMore=${firstPageData.hasMore}`
+      `获取数据成功: total=${pageData.total}, records.length=${pageData.records.length}, hasMore=${pageData.hasMore}`
     );
 
     log('info', `步骤3: 首屏渲染`);
     const renderTimer = createTimer('首屏渲染');
 
     // 将序号生成从后端 SQL 移到前端应用层
-    assignRowNumbers(firstPageData.records, firstPageData.current, firstPageData.size);
+    assignRowNumbers(pageData.records, pageData.current, pageData.size);
 
     if (thisLoadId !== currentLoadId) {
       log('info', `加载已过期（thisLoadId=${thisLoadId}, currentLoadId=${currentLoadId}），跳过数据更新`);
@@ -555,8 +536,8 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       return;
     }
 
-    serverRows.value = firstPageData.records;
-    loadedCount.value = firstPageData.records.length;
+    serverRows.value = pageData.records;
+    loadedCount.value = pageData.records.length;
     isInitialChunkLoaded.value = true;
     loading.value = false;
     markTrace('数据处理完成');
@@ -574,30 +555,30 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
     log('info', `步骤4: 保存到缓存`);
     workbenchStore.setCache(functionCode, params, {
-      pageMeta: data.meta,
-      serverRows: firstPageData.records,
-      total: firstPageData.total,
+      pageMeta: pageData.meta,
+      serverRows: pageData.records,
+      total: pageData.total,
       isDataLoaded: false
     });
-    log('debug', `缓存已保存: serverRows.length=${firstPageData.records.length}`);
+    log('debug', `缓存已保存: serverRows.length=${pageData.records.length}`);
 
     totalTimer.end();
 
-    if (firstPageData.hasMore) {
-      log('info', `步骤5: 后台加载剩余数据，总数=${firstPageData.total}`);
+    if (pageData.hasMore) {
+      log('info', `步骤5: 后台加载剩余数据，总数=${pageData.total}`);
       isChunkLoading.value = true;
       log('debug', `设置 isChunkLoading = true`);
 
       setTimeout(() => {
         log('debug', `启动后台加载: loadRemainingData()`);
-        loadRemainingData(functionCode, params, data.meta, filters, drillConditionSql, firstPageData.total, thisLoadId);
+        loadRemainingData(functionCode, params, pageData.meta, filters, drillConditionSql, pageData.total, thisLoadId);
       }, 500);
     } else {
       log('info', `数据量较小，已全部加载，标记缓存为完整`);
       workbenchStore.setCache(functionCode, params, {
-        pageMeta: data.meta,
-        serverRows: firstPageData.records,
-        total: firstPageData.total,
+        pageMeta: pageData.meta,
+        serverRows: pageData.records,
+        total: pageData.total,
         isDataLoaded: true
       });
     }
