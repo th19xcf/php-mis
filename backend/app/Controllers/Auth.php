@@ -31,7 +31,7 @@ class Auth extends BaseController
      */
     public function login()
     {
-        $t0 = microtime(true);
+        $t0 = hrtime(true);
 
         $payload = $this->request->getJSON(true) ?? [];
 
@@ -39,7 +39,7 @@ class Auth extends BaseController
         $password = (string) ($payload['password'] ?? '');
         $region = trim((string) ($payload['region'] ?? ''));
 
-        $tParse = microtime(true);
+        $tParse = hrtime(true);
 
         if ($userName === '' || $password === '') {
             log_message('info', '[Login] 失败 - 参数缺失 userName/region: ' . sprintf('%.1fms', ($tParse - $t0) * 1000));
@@ -58,7 +58,7 @@ class Auth extends BaseController
         }
 
         $user = $this->authModel->verifyUser($userName, $password, $region);
-        $tVerify = microtime(true);
+        $tVerify = hrtime(true);
 
         if (!$user) {
             log_message('info', '[Login] 失败 - 凭据错误 user=' . $userName . ' region=' . $region
@@ -72,7 +72,7 @@ class Auth extends BaseController
         }
 
         $this->initSession();
-        $tSession = microtime(true);
+        $tSession = hrtime(true);
 
         // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
         // 移除万能密码机制，改为代理登录模式
@@ -82,26 +82,26 @@ class Auth extends BaseController
         $user['is_proxy_login'] = $user['is_proxy_login'] ?? false;  // 是否代理登录
 
         $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
-        $tRoleAuthz = microtime(true);
+        $tRoleAuthz = hrtime(true);
         $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
-        $tLocAuthz = microtime(true);
+        $tLocAuthz = hrtime(true);
         $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-        $tDeptNameAuthz = microtime(true);
+        $tDeptNameAuthz = hrtime(true);
         $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
-        $tDeptCodeAuthz = microtime(true);
+        $tDeptCodeAuthz = hrtime(true);
 
         $accessToken = $this->jwtTokenService->generateAccessToken($user);
-        $tAccessToken = microtime(true);
+        $tAccessToken = hrtime(true);
         $refreshToken = $this->jwtTokenService->generateRefreshToken($user);
-        $tRefreshToken = microtime(true);
+        $tRefreshToken = hrtime(true);
 
         // 将用户信息注入 SessionUserContext，供后续 sql_log 等使用
         $decoded = $this->jwtTokenService->decode($accessToken);
         SessionUserContext::setJwtUser($decoded);
-        $tSessionCtx = microtime(true);
+        $tSessionCtx = hrtime(true);
 
         (new Mcommon())->sql_log('登录成功', '', sprintf('属地=`%s`', $region));
-        $tSqlLog = microtime(true);
+        $tSqlLog = hrtime(true);
 
         $steps = [
             '解析参数' => $tParse,
@@ -134,7 +134,7 @@ class Auth extends BaseController
      */
     public function getUserInfo()
     {
-        $t0 = microtime(true);
+        $t0 = hrtime(true);
 
         $token = $this->jwtTokenService->extractBearerToken($this->request->getHeaderLine('Authorization'));
 
@@ -147,7 +147,7 @@ class Auth extends BaseController
 
         try {
             $decoded = $this->jwtTokenService->decode($token);
-            $tDecode = microtime(true);
+            $tDecode = hrtime(true);
 
             $tokenWorkId = isset($decoded->workId) ? trim((string) $decoded->workId) : '';
             $tokenRegion = isset($decoded->region) ? trim((string) $decoded->region) : '';
@@ -160,7 +160,7 @@ class Auth extends BaseController
             if (!$user && isset($decoded->userId)) {
                 $user = $this->authModel->getUserById((int) $decoded->userId);
             }
-            $tGetUser = microtime(true);
+            $tGetUser = hrtime(true);
 
             if (!$user) {
                 return $this->response->setJSON([
@@ -177,9 +177,9 @@ class Auth extends BaseController
             }
 
             $authData = $this->authModel->getUserAuthData($user['work_id'], $user['region']);
-            $tAuth = microtime(true);
+            $tAuth = hrtime(true);
             $menuData = $this->authModel->getUserMenuData($user['work_id'], $user['region']);
-            $tMenu = microtime(true);
+            $tMenu = hrtime(true);
             $roles = $authData['roles'];
             $buttons = $authData['buttons'];
 
@@ -226,7 +226,7 @@ class Auth extends BaseController
      */
     public function refreshToken()
     {
-        $t0 = microtime(true);
+        $t0 = hrtime(true);
 
         $payload = $this->request->getJSON(true) ?? [];
         $refreshToken = (string) ($payload['refreshToken'] ?? '');
@@ -240,7 +240,7 @@ class Auth extends BaseController
 
         try {
             $decoded = $this->jwtTokenService->decode($refreshToken);
-            $tDecode = microtime(true);
+            $tDecode = hrtime(true);
 
             // 验证这是一个 refresh token
             if (!isset($decoded->type) || $decoded->type !== 'refresh') {
@@ -261,7 +261,7 @@ class Auth extends BaseController
             if (!$user && isset($decoded->userId)) {
                 $user = $this->authModel->getUserById((int) $decoded->userId);
             }
-            $tGetUser = microtime(true);
+            $tGetUser = hrtime(true);
 
             if (!$user) {
                 return $this->response->setJSON([
@@ -280,22 +280,22 @@ class Auth extends BaseController
             // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
             $user['is_super_admin'] = (bool) ($decoded->isSuperAdmin ?? false);
             $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
-            $tRole = microtime(true);
+            $tRole = hrtime(true);
             $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
-            $tLoc = microtime(true);
+            $tLoc = hrtime(true);
             $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-            $tDeptName = microtime(true);
+            $tDeptName = hrtime(true);
             $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
-            $tDeptCode = microtime(true);
+            $tDeptCode = hrtime(true);
 
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
-            $tAccessToken = microtime(true);
+            $tAccessToken = hrtime(true);
             $newRefreshToken = $this->jwtTokenService->generateRefreshToken($user);
-            $tRefreshToken = microtime(true);
+            $tRefreshToken = hrtime(true);
 
             // Refresh Token 旋转：使旧的 refreshToken 失效，防止被盗用
             $this->tokenBlacklistService->addToBlacklist($refreshToken, 'refresh');
-            $tBlacklist = microtime(true);
+            $tBlacklist = hrtime(true);
 
             $steps = [
                 'Token解码' => $tDecode,
@@ -327,69 +327,6 @@ class Auth extends BaseController
                 'msg' => 'refreshToken无效或已过期'
             ]);
         }
-    }
-
-    private function buildPerformanceTable(string $tag, string $status, string $info, array $steps, float $t0): string
-    {
-        $total = (end($steps) - $t0) * 1000;
-        if ($total < 0.001) $total = 0.001;
-
-        $rows = [];
-        $prevTime = $t0;
-        $index = 0;
-
-        foreach ($steps as $stepName => $currTime) {
-            $duration = ($currTime - $prevTime) * 1000;
-            $timestamp = sprintf('%.1f', ($currTime - $t0) * 1000);
-            $pct = $total > 0 ? ($duration / $total) * 100 : 0;
-
-            $rows[] = [
-                'index' => $index,
-                'step' => $stepName,
-                'timestamp' => $timestamp,
-                'duration' => sprintf('%.1fms', $duration),
-                'pct' => sprintf('%.1f%%', $pct),
-                'raw_duration' => $duration
-            ];
-            $prevTime = $currTime;
-            $index++;
-        }
-
-        $logLines = [];
-        $logLines[] = sprintf('%s %s %s 总耗时: %.2fms', $tag, $info, $status, $total);
-        $logLines[] = sprintf('%-8s | %-20s | %-10s | %-10s | %-6s', '(索引)', 'step', 'timestamp', 'duration', 'pct');
-        $logLines[] = str_repeat('-', 60);
-
-        foreach ($rows as $row) {
-            $logLines[] = sprintf('%-8s | %-20s | %-10s | %-10s | %-6s',
-                $row['index'],
-                $row['step'],
-                $row['timestamp'],
-                $row['duration'],
-                $row['pct']
-            );
-        }
-
-        usort($rows, function ($a, $b) {
-            return $b['raw_duration'] <=> $a['raw_duration'];
-        });
-
-        $maxDuration = $rows[0]['raw_duration'] ?? 0;
-
-        $logLines[] = '';
-        $logLines[] = '耗时排行（从慢到快）';
-        $maxBar = 50;
-        $rank = 1;
-        foreach ($rows as $row) {
-            if ($row['raw_duration'] < 0.001) continue;
-            $barLen = $maxDuration > 0 ? (int) ($row['raw_duration'] / $maxDuration * $maxBar) : 0;
-            $barLen = max($barLen, 1);
-            $bar = str_repeat('█', $barLen);
-            $logLines[] = sprintf(' %d. %-20s %9.1fms %s', $rank, $row['step'], $row['raw_duration'], $bar);
-            $rank++;
-        }
-
-        return implode("\n", $logLines);
     }
 
     /**

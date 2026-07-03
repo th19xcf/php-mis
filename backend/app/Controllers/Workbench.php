@@ -54,12 +54,18 @@ class Workbench extends BaseApiController
     {
         $start = hrtime(true);
         try {
-            log_message('debug', '[Workbench::page] 开始处理，functionCode: ' . $functionCode);
             [$context, $definition, $trace] = $this->contextService->buildWorkbenchContext($functionCode);
-            log_message('debug', '[Workbench::page] 上下文构建成功');
+            $tContextDone = hrtime(true);
 
             $serverMs = (hrtime(true) - $start) / 1e6;
-            log_message('debug', sprintf('[Workbench::page] 服务端处理完成: %.2fms', $serverMs));
+
+            $steps = [
+                'buildContext' => $tContextDone,
+            ];
+            $logMsg = $this->buildPerformanceTable('[Page]', '成功',
+                'functionCode=' . $functionCode,
+                $steps, $start);
+            log_message('info', $logMsg);
 
             $trace['total'] = round($serverMs, 2);
             $this->setServerTrace($trace);
@@ -115,19 +121,37 @@ class Workbench extends BaseApiController
             $fetchTotal = filter_var($payload['fetchTotal'] ?? true, FILTER_VALIDATE_BOOLEAN);
 
             [$context, , $trace] = $this->contextService->buildWorkbenchContext($functionCode);
+            $tContextDone = hrtime(true);
 
             $total = 0;
+            $tCountDone = $tContextDone;
             if ($fetchTotal) {
                 $tCount = hrtime(true);
                 $total = $this->queryService->queryTotalCount($context, $payload);
-                $trace['queryTotal'] = round((hrtime(true) - $tCount) / 1e6, 2);
+                $tCountDone = hrtime(true);
+                $trace['queryTotal'] = round(($tCountDone - $tCount) / 1e6, 2);
             }
 
             $tQuery = hrtime(true);
             $records = $this->queryService->queryRecordsPaged($context, $payload, $current, $size, $offset);
-            $trace['queryRecords'] = round((hrtime(true) - $tQuery) / 1e6, 2);
+            $tQueryDone = hrtime(true);
+            $trace['queryRecords'] = round(($tQueryDone - $tQuery) / 1e6, 2);
 
             $serverMs = (hrtime(true) - $start) / 1e6;
+
+            $steps = [
+                'buildContext' => $tContextDone,
+            ];
+            if ($fetchTotal) {
+                $steps['queryTotal'] = $tCountDone;
+            }
+            $steps['queryRecords'] = $tQueryDone;
+
+            $logMsg = $this->buildPerformanceTable('[QueryPaged]', '成功',
+                'functionCode=' . $functionCode . ' total=' . $total . ' records=' . count($records),
+                $steps, $start);
+            log_message('info', $logMsg);
+
             log_message('debug', sprintf('[Workbench::queryPaged] 服务端处理完成: %.2fms, total=%d, records=%d', $serverMs, $total, count($records)));
 
             $trace['total'] = round($serverMs, 2);
