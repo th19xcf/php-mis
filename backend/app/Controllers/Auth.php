@@ -10,7 +10,7 @@ use App\Libraries\TokenBlacklistService;
 use App\Models\AuthModel;
 use App\Models\Mcommon;
 
-class Auth extends BaseController
+class Auth extends BaseApiController
 {
     private AuthModel $authModel;
     private JwtTokenService $jwtTokenService;
