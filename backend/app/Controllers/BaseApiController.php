@@ -26,6 +26,7 @@ class BaseApiController extends BaseController
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
+        
         $this->model = new Mcommon();
         $this->userContext = new SessionUserContext();
 

@@ -9,6 +9,8 @@ interface UseWorkbenchImportOptions {
   gridApi: Ref<GridApi<Api.Workbench.QueryRecord> | null>;
   getFunctionCode: () => string;
   getParams: () => string;
+  getMenu1: () => string;
+  getMenu2: () => string;
   reloadPage: () => void;
   clearCache: (functionCode: string, params: string) => void;
   notify: (type: 'success' | 'error' | 'warning' | 'info', message: string) => void;
@@ -22,6 +24,68 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
   const importError = ref<string>('');
   const importSuccess = ref<{ count: number; message: string } | null>(null);
   const fileInputRef = ref<HTMLInputElement | null>(null);
+  const headerRow = ref(1);
+  const dataRow = ref(2);
+  // 保存导入列配置，用于自动匹配表头行
+  const importColumns = ref<Api.Workbench.ImportColumn[]>([]);
+
+  /**
+   * 在 Excel 前 N 行中自动检测表头所在行
+   *
+   * 检测策略（按优先级）：
+   * 1. 严格全匹配：用 def_import_column.列名 与前 20 行逐行比对，
+   *    必须所有列名都在该行出现才算找到表头（100% 匹配）
+   * 2. 启发式判断：找出第一个"所有非空单元格都是字符串"的行作为表头
+   * 3. 兜底：使用配置的 headerRow
+   *
+   * @returns 检测结果
+   */
+  function detectHeaderRow(jsonData: any[][], scanRows = 20): { headerRow: number; dataRow: number; reason: string } {
+    const previewLines = Math.min(scanRows, jsonData.length);
+    const expectedHeaders = importColumns.value.map(c => c.columnName).filter(Boolean);
+
+    // 策略1：严格全匹配——所有列名都必须在该行出现
+    if (expectedHeaders.length > 0) {
+      for (let i = 0; i < previewLines; i++) {
+        const row = jsonData[i] || [];
+        const rowStrSet = new Set(row.filter(c => c !== undefined && c !== '').map(c => String(c).trim()));
+        // 所有列名都必须出现在该行
+        const allMatched = expectedHeaders.every(h => rowStrSet.has(h));
+        if (allMatched) {
+          return {
+            headerRow: i + 1,
+            dataRow: i + 2,
+            reason: `严格全匹配 ${expectedHeaders.length}/${expectedHeaders.length} 列`
+          };
+        }
+      }
+    }
+
+    // 策略2：启发式——找第一个所有非空单元格都是字符串的行
+    for (let i = 0; i < previewLines; i++) {
+      const row = jsonData[i] || [];
+      const nonEmpty = row.filter(c => c !== undefined && c !== null && c !== '');
+      if (nonEmpty.length < 3) continue; // 至少 3 个非空列才算表头
+      const allString = nonEmpty.every(c => {
+        const s = String(c).trim();
+        return s !== '' && isNaN(Number(s)) && !/^\d{4}-\d{2}-\d{2}/.test(s);
+      });
+      if (allString) {
+        return {
+          headerRow: i + 1,
+          dataRow: i + 2,
+          reason: `启发式判断（第 ${i + 1} 行非空且全为字符串）`
+        };
+      }
+    }
+
+    // 策略3：兜底使用配置
+    return {
+      headerRow: headerRow.value,
+      dataRow: dataRow.value,
+      reason: `使用配置（未检测到全匹配表头）`
+    };
+  }
 
   const importPreviewColumns = computed(() => {
     if (importPreviewData.value.length === 0) return [];
@@ -50,12 +114,28 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     });
   });
 
-  function handleImport() {
+  async function handleImport() {
     importVisible.value = true;
     importFile.value = null;
     importPreviewData.value = [];
     importError.value = '';
     importSuccess.value = null;
+
+    const functionCode = options.getFunctionCode();
+    if (functionCode) {
+      try {
+        const result = await fetchImportColumns(functionCode);
+        if (result.data) {
+          headerRow.value = result.data.headerRow ?? 1;
+          dataRow.value = result.data.dataRow ?? 2;
+          importColumns.value = result.data.columns ?? [];
+        }
+      } catch {
+        headerRow.value = 1;
+        dataRow.value = 2;
+        importColumns.value = [];
+      }
+    }
   }
 
   function triggerFileInput() {
@@ -96,9 +176,6 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
 
     try {
       const data = await file.arrayBuffer();
-      // 注意：raw: false 让单元格按显示文本返回（避免日期被解析为 Excel 序列号，例如 2026-05-08 -> 46150）
-      // cellDates: false 配合 raw: false 使用，确保日期列保留原始字符串格式
-      // dateNF: 'yyyy-mm-dd' 指定日期列的格式化样式
       const workbook = XLSX.read(data, { type: 'array', cellDates: false });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(firstSheet, {
@@ -107,16 +184,31 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
         dateNF: 'yyyy-mm-dd'
       }) as any[][];
 
-      if (jsonData.length < 2) {
-        const msg = '文件数据不足，至少需要包含表头和一行数据';
+      // 自动检测表头行
+      const detected = detectHeaderRow(jsonData, 20);
+      const detectedHeaderRow = detected.headerRow;
+      const detectedDataRow = detected.dataRow;
+
+      const headerIndex = detectedHeaderRow - 1;
+      const dataStartIndex = detectedDataRow - 1;
+
+      console.log(`[IMPORT] 表头行检测: ${detected.reason}`);
+      console.log(`[IMPORT] 使用表头行=${detectedHeaderRow}, 数据行=${detectedDataRow}`);
+
+      if (jsonData.length <= dataStartIndex) {
+        const msg = `文件数据不足，数据行从第${detectedDataRow}行开始，但文件只有${jsonData.length}行`;
         console.error(`[IMPORT] ${msg}`);
         importError.value = msg;
         importPreviewData.value = [];
         return;
       }
 
-      const headers = jsonData[0] as string[];
-      const rows = jsonData.slice(1).filter(row => row.some(cell => cell !== undefined && cell !== ''));
+      const headers = jsonData[headerIndex] as string[];
+      const rows = jsonData.slice(dataStartIndex).filter(row => row.some(cell => cell !== undefined && cell !== ''));
+
+      // 调试：打印解析结果
+      console.log('[IMPORT] 解析出的表头 headers:', headers);
+      console.log('[IMPORT] 第一行数据:', rows[0]);
 
       if (rows.length === 0) {
         const msg = '未找到有效数据行';
@@ -127,7 +219,7 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
       }
 
       importPreviewData.value = rows.map((row, index) => {
-        const obj: Record<string, any> = { _rowIndex: index + 2 };
+        const obj: Record<string, any> = { _rowIndex: index + dataRow.value };
         headers.forEach((header, colIndex) => {
           if (header) {
             let cellValue = row[colIndex] ?? '';
@@ -175,10 +267,13 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     importError.value = '';
 
     try {
-      const { data, error } = await importData(functionCode, importPreviewData.value);
+      const { data, error } = await importData(functionCode, importPreviewData.value, options.getMenu1(), options.getMenu2());
 
       if (error) {
         console.error('导入请求错误:', error);
+        console.error('[IMPORT] error.response:', error?.response);
+        console.error('[IMPORT] error.response.data:', error?.response?.data);
+        console.error('[IMPORT] error.response.status:', error?.response?.status);
         const backendMsg = error?.response?.data?.msg;
         const backendErrors = error?.response?.data?.data?.errors;
         const detail = backendMsg || error?.message || '请稍后重试';

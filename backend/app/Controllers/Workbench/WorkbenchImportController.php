@@ -102,7 +102,11 @@ class WorkbenchImportController extends BaseApiController
 
             $result = $this->importService->getImportColumns($functionCode);
 
-            return $this->success(['columns' => $result['columns'] ?? []]);
+            return $this->success([
+                'columns' => $result['columns'] ?? [],
+                'headerRow' => $result['headerRow'] ?? 1,
+                'dataRow' => $result['dataRow'] ?? 2
+            ]);
         } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
         } catch (ValidationException $e) {
@@ -135,9 +139,10 @@ class WorkbenchImportController extends BaseApiController
 
             $userWorkid   = $this->userContext->getWorkId();
             $userLocation = $this->userContext->getLocation();
-            $session = \Config\Services::session();
-            $menu1 = $session->get($functionCode . '-menu_1') ?? '';
-            $menu2 = $session->get($functionCode . '-menu_2') ?? '';
+
+            // 从前端获取 menu1/menu2，避免 session 初始化问题
+            $menu1 = $payload['menu1'] ?? '';
+            $menu2 = $payload['menu2'] ?? '';
 
             $systemVars = [
                 '$时间戳' => date('Y-m-d H:i:s'),
@@ -246,13 +251,17 @@ class WorkbenchImportController extends BaseApiController
             $importResult = $this->importService->importFromTempTable(
                 $dataTable, $tmpTableName, $importColumns
             );
+            log_message('debug', '[WorkbenchImport] importFromTempTable 结果: ' . json_encode($importResult, JSON_UNESCAPED_UNICODE));
 
             if ($importResult['success']) {
                 if ($importModule !== '') {
+                    log_message('debug', '[WorkbenchImport] 执行后处理: ' . $importModule);
                     $this->importService->executeAfterProcess($importModule);
+                    log_message('debug', '[WorkbenchImport] 后处理完成');
                 }
-                $this->importService->dropTempTable($tmpTableName);
-                return $this->success([
+                // 调试：暂时保留临时表，便于排查"导入记录为空值"问题
+                log_message('debug', '[WorkbenchImport] 保留临时表用于查错: ' . $tmpTableName);
+                $response = $this->success([
                     'success'      => true,
                     'message'      => $importResult['message'],
                     'total'        => count($importData),
@@ -260,9 +269,12 @@ class WorkbenchImportController extends BaseApiController
                     'errorCount'   => 0,
                     'errors'       => [],
                 ]);
+                log_message('debug', '[WorkbenchImport] 响应体: ' . $response->getBody());
+                return $response;
             }
 
             // 保留临时表用于调试
+            log_message('debug', '[WorkbenchImport] 导入失败, 保留临时表, 返回: ' . json_encode($importResult, JSON_UNESCAPED_UNICODE));
             return $this->success([
                 'success'      => false,
                 'message'      => $importResult['message'],

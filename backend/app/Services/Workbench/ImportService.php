@@ -56,14 +56,32 @@ class ImportService
         $query = $this->model->select($sql);
         if ($query === false) {
             log_message('error', '查询 def_query_config 失败');
-            return ['columns' => []];
+            return ['columns' => [], 'headerRow' => 1, 'dataRow' => 2];
         }
 
         $row = $query->getRowArray();
         $importModule = (string) ($row['导入模块'] ?? '');
 
+        $headerRow = 1;
+        $dataRow = 2;
+
+        if ($importModule !== '') {
+            $sql = sprintf(
+                'select 表头行, 数据行 from def_import_config where 导入模块=%s',
+                $this->model->quote($importModule)
+            );
+            $query = $this->model->select($sql);
+            if ($query !== false) {
+                $configRow = $query->getRowArray();
+                if ($configRow) {
+                    $headerRow = (int) ($configRow['表头行'] ?? 1);
+                    $dataRow = (int) ($configRow['数据行'] ?? 2);
+                }
+            }
+        }
+
         if ($importModule === '') {
-            return ['columns' => []];
+            return ['columns' => [], 'headerRow' => $headerRow, 'dataRow' => $dataRow];
         }
 
         $sql = sprintf(
@@ -77,7 +95,7 @@ class ImportService
         $query = $this->model->select($sql);
         if ($query === false) {
             log_message('error', '查询 def_import_column 失败');
-            return ['columns' => []];
+            return ['columns' => [], 'headerRow' => $headerRow, 'dataRow' => $dataRow];
         }
 
         $results = $query->getResultArray();
@@ -95,7 +113,7 @@ class ImportService
             ];
         }
 
-        return ['columns' => $columns, 'importModule' => $importModule];
+        return ['columns' => $columns, 'importModule' => $importModule, 'headerRow' => $headerRow, 'dataRow' => $dataRow];
     }
 
     /**
@@ -112,6 +130,8 @@ class ImportService
     public function getImportConfig(string $functionCode, string $menu1, string $menu2, string $userWorkid, string $dataTable, string $importModule): array
     {
         $importColumns = [];
+        $headerRow = 1;
+        $dataRow = 2;
 
         if ($importModule !== '') {
             $sql = sprintf(
@@ -124,6 +144,19 @@ class ImportService
             $query = $this->model->select($sql);
             if ($query !== false) {
                 $importColumns = $query->getResultArray();
+            }
+
+            $sql = sprintf(
+                'select 表头行, 数据行 from def_import_config where 导入模块=%s',
+                $this->model->quote($importModule)
+            );
+            $query = $this->model->select($sql);
+            if ($query !== false) {
+                $row = $query->getRowArray();
+                if ($row) {
+                    $headerRow = (int) ($row['表头行'] ?? 1);
+                    $dataRow = (int) ($row['数据行'] ?? 2);
+                }
             }
         }
 
@@ -169,7 +202,9 @@ class ImportService
             'tmpTableName' => $tmpTableName,
             'importColumns' => $importColumns,
             'fieldMap' => $fieldMap,
-            'requiredColumns' => $requiredColumns
+            'requiredColumns' => $requiredColumns,
+            'headerRow' => $headerRow,
+            'dataRow' => $dataRow
         ];
     }
 
@@ -184,6 +219,13 @@ class ImportService
      */
     public function validateImportData(array $importData, array $fieldMap, array $requiredColumns, array $systemVars): array
     {
+        // 调试：对比 importData 的 key 和 fieldMap 的 key
+        if (!empty($importData)) {
+            log_message('debug', '[ImportService] validateImportData importData 第一行 key: ' . json_encode(array_keys($importData[0]), JSON_UNESCAPED_UNICODE));
+            log_message('debug', '[ImportService] validateImportData importData 第一行数据: ' . json_encode($importData[0], JSON_UNESCAPED_UNICODE));
+            log_message('debug', '[ImportService] validateImportData fieldMap key: ' . json_encode(array_keys($fieldMap), JSON_UNESCAPED_UNICODE));
+        }
+
         if (!empty($importData)) {
             $firstRow = $importData[0];
             $missingColumns = [];
@@ -264,25 +306,31 @@ class ImportService
         $this->dropTempTable($tableName);
 
         if (empty($columns)) {
-            $sql = sprintf('CREATE TABLE %s (id int auto_increment primary key, data varchar(255))', $tableName);
+            $sql = sprintf('CREATE TABLE `%s` (id int auto_increment primary key, data varchar(255))', $tableName);
             $result = $this->model->exec($sql);
             return $result !== false;
         }
 
         $fieldDefs = [];
+        $fieldNamesForLog = [];
         foreach ($columns as $col) {
             $fieldName = $col['字段名'] ?? $col['列名'];
+            $fieldNamesForLog[] = $fieldName;
             $fieldLength = $col['字段长度'] ?? 255;
             $defaultValue = (string) ($col['缺省值'] ?? '');
             if ($defaultValue !== '') {
-                $fieldDefs[] = sprintf('%s varchar(%s) not null default %s', $fieldName, $fieldLength, $this->model->quote($defaultValue));
+                $fieldDefs[] = sprintf('`%s` varchar(%s) not null default %s', $fieldName, $fieldLength, $this->model->quote($defaultValue));
             } else {
-                $fieldDefs[] = sprintf('%s varchar(%s) not null default ""', $fieldName, $fieldLength);
+                $fieldDefs[] = sprintf('`%s` varchar(%s) not null default ""', $fieldName, $fieldLength);
             }
         }
 
-        $sql = sprintf('CREATE TABLE %s (%s)', $tableName, implode(',', $fieldDefs));
+        $sql = sprintf('CREATE TABLE `%s` (%s)', $tableName, implode(',', $fieldDefs));
+        log_message('debug', '[ImportService] createTempTable 字段名列表: ' . json_encode($fieldNamesForLog, JSON_UNESCAPED_UNICODE));
+        log_message('debug', '[ImportService] createTempTable SQL: ' . $sql);
+
         $result = $this->model->exec($sql);
+        log_message('debug', '[ImportService] createTempTable 结果: ' . var_export($result, true));
 
         return $result !== false;
     }
@@ -295,7 +343,7 @@ class ImportService
      */
     public function dropTempTable(string $tableName): bool
     {
-        $sql = sprintf('DROP TABLE IF EXISTS %s', $tableName);
+        $sql = sprintf('DROP TABLE IF EXISTS `%s`', $tableName);
         $result = $this->model->exec($sql);
         return $result !== false;
     }
@@ -315,6 +363,11 @@ class ImportService
         if (empty($data)) {
             return true;
         }
+
+        // 调试：记录 validData 的字段名和第一行数据
+        log_message('debug', '[ImportService] insertToTempTable 表名: ' . $tableName);
+        log_message('debug', '[ImportService] validData 字段名: ' . json_encode(array_keys($data[0]), JSON_UNESCAPED_UNICODE));
+        log_message('debug', '[ImportService] validData 第一行数据: ' . json_encode($data[0], JSON_UNESCAPED_UNICODE));
 
         $defaultValueMap = [];
         foreach ($importColumns as $col) {
@@ -340,14 +393,19 @@ class ImportService
             $values[] = '(' . implode(',', $rowValues) . ')';
         }
 
+        $quotedFields = array_map(static fn($f) => '`' . $f . '`', $fields);
+
         $sql = sprintf(
-            'INSERT INTO %s (%s) VALUES %s',
+            'INSERT INTO `%s` (%s) VALUES %s',
             $tableName,
-            implode(', ', $fields),
+            implode(', ', $quotedFields),
             implode(', ', $values)
         );
 
+        log_message('debug', '[ImportService] insertToTempTable SQL: ' . substr($sql, 0, 500));
+
         $result = $this->model->exec($sql);
+        log_message('debug', '[ImportService] insertToTempTable 结果: ' . var_export($result, true));
         return $result !== false;
     }
 
@@ -383,8 +441,8 @@ class ImportService
                         ifnull(t2.对象值,"") as 对象值
                     from
                     (
-                        select "%s" as 字段名, %s as 字段值
-                        from %s
+                        select "%s" as 字段名, `%s` as 字段值
+                        from `%s`
                         group by 字段值
                     ) as t1
                     left join
@@ -419,7 +477,7 @@ class ImportService
             // 条件校验
             if (strpos($checkType, '条件') !== false && $checkInfo !== '') {
                 $sql = sprintf(
-                    'select "%s" as 字段名, %s as 字段值 from %s where %s',
+                    'select "%s" as 字段名, `%s` as 字段值 from `%s` where %s',
                     $columnName, $fieldName, $tmpTableName, $checkInfo
                 );
 
@@ -443,7 +501,7 @@ class ImportService
             // 日期格式校验
             if (strpos($checkType, '日期') !== false) {
                 $sql = sprintf(
-                    'select "%s" as 字段名, %s as 字段值 from %s',
+                    'select "%s" as 字段名, `%s` as 字段值 from `%s`',
                     $columnName, $fieldName, $tmpTableName
                 );
 
@@ -511,7 +569,7 @@ class ImportService
             $duplicateFields = $row['滤重字段'];
 
             $sql = sprintf(
-                'select %s from %s where concat(%s) in (select concat(%s) from %s)',
+                'select `%s` from `%s` where concat(`%s`) in (select concat(`%s`) from `%s`)',
                 $duplicateFields,
                 $dataTable,
                 $duplicateFields,
@@ -596,7 +654,7 @@ class ImportService
             }
 
             $sql = sprintf(
-                'INSERT INTO %s (%s) SELECT %s FROM %s',
+                'INSERT INTO `%s` (%s) SELECT %s FROM `%s`',
                 $targetTable,
                 implode(', ', $fieldNames),
                 implode(', ', $selectParts),
@@ -606,9 +664,13 @@ class ImportService
             log_message('debug', '[ImportService] 导入SQL: ' . $sql);
 
             $result = $db->query($sql);
+            log_message('debug', '[ImportService] SQL执行完成, result type: ' . (is_object($result) ? get_class($result) : gettype($result)));
+
             $affectedRows = $db->affectedRows();
+            log_message('debug', '[ImportService] affectedRows: ' . $affectedRows);
 
             $db->transComplete();
+            log_message('debug', '[ImportService] transComplete done');
 
             if ($result === false) {
                 return [
@@ -619,6 +681,7 @@ class ImportService
                 ];
             }
 
+            log_message('debug', '[ImportService] 返回 success=true, count=' . $affectedRows);
             return [
                 'success' => true,
                 'count'   => $affectedRows,
@@ -662,7 +725,13 @@ class ImportService
 
             $beforeProcess = $row['前处理模块'];
             $spSql = sprintf('call %s', $beforeProcess);
-            $this->model->select($spSql);
+
+            ob_start();
+            try {
+                $this->model->select($spSql);
+            } finally {
+                ob_end_clean();
+            }
 
             return ['success' => true, 'message' => '前处理执行成功'];
         } catch (\Throwable $e) {
@@ -697,7 +766,13 @@ class ImportService
 
             $afterProcess = $row['后处理模块'];
             $spSql = sprintf('call %s', $afterProcess);
-            $this->model->select($spSql);
+
+            ob_start();
+            try {
+                $this->model->select($spSql);
+            } finally {
+                ob_end_clean();
+            }
         } catch (\Throwable $e) {
             log_message('error', '执行后处理模块失败: ' . $e->getMessage());
         }
@@ -755,6 +830,8 @@ class ImportService
                 'insertToTempTableSql'  => $insertToTempTableSql,
                 'importFromTempTableSql'=> $importFromTempTableSql,
                 'importColumns'         => $importColumns,
+                'headerRow'             => $importConfig['headerRow'],
+                'dataRow'               => $importConfig['dataRow'],
             ];
         } catch (\Throwable $e) {
             log_message('error', '构建导入调试 SQL 失败: ' . $e->getMessage());
@@ -775,7 +852,7 @@ class ImportService
     private function buildCreateTempTableSql(string $tableName, array $columns): string
     {
         if (empty($columns)) {
-            return sprintf('CREATE TABLE %s (id int auto_increment primary key, data varchar(255))', $tableName);
+            return sprintf('CREATE TABLE `%s` (id int auto_increment primary key, data varchar(255))', $tableName);
         }
 
         $fieldDefs = [];
@@ -784,13 +861,13 @@ class ImportService
             $fieldLength = $col['字段长度'] ?? 255;
             $defaultValue = (string) ($col['缺省值'] ?? '');
             if ($defaultValue !== '') {
-                $fieldDefs[] = sprintf('%s varchar(%s) not null default %s', $fieldName, $fieldLength, $this->model->quote($defaultValue));
+                $fieldDefs[] = sprintf('`%s` varchar(%s) not null default %s', $fieldName, $fieldLength, $this->model->quote($defaultValue));
             } else {
-                $fieldDefs[] = sprintf('%s varchar(%s) not null default ""', $fieldName, $fieldLength);
+                $fieldDefs[] = sprintf('`%s` varchar(%s) not null default ""', $fieldName, $fieldLength);
             }
         }
 
-        return sprintf('CREATE TABLE %s (%s)', $tableName, implode(',', $fieldDefs));
+        return sprintf('CREATE TABLE `%s` (%s)', $tableName, implode(',', $fieldDefs));
     }
 
     /**
@@ -842,7 +919,7 @@ class ImportService
             return '';
         }
 
-        return sprintf('INSERT INTO %s (%s) VALUES %s', $tableName, implode(',', $fields), implode(',', $values));
+        return sprintf('INSERT INTO `%s` (%s) VALUES %s', $tableName, implode(',', $fields), implode(',', $values));
     }
 
     /**
@@ -879,7 +956,7 @@ class ImportService
             return '-- 没有可导入的字段';
         }
 
-        return sprintf('INSERT INTO %s (%s) SELECT %s FROM %s',
+        return sprintf('INSERT INTO `%s` (%s) SELECT %s FROM `%s`',
             $targetTable,
             implode(', ', $fieldNames),
             implode(', ', $selectParts),

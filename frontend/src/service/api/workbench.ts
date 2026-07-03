@@ -61,12 +61,14 @@ export function fetchImportColumns(functionCode: string) {
   });
 }
 
-export function importData(functionCode: string, data: any[]) {
+export function importData(functionCode: string, data: any[], menu1: string = '', menu2: string = '') {
   return request<Api.Workbench.ImportResult>({
     url: `/workbench/import/${encodeURIComponent(functionCode)}`,
     method: 'post',
     data: {
       data,
+      menu1,
+      menu2,
       config: {}
     },
     // 导入接口的业务校验错误（如 "Data too long for column..."）不应

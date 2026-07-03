@@ -59,7 +59,7 @@ class Filters extends BaseFilters
         'after' => [
             'pagecache',   // Web Page Caching
             'performance', // Performance Metrics
-            'toolbar',     // Debug Toolbar
+            // 'toolbar',     // Debug Toolbar - 已禁用：CI4 在生产环境返回 false 导致 TypeError
         ],
     ];
 
@@ -109,8 +109,6 @@ class Filters extends BaseFilters
         'jwt' => [
             'before' => [
                 'auth/getUserInfo',
-                'auth/logout',
-                'route/getUserRoutes',
                 'workbench/*',
                 'comment/*',
                 'dept/*',
@@ -119,7 +117,6 @@ class Filters extends BaseFilters
                 'train/*',
                 'employee/*',
                 'contract/*',
-                'cache/*',
             ],
         ],
     ];

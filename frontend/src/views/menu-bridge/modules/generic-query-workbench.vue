@@ -153,6 +153,8 @@ const {
   gridApi,
   getFunctionCode: () => String(props.meta.functionCode || '').trim(),
   getParams: () => params.value,
+  getMenu1: () => String(props.meta.menu1 || ''),
+  getMenu2: () => String(props.meta.menu2 || ''),
   reloadPage: () => loadPage(),
   clearCache: (fc, p) => workbenchStore.clearCache(fc, p),
   notify
