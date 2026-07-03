@@ -602,16 +602,19 @@ function clearAddPanel() {
   addVisible.value = false;
   addError.value = '';
   addSuccess.value = '';
+  editPanelMaximized.value = false;
 }
 function clearUpdatePanel() {
   updateVisible.value = false;
   updateError.value = '';
   updateSuccess.value = '';
+  editPanelMaximized.value = false;
 }
 function clearBatchUpdatePanel() {
   batchUpdateVisible.value = false;
   batchUpdateError.value = '';
   batchUpdateSuccess.value = '';
+  editPanelMaximized.value = false;
 }
 
 // 「添加样本数据」：把表格勾选的 1 行数据合并到 addFormData
