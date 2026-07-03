@@ -101,16 +101,20 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
    * @param [redirect=true] Whether to redirect after login. Default is `true`
    */
   async function login(userName: string, password: string, region?: string, redirect = true) {
+    const t0 = performance.now();
     startLoading();
 
     const { data: loginToken, error } = await fetchLogin(userName, password, region);
+    const tFetchLogin = performance.now();
 
     if (!error) {
       const pass = await loginByToken(loginToken);
+      const tLoginByToken = performance.now();
 
       if (pass) {
         // Check if the tab needs to be cleared
         const isClear = checkTabClear();
+        const tTabClear = performance.now();
         let needRedirect = redirect;
 
         if (isClear) {
@@ -118,12 +122,22 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
           needRedirect = false;
         }
         await redirectFromLogin(needRedirect);
+        const tRedirect = performance.now();
 
         window.$notification?.success({
           title: $t('page.login.common.loginSuccess'),
           content: $t('page.login.common.welcomeBack', { userName: userInfo.userName }),
           duration: 4500
         });
+
+        console.log(
+          '[登录耗时]',
+          `fetchLogin=${(tFetchLogin - t0).toFixed(1)}ms`,
+          `loginByToken=${(tLoginByToken - tFetchLogin).toFixed(1)}ms`,
+          `checkTabClear=${(tTabClear - tLoginByToken).toFixed(1)}ms`,
+          `redirectFromLogin=${(tRedirect - tTabClear).toFixed(1)}ms`,
+          `总计=${(tRedirect - t0).toFixed(1)}ms`
+        );
       }
     } else {
       resetStore();
@@ -134,15 +148,23 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
 
   async function loginByToken(loginToken: Api.Auth.LoginToken) {
     // 1. stored in the localStorage, the later requests need it in headers
+    const t0 = performance.now();
     localStg.set('token', loginToken.token);
     localStg.set('refreshToken', loginToken.refreshToken);
+    const tStorage = performance.now();
 
     // 2. get user info
     const pass = await getUserInfo();
+    const tUserInfo = performance.now();
 
     if (pass) {
       token.value = loginToken.token;
-
+      console.log(
+        '[loginByToken 耗时]',
+        `存储token=${(tStorage - t0).toFixed(1)}ms`,
+        `getUserInfo=${(tUserInfo - tStorage).toFixed(1)}ms`,
+        `总计=${(tUserInfo - t0).toFixed(1)}ms`
+      );
       return true;
     }
 

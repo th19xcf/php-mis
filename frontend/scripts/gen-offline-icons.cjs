@@ -5,7 +5,10 @@ const ICON_SETS = [
   { prefix: 'mdi', jsonPath: require.resolve('@iconify/json/json/mdi.json') },
   { prefix: 'ant-design', jsonPath: require.resolve('@iconify/json/json/ant-design.json') },
   { prefix: 'ph', jsonPath: require.resolve('@iconify/json/json/ph.json') },
-  { prefix: 'material-symbols', jsonPath: require.resolve('@iconify/json/json/material-symbols.json') }
+  { prefix: 'material-symbols', jsonPath: require.resolve('@iconify/json/json/material-symbols.json') },
+  { prefix: 'carbon', jsonPath: require.resolve('@iconify/json/json/carbon.json') },
+  { prefix: 'line-md', jsonPath: require.resolve('@iconify/json/json/line-md.json') },
+  { prefix: 'majesticons', jsonPath: require.resolve('@iconify/json/json/majesticons.json') }
 ];
 
 const SCAN_DIRS = ['src'];

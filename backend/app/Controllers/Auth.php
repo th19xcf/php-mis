@@ -15,7 +15,6 @@ class Auth extends BaseController
     private AuthModel $authModel;
     private JwtTokenService $jwtTokenService;
     private TokenBlacklistService $tokenBlacklistService;
-    private AuthorizationService $authorizationService;
 
     /**
      * 初始化认证控制器并装载认证模型。
@@ -25,7 +24,6 @@ class Auth extends BaseController
         $this->authModel = new AuthModel();
         $this->jwtTokenService = new JwtTokenService();
         $this->tokenBlacklistService = new TokenBlacklistService();
-        $this->authorizationService = new AuthorizationService();
     }
 
     /**
@@ -33,13 +31,18 @@ class Auth extends BaseController
      */
     public function login()
     {
+        $t0 = microtime(true);
+
         $payload = $this->request->getJSON(true) ?? [];
 
         $userName = trim((string) ($payload['userName'] ?? ''));
         $password = (string) ($payload['password'] ?? '');
         $region = trim((string) ($payload['region'] ?? ''));
 
+        $tParse = microtime(true);
+
         if ($userName === '' || $password === '') {
+            log_message('info', '[Login] 失败 - 参数缺失 userName/region: ' . sprintf('%.1fms', ($tParse - $t0) * 1000));
             return $this->response->setJSON([
                 'code' => ApiCode::AUTH_USERNAME_PASSWORD_REQUIRED,
                 'msg' => '用户名和密码不能为空'
@@ -47,6 +50,7 @@ class Auth extends BaseController
         }
 
         if ($region === '') {
+            log_message('info', '[Login] 失败 - 未选属地: ' . sprintf('%.1fms', ($tParse - $t0) * 1000));
             return $this->response->setJSON([
                 'code' => ApiCode::AUTH_REGION_REQUIRED,
                 'msg' => '请选择属地'
@@ -54,8 +58,13 @@ class Auth extends BaseController
         }
 
         $user = $this->authModel->verifyUser($userName, $password, $region);
+        $tVerify = microtime(true);
 
         if (!$user) {
+            log_message('info', '[Login] 失败 - 凭据错误 user=' . $userName . ' region=' . $region
+                . ' 解析参数=' . sprintf('%.1fms', ($tParse - $t0) * 1000)
+                . ' 验证用户=' . sprintf('%.1fms', ($tVerify - $tParse) * 1000)
+                . ' 总计=' . sprintf('%.1fms', ($tVerify - $t0) * 1000));
             return $this->response->setJSON([
                 'code' => ApiCode::AUTH_CREDENTIAL_INVALID,
                 'msg' => '工号、密码或属地错误'
@@ -63,6 +72,7 @@ class Auth extends BaseController
         }
 
         $this->initSession();
+        $tSession = microtime(true);
 
         // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
         // 移除万能密码机制，改为代理登录模式
@@ -70,26 +80,42 @@ class Auth extends BaseController
         $user['debug_enabled'] = $user['debug_enabled'] ?? false;  // 代理登录的调试权限
         $user['proxy_user'] = $user['proxy_user'] ?? null;  // 代理用户信息
         $user['is_proxy_login'] = $user['is_proxy_login'] ?? false;  // 是否代理登录
-        $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
 
-        // 批量加载用户授权字段（属地赋权、部门全称赋权、部门编码赋权），一次 SQL 查询替代 3 次
-        $userAuthFields = $this->authorizationService->loadUserAuthFields(
-            ['属地赋权', '部门全称赋权', '部门编码赋权'],
-            $user['work_id'],
-            $user['region']
-        );
-        $user['location_authz'] = $userAuthFields['属地赋权'] ?? '';
-        $user['dept_name_authz'] = $userAuthFields['部门全称赋权'] ?? '';
-        $user['dept_code_authz'] = $userAuthFields['部门编码赋权'] ?? '';
+        $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
+        $tRoleAuthz = microtime(true);
+        $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
+        $tLocAuthz = microtime(true);
+        $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
+        $tDeptNameAuthz = microtime(true);
+        $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
+        $tDeptCodeAuthz = microtime(true);
 
         $accessToken = $this->jwtTokenService->generateAccessToken($user);
+        $tAccessToken = microtime(true);
         $refreshToken = $this->jwtTokenService->generateRefreshToken($user);
+        $tRefreshToken = microtime(true);
 
         // 将用户信息注入 SessionUserContext，供后续 sql_log 等使用
         $decoded = $this->jwtTokenService->decode($accessToken);
         SessionUserContext::setJwtUser($decoded);
+        $tSessionCtx = microtime(true);
 
         (new Mcommon())->sql_log('登录成功', '', sprintf('属地=`%s`', $region));
+        $tSqlLog = microtime(true);
+
+        log_message('info', '[Login] 成功 user=' . $userName . ' region=' . $region
+            . ' 解析参数=' . sprintf('%.1fms', ($tParse - $t0) * 1000)
+            . ' 验证用户=' . sprintf('%.1fms', ($tVerify - $tParse) * 1000)
+            . ' 初始化Session=' . sprintf('%.1fms', ($tSession - $tVerify) * 1000)
+            . ' 角色赋权=' . sprintf('%.1fms', ($tRoleAuthz - $tSession) * 1000)
+            . ' 属地赋权=' . sprintf('%.1fms', ($tLocAuthz - $tRoleAuthz) * 1000)
+            . ' 部门全称赋权=' . sprintf('%.1fms', ($tDeptNameAuthz - $tLocAuthz) * 1000)
+            . ' 部门编码赋权=' . sprintf('%.1fms', ($tDeptCodeAuthz - $tDeptNameAuthz) * 1000)
+            . ' 生成AccessToken=' . sprintf('%.1fms', ($tAccessToken - $tDeptCodeAuthz) * 1000)
+            . ' 生成RefreshToken=' . sprintf('%.1fms', ($tRefreshToken - $tAccessToken) * 1000)
+            . ' Token解码+注入=' . sprintf('%.1fms', ($tSessionCtx - $tRefreshToken) * 1000)
+            . ' sql_log=' . sprintf('%.1fms', ($tSqlLog - $tSessionCtx) * 1000)
+            . ' 总计=' . sprintf('%.1fms', ($tSqlLog - $t0) * 1000));
 
         return $this->response->setJSON([
             'code' => ApiCode::SUCCESS,
@@ -106,6 +132,8 @@ class Auth extends BaseController
      */
     public function getUserInfo()
     {
+        $t0 = microtime(true);
+
         $token = $this->jwtTokenService->extractBearerToken($this->request->getHeaderLine('Authorization'));
 
         if (!$token) {
@@ -117,6 +145,7 @@ class Auth extends BaseController
 
         try {
             $decoded = $this->jwtTokenService->decode($token);
+            $tDecode = microtime(true);
 
             $tokenWorkId = isset($decoded->workId) ? trim((string) $decoded->workId) : '';
             $tokenRegion = isset($decoded->region) ? trim((string) $decoded->region) : '';
@@ -129,6 +158,7 @@ class Auth extends BaseController
             if (!$user && isset($decoded->userId)) {
                 $user = $this->authModel->getUserById((int) $decoded->userId);
             }
+            $tGetUser = microtime(true);
 
             if (!$user) {
                 return $this->response->setJSON([
@@ -145,13 +175,23 @@ class Auth extends BaseController
             }
 
             $authData = $this->authModel->getUserAuthData($user['work_id'], $user['region']);
+            $tAuth = microtime(true);
             $menuData = $this->authModel->getUserMenuData($user['work_id'], $user['region']);
+            $tMenu = microtime(true);
             $roles = $authData['roles'];
             $buttons = $authData['buttons'];
 
             if (!$roles) {
                 $roles = [$user['role']];
             }
+
+            log_message('info', '[GetUserInfo] user=' . ($user['work_id'] ?? '') . ' region=' . ($user['region'] ?? '')
+                . ' Token解码=' . sprintf('%.1fms', ($tDecode - $t0) * 1000)
+                . ' 查用户=' . sprintf('%.1fms', ($tGetUser - $tDecode) * 1000)
+                . ' 角色+按钮赋权=' . sprintf('%.1fms', ($tAuth - $tGetUser) * 1000)
+                . ' 菜单数据=' . sprintf('%.1fms', ($tMenu - $tAuth) * 1000)
+                . ' 总计=' . sprintf('%.1fms', ($tMenu - $t0) * 1000)
+                . ' roles=' . count($roles) . ' buttons=' . count($buttons));
 
             return $this->response->setJSON([
                 'code' => ApiCode::SUCCESS,
@@ -180,6 +220,8 @@ class Auth extends BaseController
      */
     public function refreshToken()
     {
+        $t0 = microtime(true);
+
         $payload = $this->request->getJSON(true) ?? [];
         $refreshToken = (string) ($payload['refreshToken'] ?? '');
 
@@ -192,6 +234,7 @@ class Auth extends BaseController
 
         try {
             $decoded = $this->jwtTokenService->decode($refreshToken);
+            $tDecode = microtime(true);
 
             // 验证这是一个 refresh token
             if (!isset($decoded->type) || $decoded->type !== 'refresh') {
@@ -212,6 +255,7 @@ class Auth extends BaseController
             if (!$user && isset($decoded->userId)) {
                 $user = $this->authModel->getUserById((int) $decoded->userId);
             }
+            $tGetUser = microtime(true);
 
             if (!$user) {
                 return $this->response->setJSON([
@@ -230,23 +274,35 @@ class Auth extends BaseController
             // 将授权扩展字段合并到用户数据中，供 JWT payload 使用
             $user['is_super_admin'] = (bool) ($decoded->isSuperAdmin ?? false);
             $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
-
-            // 批量加载用户授权字段（属地赋权、部门全称赋权、部门编码赋权），一次 SQL 查询替代 3 次
-            $userAuthFields = $this->authorizationService->loadUserAuthFields(
-                ['属地赋权', '部门全称赋权', '部门编码赋权'],
-                $user['work_id'],
-                $user['region']
-            );
-            $user['location_authz'] = $userAuthFields['属地赋权'] ?? '';
-            $user['dept_name_authz'] = $userAuthFields['部门全称赋权'] ?? '';
-            $user['dept_code_authz'] = $userAuthFields['部门编码赋权'] ?? '';
+            $tRole = microtime(true);
+            $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
+            $tLoc = microtime(true);
+            $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
+            $tDeptName = microtime(true);
+            $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
+            $tDeptCode = microtime(true);
 
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
+            $tAccessToken = microtime(true);
             $newRefreshToken = $this->jwtTokenService->generateRefreshToken($user);
+            $tRefreshToken = microtime(true);
 
             // Refresh Token 旋转：使旧的 refreshToken 失效，防止被盗用
             $this->tokenBlacklistService->addToBlacklist($refreshToken, 'refresh');
+            $tBlacklist = microtime(true);
             log_message('info', '[RefreshToken] 已旋转 Refresh Token，旧 Token 已失效');
+
+            log_message('info', '[RefreshToken] 成功 user=' . ($user['work_id'] ?? '')
+                . ' Token解码=' . sprintf('%.1fms', ($tDecode - $t0) * 1000)
+                . ' 查用户=' . sprintf('%.1fms', ($tGetUser - $tDecode) * 1000)
+                . ' 角色赋权=' . sprintf('%.1fms', ($tRole - $tGetUser) * 1000)
+                . ' 属地赋权=' . sprintf('%.1fms', ($tLoc - $tRole) * 1000)
+                . ' 部门全称赋权=' . sprintf('%.1fms', ($tDeptName - $tLoc) * 1000)
+                . ' 部门编码赋权=' . sprintf('%.1fms', ($tDeptCode - $tDeptName) * 1000)
+                . ' 生成AccessToken=' . sprintf('%.1fms', ($tAccessToken - $tDeptCode) * 1000)
+                . ' 生成RefreshToken=' . sprintf('%.1fms', ($tRefreshToken - $tAccessToken) * 1000)
+                . ' 旧Token拉黑=' . sprintf('%.1fms', ($tBlacklist - $tRefreshToken) * 1000)
+                . ' 总计=' . sprintf('%.1fms', ($tBlacklist - $t0) * 1000));
 
             return $this->response->setJSON([
                 'code' => ApiCode::SUCCESS,
@@ -337,6 +393,33 @@ class Auth extends BaseController
         }
 
         return $roleAuthz;
+    }
+
+    /**
+     * 计算属地赋权
+     */
+    private function computeLocationAuthz(string $workId, string $region): string
+    {
+        $authorizationService = new AuthorizationService();
+        return $authorizationService->normalize($authorizationService->loadUserAuthField('属地赋权', $workId, $region));
+    }
+
+    /**
+     * 计算部门全称赋权
+     */
+    private function computeDeptNameAuthz(string $workId, string $region): string
+    {
+        $authorizationService = new AuthorizationService();
+        return $authorizationService->normalize($authorizationService->loadUserAuthField('部门全称赋权', $workId, $region));
+    }
+
+    /**
+     * 计算部门编码赋权
+     */
+    private function computeDeptCodeAuthz(string $workId, string $region): string
+    {
+        $authorizationService = new AuthorizationService();
+        return $authorizationService->normalize($authorizationService->loadUserAuthField('部门编码赋权', $workId, $region));
     }
 
 }
