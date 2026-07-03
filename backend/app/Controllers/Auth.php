@@ -103,19 +103,21 @@ class Auth extends BaseController
         (new Mcommon())->sql_log('登录成功', '', sprintf('属地=`%s`', $region));
         $tSqlLog = microtime(true);
 
-        log_message('info', '[Login] 成功 user=' . $userName . ' region=' . $region
-            . ' 解析参数=' . sprintf('%.1fms', ($tParse - $t0) * 1000)
-            . ' 验证用户=' . sprintf('%.1fms', ($tVerify - $tParse) * 1000)
-            . ' 初始化Session=' . sprintf('%.1fms', ($tSession - $tVerify) * 1000)
-            . ' 角色赋权=' . sprintf('%.1fms', ($tRoleAuthz - $tSession) * 1000)
-            . ' 属地赋权=' . sprintf('%.1fms', ($tLocAuthz - $tRoleAuthz) * 1000)
-            . ' 部门全称赋权=' . sprintf('%.1fms', ($tDeptNameAuthz - $tLocAuthz) * 1000)
-            . ' 部门编码赋权=' . sprintf('%.1fms', ($tDeptCodeAuthz - $tDeptNameAuthz) * 1000)
-            . ' 生成AccessToken=' . sprintf('%.1fms', ($tAccessToken - $tDeptCodeAuthz) * 1000)
-            . ' 生成RefreshToken=' . sprintf('%.1fms', ($tRefreshToken - $tAccessToken) * 1000)
-            . ' Token解码+注入=' . sprintf('%.1fms', ($tSessionCtx - $tRefreshToken) * 1000)
-            . ' sql_log=' . sprintf('%.1fms', ($tSqlLog - $tSessionCtx) * 1000)
-            . ' 总计=' . sprintf('%.1fms', ($tSqlLog - $t0) * 1000));
+        $steps = [
+            '解析参数' => $tParse,
+            '验证用户' => $tVerify,
+            '初始化Session' => $tSession,
+            '角色赋权' => $tRoleAuthz,
+            '属地赋权' => $tLocAuthz,
+            '部门全称赋权' => $tDeptNameAuthz,
+            '部门编码赋权' => $tDeptCodeAuthz,
+            '生成AccessToken' => $tAccessToken,
+            '生成RefreshToken' => $tRefreshToken,
+            'Token解码+注入' => $tSessionCtx,
+            'sql_log' => $tSqlLog
+        ];
+        $logMsg = $this->buildPerformanceTable('[Login]', '成功', 'user=' . $userName . ' region=' . $region, $steps, $t0);
+        log_message('info', $logMsg);
 
         return $this->response->setJSON([
             'code' => ApiCode::SUCCESS,
@@ -185,13 +187,17 @@ class Auth extends BaseController
                 $roles = [$user['role']];
             }
 
-            log_message('info', '[GetUserInfo] user=' . ($user['work_id'] ?? '') . ' region=' . ($user['region'] ?? '')
-                . ' Token解码=' . sprintf('%.1fms', ($tDecode - $t0) * 1000)
-                . ' 查用户=' . sprintf('%.1fms', ($tGetUser - $tDecode) * 1000)
-                . ' 角色+按钮赋权=' . sprintf('%.1fms', ($tAuth - $tGetUser) * 1000)
-                . ' 菜单数据=' . sprintf('%.1fms', ($tMenu - $tAuth) * 1000)
-                . ' 总计=' . sprintf('%.1fms', ($tMenu - $t0) * 1000)
-                . ' roles=' . count($roles) . ' buttons=' . count($buttons));
+            $steps = [
+                'Token解码' => $tDecode,
+                '查用户' => $tGetUser,
+                '角色+按钮赋权' => $tAuth,
+                '菜单数据' => $tMenu
+            ];
+            $logMsg = $this->buildPerformanceTable('[GetUserInfo]', '成功',
+                'user=' . ($user['work_id'] ?? '') . ' region=' . ($user['region'] ?? '')
+                . ' roles=' . count($roles) . ' buttons=' . count($buttons),
+                $steps, $t0);
+            log_message('info', $logMsg);
 
             return $this->response->setJSON([
                 'code' => ApiCode::SUCCESS,
@@ -290,19 +296,22 @@ class Auth extends BaseController
             // Refresh Token 旋转：使旧的 refreshToken 失效，防止被盗用
             $this->tokenBlacklistService->addToBlacklist($refreshToken, 'refresh');
             $tBlacklist = microtime(true);
-            log_message('info', '[RefreshToken] 已旋转 Refresh Token，旧 Token 已失效');
 
-            log_message('info', '[RefreshToken] 成功 user=' . ($user['work_id'] ?? '')
-                . ' Token解码=' . sprintf('%.1fms', ($tDecode - $t0) * 1000)
-                . ' 查用户=' . sprintf('%.1fms', ($tGetUser - $tDecode) * 1000)
-                . ' 角色赋权=' . sprintf('%.1fms', ($tRole - $tGetUser) * 1000)
-                . ' 属地赋权=' . sprintf('%.1fms', ($tLoc - $tRole) * 1000)
-                . ' 部门全称赋权=' . sprintf('%.1fms', ($tDeptName - $tLoc) * 1000)
-                . ' 部门编码赋权=' . sprintf('%.1fms', ($tDeptCode - $tDeptName) * 1000)
-                . ' 生成AccessToken=' . sprintf('%.1fms', ($tAccessToken - $tDeptCode) * 1000)
-                . ' 生成RefreshToken=' . sprintf('%.1fms', ($tRefreshToken - $tAccessToken) * 1000)
-                . ' 旧Token拉黑=' . sprintf('%.1fms', ($tBlacklist - $tRefreshToken) * 1000)
-                . ' 总计=' . sprintf('%.1fms', ($tBlacklist - $t0) * 1000));
+            $steps = [
+                'Token解码' => $tDecode,
+                '查用户' => $tGetUser,
+                '角色赋权' => $tRole,
+                '属地赋权' => $tLoc,
+                '部门全称赋权' => $tDeptName,
+                '部门编码赋权' => $tDeptCode,
+                '生成AccessToken' => $tAccessToken,
+                '生成RefreshToken' => $tRefreshToken,
+                '旧Token拉黑' => $tBlacklist
+            ];
+            $logMsg = $this->buildPerformanceTable('[RefreshToken]', '成功',
+                'user=' . ($user['work_id'] ?? '') . ' region=' . ($user['region'] ?? ''),
+                $steps, $t0);
+            log_message('info', $logMsg);
 
             return $this->response->setJSON([
                 'code' => ApiCode::SUCCESS,
@@ -318,6 +327,69 @@ class Auth extends BaseController
                 'msg' => 'refreshToken无效或已过期'
             ]);
         }
+    }
+
+    private function buildPerformanceTable(string $tag, string $status, string $info, array $steps, float $t0): string
+    {
+        $total = (end($steps) - $t0) * 1000;
+        if ($total < 0.001) $total = 0.001;
+
+        $rows = [];
+        $prevTime = $t0;
+        $index = 0;
+
+        foreach ($steps as $stepName => $currTime) {
+            $duration = ($currTime - $prevTime) * 1000;
+            $timestamp = sprintf('%.1f', ($currTime - $t0) * 1000);
+            $pct = $total > 0 ? ($duration / $total) * 100 : 0;
+
+            $rows[] = [
+                'index' => $index,
+                'step' => $stepName,
+                'timestamp' => $timestamp,
+                'duration' => sprintf('%.1fms', $duration),
+                'pct' => sprintf('%.1f%%', $pct),
+                'raw_duration' => $duration
+            ];
+            $prevTime = $currTime;
+            $index++;
+        }
+
+        $logLines = [];
+        $logLines[] = sprintf('%s %s %s 总耗时: %.2fms', $tag, $info, $status, $total);
+        $logLines[] = sprintf('%-8s | %-20s | %-10s | %-10s | %-6s', '(索引)', 'step', 'timestamp', 'duration', 'pct');
+        $logLines[] = str_repeat('-', 60);
+
+        foreach ($rows as $row) {
+            $logLines[] = sprintf('%-8s | %-20s | %-10s | %-10s | %-6s',
+                $row['index'],
+                $row['step'],
+                $row['timestamp'],
+                $row['duration'],
+                $row['pct']
+            );
+        }
+
+        usort($rows, function ($a, $b) {
+            return $b['raw_duration'] <=> $a['raw_duration'];
+        });
+
+        $maxDuration = $rows[0]['raw_duration'] ?? 0;
+
+        $logLines[] = '';
+        $logLines[] = '耗时排行（从慢到快）';
+        $maxBar = 50;
+        $rank = 1;
+        foreach ($rows as $row) {
+            if ($row['raw_duration'] < 0.001) continue;
+            $barLen = $maxDuration > 0 ? (int) ($row['raw_duration'] / $maxDuration * $maxBar) : 0;
+            $barLen = max($barLen, 1);
+            $bar = str_repeat('█', $barLen);
+            $logLines[] = sprintf(' %d. %-20s %9.1fms %s', $rank, $row['step'], $row['raw_duration'], $bar);
+            $rank++;
+        }
+
+        return implode("\n", $logLines);
     }
 
     /**

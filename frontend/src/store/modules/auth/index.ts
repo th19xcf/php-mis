@@ -11,6 +11,81 @@ import { useRouteStore } from '../route';
 import { useTabStore } from '../tab';
 import { clearAuthStorage, getToken } from './shared';
 
+interface PerfStep {
+  name: string;
+  time: number;
+}
+
+function buildPerformanceTable(tag: string, info: string, steps: PerfStep[], t0: number): void {
+  const total = steps[steps.length - 1].time - t0;
+
+  const rows: {
+    index: number;
+    step: string;
+    timestamp: string;
+    duration: string;
+    pct: string;
+    rawDuration: number;
+  }[] = [];
+
+  let prevTime = t0;
+  steps.forEach((step, idx) => {
+    const duration = step.time - prevTime;
+    const timestamp = (step.time - t0).toFixed(1);
+    const pct = total > 0 ? ((duration / total) * 100).toFixed(1) : '0.0';
+
+    rows.push({
+      index: idx,
+      step: step.name,
+      timestamp: timestamp,
+      duration: `+${duration.toFixed(1)}ms`,
+      pct: `${pct}%`,
+      rawDuration: duration
+    });
+    prevTime = step.time;
+  });
+
+  rows.push({
+    index: rows.length,
+    step: '总计',
+    timestamp: total.toFixed(1),
+    duration: `${total.toFixed(1)}ms`,
+    pct: '100%',
+    rawDuration: total
+  });
+
+  console.log(`%c[性能追踪] [${tag}] ${info} 总耗时: ${total.toFixed(2)}ms`, 'color: #3b82f6; font-weight: bold');
+
+  const header = `%c${pad('(索引)', 8)} | ${pad('step', 20)} | ${pad('timestamp', 10)} | ${pad('duration', 10)} | ${pad('pct', 6)}`;
+  console.log(header, 'color: #64748b;');
+
+  console.log('%c' + '-'.repeat(60), 'color: #475569;');
+
+  rows.forEach(row => {
+    const line = `${pad(row.index.toString(), 8)} | ${pad(row.step, 20)} | ${pad(row.timestamp, 10)} | ${pad(row.duration, 10)} | ${pad(row.pct, 6)}`;
+    console.log(line);
+  });
+
+  const sorted = [...rows].sort((a, b) => b.rawDuration - a.rawDuration).filter(r => r.rawDuration > 0.001);
+
+  console.log('');
+  console.log('%c耗时排行（从慢到快）', 'color: #ef4444; font-weight: bold');
+
+  const maxBar = 50;
+  const maxDur = sorted[0]?.rawDuration || 1;
+
+  sorted.forEach((row, idx) => {
+    const barLen = maxDur > 0 ? Math.max(1, Math.floor((row.rawDuration / maxDur) * maxBar)) : 1;
+    const bar = '█'.repeat(barLen);
+    const line = ` %d. ${pad(row.step, 20)} ${row.rawDuration.toFixed(2).padStart(8)}ms ${bar}`;
+    console.log(line.replace('%d', (idx + 1).toString()));
+  });
+}
+
+function pad(str: string, len: number): string {
+  return str.padEnd(len);
+}
+
 export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
   const route = useRoute();
   const routeStore = useRouteStore();
@@ -130,14 +205,13 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
           duration: 4500
         });
 
-        console.log(
-          '[登录耗时]',
-          `fetchLogin=${(tFetchLogin - t0).toFixed(1)}ms`,
-          `loginByToken=${(tLoginByToken - tFetchLogin).toFixed(1)}ms`,
-          `checkTabClear=${(tTabClear - tLoginByToken).toFixed(1)}ms`,
-          `redirectFromLogin=${(tRedirect - tTabClear).toFixed(1)}ms`,
-          `总计=${(tRedirect - t0).toFixed(1)}ms`
-        );
+        const steps: PerfStep[] = [
+          { name: 'fetchLogin', time: tFetchLogin },
+          { name: 'loginByToken', time: tLoginByToken },
+          { name: 'checkTabClear', time: tTabClear },
+          { name: 'redirectFromLogin', time: tRedirect }
+        ];
+        buildPerformanceTable('Login', `user=${userName}`, steps, t0);
       }
     } else {
       resetStore();
@@ -159,12 +233,11 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
 
     if (pass) {
       token.value = loginToken.token;
-      console.log(
-        '[loginByToken 耗时]',
-        `存储token=${(tStorage - t0).toFixed(1)}ms`,
-        `getUserInfo=${(tUserInfo - tStorage).toFixed(1)}ms`,
-        `总计=${(tUserInfo - t0).toFixed(1)}ms`
-      );
+      const steps: PerfStep[] = [
+        { name: '存储token', time: tStorage },
+        { name: 'getUserInfo', time: tUserInfo }
+      ];
+      buildPerformanceTable('loginByToken', '', steps, t0);
       return true;
     }
 
