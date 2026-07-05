@@ -6,9 +6,9 @@ use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
+use App\Libraries\ContextCacheService;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
-use CodeIgniter\Cache\CacheInterface;
 use Config\Services;
 
 /**
@@ -17,23 +17,23 @@ use Config\Services;
  * 负责构建工作台上下文信息（用户授权、功能授权、查询配置等）。
  * 角色级授权查询已委托给 AuthorizationService::loadRoleAuthField，
  * 数据整理执行已迁至 Workbench 控制器，条件变量替换已迁至 ChartService。
+ *
+ * 缓存读写与失效已委托给 ContextCacheService（含反向索引精准删除，
+ * 解决 FileHandler 驱动下全清问题）。
  */
 class ContextService
 {
-    private const CACHE_PREFIX = 'workbench_context_';
-    private const CACHE_TTL_SECONDS = 1800;
-
     private Mcommon $model;
     private AuthorizationService $authorizationService;
     private SessionUserContext $userContext;
-    private CacheInterface $cache;
+    private ContextCacheService $cacheService;
 
     public function __construct()
     {
         $this->model = new Mcommon();
         $this->authorizationService = new AuthorizationService();
         $this->userContext = new SessionUserContext();
-        $this->cache = Services::cache();
+        $this->cacheService = new ContextCacheService();
     }
 
     /**
@@ -60,9 +60,9 @@ class ContextService
         $trace['requireLogin'] = round((hrtime(true) - $tAuthStart) / 1e6, 2);
         log_message('debug', '[ContextService] 步骤1完成: companyId=' . $companyId . ', userWorkId=' . $userWorkId);
 
-        $cacheKey = $this->buildCacheKey($functionCode, $user['roleAuthz'], $companyId, $debugEnabled);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached) && isset($cached['context'], $cached['definition'])) {
+        $cacheKey = $this->cacheService->buildCacheKey($functionCode, $user['roleAuthz'], $companyId, $debugEnabled);
+        $cached = $this->cacheService->get($cacheKey);
+        if ($cached !== null) {
             $elapsed = (hrtime(true) - $start) / 1e6;
             $trace['contextBuild'] = round($elapsed, 2);
             $trace['contextCacheHit'] = true;
@@ -162,7 +162,7 @@ class ContextService
             'queryTable' => $queryConfig['queryTable']
         ];
 
-        $this->saveCache($cacheKey, $context, $definition);
+        $this->cacheService->save($cacheKey, $context, $definition);
 
         $elapsed = (hrtime(true) - $start) / 1e6;
         $trace['contextBuild'] = round($elapsed, 2);
@@ -216,81 +216,32 @@ class ContextService
     }
 
     /**
-     * 基于 functionCode + roleAuthz + region + isSuperAdmin，同角色用户共享缓存。
+     * 清除工作台上下文缓存（委托给 ContextCacheService）
      *
-     * isSuperAdmin 必须纳入键空间：万能密码（工号+工号）登录时
-     * isSuperAdmin=true，userAuth.debugAuth 会被强制置为 true；
-     * 同用户之前用普通密码登录时 isSuperAdmin=false，缓存里
-     * debugSql=false。两者会通过 userAuth.debugAuth → definition.toolbar.debugSql
-     * 产生不同结果，必须分别缓存，否则超管身份命中旧缓存看不到"调试"按钮。
-     */
-    private function buildCacheKey(string $functionCode, string $roleAuthz, string $region, bool $isSuperAdmin = false): string
-    {
-        return self::CACHE_PREFIX . md5($functionCode) . '_' . md5(implode('|', [$roleAuthz, $region, $isSuperAdmin ? '1' : '0']));
-    }
-
-    /**
-     * 保存工作台上下文到缓存
-     */
-    private function saveCache(string $cacheKey, array $context, array $definition): void
-    {
-        $this->cache->save($cacheKey, [
-            'context' => $context,
-            'definition' => $definition,
-            'cachedAt' => time(),
-        ], self::CACHE_TTL_SECONDS);
-
-        log_message('debug', '[ContextService] 上下文已缓存: ' . $cacheKey);
-    }
-
-    /**
-     * 清除工作台上下文缓存
-     *
-     * - 三个参数均为空：清空当前缓存驱动的全部数据（慎用）。
-     * - 仅提供 functionCode：清除该功能编码下所有角色/属地的缓存。
+     * - 三个参数均为空：清空当前缓存驱动的全部数据（用于"全量清理"）。
+     * - 仅提供 functionCode：清除该功能编码下所有角色/属地的缓存（精准删除，FileHandler 安全）。
      * - 三个参数全部提供：精确删除单条缓存。
      *
      * @param string $functionCode 功能编码
      * @param string $roleAuthz    角色赋权字符串（逗号分隔）
      * @param string $region       属地/公司编码
+     * @return int 实际删除的缓存条数（-1 表示全量清理无法统计）
      */
-    public function clearCache(string $functionCode = '', string $roleAuthz = '', string $region = ''): void
+    public function clearCache(string $functionCode = '', string $roleAuthz = '', string $region = ''): int
     {
-        if ($functionCode === '' && $roleAuthz === '' && $region === '') {
-            $this->cache->clean();
-            log_message('info', '[ContextService] 已清空全部缓存');
-            return;
-        }
-
-        if ($functionCode !== '' && $roleAuthz === '' && $region === '') {
-            $this->clearCacheByFunctionCode($functionCode);
-            return;
-        }
-
-        $targetKey = $this->buildCacheKey($functionCode, $roleAuthz, $region);
-        $this->cache->delete($targetKey);
-        log_message('info', '[ContextService] 已清除工作台上下文缓存: ' . $targetKey);
+        return $this->cacheService->clear($functionCode, $roleAuthz, $region);
     }
 
     /**
-     * 清除指定功能编码下的所有工作台上下文缓存
+     * 清除指定功能编码下的所有工作台上下文缓存（委托给 ContextCacheService）
+     *
+     * 内部使用反向索引精准删除，避免 FileHandler 驱动下退化为全清。
+     *
+     * @return int 删除的缓存条数
      */
-    public function clearCacheByFunctionCode(string $functionCode): void
+    public function clearCacheByFunctionCode(string $functionCode): int
     {
-        $pattern = $this->buildFunctionCachePattern($functionCode);
-
-        try {
-            $this->cache->deleteMatching($pattern);
-            log_message('info', '[ContextService] 已清除功能编码缓存: ' . $functionCode . ', pattern: ' . $pattern);
-        } catch (\BadMethodCallException $e) {
-            log_message('warning', '[ContextService] 当前缓存驱动不支持 deleteMatching，回退到全量清空');
-            $this->cache->clean();
-        }
-    }
-
-    private function buildFunctionCachePattern(string $functionCode): string
-    {
-        return self::CACHE_PREFIX . md5($functionCode) . '_*';
+        return $this->cacheService->deleteByFunctionCode($functionCode);
     }
 
     /**
