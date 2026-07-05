@@ -34,6 +34,16 @@ yarn.lock
 
 .VSCodeCounter
 
+# 环境变量（含接口地址等配置，不应入库）
+.env
+.env.*
+!.env.example
+
+# 本地辅助文件
+commit-msg.txt
+commit-msg-temp.txt
+.commit-msg-temp.txt
+
 # Auto-generated type declarations
 src/typings/components.d.ts
 src/typings/elegant-router.d.ts
