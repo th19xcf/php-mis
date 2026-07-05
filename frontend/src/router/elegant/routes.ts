@@ -95,6 +95,16 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'match-data',
+    path: '/match-data',
+    component: 'layout.base$view.match-data',
+    meta: {
+      title: '数据匹配',
+      i18nKey: 'route.match-data',
+      keepAlive: true
+    }
+  },
+  {
     name: 'menu-bridge',
     path: '/menu-bridge',
     component: 'layout.base$view.menu-bridge',

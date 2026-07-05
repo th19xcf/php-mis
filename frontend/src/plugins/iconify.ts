@@ -1,4 +1,5 @@
 import { addCollection, _api } from '@iconify/vue';
+import type { IconifyAPIModule } from '@iconify/vue';
 import offlineIcons from './offline-icons-data.json';
 
 /**
@@ -9,13 +10,12 @@ import offlineIcons from './offline-icons-data.json';
  * @iconify/vue 5.0.0 在模块加载时已经把默认 provider 注入到 configStorage['']，
  * 单纯 addAPIProvider('', { resources: [] }) 会被 createAPIConfig 直接拒绝。
  * 因此采用 setAPIModule 覆盖默认 API module 的方式：
- *   - prepare 永远返回 false（不要重试、不要加载）
+ *   - prepare 永远返回空数组（不生成查询参数）
  *   - send 收到请求后立即以 "abort" 回调，iconify 内部会标记图标为 missing
  */
-const NOOP_API_MODULE = {
-  prepare: (_provider: string, _prefix: string, _icons: string[]): boolean => false,
-  send: (_host: string, _params: unknown, callback: (status: string, data: unknown) => void): void => {
-    // 第三个参数就是 callback：status='abort' 表示终止请求，iconify 内部会标记图标为 missing
+const NOOP_API_MODULE: IconifyAPIModule = {
+  prepare: (_provider, _prefix, _icons) => [],
+  send: (_host, _params, callback) => {
     setTimeout(() => callback('abort', 424), 0);
   }
 };

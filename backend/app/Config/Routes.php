@@ -72,6 +72,12 @@ $routes->group('comment', static function ($routes) {
 	$routes->post('add/(:segment)', 'Comment::add/$1');
 });
 
+$routes->group('match', static function ($routes) {
+	$routes->get('page/(:segment)', 'MatchApi::page/$1');
+	$routes->post('buildRelation', 'MatchApi::buildRelation');
+	$routes->post('revokeRelation', 'MatchApi::revokeRelation');
+});
+
 $routes->group('dept', static function ($routes) {
 	$routes->get('tree', 'DeptApi::tree');
 	$routes->get('detail/(:segment)', 'DeptApi::detail/$1');

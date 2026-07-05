@@ -54,7 +54,8 @@ const nativeComponentMap: Record<string, any> = {
   interview: defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
   train: defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
   employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
-  contract: defineAsyncComponent(() => import('@/views/contract/index.vue'))
+  contract: defineAsyncComponent(() => import('@/views/contract/index.vue')),
+  'match-data': defineAsyncComponent(() => import('@/views/match-data/index.vue'))
 };
 
 // 静态 HTML 页面映射：frontendRoute -> public 下的相对路径
@@ -169,7 +170,7 @@ function handleIframeLoad() {
         <!-- 原生 Vue 组件渲染 - 使用 keep-alive 缓存 -->
         <template v-if="isNativeFunction">
           <KeepAlive>
-            <component :is="currentNativeComponent" />
+            <component :is="currentNativeComponent" :meta="meta" />
           </KeepAlive>
         </template>
 

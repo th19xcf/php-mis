@@ -242,6 +242,7 @@ const local: App.I18n.Schema = {
     'iframe-page': 'Iframe',
     home: 'Home',
     'menu-bridge': 'Dynamic Menu',
+    'match-data': 'Data Match',
     'permission-demo': 'Permission Demo',
     system: 'System Management',
     system_dept: 'Department Management',

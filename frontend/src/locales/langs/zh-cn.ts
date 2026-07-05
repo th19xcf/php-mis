@@ -238,6 +238,7 @@ const local: App.I18n.Schema = {
     'iframe-page': '外链页面',
     home: '首页',
     'menu-bridge': '动态菜单',
+    'match-data': '数据匹配',
     'permission-demo': '权限演示',
     system: '系统管理',
     system_dept: '部门管理',

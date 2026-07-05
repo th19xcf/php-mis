@@ -171,6 +171,7 @@ const routeMap: RouteMap = {
   "home": "/home",
   "iframe-page": "/iframe-page/:url",
   "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?",
+  "match-data": "/match-data",
   "menu-bridge": "/menu-bridge",
   "permission-demo": "/permission-demo",
   "personnel": "/personnel",
