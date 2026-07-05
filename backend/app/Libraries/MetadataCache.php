@@ -403,6 +403,68 @@ class MetadataCache
     }
 
     /**
+     * 解析功能对应数据表的主键字段（跨用户共享缓存）
+     *
+     * 解析顺序：
+     * 1. 命中缓存 → 直接返回
+     * 2. 查 def_query_config.主键字段（通过 def_function 关联）
+     * 3. 回退 SHOW INDEX FROM {dataTable} WHERE Key_name='PRIMARY'
+     *
+     * 与原 ContextService.resolvePrimaryKey / WorkbenchResponseTrait.getPrimaryKey
+     * 逻辑完全一致，但缓存从 session 迁移到 MetadataCache（TTL 86400s），
+     * 跨用户共享，消除每个新用户首次访问触发的 SHOW INDEX 调用。
+     *
+     * 复合主键以 ";" 分隔（如 "工号;姓名"）。
+     *
+     * @param string $functionCode 功能编码
+     * @param string $dataTable    数据表名（用于 SHOW INDEX 回退）
+     * @return string 主键字段名（空字符串表示未识别）
+     */
+    public function getPrimaryKey(string $functionCode, string $dataTable = ''): string
+    {
+        $cacheKey = self::CACHE_PREFIX . 'primary_key_' . md5($functionCode);
+        $cached = $this->cache->get($cacheKey);
+        if (is_string($cached) && $cached !== '') {
+            log_message('debug', '[MetadataCache] getPrimaryKey 缓存命中: ' . $functionCode);
+            return $cached;
+        }
+
+        // 1. 优先查 def_query_config.主键字段
+        $sql = sprintf(
+            'SELECT t1.主键字段 FROM def_query_config t1
+            INNER JOIN def_function t2 ON t2.模块名称 = t1.查询模块
+            WHERE t2.功能编码 = %s',
+            $this->model->quote($functionCode)
+        );
+        $result = $this->model->select($sql);
+        if ($result !== false && ($row = $result->getRowArray()) && !empty($row['主键字段'])) {
+            $primaryKey = (string) $row['主键字段'];
+            $this->cache->save($cacheKey, $primaryKey, self::INDEX_TTL_SECONDS);
+            $this->addToIndex('def_query_config', $cacheKey);
+            log_message('debug', '[MetadataCache] getPrimaryKey 缓存写入(def_query_config): ' . $functionCode);
+            return $primaryKey;
+        }
+
+        // 2. 回退 SHOW INDEX FROM
+        if (empty($dataTable)) {
+            return '';
+        }
+        $sql = sprintf('SHOW INDEX FROM %s WHERE Key_name = "PRIMARY"', $dataTable);
+        $result = $this->model->select($sql);
+        if ($result !== false && ($row = $result->getRowArray())) {
+            $primaryKey = (string) ($row['Column_name'] ?? '');
+            if ($primaryKey !== '') {
+                $this->cache->save($cacheKey, $primaryKey, self::INDEX_TTL_SECONDS);
+                $this->addToIndex('def_query_config', $cacheKey);
+                log_message('debug', '[MetadataCache] getPrimaryKey 缓存写入(SHOW INDEX): ' . $functionCode);
+            }
+            return $primaryKey;
+        }
+
+        return '';
+    }
+
+    /**
      * 手动清除指定表的缓存（触发事件通知）
      *
      * 优先通过反向索引精准删除该表对应的所有 cacheKey；

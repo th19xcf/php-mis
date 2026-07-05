@@ -34,7 +34,8 @@ trait WorkbenchResponseTrait
     /**
      * 解析主键字段
      *
-     * 优先从 session 取，其次从 def_query_config 取，最后从表结构推断。
+     * 通过 MetadataCache::getPrimaryKey 获取（跨用户共享缓存，TTL 86400s），
+     * 命中缓存时跳过 SQL，消除每个新用户首次访问触发的 SHOW INDEX 调用。
      *
      * @param string $functionCode
      * @param array  $queryConfig
@@ -42,37 +43,8 @@ trait WorkbenchResponseTrait
      */
     protected function getPrimaryKey(string $functionCode, array $queryConfig): string
     {
-        $session = \Config\Services::session();
-        $primaryKey = $session->get($functionCode . '-primary_key');
-
-        if (!empty($primaryKey)) {
-            return $primaryKey;
-        }
-
         $dataTable = $queryConfig['dataTable'] ?? '';
-        if (empty($dataTable)) {
-            return '';
-        }
-
-        $sql = sprintf(
-            'SELECT t1.主键字段 FROM def_query_config t1
-            INNER JOIN def_function t2 ON t2.模块名称 = t1.查询模块
-            WHERE t2.功能编码 = %s',
-            $this->model->quote($functionCode)
-        );
-
-        $result = $this->model->select($sql);
-        if ($result !== false && ($row = $result->getRowArray()) && !empty($row['主键字段'])) {
-            return $row['主键字段'];
-        }
-
-        $sql = sprintf('SHOW INDEX FROM %s WHERE Key_name = "PRIMARY"', $dataTable);
-        $result = $this->model->select($sql);
-        if ($result !== false && ($row = $result->getRowArray())) {
-            return $row['Column_name'] ?? '';
-        }
-
-        return '';
+        return (new \App\Libraries\MetadataCache())->getPrimaryKey($functionCode, $dataTable);
     }
 
     /**
