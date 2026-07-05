@@ -16,8 +16,6 @@ interface UseWorkbenchChartDrillOptions {
   onDrillChartsUpdated: (charts: any[]) => void;
   /** 是否处于暗色模式 */
   isDarkMode: Ref<boolean>;
-  /** 重新生成 ECharts option 的工具函数 */
-  regenerateOptionsFromCharts: (charts: any[]) => void;
 }
 
 /**
@@ -214,7 +212,6 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
       log('info', `钻取成功, 新级别=${drillLevel.value}, 返回图表数=${data.charts.length}`);
 
       // 通知外部更新图表
-      options.regenerateOptionsFromCharts(data.charts);
       options.onDrillChartsUpdated(data.charts);
       options.notify('success', `已钻取至第 ${drillLevel.value} 级`);
     } catch (err) {

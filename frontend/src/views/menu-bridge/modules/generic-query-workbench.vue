@@ -868,11 +868,7 @@ const { drillLevel, isDrilled, handleChartClick, resetDrill, silentResetDrill } 
     // 用钻取结果重新渲染图表
     await reloadChartsFromDrill(charts);
   },
-  isDarkMode,
-  regenerateOptionsFromCharts: (charts: any[]) => {
-    // 实际重新渲染由 useWorkbenchChart 内部完成
-    void charts;
-  }
+  isDarkMode
 });
 
 // 钻取选项缓存（页面级 + 图表级）
