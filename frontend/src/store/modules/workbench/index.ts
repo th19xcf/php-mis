@@ -29,6 +29,43 @@ export interface WorkbenchCacheItem {
   rowCount?: number;
 }
 
+/**
+ * 创建默认的 WorkbenchCacheItem
+ *
+ * 8 个细粒度 setter（setFilterModel / setColumnState / setPage / setPageSize /
+ * setSelectedRows / setVisibleColumns / setPinColumns / setUIState）在缓存
+ * 不存在时需创建默认项，仅 1 个字段用入参覆盖，其余字段全部相同。本工厂函数
+ * 消除约 140 行重复，并保证字段演进时只需修改 1 处。
+ *
+ * @param overrides 覆盖字段（如 { filterModel } 表示其余字段取默认值）
+ */
+function createDefaultCacheItem(overrides: Partial<WorkbenchCacheItem> = {}): WorkbenchCacheItem {
+  return {
+    pageMeta: null,
+    serverRows: [],
+    total: 0,
+    isDataLoaded: false,
+    filterModel: null,
+    columnState: null,
+    page: 1,
+    pageSize: 500,
+    selectedRows: [],
+    visibleColumns: [],
+    pinColumns: [],
+    uiState: {
+      conditionVisible: false,
+      fieldColumnVisible: false,
+      pinColumnVisible: false,
+      quickKeyword: '',
+      selectedField: '',
+      selectedOperator: 'contains',
+      selectedValue: ''
+    },
+    timestamp: Date.now(),
+    ...overrides
+  };
+}
+
 export const useWorkbenchStore = defineStore('workbench', () => {
   // 缓存每个标签作用域 + 功能编码 + 参数组合的数据
   const cache = ref<Map<string, WorkbenchCacheItem>>(new Map());
@@ -110,29 +147,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       existing.filterModel = filterModel;
       existing.timestamp = Date.now();
     } else {
-      cache.value.set(key, {
-        pageMeta: null,
-        serverRows: [],
-        total: 0,
-        isDataLoaded: false,
-        filterModel,
-        columnState: null,
-        page: 1,
-        pageSize: 500,
-        selectedRows: [],
-        visibleColumns: [],
-        pinColumns: [],
-        uiState: {
-          conditionVisible: false,
-          fieldColumnVisible: false,
-          pinColumnVisible: false,
-          quickKeyword: '',
-          selectedField: '',
-          selectedOperator: 'contains',
-          selectedValue: ''
-        },
-        timestamp: Date.now()
-      });
+      cache.value.set(key, createDefaultCacheItem({ filterModel }));
     }
   }
 
@@ -159,29 +174,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       existing.columnState = columnState;
       existing.timestamp = Date.now();
     } else {
-      cache.value.set(key, {
-        pageMeta: null,
-        serverRows: [],
-        total: 0,
-        isDataLoaded: false,
-        filterModel: null,
-        columnState,
-        page: 1,
-        pageSize: 500,
-        selectedRows: [],
-        visibleColumns: [],
-        pinColumns: [],
-        uiState: {
-          conditionVisible: false,
-          fieldColumnVisible: false,
-          pinColumnVisible: false,
-          quickKeyword: '',
-          selectedField: '',
-          selectedOperator: 'contains',
-          selectedValue: ''
-        },
-        timestamp: Date.now()
-      });
+      cache.value.set(key, createDefaultCacheItem({ columnState }));
     }
   }
 
@@ -206,29 +199,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       existing.page = page;
       existing.timestamp = Date.now();
     } else {
-      cache.value.set(key, {
-        pageMeta: null,
-        serverRows: [],
-        total: 0,
-        isDataLoaded: false,
-        filterModel: null,
-        columnState: null,
-        page,
-        pageSize: 500,
-        selectedRows: [],
-        visibleColumns: [],
-        pinColumns: [],
-        uiState: {
-          conditionVisible: false,
-          fieldColumnVisible: false,
-          pinColumnVisible: false,
-          quickKeyword: '',
-          selectedField: '',
-          selectedOperator: 'contains',
-          selectedValue: ''
-        },
-        timestamp: Date.now()
-      });
+      cache.value.set(key, createDefaultCacheItem({ page }));
     }
   }
 
@@ -243,29 +214,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       existing.pageSize = pageSize;
       existing.timestamp = Date.now();
     } else {
-      cache.value.set(key, {
-        pageMeta: null,
-        serverRows: [],
-        total: 0,
-        isDataLoaded: false,
-        filterModel: null,
-        columnState: null,
-        page: 1,
-        pageSize,
-        selectedRows: [],
-        visibleColumns: [],
-        pinColumns: [],
-        uiState: {
-          conditionVisible: false,
-          fieldColumnVisible: false,
-          pinColumnVisible: false,
-          quickKeyword: '',
-          selectedField: '',
-          selectedOperator: 'contains',
-          selectedValue: ''
-        },
-        timestamp: Date.now()
-      });
+      cache.value.set(key, createDefaultCacheItem({ pageSize }));
     }
   }
 
@@ -281,29 +230,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       existing.selectedRows = selectedRows;
       existing.timestamp = Date.now();
     } else {
-      cache.value.set(key, {
-        pageMeta: null,
-        serverRows: [],
-        total: 0,
-        isDataLoaded: false,
-        filterModel: null,
-        columnState: null,
-        page: 1,
-        pageSize: 500,
-        selectedRows,
-        visibleColumns: [],
-        pinColumns: [],
-        uiState: {
-          conditionVisible: false,
-          fieldColumnVisible: false,
-          pinColumnVisible: false,
-          quickKeyword: '',
-          selectedField: '',
-          selectedOperator: 'contains',
-          selectedValue: ''
-        },
-        timestamp: Date.now()
-      });
+      cache.value.set(key, createDefaultCacheItem({ selectedRows }));
     }
   }
 
@@ -319,29 +246,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       existing.visibleColumns = visibleColumns;
       existing.timestamp = Date.now();
     } else {
-      cache.value.set(key, {
-        pageMeta: null,
-        serverRows: [],
-        total: 0,
-        isDataLoaded: false,
-        filterModel: null,
-        columnState: null,
-        page: 1,
-        pageSize: 500,
-        selectedRows: [],
-        visibleColumns,
-        pinColumns: [],
-        uiState: {
-          conditionVisible: false,
-          fieldColumnVisible: false,
-          pinColumnVisible: false,
-          quickKeyword: '',
-          selectedField: '',
-          selectedOperator: 'contains',
-          selectedValue: ''
-        },
-        timestamp: Date.now()
-      });
+      cache.value.set(key, createDefaultCacheItem({ visibleColumns }));
     }
   }
 
@@ -359,29 +264,7 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       existing.pinColumns = pinColumns;
       existing.timestamp = Date.now();
     } else {
-      cache.value.set(key, {
-        pageMeta: null,
-        serverRows: [],
-        total: 0,
-        isDataLoaded: false,
-        filterModel: null,
-        columnState: null,
-        page: 1,
-        pageSize: 500,
-        selectedRows: [],
-        visibleColumns: [],
-        pinColumns,
-        uiState: {
-          conditionVisible: false,
-          fieldColumnVisible: false,
-          pinColumnVisible: false,
-          quickKeyword: '',
-          selectedField: '',
-          selectedOperator: 'contains',
-          selectedValue: ''
-        },
-        timestamp: Date.now()
-      });
+      cache.value.set(key, createDefaultCacheItem({ pinColumns }));
     }
   }
 
@@ -402,30 +285,21 @@ export const useWorkbenchStore = defineStore('workbench', () => {
       existing.uiState = { ...existing.uiState, ...uiState };
       existing.timestamp = Date.now();
     } else {
-      cache.value.set(key, {
-        pageMeta: null,
-        serverRows: [],
-        total: 0,
-        isDataLoaded: false,
-        filterModel: null,
-        columnState: null,
-        page: 1,
-        pageSize: 500,
-        selectedRows: [],
-        visibleColumns: [],
-        pinColumns: [],
-        uiState: {
-          conditionVisible: false,
-          fieldColumnVisible: false,
-          pinColumnVisible: false,
-          quickKeyword: '',
-          selectedField: '',
-          selectedOperator: 'contains',
-          selectedValue: '',
-          ...uiState
-        },
-        timestamp: Date.now()
-      });
+      cache.value.set(
+        key,
+        createDefaultCacheItem({
+          uiState: {
+            conditionVisible: false,
+            fieldColumnVisible: false,
+            pinColumnVisible: false,
+            quickKeyword: '',
+            selectedField: '',
+            selectedOperator: 'contains',
+            selectedValue: '',
+            ...uiState
+          }
+        })
+      );
     }
   }
 
