@@ -275,6 +275,134 @@ class MetadataCache
     }
 
     /**
+     * 获取用户完整授权信息（含角色组合并，对齐 ContextService.loadUserAuthorization 的 SQL）
+     *
+     * 与 getUserInfo 的差异：
+     * - LEFT JOIN def_role_group 合并角色编码（t1+t2 CASE WHEN 三重逻辑）
+     * - 包含赋权字段：属地赋权、部门编码赋权、部门全称赋权、工号限权
+     * - CSV 清洗：replace(replace(...,"，",",")," ","")
+     *
+     * 缓存键：user_auth_{md5(workId+region)}，独立于 getUserInfo 的 user_info_* 键。
+     *
+     * @param string $workId  工号
+     * @param string $region  属地（companyId）
+     * @return array|null     单行授权信息，字段对齐 ContextService 原 SQL
+     */
+    public function getUserAuthorization(string $workId, string $region): ?array
+    {
+        $cacheKey = self::CACHE_PREFIX . 'user_auth_' . md5($workId . $region);
+        $cached = $this->cache->get($cacheKey);
+        if (is_array($cached)) {
+            log_message('debug', '[MetadataCache] getUserAuthorization 缓存命中: ' . $workId);
+            return $cached;
+        }
+
+        $sql = sprintf(
+            'select
+                员工编号,姓名,工号,t1.角色组,
+                case
+                    when t1.角色组!="" and t1.角色编码="" and t2.角色组 is not null then t2.角色编码
+                    when t1.角色组!="" and t1.角色编码!="" and t2.角色组 is not null then concat(t2.角色编码,",",t1.角色编码)
+                    else t1.角色编码
+                end as 角色编码,
+                属地赋权,部门编码赋权,部门全称赋权,
+                工号限权,调试赋权,维护赋权,
+                员工属地,员工部门编码,员工部门全称
+            from
+            (
+                select
+                    员工编号,姓名,工号,
+                    角色组,replace(replace(角色编码,"，",",")," ","") as 角色编码,
+                    replace(replace(属地赋权,"，",",")," ","") as 属地赋权,
+                    replace(replace(部门编码赋权,"，",",")," ","") as 部门编码赋权,
+                    replace(replace(部门全称赋权,"，",",")," ","") as 部门全称赋权,
+                    工号限权,调试赋权,维护赋权,
+                    员工属地,员工部门编码,员工部门全称
+                from def_user
+                where 有效标识="1" and 员工属地=%s and 工号=%s
+                group by 员工属地,工号
+            ) as t1
+            left join
+            (
+                select 角色组,replace(replace(角色编码,"，",",")," ","") as 角色编码
+                from def_role_group
+                where 有效标识="1"
+            ) as t2 on t1.角色组=t2.角色组',
+            $this->model->quote($region),
+            $this->model->quote($workId)
+        );
+
+        $result = $this->model->select($sql);
+        if ($result === false) {
+            return null;
+        }
+
+        $row = $result->getRowArray();
+        if ($row !== null) {
+            $this->cache->save($cacheKey, $row, self::TTL_DEF_USER);
+            $this->addToIndex('def_user', $cacheKey);
+            log_message('debug', '[MetadataCache] getUserAuthorization 缓存写入: ' . $workId);
+        }
+
+        return $row;
+    }
+
+    /**
+     * 通过 def_function 关联获取 def_query_config 配置（对齐 AuthorizationService.loadQueryConfig 的 SQL）
+     *
+     * 与 getQueryConfig 的差异：
+     * - 查询条件：查询模块 in (select 模块名称 from def_function where 功能编码=X)
+     *   原因：def_query_config 的 功能编码 字段可能为空或不匹配，需通过 def_function 中转
+     * - 字段范围：21 个明确字段（非 select *）
+     *
+     * 缓存键：query_config_by_fn_{md5(functionCode)}，独立于 getQueryConfig 的 query_config_* 键。
+     *
+     * @param string $functionCode 功能编码
+     * @return array|null 单行配置（原始字段，未做 $角色 替换）
+     */
+    public function getQueryConfigByFunction(string $functionCode): ?array
+    {
+        $cacheKey = self::CACHE_PREFIX . 'query_config_by_fn_' . md5($functionCode);
+        $cached = $this->cache->get($cacheKey);
+        if (is_array($cached)) {
+            log_message('debug', '[MetadataCache] getQueryConfigByFunction 缓存命中: ' . $functionCode);
+            return $cached;
+        }
+
+        $sql = sprintf(
+            'select
+                查询模块,模块类型,字段模块,钻取模块,
+                查询表名,数据表名,数据模式,
+                查询条件,汇总条件,排序条件,初始条数,
+                新增前处理模块,新增后处理模块,
+                更新前处理模块,更新后处理模块,
+                数据整理模块,备注模块,导入模块,图形模块,表样式
+            from def_query_config
+            where 查询模块 in
+                (
+                    select 模块名称
+                    from def_function
+                    where 有效标识="1" and 功能编码=%s
+                )',
+            $this->model->quote($functionCode)
+        );
+
+        $result = $this->model->select($sql);
+        if ($result === false) {
+            return null;
+        }
+
+        $row = $result->getRowArray();
+        if ($row !== null) {
+            $this->cache->save($cacheKey, $row, self::TTL_DEF_QUERY_CONFIG);
+            $this->addToIndex('def_query_config', $cacheKey);
+            log_message('debug', '[MetadataCache] getQueryConfigByFunction 缓存写入: ' . $functionCode);
+        }
+
+        return $row;
+    }
+
+    /**
      * 手动清除指定表的缓存（触发事件通知）
      *
      * 优先通过反向索引精准删除该表对应的所有 cacheKey；

@@ -4,14 +4,17 @@ namespace App\Libraries;
 
 use App\Models\Mcommon;
 use App\Libraries\SessionUserContext;
+use App\Libraries\MetadataCache;
 
 class AuthorizationService
 {
     private Mcommon $model;
+    private MetadataCache $metadataCache;
 
     public function __construct()
     {
         $this->model = new Mcommon();
+        $this->metadataCache = new MetadataCache();
     }
 
     public function normalize(string $value): string
@@ -327,32 +330,12 @@ class AuthorizationService
     public function loadQueryConfig(string $functionCode, string $userRole, ?\Closure $logger = null): array
     {
         if ($logger !== null) {
-            $logger('[loadQueryConfig] 开始执行 SQL 查询, functionCode=' . $functionCode, 'debug');
+            $logger('[loadQueryConfig] 开始加载查询配置, functionCode=' . $functionCode, 'debug');
         }
 
-        $sql = sprintf(
-            'select
-                查询模块,模块类型,字段模块,钻取模块,
-                查询表名,数据表名,数据模式,
-                查询条件,汇总条件,排序条件,初始条数,
-                新增前处理模块,新增后处理模块,
-                更新前处理模块,更新后处理模块,
-                数据整理模块,备注模块,导入模块,图形模块,表样式
-            from def_query_config
-            where 查询模块 in
-                (
-                    select 模块名称
-                    from def_function
-                    where 有效标识="1" and 功能编码=%s
-                )',
-            $this->model->quote($functionCode)
-        );
-
-        $result = $this->model->select($sql);
-        if ($result === false) {
-            return [];
-        }
-        $row = $result->getRowArray();
+        // 通过 MetadataCache 获取配置（命中缓存时跳过 SQL），
+        // SQL 逻辑与原实现一致：通过 def_function 关联查询 def_query_config
+        $row = $this->metadataCache->getQueryConfigByFunction($functionCode);
         if (!$row) {
             return [];
         }

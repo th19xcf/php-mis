@@ -7,6 +7,7 @@ use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
 use App\Libraries\ContextCacheService;
+use App\Libraries\MetadataCache;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 use Config\Services;
@@ -27,6 +28,7 @@ class ContextService
     private AuthorizationService $authorizationService;
     private SessionUserContext $userContext;
     private ContextCacheService $cacheService;
+    private MetadataCache $metadataCache;
 
     public function __construct()
     {
@@ -34,6 +36,7 @@ class ContextService
         $this->authorizationService = new AuthorizationService();
         $this->userContext = new SessionUserContext();
         $this->cacheService = new ContextCacheService();
+        $this->metadataCache = new MetadataCache();
     }
 
     /**
@@ -246,46 +249,14 @@ class ContextService
 
     /**
      * 加载用户授权信息
+     *
+     * 通过 MetadataCache::getUserAuthorization 获取用户完整授权信息（含角色组合并），
+     * 命中缓存时跳过 SQL，避免重复查询 def_user/def_role_group。
      */
     private function loadUserAuthorization(string $companyId, string $userWorkId, bool $debugEnabled): array
     {
-        log_message('debug', '[loadUserAuthorization] 开始执行 SQL 查询');
-        $sql = sprintf(
-            'select
-                员工编号,姓名,工号,t1.角色组,
-                case
-                    when t1.角色组!="" and t1.角色编码="" and t2.角色组 is not null then t2.角色编码
-                    when t1.角色组!="" and t1.角色编码!="" and t2.角色组 is not null then concat(t2.角色编码,",",t1.角色编码)
-                    else t1.角色编码
-                end as 角色编码,
-                属地赋权,部门编码赋权,部门全称赋权,
-                工号限权,调试赋权,维护赋权,
-                员工属地,员工部门编码,员工部门全称
-            from
-            (
-                select
-                    员工编号,姓名,工号,
-                    角色组,replace(replace(角色编码,"，",",")," ","") as 角色编码,
-                    replace(replace(属地赋权,"，",",")," ","") as 属地赋权,
-                    replace(replace(部门编码赋权,"，",",")," ","") as 部门编码赋权,
-                    replace(replace(部门全称赋权,"，",",")," ","") as 部门全称赋权,
-                    工号限权,调试赋权,维护赋权,
-                    员工属地,员工部门编码,员工部门全称
-                from def_user
-                where 有效标识="1" and 员工属地=%s and 工号=%s
-                group by 员工属地,工号
-            ) as t1
-            left join
-            (
-                select 角色组,replace(replace(角色编码,"，",",")," ","") as 角色编码
-                from def_role_group
-                where 有效标识="1"
-            ) as t2 on t1.角色组=t2.角色组',
-            $this->model->quote($companyId),
-            $this->model->quote($userWorkId)
-        );
-
-        $row = $this->model->select($sql)->getRowArray();
+        log_message('debug', '[loadUserAuthorization] 开始加载用户授权信息');
+        $row = $this->metadataCache->getUserAuthorization($userWorkId, $companyId);
         if (!$row) {
             throw new AuthException('用户权限信息不存在');
         }
