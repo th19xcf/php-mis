@@ -63,7 +63,13 @@ class BatchEditService
                         implode(', ', $updates),
                         $where
                     );
-                    $this->model->sql_log('批量修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`,值=`%s`', $dataTable, $primaryKey, (string) $keyVal));
+                    $this->model->sql_log('批量修改[0]', $functionCode, [
+                        'table' => $dataTable,
+                        'pk' => $primaryKey,
+                        'pk_values' => [$keyVal],
+                        'fields' => $formData,
+                        'note' => '直接UPDATE',
+                    ]);
                     $num += $this->model->exec($sql);
                 }
                 return $num;
@@ -91,7 +97,12 @@ class BatchEditService
                         date('Y-m-d H:i:s'),
                         $where
                     );
-                    $this->model->sql_log('批量修改[1-旧]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
+                    $this->model->sql_log('批量修改[1-旧]', $functionCode, [
+                        'table' => $dataTable,
+                        'pk' => $primaryKey,
+                        'pk_values' => [$keyVal],
+                        'note' => '流水旧记录置无效',
+                    ]);
                     $this->model->exec($sqlUpdateOld);
 
                     $fields = [];
@@ -126,7 +137,13 @@ class BatchEditService
                         implode(', ', $fields),
                         implode(', ', $values)
                     );
-                    $this->model->sql_log('批量修改[1-新]', $functionCode, sprintf('表名=`%s`', $dataTable));
+                    $this->model->sql_log('批量修改[1-新]', $functionCode, [
+                        'table' => $dataTable,
+                        'pk' => $primaryKey,
+                        'pk_values' => [$keyVal],
+                        'fields' => $formData,
+                        'note' => '流水插新版本',
+                    ]);
                     $num += $this->model->exec($sqlInsert);
                 }
                 return $num;
@@ -228,7 +245,17 @@ class BatchEditService
                         }
 
                         $sql = sprintf('UPDATE %s SET %s WHERE %s', $dataTable, implode(', ', $updates), $where);
-                        $this->model->sql_log('表级修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
+                        $this->model->sql_log('表级修改[0]', $functionCode, [
+                            'table' => $dataTable,
+                            'pk' => $primaryKey,
+                            'pk_values' => [$row[$primaryKey] ?? null],
+                            'fields' => array_keys(array_filter(
+                                $row,
+                                fn($k) => $k !== $primaryKey && !in_array($k, $skipFields, true),
+                                ARRAY_FILTER_USE_KEY
+                            )),
+                            'note' => '单条UPDATE',
+                        ]);
                         $num += $this->model->exec($sql);
                     } else {
                         $caseStatements = [];
@@ -255,7 +282,14 @@ class BatchEditService
                             $whereIn
                         );
 
-                        $this->model->sql_log('表级修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`,批量数=%d', $dataTable, $primaryKey, count($groupRows)));
+                        $this->model->sql_log('表级修改[0]', $functionCode, [
+                            'table' => $dataTable,
+                            'pk' => $primaryKey,
+                            'pk_values' => array_map(fn($r) => $r[$primaryKey] ?? null, $groupRows),
+                            'fields' => $updateFields,
+                            'note' => 'CASE WHEN批量UPDATE',
+                            'batch_count' => count($groupRows),
+                        ]);
                         $num += $this->model->exec($sql);
                     }
                 }
@@ -298,7 +332,13 @@ class BatchEditService
                     date('Y-m-d H:i:s'),
                     $whereIn
                 );
-                $this->model->sql_log('表级修改[1-旧]', $functionCode, sprintf('表名=`%s`,批量数=%d', $dataTable, count($validRows)));
+                $this->model->sql_log('表级修改[1-旧]', $functionCode, [
+                    'table' => $dataTable,
+                    'pk' => $primaryKey,
+                    'pk_values' => array_map(fn($r) => $r[$primaryKey] ?? null, $validRows),
+                    'note' => '流水旧记录批量置无效',
+                    'batch_count' => count($validRows),
+                ]);
                 $this->model->exec($sqlUpdateOld);
 
                 $insertValuesList = [];
@@ -360,7 +400,13 @@ class BatchEditService
                         implode(', ', $allFields),
                         implode(', ', $insertValuesList)
                     );
-                    $this->model->sql_log('表级修改[1-新]', $functionCode, sprintf('表名=`%s`,批量数=%d', $dataTable, count($insertValuesList)));
+                    $this->model->sql_log('表级修改[1-新]', $functionCode, [
+                        'table' => $dataTable,
+                        'pk' => $primaryKey,
+                        'pk_values' => array_map(fn($r) => $r[$primaryKey] ?? null, $validRows),
+                        'note' => '流水批量插新',
+                        'batch_count' => count($insertValuesList),
+                    ]);
                     $num += $this->model->exec($sqlInsert);
                 }
 

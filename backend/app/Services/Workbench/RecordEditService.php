@@ -210,7 +210,13 @@ class RecordEditService
                     implode(', ', $updates),
                     $where
                 );
-                $this->model->sql_log('修改[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`,值=`%s`', $dataTable, $primaryKey, $keyStr));
+                $this->model->sql_log('修改[0]', $functionCode, [
+                    'table' => $dataTable,
+                    'pk' => $primaryKey,
+                    'pk_values' => $keyValues,
+                    'fields' => $formData,
+                    'note' => '直接UPDATE',
+                ]);
                 return $this->model->exec($sql);
 
             case '1':
@@ -233,7 +239,12 @@ class RecordEditService
                     date('Y-m-d H:i:s'),
                     $where
                 );
-                $this->model->sql_log('修改[1-旧]', $functionCode, sprintf('表名=`%s`,主键=`%s`', $dataTable, $primaryKey));
+                $this->model->sql_log('修改[1-旧]', $functionCode, [
+                    'table' => $dataTable,
+                    'pk' => $primaryKey,
+                    'pk_values' => $keyValues,
+                    'note' => '流水旧记录置无效',
+                ]);
                 $this->model->exec($sqlUpdateOld);
 
                 $fields = [];
@@ -268,7 +279,13 @@ class RecordEditService
                     implode(', ', $fields),
                     implode(', ', $values)
                 );
-                $this->model->sql_log('修改[1-新]', $functionCode, sprintf('表名=`%s`', $dataTable));
+                $this->model->sql_log('修改[1-新]', $functionCode, [
+                    'table' => $dataTable,
+                    'pk' => $primaryKey,
+                    'pk_values' => $keyValues,
+                    'fields' => $formData,
+                    'note' => '流水插新版本',
+                ]);
                 return $this->model->exec($sqlInsert);
 
             default:
@@ -301,7 +318,12 @@ class RecordEditService
         switch ($dataModel) {
             case '0':
                 $sql = sprintf('DELETE FROM %s WHERE %s', $dataTable, $where);
-                $this->model->sql_log('删除[0]', $functionCode, sprintf('表名=`%s`,主键=`%s`,值=`%s`', $dataTable, $primaryKey, $keyStr));
+                $this->model->sql_log('删除[0]', $functionCode, [
+                    'table' => $dataTable,
+                    'pk' => $primaryKey,
+                    'pk_values' => $keyValues,
+                    'note' => '硬删除',
+                ]);
                 return $this->model->exec($sql);
 
             case '1':
@@ -314,7 +336,12 @@ class RecordEditService
                     date('Y-m-d H:i:s'),
                     $where
                 );
-                $this->model->sql_log('删除[1]', $functionCode, sprintf('表名=`%s`,主键=`%s`,值=`%s`', $dataTable, $primaryKey, $keyStr));
+                $this->model->sql_log('删除[1]', $functionCode, [
+                    'table' => $dataTable,
+                    'pk' => $primaryKey,
+                    'pk_values' => $keyValues,
+                    'note' => '流水软删除',
+                ]);
                 return $this->model->exec($sql);
 
             default:

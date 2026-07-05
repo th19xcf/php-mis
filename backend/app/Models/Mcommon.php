@@ -17,6 +17,12 @@ class Mcommon extends Model
     {
         if ($this->dbInstance === null) {
             $this->dbInstance = db_connect('btdc');
+            // 设置查询超时（30秒），防止远端MySQL慢查询卡死PHP单线程服务器
+            try {
+                $this->dbInstance->query('SET SESSION max_execution_time = 30000');
+            } catch (\Throwable $e) {
+                log_message('warning', '[Mcommon] 设置 max_execution_time 失败: ' . $e->getMessage());
+            }
         }
         return $this->dbInstance;
     }
@@ -92,7 +98,20 @@ class Mcommon extends Model
         return $db->affectedRows();
     }
 
-    public function sql_log(string $option, string $func_id = '', string $info = ''): int
+    /**
+     * 写入业务审计日志
+     *
+     * $info 支持两种形式:
+     *  - string: 兼容旧调用,原样写入(适用于登录/登出等简单场景)
+     *  - array:  结构化数据,自动 JSON 编码(保留中文),便于后续查询/统计
+     *            推荐结构: ['table'=>..., 'pk'=>..., 'pk_values'=>[...], 'fields'=>[...]]
+     *
+     * @param string       $option  动作描述(如 "修改[0]"、"删除[1]")
+     * @param string       $func_id 功能编码
+     * @param array|string $info    附加信息
+     * @return int 影响行数(log_switch 关闭时返回 0)
+     */
+    public function sql_log(string $option, string $func_id = '', array|string $info = ''): int
     {
         $userContext = new SessionUserContext();
         $user = $userContext->getSessionUser();
@@ -104,6 +123,11 @@ class Mcommon extends Model
             return 0;
         }
 
+        // 结构化信息走 JSON 编码(保留中文/Unicode,不转义斜杠);字符串信息保持原样
+        $infoEncoded = is_array($info)
+            ? json_encode($info, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            : (string) $info;
+
         $db = $this->getDb();
 
         $insert = sprintf(
@@ -112,7 +136,7 @@ class Mcommon extends Model
             $db->escape($user_workid),
             $db->escape($option),
             $db->escape($func_id),
-            $db->escape($info)
+            $db->escape($infoEncoded)
         );
 
         $db->query($insert);
