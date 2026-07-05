@@ -2,6 +2,7 @@ import { onActivated, onDeactivated, onUnmounted } from 'vue';
 import type { Ref } from 'vue';
 import type { GridApi } from 'ag-grid-community';
 import { useWorkbenchStore } from '@/store/modules/workbench';
+import type { WorkbenchCacheItem } from '@/store/modules/workbench';
 
 type ConditionOperator = 'contains' | 'equals' | 'startsWith';
 
@@ -10,28 +11,40 @@ interface WorkbenchMetaLike {
   params?: string;
 }
 
+/**
+ * 封装版 WorkbenchStore 契约
+ *
+ * 与原始 Pinia store（useWorkbenchStore）的差异：
+ * - 方法参数为 2 个（functionCode, params），scopeKey 已由 useWorkbenchGridState
+ *   在内部通过 options.getCacheScopeKey() 自动注入，调用方无需关心
+ * - 类型派生自 WorkbenchCacheItem，与 store 数据结构自动同步
+ *
+ * 该 interface 用于约束 useWorkbenchGridState 内部构造的 workbenchStore 对象，
+ * 并被 use-workbench-data-loader / grid-ready / table-edit / state-reset 等
+ * hook 作为入参类型。
+ */
 export interface WorkbenchStore {
-  getCache: (functionCode: string, params: string) => any;
-  setCache: (functionCode: string, params: string, data: Partial<any>) => void;
+  getCache: (functionCode: string, params: string) => WorkbenchCacheItem | undefined;
+  setCache: (functionCode: string, params: string, data: Partial<WorkbenchCacheItem>) => void;
   clearCache: (functionCode: string, params: string) => void;
-  getFilterModel: (functionCode: string, params: string) => any;
-  setFilterModel: (functionCode: string, params: string, filterModel: any) => void;
+  getFilterModel: (functionCode: string, params: string) => WorkbenchCacheItem['filterModel'];
+  setFilterModel: (functionCode: string, params: string, filterModel: WorkbenchCacheItem['filterModel']) => void;
   clearFilterModel: (functionCode: string, params: string) => void;
-  getColumnState: (functionCode: string, params: string) => any;
-  setColumnState: (functionCode: string, params: string, columnState: any) => void;
+  getColumnState: (functionCode: string, params: string) => WorkbenchCacheItem['columnState'];
+  setColumnState: (functionCode: string, params: string, columnState: WorkbenchCacheItem['columnState']) => void;
   clearColumnState: (functionCode: string, params: string) => void;
-  getPage: (functionCode: string, params: string) => number;
-  setPage: (functionCode: string, params: string, currentPage: number) => void;
-  getPageSize: (functionCode: string, params: string) => number;
-  setPageSize: (functionCode: string, params: string, currentPageSize: number) => void;
-  getSelectedRows: (functionCode: string, params: string) => any[];
-  setSelectedRows: (functionCode: string, params: string, selectedRows: any[]) => void;
-  getVisibleColumns: (functionCode: string, params: string) => string[];
-  setVisibleColumns: (functionCode: string, params: string, visibleColumns: string[]) => void;
-  getPinColumns: (functionCode: string, params: string) => string[];
-  setPinColumns: (functionCode: string, params: string, pinColumns: string[]) => void;
-  getUIState: (functionCode: string, params: string) => any;
-  setUIState: (functionCode: string, params: string, uiState: any) => void;
+  getPage: (functionCode: string, params: string) => WorkbenchCacheItem['page'];
+  setPage: (functionCode: string, params: string, currentPage: WorkbenchCacheItem['page']) => void;
+  getPageSize: (functionCode: string, params: string) => WorkbenchCacheItem['pageSize'];
+  setPageSize: (functionCode: string, params: string, currentPageSize: WorkbenchCacheItem['pageSize']) => void;
+  getSelectedRows: (functionCode: string, params: string) => WorkbenchCacheItem['selectedRows'];
+  setSelectedRows: (functionCode: string, params: string, selectedRows: WorkbenchCacheItem['selectedRows']) => void;
+  getVisibleColumns: (functionCode: string, params: string) => WorkbenchCacheItem['visibleColumns'];
+  setVisibleColumns: (functionCode: string, params: string, visibleColumns: WorkbenchCacheItem['visibleColumns']) => void;
+  getPinColumns: (functionCode: string, params: string) => WorkbenchCacheItem['pinColumns'];
+  setPinColumns: (functionCode: string, params: string, pinColumns: WorkbenchCacheItem['pinColumns']) => void;
+  getUIState: (functionCode: string, params: string) => WorkbenchCacheItem['uiState'] | null;
+  setUIState: (functionCode: string, params: string, uiState: Partial<WorkbenchCacheItem['uiState']>) => void;
 }
 
 interface WorkbenchGridStateOptions {
@@ -71,49 +84,49 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     return String(options.getMeta().params || '').trim();
   }
 
-  const workbenchStore = {
+  const workbenchStore: WorkbenchStore = {
     getCache: (functionCode: string, params: string) =>
       rawWorkbenchStore.getCache(functionCode, params, options.getCacheScopeKey()),
-    setCache: (functionCode: string, params: string, data: Partial<any>) =>
+    setCache: (functionCode: string, params: string, data) =>
       rawWorkbenchStore.setCache(functionCode, params, data, options.getCacheScopeKey()),
     clearCache: (functionCode: string, params: string) =>
       rawWorkbenchStore.clearCache(functionCode, params, options.getCacheScopeKey()),
     getFilterModel: (functionCode: string, params: string) =>
       rawWorkbenchStore.getFilterModel(functionCode, params, options.getCacheScopeKey()),
-    setFilterModel: (functionCode: string, params: string, filterModel: any) =>
+    setFilterModel: (functionCode: string, params: string, filterModel) =>
       rawWorkbenchStore.setFilterModel(functionCode, params, filterModel, options.getCacheScopeKey()),
     clearFilterModel: (functionCode: string, params: string) =>
       rawWorkbenchStore.clearFilterModel(functionCode, params, options.getCacheScopeKey()),
     getColumnState: (functionCode: string, params: string) =>
       rawWorkbenchStore.getColumnState(functionCode, params, options.getCacheScopeKey()),
-    setColumnState: (functionCode: string, params: string, columnState: any) =>
+    setColumnState: (functionCode: string, params: string, columnState) =>
       rawWorkbenchStore.setColumnState(functionCode, params, columnState, options.getCacheScopeKey()),
     clearColumnState: (functionCode: string, params: string) =>
       rawWorkbenchStore.clearColumnState(functionCode, params, options.getCacheScopeKey()),
     getPage: (functionCode: string, params: string) =>
       rawWorkbenchStore.getPage(functionCode, params, options.getCacheScopeKey()),
-    setPage: (functionCode: string, params: string, currentPage: number) =>
+    setPage: (functionCode: string, params: string, currentPage) =>
       rawWorkbenchStore.setPage(functionCode, params, currentPage, options.getCacheScopeKey()),
     getPageSize: (functionCode: string, params: string) =>
       rawWorkbenchStore.getPageSize(functionCode, params, options.getCacheScopeKey()),
-    setPageSize: (functionCode: string, params: string, currentPageSize: number) =>
+    setPageSize: (functionCode: string, params: string, currentPageSize) =>
       rawWorkbenchStore.setPageSize(functionCode, params, currentPageSize, options.getCacheScopeKey()),
     getSelectedRows: (functionCode: string, params: string) =>
       rawWorkbenchStore.getSelectedRows(functionCode, params, options.getCacheScopeKey()),
-    setSelectedRows: (functionCode: string, params: string, selectedRows: any[]) =>
+    setSelectedRows: (functionCode: string, params: string, selectedRows) =>
       rawWorkbenchStore.setSelectedRows(functionCode, params, selectedRows, options.getCacheScopeKey()),
     getVisibleColumns: (functionCode: string, params: string) =>
       rawWorkbenchStore.getVisibleColumns(functionCode, params, options.getCacheScopeKey()),
-    setVisibleColumns: (functionCode: string, params: string, visibleColumns: string[]) =>
+    setVisibleColumns: (functionCode: string, params: string, visibleColumns) =>
       rawWorkbenchStore.setVisibleColumns(functionCode, params, visibleColumns, options.getCacheScopeKey()),
     getPinColumns: (functionCode: string, params: string) =>
       rawWorkbenchStore.getPinColumns(functionCode, params, options.getCacheScopeKey()),
-    setPinColumns: (functionCode: string, params: string, pinColumns: string[]) => {
+    setPinColumns: (functionCode: string, params: string, pinColumns) => {
       rawWorkbenchStore.setPinColumns(functionCode, params, pinColumns, options.getCacheScopeKey());
     },
     getUIState: (functionCode: string, params: string) =>
       rawWorkbenchStore.getUIState(functionCode, params, options.getCacheScopeKey()),
-    setUIState: (functionCode: string, params: string, uiState: any) =>
+    setUIState: (functionCode: string, params: string, uiState) =>
       rawWorkbenchStore.setUIState(functionCode, params, uiState, options.getCacheScopeKey())
   };
 
