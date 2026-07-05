@@ -17,7 +17,8 @@ use Throwable;
  * 通过 Config\TokenBlacklist::$driver 选择驱动。
  *
  * 兼容性：
- *   - 公共方法签名 100% 保持不变（addToBlacklist/isBlacklisted/blacklistAllUserTokens/cleanup）
+ *   - 公共方法签名向后兼容（addToBlacklist/blacklistAllUserTokens/cleanup 不变）
+ *   - isBlacklisted 增加可选第三参数 jti，调用方可传入已解码的 jti 避免重复解码
  *   - 文件驱动生成的 JSON 格式保持兼容
  *   - 切换驱动无需修改调用方代码
  */
@@ -77,11 +78,17 @@ class TokenBlacklistService
     /**
      * 检查 Token 是否在黑名单中
      *
+     * @param string      $token Token 字符串（仅当未传入 $jti 时用于解析 JTI）
+     * @param string      $type  Token 类型 (access/refresh)
+     * @param string|null $jti   已解码的 JTI，传入则跳过内部 decode，避免重复解码
      * @return bool true=已失效需拒绝；false=有效可放行
      */
-    public function isBlacklisted(string $token, string $type = 'access'): bool
+    public function isBlacklisted(string $token, string $type = 'access', ?string $jti = null): bool
     {
-        $jti = $this->jwtTokenService->extractJti($token);
+        // 优化：调用方（如 JwtAuthFilter）已 decode 过 token，可直接传入 jti 避免二次解码
+        if ($jti === null) {
+            $jti = $this->jwtTokenService->extractJti($token);
+        }
         if (!$jti) {
             // 无法解析 JTI 的 token 视为失效（fail-closed）
             return true;

@@ -14,9 +14,10 @@ class JwtAuthFilter implements FilterInterface
 {
     public function before(RequestInterface $request, $arguments = null)
     {
-        $jwtTokenService = new JwtTokenService();
-        $tokenBlacklistService = new TokenBlacklistService();
-        
+        // 优化：通过 Services 共享实例避免每请求重复构造（file 驱动触发目录检查，redis 驱动触发 Predis 连接）
+        $jwtTokenService = service('jwtTokenService');
+        $tokenBlacklistService = service('tokenBlacklistService');
+
         $token = $jwtTokenService->extractBearerToken($request->getHeaderLine('Authorization'));
 
         if ($token === null) {
@@ -28,10 +29,11 @@ class JwtAuthFilter implements FilterInterface
 
         try {
             $decoded = $jwtTokenService->decode($token);
-            
+
             $tokenType = $decoded->type ?? 'access';
-            
-            if ($tokenBlacklistService->isBlacklisted($token, $tokenType)) {
+
+            // 优化：传入已解码的 jti，避免 isBlacklisted 内部二次 decode（原实现每请求解码 2 次）
+            if ($tokenBlacklistService->isBlacklisted($token, $tokenType, $decoded->jti ?? null)) {
                 return service('response')->setJSON([
                     'code' => ApiCode::AUTH_TOKEN_EXPIRED,
                     'msg' => 'token已失效，请重新登录'
