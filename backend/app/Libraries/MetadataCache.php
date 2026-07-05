@@ -9,11 +9,28 @@ use Config\Services;
 class MetadataCache
 {
     private const CACHE_PREFIX = 'metadata_';
+    private const INDEX_PREFIX = 'metadata_index_';
 
     private const TTL_DEF_QUERY_COLUMN = 3600;
     private const TTL_DEF_CHART_DRILL_CONFIG = 3600;
     private const TTL_DEF_QUERY_CONFIG = 7200;
     private const TTL_DEF_USER = 1800;
+    // 索引 TTL 远大于数据 TTL，避免索引过早失效导致清理时漏删
+    // 索引中残留已过期的数据键不影响正确性（delete 时 cache->get 返回 false）
+    private const INDEX_TTL_SECONDS = 86400;
+
+    /**
+     * 表名 → 该表对应的 cacheKey 前缀列表
+     *
+     * 用于 invalidateTable 时反查需要清理的索引归属。
+     * 注意：popup_column_map 是无 hash 的固定键，单独列出。
+     */
+    private const TABLE_KEY_PREFIXES = [
+        'def_query_column'      => ['metadata_popup_column_map', 'metadata_popup_config_'],
+        'def_chart_drill_config' => ['metadata_chart_drill_'],
+        'def_query_config'      => ['metadata_query_config_'],
+        'def_user'              => ['metadata_user_info_'],
+    ];
 
     private CacheInterface $cache;
     private Mcommon $model;
@@ -95,6 +112,7 @@ class MetadataCache
         }
 
         $this->cache->save($cacheKey, $map, self::TTL_DEF_QUERY_COLUMN);
+        $this->addToIndex('def_query_column', $cacheKey);
         log_message('info', '[MetadataCache] getPopupColumnMap 缓存写入, ' . count($map) . ' 条');
 
         return $map;
@@ -141,6 +159,7 @@ class MetadataCache
         ];
 
         $this->cache->save($cacheKey, $config, self::TTL_DEF_QUERY_COLUMN);
+        $this->addToIndex('def_query_column', $cacheKey);
         log_message('debug', '[MetadataCache] getPopupConfigByObject 缓存写入: ' . $objectName);
 
         return $config;
@@ -175,6 +194,7 @@ class MetadataCache
 
         $config = $result->getResultArray();
         $this->cache->save($cacheKey, $config, self::TTL_DEF_CHART_DRILL_CONFIG);
+        $this->addToIndex('def_chart_drill_config', $cacheKey);
         log_message('debug', '[MetadataCache] getChartDrillConfig 缓存写入: ' . $drillModule . ', ' . count($config) . ' 条');
 
         return $config;
@@ -208,6 +228,7 @@ class MetadataCache
         $config = $result->getRowArray();
         if ($config !== null) {
             $this->cache->save($cacheKey, $config, self::TTL_DEF_QUERY_CONFIG);
+            $this->addToIndex('def_query_config', $cacheKey);
             log_message('debug', '[MetadataCache] getQueryConfig 缓存写入: ' . $functionCode);
         }
 
@@ -246,6 +267,7 @@ class MetadataCache
         $user = $result->getRowArray();
         if ($user !== null) {
             $this->cache->save($cacheKey, $user, self::TTL_DEF_USER);
+            $this->addToIndex('def_user', $cacheKey);
             log_message('debug', '[MetadataCache] getUserInfo 缓存写入: ' . $workId);
         }
 
@@ -255,49 +277,47 @@ class MetadataCache
     /**
      * 手动清除指定表的缓存（触发事件通知）
      *
+     * 优先通过反向索引精准删除该表对应的所有 cacheKey；
+     * 索引缺失时尝试 deleteMatching（仅 Redis/Memcached 支持）；
+     * FileHandler 不支持 deleteMatching 时仅记录 warning，不再退化为 deleteAll 全清，
+     * 避免单表变更引发全站冷启动（对齐 ContextCacheService 的设计）。
+     *
      * @param string $tableName 表名（def_query_column, def_chart_drill_config, def_query_config, def_user）
      */
     public function invalidateTable(string $tableName): void
     {
         $tableName = strtolower(trim($tableName));
 
-        switch ($tableName) {
-            case 'def_query_column':
-                $this->cache->delete(self::CACHE_PREFIX . 'popup_column_map');
-                $this->deleteKeysByPattern(self::CACHE_PREFIX . 'popup_config_');
-                log_message('info', '[MetadataCache] def_query_column 缓存已失效');
-                break;
-
-            case 'def_chart_drill_config':
-                $this->deleteKeysByPattern(self::CACHE_PREFIX . 'chart_drill_');
-                log_message('info', '[MetadataCache] def_chart_drill_config 缓存已失效');
-                break;
-
-            case 'def_query_config':
-                $this->deleteKeysByPattern(self::CACHE_PREFIX . 'query_config_');
-                log_message('info', '[MetadataCache] def_query_config 缓存已失效');
-                break;
-
-            case 'def_user':
-                $this->deleteKeysByPattern(self::CACHE_PREFIX . 'user_info_');
-                log_message('info', '[MetadataCache] def_user 缓存已失效');
-                break;
-
-            default:
-                log_message('warning', '[MetadataCache] 无效的表名: ' . $tableName);
-                return;
+        if (!isset(self::TABLE_KEY_PREFIXES[$tableName])) {
+            log_message('warning', '[MetadataCache] 无效的表名: ' . $tableName);
+            return;
         }
+
+        $deletedCount = $this->deleteByTableIndex($tableName);
+
+        // 固定键（popup_column_map 无 hash，不在索引中，需单独删除）
+        if ($tableName === 'def_query_column') {
+            $this->cache->delete(self::CACHE_PREFIX . 'popup_column_map');
+        }
+
+        log_message('info', sprintf(
+            '[MetadataCache] %s 缓存已失效，删除 %d 条',
+            $tableName,
+            $deletedCount
+        ));
 
         $this->triggerInvalidate($tableName);
     }
 
     /**
      * 清除所有元数据缓存（触发事件通知）
+     *
+     * 全量清理场景可接受 clean()：用户主动触发，非单表变更的副作用。
      */
     public function invalidateAll(): void
     {
-        $this->deleteKeysByPattern(self::CACHE_PREFIX);
-        log_message('info', '[MetadataCache] 所有元数据缓存已失效');
+        $this->cache->clean();
+        log_message('info', '[MetadataCache] 所有元数据缓存已失效（全量清理）');
         $this->triggerInvalidate('all');
     }
 
@@ -321,19 +341,70 @@ class MetadataCache
     }
 
     /**
-     * 按模式删除缓存键
+     * 将 cacheKey 登记到对应表的反向索引
+     *
+     * 索引键格式：metadata_index_{tableName}
+     * 索引值为该表下所有 cacheKey 的数组（去重）。
      */
-    private function deleteKeysByPattern(string $pattern): void
+    private function addToIndex(string $tableName, string $cacheKey): void
     {
+        $indexKey = self::INDEX_PREFIX . $tableName;
+        $keys = $this->cache->get($indexKey);
+        $keys = is_array($keys) ? $keys : [];
+
+        if (!in_array($cacheKey, $keys, true)) {
+            $keys[] = $cacheKey;
+            $this->cache->save($indexKey, $keys, self::INDEX_TTL_SECONDS);
+        }
+    }
+
+    /**
+     * 按表索引精准删除该表对应的所有 cacheKey
+     *
+     * 优先走反向索引逐条 delete；
+     * 索引缺失时尝试 deleteMatching（仅 Redis/Memcached 支持）；
+     * FileHandler 不支持 deleteMatching 时仅 warning，不退化为 deleteAll。
+     *
+     * @return int 实际删除的缓存条数（索引命中时统计；索引缺失走 deleteMatching 时返回 0）
+     */
+    private function deleteByTableIndex(string $tableName): int
+    {
+        $indexKey = self::INDEX_PREFIX . $tableName;
+        $keys = $this->cache->get($indexKey);
+
+        if (is_array($keys) && !empty($keys)) {
+            $count = 0;
+            foreach ($keys as $key) {
+                if ($this->cache->delete($key)) {
+                    $count++;
+                }
+            }
+            $this->cache->delete($indexKey);
+            return $count;
+        }
+
+        // 索引缺失兜底：尝试 deleteMatching（仅 Redis/Memcached 有效）
+        $prefixes = self::TABLE_KEY_PREFIXES[$tableName] ?? [];
         try {
             $handler = $this->cache->handler();
             if (method_exists($handler, 'deleteMatching')) {
-                $handler->deleteMatching($pattern . '*');
-            } elseif (method_exists($handler, 'deleteAll')) {
-                $handler->deleteAll();
+                foreach ($prefixes as $prefix) {
+                    $handler->deleteMatching($prefix . '*');
+                }
+                log_message('info', sprintf(
+                    '[MetadataCache] 索引缺失，已通过 deleteMatching 清除: table=%s',
+                    $tableName
+                ));
+            } else {
+                log_message('warning', sprintf(
+                    '[MetadataCache] 索引缺失且驱动不支持 deleteMatching，本次无键可删（避免全清）: table=%s',
+                    $tableName
+                ));
             }
         } catch (\Throwable $e) {
-            log_message('error', '[MetadataCache] deleteKeysByPattern 失败: ' . $e->getMessage());
+            log_message('error', '[MetadataCache] deleteMatching 失败: ' . $e->getMessage());
         }
+
+        return 0;
     }
 }
