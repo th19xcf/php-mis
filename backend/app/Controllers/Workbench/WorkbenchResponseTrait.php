@@ -2,8 +2,6 @@
 
 namespace App\Controllers\Workbench;
 
-use App\Libraries\AuthorizationService;
-
 /**
  * 工作台控制器共享能力
  *
@@ -16,11 +14,8 @@ trait WorkbenchResponseTrait
     /**
      * 加载工作台查询配置（统一委托到 AuthorizationService::loadQueryConfig）。
      *
-     * 注意：不缓存 AuthorizationService 实例于 trait 属性中 —— 因为 Workbench.php
-     * 已声明 private AuthorizationService $authorizationService 属性，trait 再声明
-     * 会因"nullable vs non-nullable"产生 Fatal error。每次调用新建 AuthorizationService
-     * 是安全的：Mcommon 内部通过 getDb() 缓存 db 连接，CI 的 db_connect('btdc') 是
-     * 全局共享，所以多个 AuthorizationService 实例共享同一个 DB 连接。
+     * 通过 BaseApiController::getAuthorizationService() 获取请求内单例，
+     * 避免每次调用新建实例。
      *
      * @param string $functionCode 功能编码
      * @param string $userRole     当前用户角色（用于替换 $角色 变量）
@@ -28,7 +23,7 @@ trait WorkbenchResponseTrait
      */
     protected function loadQueryConfig(string $functionCode, string $userRole): array
     {
-        return (new AuthorizationService())->loadQueryConfig($functionCode, $userRole);
+        return $this->getAuthorizationService()->loadQueryConfig($functionCode, $userRole);
     }
 
     /**

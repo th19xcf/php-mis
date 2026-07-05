@@ -4,7 +4,6 @@ namespace App\Controllers;
 
 use App\Constants\ApiCode;
 use App\Libraries\JwtTokenService;
-use App\Libraries\AuthorizationService;
 use App\Libraries\SessionUserContext;
 use App\Libraries\TokenBlacklistService;
 use App\Models\AuthModel;
@@ -409,7 +408,7 @@ class Auth extends BaseApiController
      */
     private function computeLocationAuthz(string $workId, string $region): string
     {
-        $authorizationService = new AuthorizationService();
+        $authorizationService = $this->getAuthorizationService();
         return $authorizationService->normalize($authorizationService->loadUserAuthField('属地赋权', $workId, $region));
     }
 
@@ -418,7 +417,7 @@ class Auth extends BaseApiController
      */
     private function computeDeptNameAuthz(string $workId, string $region): string
     {
-        $authorizationService = new AuthorizationService();
+        $authorizationService = $this->getAuthorizationService();
         return $authorizationService->normalize($authorizationService->loadUserAuthField('部门全称赋权', $workId, $region));
     }
 
@@ -427,7 +426,7 @@ class Auth extends BaseApiController
      */
     private function computeDeptCodeAuthz(string $workId, string $region): string
     {
-        $authorizationService = new AuthorizationService();
+        $authorizationService = $this->getAuthorizationService();
         return $authorizationService->normalize($authorizationService->loadUserAuthField('部门编码赋权', $workId, $region));
     }
 

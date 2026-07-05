@@ -7,7 +7,6 @@ use App\Controllers\Workbench\WorkbenchResponseTrait;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
-use App\Libraries\AuthorizationService;
 use App\Services\Workbench\ChartService;
 use App\Services\Workbench\DrillService;
 use App\Services\Workbench\EditService;
@@ -30,7 +29,6 @@ class Workbench extends BaseApiController
 {
     use WorkbenchResponseTrait;
 
-    private AuthorizationService $authorizationService;
     private ChartService $chartService;
     private DrillService $drillService;
     private EditService $editService;
@@ -41,7 +39,6 @@ class Workbench extends BaseApiController
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
-        $this->authorizationService = new AuthorizationService();
         $this->chartService = new ChartService();
         $this->drillService = new DrillService();
         $this->editService = new EditService();
