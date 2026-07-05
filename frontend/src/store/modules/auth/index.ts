@@ -9,7 +9,12 @@ import { SetupStoreId } from '@/enum';
 import { $t } from '@/locales';
 import { useRouteStore } from '../route';
 import { useTabStore } from '../tab';
-import { clearAuthStorage, getToken } from './shared';
+import { clearAuthStorage, clearWorkbenchCache, getToken } from './shared';
+
+interface ResetStoreOptions {
+  /** 是否清理业务缓存（globalTabs / lastLoginUserId）。主动退出时传 true，被动登出保持 false */
+  clearBusinessCache?: boolean;
+}
 
 interface PerfStep {
   name: string;
@@ -113,10 +118,18 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
   const isLogin = computed(() => Boolean(token.value));
 
   /** Reset auth store */
-  async function resetStore() {
+  async function resetStore(options?: ResetStoreOptions) {
+    const shouldClearBusinessCache = options?.clearBusinessCache === true;
+
     recordUserId();
 
     clearAuthStorage();
+
+    // 主动退出时清理业务缓存（globalTabs / lastLoginUserId）
+    // 被动登出（token 失效）保留，便于重新登录后恢复现场
+    if (shouldClearBusinessCache) {
+      clearWorkbenchCache();
+    }
 
     token.value = '';
     userInfo.userId = '';
@@ -154,12 +167,10 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
 
     const lastLoginUserId = localStg.get('lastLoginUserId');
 
-    // Clear all tabs if current user is different from previous user
+    // 换号登录：清理业务缓存（globalTabs / lastLoginUserId）+ 清空 Pinia tabs
     if (!lastLoginUserId || lastLoginUserId !== userInfo.userId) {
-      localStg.remove('globalTabs');
+      clearWorkbenchCache();
       tabStore.clearTabs();
-
-      localStg.remove('lastLoginUserId');
       return true;
     }
 

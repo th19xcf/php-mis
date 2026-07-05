@@ -50,7 +50,8 @@ function logout() {
     positiveText: $t('common.confirm'),
     negativeText: $t('common.cancel'),
     onPositiveClick: () => {
-      authStore.resetStore();
+      // 主动退出：清理业务缓存（globalTabs / lastLoginUserId），避免换号场景缓存污染
+      authStore.resetStore({ clearBusinessCache: true });
     }
   });
 }
