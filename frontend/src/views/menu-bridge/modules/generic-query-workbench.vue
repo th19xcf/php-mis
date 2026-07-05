@@ -94,8 +94,14 @@ const isRestoringFilter = ref(false);
 // 防止排序恢复期间 sortChanged 覆盖排序
 const isRestoringColumnState = ref(false);
 
-const functionCode = computed(() => String(props.meta.functionCode || ''));
-const params = computed(() => String(props.meta.params || ''));
+const functionCode = computed(() => String(props.meta.functionCode || '').trim());
+const params = computed(() => String(props.meta.params || '').trim());
+
+// 抽取为 const 函数，避免在各 hook 入参中重复 17 次同一 lambda
+const getFunctionCode = () => functionCode.value;
+const getParams = () => params.value;
+// 图表 / 钻取专用：functionCode 来源是 route，不是 props.meta
+const getRouteFunctionCode = () => String(route.query.functionCode || route.meta?.functionCode || '');
 
 // 先创建需要的状态（用于解决循环依赖）
 const pageMeta = ref<Api.Workbench.PageMeta | null>(null);
@@ -151,8 +157,8 @@ const {
   resetImportPreview
 } = useWorkbenchImport({
   gridApi,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  getParams: () => params.value,
+  getFunctionCode,
+  getParams,
   getMenu1: () => String(props.meta.menu1 || ''),
   getMenu2: () => String(props.meta.menu2 || ''),
   reloadPage: () => loadPage(),
@@ -176,7 +182,7 @@ const {
   handleSubmitComment
 } = useWorkbenchComment({
   gridApi,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   getCommentModuleName: () => pageMeta.value?.commentModule || String(props.meta.functionCode || '').trim(),
   notify
 });
@@ -488,11 +494,9 @@ const {
   setEditFieldValue
 } = useWorkbenchEditForms({
   gridApi,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   refreshAfterMutation: () => {
-    const currentFunctionCode = String(props.meta.functionCode || '').trim();
-    const currentParams = String(props.meta.params || '').trim();
-    workbenchStore.clearCache(currentFunctionCode, currentParams);
+    workbenchStore.clearCache(getFunctionCode(), getParams());
     isDataLoaded.value = false;
     loadPage();
   },
@@ -804,7 +808,7 @@ const {
   resizeChart: chartResize,
   reloadChartsFromDrill
 } = useWorkbenchChart({
-  getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
+  getFunctionCode: getRouteFunctionCode,
   notify,
   onChartClick: (clickParams: any) => {
     // 图表点击事件转发给图形钻取 hook
@@ -850,7 +854,7 @@ watch(chartVisible, val => {
 });
 
 const { drillLevel, isDrilled, handleChartClick, resetDrill, silentResetDrill } = useWorkbenchChartDrill({
-  getFunctionCode: () => String(route.query.functionCode || route.meta?.functionCode || ''),
+  getFunctionCode: getRouteFunctionCode,
   getDrillOptionsForChart: (sid: string) => {
     // 图形钻取对话框使用图表自身的钻取选项（chart.钻取选项，源自 def_chart_drill_config）
     // 与旧版 Vgrid_aggrid.php::chart_drill 中的 chart_data[chartModule][chartCode]['钻取模块'] 等价
@@ -899,8 +903,8 @@ const {
   handleTableEditSubmit
 } = useWorkbenchTableEdit({
   gridApi,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  getParams: () => String(props.meta.params || '').trim(),
+  getFunctionCode,
+  getParams,
   workbenchStore,
   notify,
   loadPage,
@@ -913,7 +917,7 @@ const {
 // 导出（XLSX）
 const { handleExport } = useWorkbenchExport({
   gridApi,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   notify,
   getFilters: () => {
     // 组合：ag-grid 列筛选 + 条件面板筛选 + 工具栏快速检索
@@ -951,14 +955,14 @@ const { handleExport } = useWorkbenchExport({
 // 钻取选项对话框（数据行 → 跳转新功能页）
 const { openDataDrill } = useWorkbenchDrillDialog({
   gridApi,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   loading,
   notify
 });
 
 // 全量数据加载 + 条件筛选应用
 const { queryPage } = useWorkbenchDataFetchAll({
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   selectedField,
   selectedOperator,
   selectedValue,
@@ -986,14 +990,14 @@ const { handleReset, handleRefresh } = useWorkbenchStateReset({
   tableModifiedRows,
   modifiedRowsData,
   loadPage,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  getParams: () => String(props.meta.params || '').trim(),
+  getFunctionCode,
+  getParams,
   notify
 });
 
 // 数据整理
 const { handleUpkeep } = useWorkbenchUpkeep({
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   loading,
   loadPage,
   notify
@@ -1001,11 +1005,11 @@ const { handleUpkeep } = useWorkbenchUpkeep({
 
 // 页面级 / 图表级 调试
 const { handleDebug } = useWorkbenchPageDebug({
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   notify
 });
 const { handleChartDebug } = useWorkbenchChartDebug({
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   chartData,
   drillLevel,
   isDrilled,
@@ -1018,11 +1022,9 @@ const { handleChartDebug } = useWorkbenchChartDebug({
 
 const { deleteLoading, handleDelete } = useWorkbenchDelete({
   gridApi,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   refreshAfterMutation: () => {
-    const currentFunctionCode = String(props.meta.functionCode || '').trim();
-    const currentParams = String(props.meta.params || '').trim();
-    workbenchStore.clearCache(currentFunctionCode, currentParams);
+    workbenchStore.clearCache(getFunctionCode(), getParams());
     isDataLoaded.value = false;
     loadPage();
   },
@@ -1043,7 +1045,7 @@ const {
   replacePopupSelection,
   appendPopupSelection
 } = useWorkbenchPopupCascader({
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
+  getFunctionCode,
   /**
    * 「添加」模式需要拿当前活动表单中该字段的原值做拼接。
    * 三类表单（新增 / 单条修改 / 多条修改）由 rightPanelMode 区分。
@@ -1092,8 +1094,8 @@ const { handleGridReady } = useWorkbenchGridReady({
   isRestoringColumnState,
   page,
   registerGridPersistenceListeners,
-  getFunctionCode: () => String(props.meta.functionCode || '').trim(),
-  getParams: () => String(props.meta.params || '').trim(),
+  getFunctionCode,
+  getParams,
   fieldColumnOptions: () => fieldColumnOptions.value
 });
 </script>
