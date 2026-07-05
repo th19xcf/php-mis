@@ -42,7 +42,11 @@ export function useWorkbenchGridReady(options: UseWorkbenchGridReadyOptions) {
     const pinColumnsArray = Array.from(cachedPinColumns);
     const mergedColumnState = cachedColumnState.map((col: any) => {
       // GUID 列恒隐藏：忽略缓存的 hide，强制隐藏
-      if (String(col.colId || '').trim().toUpperCase() === 'GUID') {
+      if (
+        String(col.colId || '')
+          .trim()
+          .toUpperCase() === 'GUID'
+      ) {
         return { ...col, hide: true };
       }
       if (pinColumnsArray.includes(col.colId)) {
@@ -50,6 +54,11 @@ export function useWorkbenchGridReady(options: UseWorkbenchGridReadyOptions) {
       }
       return col;
     });
+
+    if (!api || api.isDestroyed()) {
+      options.isRestoringColumnState.value = false;
+      return;
+    }
 
     api.applyColumnState({ state: mergedColumnState, applyOrder: true });
 
