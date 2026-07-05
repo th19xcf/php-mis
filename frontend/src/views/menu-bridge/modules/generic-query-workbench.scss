@@ -1,3 +1,5 @@
+@use '@/styles/scss/ag-grid-shared' as *;
+
 $wb-primary-color: #1890ff;
 $wb-primary-hover: #40a9ff;
 $wb-success-color: #1f8f63;
@@ -17,9 +19,8 @@ $wb-dark-text-muted: #b0b0b0;
 $wb-shadow-color: rgba(0, 0, 0, 0.04);
 $wb-shadow-hover: rgba(0, 0, 0, 0.08);
 
-// Naive UI 风格 checkbox 图标（与 NTree 一致）
-$wb-checkbox-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23ffffff' d='M50.42,16.76L22.34,39.45l-8.1-11.46c-1.12-1.58-3.3-1.96-4.88-0.84c-1.58,1.12-1.95,3.3-0.84,4.88l10.26,14.51c0.56,0.79,1.42,1.31,2.38,1.45c0.16,0.02,0.32,0.03,0.48,0.03c0.8,0,1.57-0.27,2.2-0.78l30.99-25.03c1.5-1.21,1.74-3.42,0.52-4.92C54.13,15.78,51.93,15.55,50.42,16.76z'/%3E%3C/svg%3E");
-$wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23ffffff' d='M80.2,55.5H21.4c-2.8,0-5.1-2.5-5.1-5.5l0,0c0-3,2.3-5.5,5.1-5.5h58.7c2.8,0,5.1,2.5,5.1,5.5l0,0C85.2,53.1,82.9,55.5,80.2,55.5z'/%3E%3C/svg%3E");
+// Naive UI 风格 checkbox 图标（$wb-checkbox-check-icon / $wb-checkbox-line-icon）
+// 已由 _ag-grid-shared.scss 通过 @use 提供，无需在此重复定义
 
 @mixin wb-flex-center {
   display: flex;
@@ -269,163 +270,9 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   }
 }
 
-:deep(.query-grid .ag-root-wrapper),
-:deep(.query-grid .ag-root),
-:deep(.query-grid .ag-header),
-:deep(.query-grid .ag-body),
-:deep(.query-grid .ag-floating-top),
-:deep(.query-grid .ag-floating-bottom),
-:deep(.query-grid .ag-row),
-:deep(.query-grid .ag-row-odd),
-:deep(.query-grid .ag-row-even),
-:deep(.query-grid .ag-header-row) {
-  background-color: var(--wb-grid-surface) !important;
-}
-
-:deep(.query-grid .ag-header-cell),
-:deep(.query-grid .ag-cell),
-:deep(.query-grid .ag-header-cell-text),
-:deep(.query-grid .ag-cell-value) {
-  color: var(--wb-grid-text);
-}
-
-:deep(.query-grid .ag-cell[style*='color']),
-:deep(.query-grid .ag-cell-value[style*='color']) {
-}
-
-:deep(.query-grid .ag-cell-wrapper),
-:deep(.query-grid .ag-header-cell-comp-wrapper) {
-  height: 100%;
-  align-items: center;
-}
-
-:deep(.query-grid .ag-selection-checkbox),
-:deep(.query-grid .ag-checkbox-input-wrapper) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.query-grid .ag-selection-checkbox),
-:deep(.query-grid .ag-header-select-all) {
-  width: 100%;
-  height: 100%;
-}
-
-:deep(.query-grid .ag-header-select-all) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding-left: 0;
-}
-
-:deep(.query-grid .selection-header-left .ag-header-cell-comp-wrapper) {
-  width: 100%;
-  justify-content: center !important;
-  padding-left: 0 !important;
-}
-
-:deep(.query-grid .selection-header-left .ag-header-select-all) {
-  margin: 0 auto;
-  width: auto !important;
-}
-
-:deep(.query-grid .selection-header-left .ag-header-select-all .ag-selection-checkbox) {
-  justify-content: center !important;
-  width: auto !important;
-  padding-left: 0 !important;
-}
-
-:deep(.query-grid .selection-header-left .ag-header-cell-label) {
-  width: 100% !important;
-  justify-content: center !important;
-  padding-left: 0 !important;
-  gap: 0 !important;
-}
-
-:deep(.query-grid .selection-header-left .ag-header-cell-label .ag-checkbox-input-wrapper) {
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-}
-
-:deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn']) {
-  position: relative;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-:deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-comp-wrapper) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
-:deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-label) {
-  justify-content: center !important;
-  padding-left: 0 !important;
-}
-
-:deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-select-all) {
-  position: absolute !important;
-  left: 50% !important;
-  top: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  width: 16px !important;
-  height: 16px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-:deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
-:deep(.query-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn']) {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
-:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-:deep(.query-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper .ag-selection-checkbox) {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-:deep(.query-grid .ag-cell-value),
-:deep(.query-grid .ag-header-cell-text) {
-  display: inline-flex;
-  align-items: center;
-}
+// ============ ag-grid 共享样式（来自 _ag-grid-shared.scss）============
+@include ag-grid-base-layout('query-grid');
+@include ag-grid-selection-column('query-grid');
 
 .grid-loading {
   position: absolute;
@@ -505,112 +352,11 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   :deep(.grid-card .n-card-content) {
     background: var(--wb-dark-bg);
   }
-
-  :deep(.query-grid .ag-root-wrapper),
-  :deep(.query-grid .ag-root),
-  :deep(.query-grid .ag-header),
-  :deep(.query-grid .ag-body),
-  :deep(.query-grid .ag-floating-bottom),
-  :deep(.query-grid .ag-floating-top) {
-    background-color: var(--wb-dark-bg);
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-root-wrapper) {
-    border-color: $wb-dark-border;
-  }
-
-  :deep(.query-grid .ag-paging-panel) {
-    background-color: var(--wb-dark-bg);
-    color: var(--wb-grid-text);
-    border-top-color: $wb-dark-border;
-  }
-
-  :deep(.query-grid .ag-paging-button) {
-    color: var(--wb-grid-text);
-    background-color: $wb-dark-surface;
-    border: 1px solid #43576b;
-    border-radius: 4px;
-
-    &:hover {
-      color: #f3f8ff;
-      background-color: #243547;
-      border-color: #5a7190;
-    }
-
-    &.ag-disabled,
-    &[aria-disabled='true'] {
-      color: rgb(var(--base-text-color) / 0.45);
-      background-color: #151f2a;
-      border-color: #2f4152;
-    }
-
-    .ag-icon {
-      color: inherit;
-    }
-  }
-
-  :deep(.query-grid .ag-picker-field-wrapper),
-  :deep(.query-grid .ag-select .ag-picker-field-wrapper),
-  :deep(.query-grid .ag-paging-page-size .ag-wrapper) {
-    background-color: var(--wb-dark-bg);
-    border-color: #43576b;
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-picker-field-display),
-  :deep(.query-grid .ag-picker-field-icon) {
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-body-horizontal-scroll),
-  :deep(.query-grid .ag-body-vertical-scroll),
-  :deep(.query-grid .ag-body-horizontal-scroll-viewport),
-  :deep(.query-grid .ag-body-vertical-scroll-viewport),
-  :deep(.query-grid .ag-body-horizontal-scroll-container),
-  :deep(.query-grid .ag-body-vertical-scroll-container) {
-    background-color: var(--wb-dark-bg) !important;
-  }
-
-  :deep(.query-grid .ag-body-horizontal-scroll-viewport),
-  :deep(.query-grid .ag-body-vertical-scroll-viewport) {
-    scrollbar-color: #5e6f80 var(--wb-dark-bg);
-
-    &::-webkit-scrollbar {
-      background-color: var(--wb-dark-bg);
-    }
-
-    &::-webkit-scrollbar-thumb {
-      background-color: #5e6f80;
-      border-radius: 8px;
-    }
-  }
-
-  :deep(.query-grid .ag-header-cell),
-  :deep(.query-grid .ag-cell),
-  :deep(.query-grid .ag-header-cell-text),
-  :deep(.query-grid .ag-cell-value) {
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-header-cell .ag-icon),
-  :deep(.query-grid .ag-header-cell .ag-header-icon),
-  :deep(.query-grid .ag-header-cell-menu-button),
-  :deep(.query-grid .ag-header-cell-filter-button),
-  :deep(.query-grid .ag-header-cell-sortable .ag-sort-indicator-icon) {
-    color: var(--wb-grid-text) !important;
-    opacity: 0.95;
-
-    &:hover {
-      color: #f3f8ff !important;
-      opacity: 1;
-    }
-  }
-
-  :deep(.query-grid .ag-row-hover::before) {
-    background-color: rgba(122, 167, 214, 0.18) !important;
-  }
 }
+
+// ============ ag-grid 暗色模式共享样式 ============
+@include ag-grid-base-dark('query-grid');
+@include ag-grid-controls-dark('query-grid', $wb-dark-surface);
 
 :deep(.ag-header-cell.editable-column .ag-header-cell-text) {
   text-decoration: underline;
@@ -619,28 +365,8 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   font-weight: 700;
 }
 
-:deep(.query-grid .ag-header-cell),
-:deep(.query-grid .ag-cell) {
-  border-right: 1px dotted #d9d9d9 !important;
-}
-
-:deep(.query-grid .ag-cell.ag-cell-focus),
-:deep(.query-grid .ag-cell.ag-cell-range-selected) {
-  border: none !important;
-  outline: 2px solid #40a9ff !important;
-  outline-offset: -2px !important;
-  box-shadow: none !important;
-  z-index: 2 !important;
-}
-
-:deep(.query-grid .ag-row-hover .ag-cell) {
-  background-color: rgba(24, 144, 255, 0.04) !important;
-}
-
-:deep(.query-grid .ag-row),
-:deep(.query-grid .ag-header-row) {
-  border-bottom: 1px dotted #d9d9d9 !important;
-}
+@include ag-grid-cell-borders('query-grid');
+@include ag-grid-cell-focus('query-grid');
 
 :deep(.ag-header-cell.pinned-header) {
   background-color: #e6f7ff !important;
@@ -650,107 +376,12 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   }
 }
 
-/* Align checkbox visual with Naive UI NTree style. */
-:deep(.query-grid .ag-checkbox-input-wrapper) {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  border: 1px solid #95a6b8;
-  border-radius: 2px;
-  background-color: #ffffff;
-  line-height: 16px;
-}
+@include ag-grid-checkbox-theme('query-grid');
 
-:deep(.query-grid .ag-checkbox-input-wrapper::before) {
-  display: none !important;
-}
+@include ag-grid-checkbox-dark('query-grid');
 
-:deep(.query-grid .ag-checkbox-input-wrapper::after) {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0;
-  height: 0;
-  border: 0;
-  transform: translate(-50%, -50%);
-}
-
-:deep(.query-grid .ag-checkbox-input-wrapper.ag-checked) {
-  border-color: #2a90e8;
-  background-color: #2a90e8;
-}
-
-:deep(.query-grid .ag-checkbox-input-wrapper.ag-checked::after) {
-  content: '';
-  width: 12px;
-  height: 12px;
-  background-image: $wb-checkbox-check-icon;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-}
-
-:deep(.query-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
-  border-color: #2a90e8;
-  background-color: #2a90e8;
-}
-
-:deep(.query-grid .ag-checkbox-input-wrapper.ag-indeterminate::after) {
-  content: '';
-  width: 10px;
-  height: 10px;
-  background-image: $wb-checkbox-line-icon;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-}
-
+// 弹窗卡片本身暗色（组件特有，未纳入 mixin）
 .system-dark {
-  :deep(.query-grid .ag-header-cell),
-  :deep(.query-grid .ag-cell) {
-    border-right-color: rgba(255, 255, 255, 0.12) !important;
-  }
-
-  :deep(.query-grid .ag-row),
-  :deep(.query-grid .ag-header-row) {
-    border-bottom-color: rgba(255, 255, 255, 0.12) !important;
-  }
-
-  :deep(.query-grid .ag-checkbox-input-wrapper) {
-    border-color: #6f859b;
-    background-color: var(--wb-dark-bg);
-  }
-
-  :deep(.query-grid .ag-checkbox-input-wrapper.ag-checked),
-  :deep(.query-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
-    border-color: #4ea4f3;
-    background-color: #2f7fc5;
-  }
-
-  :deep(.query-grid .ag-checkbox-input-wrapper.ag-checked::after) {
-    content: '';
-    width: 12px;
-    height: 12px;
-    background-image: $wb-checkbox-check-icon;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-  }
-
-  :deep(.query-grid .ag-checkbox-input-wrapper.ag-indeterminate::after) {
-    content: '';
-    width: 10px;
-    height: 10px;
-    background-image: $wb-checkbox-line-icon;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    background-color: transparent;
-    box-shadow: none;
-  }
-
-  // 弹窗卡片本身暗色
   :deep(.n-card) {
     --n-color: var(--wb-dark-bg);
     --n-color-embedded: var(--wb-dark-bg);
@@ -771,81 +402,5 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
   :deep(.n-base-close) {
     color: #fff;
-  }
-
-  :deep(.query-grid .ag-filter-body-wrapper) {
-    background-color: var(--wb-dark-bg);
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-filter-condition) {
-    background-color: var(--wb-dark-bg);
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-filter-select) {
-    background-color: $wb-dark-surface;
-    border-color: #43576b;
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-filter-filter) {
-    background-color: $wb-dark-surface;
-    border-color: #43576b;
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-filter-apply-panel) {
-    background-color: var(--wb-dark-bg);
-    border-top-color: $wb-dark-border;
-  }
-
-  :deep(.query-grid .ag-mini-filter) {
-    background-color: $wb-dark-surface;
-    border-color: #43576b;
-    color: var(--wb-grid-text);
-  }
-
-  :deep(.query-grid .ag-set-filter-list) {
-    background-color: var(--wb-dark-bg);
-  }
-
-  :deep(.query-grid .ag-popup) {
-    background-color: var(--wb-dark-bg);
-  }
-
-  :deep(.query-grid .ag-menu) {
-    background-color: var(--wb-dark-bg);
-  }
-
-  :deep(.query-grid .ag-overlay) {
-    background-color: var(--wb-dark-bg);
-  }
-
-  :deep(.query-grid .ag-list) {
-    background-color: var(--wb-dark-bg);
-  }
-
-  :deep(.query-grid .ag-list-item) {
-    background-color: var(--wb-dark-bg);
-    color: var(--wb-grid-text);
-
-    &:hover {
-      background-color: rgba(122, 167, 214, 0.18);
-    }
-  }
-
-  :deep(.query-grid .ag-menu-option) {
-    background-color: var(--wb-dark-bg);
-    color: var(--wb-grid-text);
-
-    &:hover {
-      background-color: rgba(122, 167, 214, 0.18);
-    }
-  }
-
-  :deep(.query-grid .ag-tab) {
-    background-color: var(--wb-dark-bg);
-    color: var(--wb-grid-text);
   }
 }

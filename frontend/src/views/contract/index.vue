@@ -556,7 +556,9 @@ watch(
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
+@use '@/styles/scss/ag-grid-shared' as *;
+
 .contract-container {
   position: absolute;
   top: 0;
@@ -610,8 +612,15 @@ watch(
 }
 
 .contract-grid {
+  --wb-grid-surface: transparent;
+  --wb-grid-text: #1f2937;
   width: 100%;
   height: 100%;
+
+  .system-dark & {
+    --wb-grid-surface: rgb(var(--container-bg-color));
+    --wb-grid-text: rgb(var(--base-text-color));
+  }
 }
 
 .resize-splitter {
@@ -687,17 +696,17 @@ watch(
   background: rgb(24, 24, 28);
 }
 
-/* Light mode grid styles - matching generic-query-workbench */
-:deep(.contract-grid .ag-header-cell),
-:deep(.contract-grid .ag-cell) {
-  border-right: 1px dotted #c1ccc7 !important;
-}
+/* ============ ag-grid 共享样式（来自 _ag-grid-shared.scss）============ */
+@include ag-grid-cell-borders('contract-grid', #c1ccc7, #4b5965);
+@include ag-grid-selection-column('contract-grid');
+@include ag-grid-checkbox-theme('contract-grid');
+@include ag-grid-checkbox-dark('contract-grid');
+@include ag-grid-base-dark('contract-grid');
+@include ag-grid-controls-dark('contract-grid');
 
-:deep(.contract-grid .ag-row),
-:deep(.contract-grid .ag-header-row) {
-  border-bottom: 1px dotted #c1ccc7 !important;
-}
+/* ============ Component-specific styles ============ */
 
+/* Light mode row-selected highlight */
 :deep(.contract-grid .ag-row-selected::before) {
   background-color: #b7d7f5 !important;
 }
@@ -707,6 +716,7 @@ watch(
   background-image: none !important;
 }
 
+/* Light mode cell-focus（4-side border，不同于 workbench 的 outline 方案）*/
 :deep(.contract-grid .ag-cell-focus),
 :deep(.contract-grid .ag-cell-range-selected) {
   border-right: 1px solid #2196f3 !important;
@@ -715,40 +725,22 @@ watch(
   border-bottom: 1px solid #2196f3 !important;
 }
 
-/* Dark mode grid styles - matching generic-query-workbench */
-.system-dark :deep(.contract-grid .ag-root-wrapper),
-.system-dark :deep(.contract-grid .ag-root),
-.system-dark :deep(.contract-grid .ag-header),
-.system-dark :deep(.contract-grid .ag-body),
-.system-dark :deep(.contract-grid .ag-floating-bottom),
-.system-dark :deep(.contract-grid .ag-floating-top) {
-  background-color: rgb(var(--container-bg-color));
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid .ag-root-wrapper) {
-  border-color: #2b3a49;
-}
-
+/* Dark mode header border-bottom-color（mixin 未覆盖）*/
 .system-dark :deep(.contract-grid .ag-header) {
-  background-color: rgb(var(--container-bg-color));
   border-bottom-color: #2b3a49;
 }
 
+/* Dark mode row border-color（mixin 未覆盖）*/
 .system-dark :deep(.contract-grid .ag-row) {
-  background-color: rgb(var(--container-bg-color));
   border-color: #2b3a49;
 }
 
+/* Dark mode row-even background（mixin 未覆盖）*/
 .system-dark :deep(.contract-grid .ag-row-even) {
   background-color: rgb(var(--container-bg-color));
 }
 
-.system-dark :deep(.contract-grid .ag-row-hover::before) {
-  background-color: rgba(122, 167, 214, 0.18) !important;
-}
-
-/* 深色主题选中单元格的边框样式 */
+/* Dark mode cell-focus（4-side border）*/
 .system-dark :deep(.contract-grid .ag-cell-focus),
 .system-dark :deep(.contract-grid .ag-cell-range-selected) {
   border-right: 2px solid #64b5f6 !important;
@@ -757,122 +749,23 @@ watch(
   border-bottom: 2px solid #64b5f6 !important;
 }
 
-.system-dark :deep(.contract-grid .ag-cell),
-.system-dark :deep(.contract-grid .ag-header-cell),
-.system-dark :deep(.contract-grid .ag-header-cell-text),
-.system-dark :deep(.contract-grid .ag-cell-value) {
-  color: rgb(var(--base-text-color));
+/* Dark mode row-selected */
+.system-dark :deep(.contract-grid .ag-row-selected::before) {
+  background-color: #34516f !important;
 }
 
-.system-dark :deep(.contract-grid .ag-header-cell .ag-icon),
-.system-dark :deep(.contract-grid .ag-header-cell .ag-header-icon),
-.system-dark :deep(.contract-grid .ag-header-cell-menu-button),
-.system-dark :deep(.contract-grid .ag-header-cell-filter-button),
-.system-dark :deep(.contract-grid .ag-header-cell-sortable .ag-sort-indicator-icon) {
-  color: rgb(var(--base-text-color)) !important;
-  opacity: 0.95;
+.system-dark :deep(.contract-grid .ag-row-hover.ag-row-selected::before) {
+  background-color: #406281 !important;
 }
 
-.system-dark :deep(.contract-grid .ag-header-cell-menu-button:hover),
-.system-dark :deep(.contract-grid .ag-header-cell-filter-button:hover),
-.system-dark :deep(.contract-grid .ag-header-cell .ag-icon:hover) {
-  color: #f3f8ff !important;
-  opacity: 1;
-}
-
-.system-dark :deep(.contract-grid .ag-header-cell),
-:deep(.contract-grid .ag-cell) {
-  border-right: 1px dotted #4b5965 !important;
-}
-
-/* Checkbox styles - matching generic-query-workbench */
-:deep(.contract-grid .ag-selection-checkbox),
-:deep(.contract-grid .ag-checkbox-input-wrapper) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.contract-grid .ag-selection-checkbox),
-:deep(.contract-grid .ag-header-select-all) {
-  width: 100%;
-  height: 100%;
-}
-
-:deep(.contract-grid .ag-header-select-all) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding-left: 0;
-}
-
-:deep(.contract-grid .selection-header-left .ag-header-cell-comp-wrapper) {
-  width: 100%;
-  justify-content: center !important;
-  padding-left: 0 !important;
-}
-
-:deep(.contract-grid .selection-header-left .ag-header-select-all) {
-  margin: 0 auto;
-  width: auto !important;
-}
-
-:deep(.contract-grid .selection-header-left .ag-header-select-all .ag-selection-checkbox) {
-  justify-content: center !important;
-  width: auto !important;
-  padding-left: 0 !important;
-}
-
-:deep(.contract-grid .selection-header-left .ag-header-cell-label) {
-  width: 100% !important;
-  justify-content: center !important;
-  padding-left: 0 !important;
-  gap: 0 !important;
-}
-
-:deep(.contract-grid .selection-header-left .ag-header-cell-label .ag-checkbox-input-wrapper) {
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-}
-
-/* Final override: target AG Grid selection column directly. */
-:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn']) {
-  position: relative;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-comp-wrapper) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
-:deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-label) {
-  justify-content: center !important;
-  padding-left: 0 !important;
-}
-
+/* Contract selection column 额外定位规则（mixin 提供基础，此处补充）*/
 :deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-select-all) {
-  position: absolute !important;
-  left: 50% !important;
-  top: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  width: 16px !important;
-  height: 16px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
   padding: 0 !important;
   margin: 0 !important;
 }
 
 :deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
 :deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
-  margin: 0 !important;
-  padding: 0 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -882,44 +775,6 @@ watch(
   transform: translate(-50%, -50%) !important;
 }
 
-:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn']) {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
-:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-/* Force checkbox wrapper to center */
-:deep(.contract-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper .ag-selection-checkbox) {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-/* Header checkbox centering */
 :deep(.contract-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox) {
   display: flex !important;
   align-items: center !important;
@@ -938,215 +793,7 @@ watch(
   height: 100% !important;
 }
 
-/* Checkbox appearance - matching generic-query-workbench */
-:deep(.contract-grid .ag-checkbox-input-wrapper) {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  border: 1px solid #95a6b8;
-  border-radius: 2px;
-  background-color: #ffffff;
-  line-height: 16px;
-}
-
-:deep(.contract-grid .ag-checkbox-input-wrapper::before) {
-  display: none !important;
-}
-
-:deep(.contract-grid .ag-checkbox-input-wrapper::after) {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0;
-  height: 0;
-  border: 0;
-  transform: translate(-50%, -50%);
-}
-
-:deep(.contract-grid .ag-checkbox-input-wrapper.ag-checked) {
-  border-color: #2a90e8;
-  background-color: #2a90e8;
-}
-
-:deep(.contract-grid .ag-checkbox-input-wrapper.ag-checked::after) {
-  content: '✓';
-  width: auto;
-  height: auto;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  transform: translate(-50%, -56%);
-}
-
-:deep(.contract-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
-  border-color: #2a90e8;
-  background-color: #2a90e8;
-}
-
-:deep(.contract-grid .ag-checkbox-input-wrapper.ag-indeterminate::after) {
-  content: '';
-  left: 50%;
-  top: 50%;
-  width: 8px;
-  height: 2px;
-  border: 0;
-  background: #ffffff;
-  transform: translate(-50%, -50%);
-}
-
-:deep(.contract-grid .ag-cell .ag-checkbox-input-wrapper.ag-indeterminate::after) {
-  content: '✓';
-  width: auto;
-  height: auto;
-  border: 0;
-  background: transparent;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  transform: translate(-50%, -56%);
-}
-
-:deep(.contract-grid .ag-cell-value),
-:deep(.contract-grid .ag-header-cell-text) {
-  display: inline-flex;
-  align-items: center;
-}
-
-.system-dark :deep(.contract-grid .ag-row),
-.system-dark :deep(.contract-grid .ag-header-row) {
-  border-bottom: 1px dotted #4b5965 !important;
-}
-
-.system-dark :deep(.contract-grid .ag-row-selected::before) {
-  background-color: #34516f !important;
-}
-
-.system-dark :deep(.contract-grid .ag-row-hover.ag-row-selected::before) {
-  background-color: #406281 !important;
-}
-
-/* Dark mode checkbox styles */
-.system-dark :deep(.contract-grid .ag-checkbox-input-wrapper) {
-  border-color: #6f859b;
-  background-color: rgb(var(--container-bg-color));
-}
-
-.system-dark :deep(.contract-grid .ag-checkbox-input-wrapper.ag-checked),
-.system-dark :deep(.contract-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
-  border-color: #4ea4f3;
-  background-color: #2f7fc5;
-}
-
-.system-dark :deep(.contract-grid .ag-body-horizontal-scroll),
-.system-dark :deep(.contract-grid .ag-body-vertical-scroll),
-.system-dark :deep(.contract-grid .ag-body-horizontal-scroll-viewport),
-.system-dark :deep(.contract-grid .ag-body-vertical-scroll-viewport),
-.system-dark :deep(.contract-grid .ag-body-horizontal-scroll-container),
-.system-dark :deep(.contract-grid .ag-body-vertical-scroll-container) {
-  background-color: rgb(var(--container-bg-color)) !important;
-}
-
-.system-dark :deep(.contract-grid .ag-body-horizontal-scroll-viewport),
-.system-dark :deep(.contract-grid .ag-body-vertical-scroll-viewport) {
-  scrollbar-color: #5e6f80 rgb(var(--container-bg-color));
-}
-
-.system-dark :deep(.contract-grid .ag-body-horizontal-scroll-viewport::-webkit-scrollbar),
-.system-dark :deep(.contract-grid .ag-body-vertical-scroll-viewport::-webkit-scrollbar) {
-  background-color: rgb(var(--container-bg-color));
-}
-
-.system-dark :deep(.contract-grid .ag-body-horizontal-scroll-viewport::-webkit-scrollbar-thumb),
-.system-dark :deep(.contract-grid .ag-body-vertical-scroll-viewport::-webkit-scrollbar-thumb) {
-  background-color: #5e6f80;
-  border-radius: 8px;
-}
-
-/* Pagination styles - matching generic-query-workbench */
-.system-dark :deep(.contract-grid .ag-paging-panel) {
-  background-color: rgb(var(--container-bg-color));
-  color: rgb(var(--base-text-color));
-  border-top-color: #2b3a49;
-}
-
-.system-dark :deep(.contract-grid .ag-paging-button) {
-  color: rgb(var(--base-text-color));
-  background-color: #1b2a38;
-  border: 1px solid #43576b;
-  border-radius: 4px;
-}
-
-.system-dark :deep(.contract-grid .ag-paging-button:hover) {
-  color: #f3f8ff;
-  background-color: #243547;
-  border-color: #5a7190;
-}
-
-.system-dark :deep(.contract-grid .ag-paging-button.ag-disabled),
-.system-dark :deep(.contract-grid .ag-paging-button[aria-disabled='true']) {
-  color: rgb(var(--base-text-color) / 0.45);
-  background-color: #151f2a;
-  border-color: #2f4152;
-}
-
-.system-dark :deep(.contract-grid .ag-paging-button .ag-icon) {
-  color: inherit;
-}
-
-.system-dark :deep(.contract-grid .ag-picker-field-wrapper),
-.system-dark :deep(.contract-grid .ag-select .ag-picker-field-wrapper),
-.system-dark :deep(.contract-grid .ag-paging-page-size .ag-wrapper) {
-  background-color: rgb(var(--container-bg-color));
-  border-color: #43576b;
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid .ag-picker-field-display),
-.system-dark :deep(.contract-grid .ag-picker-field-icon) {
-  color: rgb(var(--base-text-color));
-}
-
-/* Filter panel styles */
-.system-dark :deep(.contract-grid .ag-filter-body-wrapper) {
-  background-color: rgb(var(--container-bg-color));
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid .ag-filter-condition) {
-  background-color: rgb(var(--container-bg-color));
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid .ag-filter-select) {
-  background-color: #1b2a38;
-  border-color: #43576b;
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid .ag-filter-filter) {
-  background-color: #1b2a38;
-  border-color: #43576b;
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid .ag-filter-apply-panel) {
-  background-color: rgb(var(--container-bg-color));
-  border-top-color: #2b3a49;
-}
-
-.system-dark :deep(.contract-grid .ag-mini-filter) {
-  background-color: #1b2a38;
-  border-color: #43576b;
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid .ag-set-filter-list) {
-  background-color: rgb(var(--container-bg-color));
-}
-
+/* Dark mode set-filter-item（mixin 未覆盖）*/
 .system-dark :deep(.contract-grid .ag-set-filter-item) {
   color: rgb(var(--base-text-color));
 }
@@ -1159,7 +806,7 @@ watch(
   background-color: #34516f;
 }
 
-/* Floating filter styles for dark mode */
+/* Dark mode floating filter（mixin 未覆盖）*/
 .system-dark :deep(.contract-grid .ag-floating-filter) {
   background-color: rgb(var(--container-bg-color));
   border-top-color: #2b3a49;
@@ -1183,6 +830,7 @@ watch(
   color: #f3f8ff;
 }
 
+/* Dark mode input fields（mixin 未覆盖）*/
 .system-dark :deep(.contract-grid input.ag-input-field-input) {
   background-color: #1b2a38;
   border-color: #43576b;

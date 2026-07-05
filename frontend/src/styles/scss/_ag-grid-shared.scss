@@ -1,0 +1,549 @@
+// ============================================================================
+// ag-grid 共享样式 mixin
+// ----------------------------------------------------------------------------
+// 抽取自 generic-query-workbench.scss / contract/index.vue /
+// MatchTablePanel.vue 三处重复的 ag-grid 主题/选择列/checkbox/暗色覆盖样式。
+//
+// 使用方式（在 SCSS 文件或 <style lang="scss" scoped> 内）：
+//   @use '@/styles/scss/ag-grid-shared' as *;
+//   .my-grid { --wb-grid-surface: transparent; ... }
+//   @include ag-grid-base-layout('my-grid');
+//   @include ag-grid-selection-column('my-grid');
+//   @include ag-grid-checkbox-theme('my-grid');
+//   @include ag-grid-cell-borders('my-grid');
+//   @include ag-grid-cell-focus('my-grid');
+//   @include ag-grid-checkbox-dark('my-grid');
+//   @include ag-grid-base-dark('my-grid');
+//
+// 调用方需在网格根节点定义以下 CSS 变量：
+//   --wb-grid-surface  网格表面背景（亮色通常为 transparent）
+//   --wb-grid-text     网格文本色
+//   --wb-grid-border   网格边框色（可选，部分 mixin 用）
+// 暗色模式下需在 .system-dark & 块内重新定义这些变量。
+// ============================================================================
+
+// ----------------------------------------------------------------------------
+// 共享变量
+// ----------------------------------------------------------------------------
+
+// Naive UI 风格 checkbox SVG 图标（与 NTree 一致）
+$wb-checkbox-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23ffffff' d='M50.42,16.76L22.34,39.45l-8.1-11.46c-1.12-1.58-3.3-1.96-4.88-0.84c-1.58,1.12-1.95,3.3-0.84,4.88l10.26,14.51c0.56,0.79,1.42,1.31,2.38,1.45c0.16,0.02,0.32,0.03,0.48,0.03c0.8,0,1.57-0.27,2.2-0.78l30.99-25.03c1.5-1.21,1.74-3.42,0.52-4.92C54.13,15.78,51.93,15.55,50.42,16.76z'/%3E%3C/svg%3E");
+$wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23ffffff' d='M80.2,55.5H21.4c-2.8,0-5.1-2.5-5.1-5.5l0,0c0-3,2.3-5.5,5.1-5.5h58.7c2.8,0,5.1,2.5,5.1,5.5l0,0C85.2,53.1,82.9,55.5,80.2,55.5z'/%3E%3C/svg%3E");
+
+// ----------------------------------------------------------------------------
+// Mixin: ag-grid 基础布局
+// 包含：root/header/body/row 背景色、cell/text 文本色、wrapper 高度对齐、
+//       cell-value/header-cell-text inline-flex、row-hover cell 高亮
+// 适用：所有使用 var(--wb-grid-surface) / var(--wb-grid-text) 的网格
+// ----------------------------------------------------------------------------
+@mixin ag-grid-base-layout($grid-class) {
+  $g: '.#{$grid-class}';
+
+  :deep(#{$g} .ag-root-wrapper),
+  :deep(#{$g} .ag-root),
+  :deep(#{$g} .ag-header),
+  :deep(#{$g} .ag-body),
+  :deep(#{$g} .ag-floating-top),
+  :deep(#{$g} .ag-floating-bottom),
+  :deep(#{$g} .ag-row),
+  :deep(#{$g} .ag-row-odd),
+  :deep(#{$g} .ag-row-even),
+  :deep(#{$g} .ag-header-row) {
+    background-color: var(--wb-grid-surface) !important;
+  }
+
+  :deep(#{$g} .ag-header-cell),
+  :deep(#{$g} .ag-cell),
+  :deep(#{$g} .ag-header-cell-text),
+  :deep(#{$g} .ag-cell-value) {
+    color: var(--wb-grid-text);
+  }
+
+  :deep(#{$g} .ag-cell-wrapper),
+  :deep(#{$g} .ag-header-cell-comp-wrapper) {
+    height: 100%;
+    align-items: center;
+  }
+
+  :deep(#{$g} .ag-cell-value),
+  :deep(#{$g} .ag-header-cell-text) {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  :deep(#{$g} .ag-row-hover .ag-cell) {
+    background-color: rgba(24, 144, 255, 0.04) !important;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Mixin: 单元格/行边框（虚线）
+// 参数化亮/暗色边框颜色，兼容三处的细微色差
+// ----------------------------------------------------------------------------
+@mixin ag-grid-cell-borders($grid-class, $light-border: #d9d9d9, $dark-border: rgba(255, 255, 255, 0.12)) {
+  $g: '.#{$grid-class}';
+
+  :deep(#{$g} .ag-header-cell),
+  :deep(#{$g} .ag-cell) {
+    border-right: 1px dotted $light-border !important;
+  }
+
+  :deep(#{$g} .ag-row),
+  :deep(#{$g} .ag-header-row) {
+    border-bottom: 1px dotted $light-border !important;
+  }
+
+  .system-dark {
+    :deep(#{$g} .ag-header-cell),
+    :deep(#{$g} .ag-cell) {
+      border-right-color: $dark-border !important;
+    }
+
+    :deep(#{$g} .ag-row),
+    :deep(#{$g} .ag-header-row) {
+      border-bottom-color: $dark-border !important;
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Mixin: 单元格聚焦边框
+// 与 generic-query-workbench 一致的 outline 方案
+// ----------------------------------------------------------------------------
+@mixin ag-grid-cell-focus($grid-class, $focus-color: #40a9ff) {
+  $g: '.#{$grid-class}';
+
+  :deep(#{$g} .ag-cell.ag-cell-focus),
+  :deep(#{$g} .ag-cell.ag-cell-range-selected) {
+    border: none !important;
+    outline: 2px solid $focus-color !important;
+    outline-offset: -2px !important;
+    box-shadow: none !important;
+    z-index: 2 !important;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Mixin: 选择列布局（ag-Grid-SelectionColumn 定位规则）
+// ~100 行，三处完全相同。包括：
+//   - selection-header-left 对齐
+//   - ag-Grid-SelectionColumn 表头单元格定位
+//   - 单元格内 checkbox 居中
+// ----------------------------------------------------------------------------
+@mixin ag-grid-selection-column($grid-class) {
+  $g: '.#{$grid-class}';
+
+  :deep(#{$g} .ag-selection-checkbox),
+  :deep(#{$g} .ag-checkbox-input-wrapper) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  :deep(#{$g} .ag-selection-checkbox),
+  :deep(#{$g} .ag-header-select-all) {
+    width: 100%;
+    height: 100%;
+  }
+
+  :deep(#{$g} .ag-header-select-all) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-left: 0;
+  }
+
+  :deep(#{$g} .selection-header-left .ag-header-cell-comp-wrapper) {
+    width: 100%;
+    justify-content: center !important;
+    padding-left: 0 !important;
+  }
+
+  :deep(#{$g} .selection-header-left .ag-header-select-all) {
+    margin: 0 auto;
+    width: auto !important;
+  }
+
+  :deep(#{$g} .selection-header-left .ag-header-select-all .ag-selection-checkbox) {
+    justify-content: center !important;
+    width: auto !important;
+    padding-left: 0 !important;
+  }
+
+  :deep(#{$g} .selection-header-left .ag-header-cell-label) {
+    width: 100% !important;
+    justify-content: center !important;
+    padding-left: 0 !important;
+    gap: 0 !important;
+  }
+
+  :deep(#{$g} .selection-header-left .ag-header-cell-label .ag-checkbox-input-wrapper) {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn']) {
+    position: relative;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-comp-wrapper) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+  }
+
+  :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-label) {
+    justify-content: center !important;
+    padding-left: 0 !important;
+  }
+
+  :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-select-all) {
+    position: absolute !important;
+    left: 50% !important;
+    top: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: 16px !important;
+    height: 16px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
+  :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  :deep(#{$g} .ag-cell[col-id='ag-Grid-SelectionColumn']) {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  :deep(#{$g} .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  :deep(#{$g} .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
+  :deep(#{$g} .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
+    position: relative;
+    width: 16px;
+    height: 16px;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  :deep(#{$g} .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper .ag-selection-checkbox) {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Mixin: Checkbox 外观（Naive UI NTree 风格，使用 SVG 图标）
+// 统一三处 checkbox 实现：之前 contract 用了 '✓' 文字字符，此处统一为 SVG
+// ----------------------------------------------------------------------------
+@mixin ag-grid-checkbox-theme($grid-class) {
+  $g: '.#{$grid-class}';
+
+  /* Align checkbox visual with Naive UI NTree style */
+  :deep(#{$g} .ag-checkbox-input-wrapper) {
+    position: relative;
+    width: 16px;
+    height: 16px;
+    border: 1px solid #95a6b8;
+    border-radius: 2px;
+    background-color: #ffffff;
+    line-height: 16px;
+  }
+
+  :deep(#{$g} .ag-checkbox-input-wrapper::before) {
+    display: none !important;
+  }
+
+  :deep(#{$g} .ag-checkbox-input-wrapper::after) {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0;
+    height: 0;
+    border: 0;
+    transform: translate(-50%, -50%);
+  }
+
+  :deep(#{$g} .ag-checkbox-input-wrapper.ag-checked) {
+    border-color: #2a90e8;
+    background-color: #2a90e8;
+  }
+
+  :deep(#{$g} .ag-checkbox-input-wrapper.ag-checked::after) {
+    content: '';
+    width: 12px;
+    height: 12px;
+    background-image: $wb-checkbox-check-icon;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+
+  :deep(#{$g} .ag-checkbox-input-wrapper.ag-indeterminate) {
+    border-color: #2a90e8;
+    background-color: #2a90e8;
+  }
+
+  :deep(#{$g} .ag-checkbox-input-wrapper.ag-indeterminate::after) {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background-image: $wb-checkbox-line-icon;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Mixin: Checkbox 暗色模式覆盖
+// ----------------------------------------------------------------------------
+@mixin ag-grid-checkbox-dark($grid-class) {
+  $g: '.#{$grid-class}';
+
+  .system-dark {
+    :deep(#{$g} .ag-checkbox-input-wrapper) {
+      border-color: #6f859b;
+      background-color: var(--wb-grid-surface);
+    }
+
+    :deep(#{$g} .ag-checkbox-input-wrapper.ag-checked),
+    :deep(#{$g} .ag-checkbox-input-wrapper.ag-indeterminate) {
+      border-color: #4ea4f3;
+      background-color: #2f7fc5;
+    }
+
+    :deep(#{$g} .ag-checkbox-input-wrapper.ag-checked::after) {
+      content: '';
+      width: 12px;
+      height: 12px;
+      background-image: $wb-checkbox-check-icon;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+    }
+
+    :deep(#{$g} .ag-checkbox-input-wrapper.ag-indeterminate::after) {
+      content: '';
+      width: 10px;
+      height: 10px;
+      background-image: $wb-checkbox-line-icon;
+      background-size: contain;
+      background-repeat: no-repeat;
+      background-position: center;
+      background-color: transparent;
+      box-shadow: none;
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Mixin: 基础暗色覆盖
+// 包含：边框、行 hover、表头图标、滚动条 等通用暗色规则
+// 不包含：分页/筛选/输入框等组件特有暗色样式（差异较大，由调用方自行处理）
+// ----------------------------------------------------------------------------
+@mixin ag-grid-base-dark($grid-class) {
+  $g: '.#{$grid-class}';
+
+  .system-dark {
+    :deep(#{$g} .ag-root-wrapper),
+    :deep(#{$g} .ag-root),
+    :deep(#{$g} .ag-header),
+    :deep(#{$g} .ag-body),
+    :deep(#{$g} .ag-floating-bottom),
+    :deep(#{$g} .ag-floating-top) {
+      background-color: var(--wb-grid-surface);
+      color: var(--wb-grid-text);
+    }
+
+    :deep(#{$g} .ag-root-wrapper) {
+      border-color: #2b3a49;
+    }
+
+    :deep(#{$g} .ag-header-cell),
+    :deep(#{$g} .ag-cell),
+    :deep(#{$g} .ag-header-cell-text),
+    :deep(#{$g} .ag-cell-value) {
+      color: var(--wb-grid-text);
+    }
+
+    :deep(#{$g} .ag-header-cell .ag-icon),
+    :deep(#{$g} .ag-header-cell .ag-header-icon),
+    :deep(#{$g} .ag-header-cell-menu-button),
+    :deep(#{$g} .ag-header-cell-filter-button),
+    :deep(#{$g} .ag-header-cell-sortable .ag-sort-indicator-icon) {
+      color: var(--wb-grid-text) !important;
+      opacity: 0.95;
+
+      &:hover {
+        color: #f3f8ff !important;
+        opacity: 1;
+      }
+    }
+
+    :deep(#{$g} .ag-row-hover::before) {
+      background-color: rgba(122, 167, 214, 0.18) !important;
+    }
+
+    :deep(#{$g} .ag-body-horizontal-scroll),
+    :deep(#{$g} .ag-body-vertical-scroll),
+    :deep(#{$g} .ag-body-horizontal-scroll-viewport),
+    :deep(#{$g} .ag-body-vertical-scroll-viewport),
+    :deep(#{$g} .ag-body-horizontal-scroll-container),
+    :deep(#{$g} .ag-body-vertical-scroll-container) {
+      background-color: var(--wb-grid-surface) !important;
+    }
+
+    :deep(#{$g} .ag-body-horizontal-scroll-viewport),
+    :deep(#{$g} .ag-body-vertical-scroll-viewport) {
+      scrollbar-color: #5e6f80 var(--wb-grid-surface);
+
+      &::-webkit-scrollbar {
+        background-color: var(--wb-grid-surface);
+      }
+
+      &::-webkit-scrollbar-thumb {
+        background-color: #5e6f80;
+        border-radius: 8px;
+      }
+    }
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Mixin: 暗色模式分页/选择器/输入框覆盖
+// 适用于需要统一暗色分页/选择器的网格（generic-query-workbench / contract）
+// MatchTablePanel 无分页，可不用
+// ----------------------------------------------------------------------------
+@mixin ag-grid-controls-dark($grid-class, $dark-surface: #1b2a38) {
+  $g: '.#{$grid-class}';
+
+  .system-dark {
+    :deep(#{$g} .ag-paging-panel) {
+      background-color: var(--wb-grid-surface);
+      color: var(--wb-grid-text);
+      border-top-color: #2b3a49;
+    }
+
+    :deep(#{$g} .ag-paging-button) {
+      color: var(--wb-grid-text);
+      background-color: $dark-surface;
+      border: 1px solid #43576b;
+      border-radius: 4px;
+
+      &:hover {
+        color: #f3f8ff;
+        background-color: #243547;
+        border-color: #5a7190;
+      }
+
+      &.ag-disabled,
+      &[aria-disabled='true'] {
+        color: rgb(var(--base-text-color) / 0.45);
+        background-color: #151f2a;
+        border-color: #2f4152;
+      }
+
+      .ag-icon {
+        color: inherit;
+      }
+    }
+
+    :deep(#{$g} .ag-picker-field-wrapper),
+    :deep(#{$g} .ag-select .ag-picker-field-wrapper),
+    :deep(#{$g} .ag-paging-page-size .ag-wrapper) {
+      background-color: var(--wb-grid-surface);
+      border-color: #43576b;
+      color: var(--wb-grid-text);
+    }
+
+    :deep(#{$g} .ag-picker-field-display),
+    :deep(#{$g} .ag-picker-field-icon) {
+      color: var(--wb-grid-text);
+    }
+
+    :deep(#{$g} .ag-filter-body-wrapper) {
+      background-color: var(--wb-grid-surface);
+      color: var(--wb-grid-text);
+    }
+
+    :deep(#{$g} .ag-filter-condition) {
+      background-color: var(--wb-grid-surface);
+      color: var(--wb-grid-text);
+    }
+
+    :deep(#{$g} .ag-filter-select),
+    :deep(#{$g} .ag-filter-filter) {
+      background-color: $dark-surface;
+      border-color: #43576b;
+      color: var(--wb-grid-text);
+    }
+
+    :deep(#{$g} .ag-filter-apply-panel) {
+      background-color: var(--wb-grid-surface);
+      border-top-color: #2b3a49;
+    }
+
+    :deep(#{$g} .ag-mini-filter) {
+      background-color: $dark-surface;
+      border-color: #43576b;
+      color: var(--wb-grid-text);
+    }
+
+    :deep(#{$g} .ag-set-filter-list),
+    :deep(#{$g} .ag-popup),
+    :deep(#{$g} .ag-menu),
+    :deep(#{$g} .ag-overlay),
+    :deep(#{$g} .ag-list) {
+      background-color: var(--wb-grid-surface);
+    }
+
+    :deep(#{$g} .ag-list-item) {
+      background-color: var(--wb-grid-surface);
+      color: var(--wb-grid-text);
+
+      &:hover {
+        background-color: rgba(122, 167, 214, 0.18);
+      }
+    }
+
+    :deep(#{$g} .ag-menu-option) {
+      background-color: var(--wb-grid-surface);
+      color: var(--wb-grid-text);
+
+      &:hover {
+        background-color: rgba(122, 167, 214, 0.18);
+      }
+    }
+
+    :deep(#{$g} .ag-tab) {
+      background-color: var(--wb-grid-surface);
+      color: var(--wb-grid-text);
+    }
+  }
+}

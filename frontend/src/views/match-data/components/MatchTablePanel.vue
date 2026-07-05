@@ -377,8 +377,7 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
 </template>
 
 <style lang="scss" scoped>
-$wb-checkbox-check-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23ffffff' d='M50.42,16.76L22.34,39.45l-8.1-11.46c-1.12-1.58-3.3-1.96-4.88-0.84c-1.58,1.12-1.95,3.3-0.84,4.88l10.26,14.51c0.56,0.79,1.42,1.31,2.38,1.45c0.16,0.02,0.32,0.03,0.48,0.03c0.8,0,1.57-0.27,2.2-0.78l30.99-25.03c1.5-1.21,1.74-3.42,0.52-4.92C54.13,15.78,51.93,15.55,50.42,16.76z'/%3E%3C/svg%3E");
-$wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath fill='%23ffffff' d='M80.2,55.5H21.4c-2.8,0-5.1-2.5-5.1-5.5l0,0c0-3,2.3-5.5,5.1-5.5h58.7c2.8,0,5.1,2.5,5.1,5.5l0,0C85.2,53.1,82.9,55.5,80.2,55.5z'/%3E%3C/svg%3E");
+@use '@/styles/scss/ag-grid-shared' as *;
 
 .match-table-panel {
   display: flex;
@@ -442,242 +441,16 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   }
 }
 
-:deep(.match-grid .ag-root-wrapper),
-:deep(.match-grid .ag-root),
-:deep(.match-grid .ag-header),
-:deep(.match-grid .ag-body),
-:deep(.match-grid .ag-floating-top),
-:deep(.match-grid .ag-floating-bottom),
-:deep(.match-grid .ag-row),
-:deep(.match-grid .ag-row-odd),
-:deep(.match-grid .ag-row-even),
-:deep(.match-grid .ag-header-row) {
-  background-color: var(--wb-grid-surface) !important;
-}
+// ============ ag-grid 共享样式（来自 _ag-grid-shared.scss）============
+@include ag-grid-base-layout('match-grid');
+@include ag-grid-cell-borders('match-grid');
+@include ag-grid-cell-focus('match-grid');
+@include ag-grid-selection-column('match-grid');
+@include ag-grid-checkbox-theme('match-grid');
+@include ag-grid-checkbox-dark('match-grid');
+@include ag-grid-base-dark('match-grid');
 
-:deep(.match-grid .ag-header-cell),
-:deep(.match-grid .ag-cell),
-:deep(.match-grid .ag-header-cell-text),
-:deep(.match-grid .ag-cell-value) {
-  color: var(--wb-grid-text);
-}
-
-:deep(.match-grid .ag-cell-wrapper),
-:deep(.match-grid .ag-header-cell-comp-wrapper) {
-  height: 100%;
-  align-items: center;
-}
-
-:deep(.match-grid .ag-cell-value),
-:deep(.match-grid .ag-header-cell-text) {
-  display: inline-flex;
-  align-items: center;
-}
-
-:deep(.match-grid .ag-header-cell),
-:deep(.match-grid .ag-cell) {
-  border-right: 1px dotted #d9d9d9 !important;
-}
-
-:deep(.match-grid .ag-row),
-:deep(.match-grid .ag-header-row) {
-  border-bottom: 1px dotted #d9d9d9 !important;
-}
-
-:deep(.match-grid .ag-row-hover .ag-cell) {
-  background-color: rgba(24, 144, 255, 0.04) !important;
-}
-
-/* Selection column alignment */
-:deep(.match-grid .ag-selection-checkbox),
-:deep(.match-grid .ag-checkbox-input-wrapper) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.match-grid .ag-selection-checkbox),
-:deep(.match-grid .ag-header-select-all) {
-  width: 100%;
-  height: 100%;
-}
-
-:deep(.match-grid .ag-header-select-all) {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding-left: 0;
-}
-
-:deep(.match-grid .selection-header-left .ag-header-cell-comp-wrapper) {
-  width: 100%;
-  justify-content: center !important;
-  padding-left: 0 !important;
-}
-
-:deep(.match-grid .selection-header-left .ag-header-select-all) {
-  margin: 0 auto;
-  width: auto !important;
-}
-
-:deep(.match-grid .selection-header-left .ag-header-select-all .ag-selection-checkbox) {
-  justify-content: center !important;
-  width: auto !important;
-  padding-left: 0 !important;
-}
-
-:deep(.match-grid .selection-header-left .ag-header-cell-label) {
-  width: 100% !important;
-  justify-content: center !important;
-  padding-left: 0 !important;
-  gap: 0 !important;
-}
-
-:deep(.match-grid .selection-header-left .ag-header-cell-label .ag-checkbox-input-wrapper) {
-  margin-left: 0 !important;
-  margin-right: 0 !important;
-}
-
-:deep(.match-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn']) {
-  position: relative;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-:deep(.match-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-comp-wrapper) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
-:deep(.match-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-label) {
-  justify-content: center !important;
-  padding-left: 0 !important;
-}
-
-:deep(.match-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-select-all) {
-  position: absolute !important;
-  left: 50% !important;
-  top: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  width: 16px !important;
-  height: 16px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-:deep(.match-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
-:deep(.match-grid .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-:deep(.match-grid .ag-cell[col-id='ag-Grid-SelectionColumn']) {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
-}
-
-:deep(.match-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper) {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:deep(.match-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
-:deep(.match-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-checkbox-input-wrapper) {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-:deep(.match-grid .ag-cell[col-id='ag-Grid-SelectionColumn'] .ag-cell-wrapper .ag-selection-checkbox) {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-
-/* Align checkbox visual with Naive UI NTree style */
-:deep(.match-grid .ag-checkbox-input-wrapper) {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  border: 1px solid #95a6b8;
-  border-radius: 2px;
-  background-color: #ffffff;
-  line-height: 16px;
-}
-
-:deep(.match-grid .ag-checkbox-input-wrapper::before) {
-  display: none !important;
-}
-
-:deep(.match-grid .ag-checkbox-input-wrapper::after) {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 0;
-  height: 0;
-  border: 0;
-  transform: translate(-50%, -50%);
-}
-
-:deep(.match-grid .ag-checkbox-input-wrapper.ag-checked) {
-  border-color: #2a90e8;
-  background-color: #2a90e8;
-}
-
-:deep(.match-grid .ag-checkbox-input-wrapper.ag-checked::after) {
-  content: '';
-  width: 12px;
-  height: 12px;
-  background-image: $wb-checkbox-check-icon;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-}
-
-:deep(.match-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
-  border-color: #2a90e8;
-  background-color: #2a90e8;
-}
-
-:deep(.match-grid .ag-checkbox-input-wrapper.ag-indeterminate::after) {
-  content: '';
-  width: 10px;
-  height: 10px;
-  background-image: $wb-checkbox-line-icon;
-  background-size: contain;
-  background-repeat: no-repeat;
-  background-position: center;
-}
-
-/* Cell focus */
-:deep(.match-grid .ag-cell.ag-cell-focus),
-:deep(.match-grid .ag-cell.ag-cell-range-selected) {
-  border: none !important;
-  outline: 2px solid #40a9ff !important;
-  outline-offset: -2px !important;
-  box-shadow: none !important;
-  z-index: 2 !important;
-}
-
-/* Row highlight classes */
+/* Row highlight classes (component-specific) */
 :deep(.match-selected-row) {
   background-color: #e6f7ff !important;
 }
@@ -690,63 +463,8 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   background-color: #f6ffed !important;
 }
 
-/* Dark mode */
+/* Dark mode row highlight (component-specific) */
 .system-dark {
-  :deep(.match-grid .ag-header-cell),
-  :deep(.match-grid .ag-cell) {
-    border-right-color: rgba(255, 255, 255, 0.12) !important;
-  }
-
-  :deep(.match-grid .ag-row),
-  :deep(.match-grid .ag-header-row) {
-    border-bottom-color: rgba(255, 255, 255, 0.12) !important;
-  }
-
-  :deep(.match-grid .ag-checkbox-input-wrapper) {
-    border-color: #6f859b;
-    background-color: var(--wb-grid-surface);
-  }
-
-  :deep(.match-grid .ag-checkbox-input-wrapper.ag-checked),
-  :deep(.match-grid .ag-checkbox-input-wrapper.ag-indeterminate) {
-    border-color: #4ea4f3;
-    background-color: #2f7fc5;
-  }
-
-  :deep(.match-grid .ag-checkbox-input-wrapper.ag-checked::after) {
-    content: '';
-    width: 12px;
-    height: 12px;
-    background-image: $wb-checkbox-check-icon;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-  }
-
-  :deep(.match-grid .ag-checkbox-input-wrapper.ag-indeterminate::after) {
-    content: '';
-    width: 10px;
-    height: 10px;
-    background-image: $wb-checkbox-line-icon;
-    background-size: contain;
-    background-repeat: no-repeat;
-    background-position: center;
-    background-color: transparent;
-    box-shadow: none;
-  }
-
-  :deep(.match-grid .ag-row-hover::before) {
-    background-color: rgba(122, 167, 214, 0.18) !important;
-  }
-
-  :deep(.match-grid .ag-header-cell .ag-icon),
-  :deep(.match-grid .ag-header-cell .ag-header-icon),
-  :deep(.match-grid .ag-header-cell-menu-button),
-  :deep(.match-grid .ag-header-cell-filter-button) {
-    color: var(--wb-grid-text) !important;
-    opacity: 0.95;
-  }
-
   :deep(.match-selected-row) {
     background-color: rgba(99, 179, 255, 0.2) !important;
   }
