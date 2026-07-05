@@ -11,7 +11,17 @@ class Mcommon extends Model
 
     private ?object $dbInstance = null;
 
-    private array $requestCache = [];
+    /**
+     * 请求级 SQL 缓存（static 实现跨实例共享）
+     *
+     * 设为 static 的原因：18 个服务类各自 new Mcommon()，若为实例属性则
+     * 同请求内 def_user/def_query_config 等元数据查询会被重复执行。
+     * 设为 static 后，同请求内所有 Mcommon 实例共享同一份缓存。
+     *
+     * 跨请求安全性：PHP-FPM 每请求结束时所有 static 变量自动销毁，
+     * 不会跨请求污染。CLI 模式下进程退出即清理。
+     */
+    private static array $requestCache = [];
 
     private function getDb(): object
     {
@@ -30,14 +40,14 @@ class Mcommon extends Model
     public function select(string $sql)
     {
         $cacheKey = md5($sql);
-        if (isset($this->requestCache[$cacheKey])) {
+        if (isset(self::$requestCache[$cacheKey])) {
             log_message('debug', '[Mcommon] 请求级缓存命中: ' . substr($sql, 0, 50) . '...');
-            return $this->requestCache[$cacheKey];
+            return self::$requestCache[$cacheKey];
         }
 
         $db = $this->getDb();
         $result = $db->query($sql);
-        $this->requestCache[$cacheKey] = $result;
+        self::$requestCache[$cacheKey] = $result;
         return $result;
     }
 
@@ -68,15 +78,15 @@ class Mcommon extends Model
     public function queryCached(string $sql, array $bindings = [])
     {
         $cacheKey = md5($sql . json_encode($bindings));
-        if (isset($this->requestCache[$cacheKey])) {
+        if (isset(self::$requestCache[$cacheKey])) {
             log_message('debug', '[Mcommon] 请求级缓存命中(queryCached): ' . substr($sql, 0, 50) . '...');
-            return $this->requestCache[$cacheKey];
+            return self::$requestCache[$cacheKey];
         }
 
         $db = $this->getDb();
         $normalized = preg_replace('/%s/', '?', $sql);
         $result = $db->query($normalized, $bindings);
-        $this->requestCache[$cacheKey] = $result;
+        self::$requestCache[$cacheKey] = $result;
         return $result;
     }
 
