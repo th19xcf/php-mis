@@ -7,6 +7,7 @@ import { AgGridVue } from 'ag-grid-vue3';
 
 import { NButton, NInput, NCheckbox, NCheckboxGroup, NSpace, NDatePicker, NSpin, NModal, NSelect } from 'naive-ui';
 import { useThemeStore } from '@/store/modules/theme';
+import { WORKBENCH_CONFIG } from '@/config/workbench';
 import WorkbenchSelectAllHeader from '@/views/menu-bridge/modules/components/WorkbenchSelectAllHeader.vue';
 import type { MatchModuleData } from '@/hooks/business/use-match-store';
 
@@ -15,21 +16,8 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 
-const lightGridTheme = themeAlpine.withParams({
-  browserColorScheme: 'light',
-  rowBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  columnBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  rangeSelectionBorderColor: '#2196F3',
-  rangeSelectionBorderStyle: 'solid'
-});
-
-const darkGridTheme = themeAlpine.withParams({
-  browserColorScheme: 'dark',
-  rowBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  columnBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  rangeSelectionBorderColor: '#64B5F6',
-  rangeSelectionBorderStyle: 'solid'
-});
+const lightGridTheme = themeAlpine.withParams(WORKBENCH_CONFIG.GRID_THEME.LIGHT);
+const darkGridTheme = themeAlpine.withParams(WORKBENCH_CONFIG.GRID_THEME.DARK);
 
 const gridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
 
@@ -426,12 +414,18 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .match-grid {
   --wb-grid-surface: transparent;
   --wb-grid-text: #1f2937;
+  --wb-grid-border: #d9d9d9;
+  --wb-grid-input-bg: #ffffff;
+  --wb-grid-input-border: #d9d9d9;
   width: 100%;
   height: 100%;
 
   .system-dark & {
     --wb-grid-surface: rgb(var(--container-bg-color));
     --wb-grid-text: rgb(var(--base-text-color));
+    --wb-grid-border: rgb(var(--container-bg-color) / 0.4);
+    --wb-grid-input-bg: rgb(var(--container-bg-color) / 0.6);
+    --wb-grid-input-border: rgb(var(--container-bg-color) / 0.5);
     --ag-background-color: rgb(var(--container-bg-color));
     --ag-header-background-color: rgb(var(--container-bg-color));
     --ag-data-background-color: rgb(var(--container-bg-color));
@@ -441,10 +435,10 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     --ag-odd-row-background-color: rgb(var(--container-bg-color));
     --ag-foreground-color: var(--wb-grid-text);
     --ag-secondary-foreground-color: var(--wb-grid-text);
-    --ag-border-color: #2b3a49;
-    --ag-row-border-color: #2b3a49;
-    --ag-input-background-color: #1f3042;
-    --ag-input-border-color: #43576b;
+    --ag-border-color: var(--wb-grid-border);
+    --ag-row-border-color: var(--wb-grid-border);
+    --ag-input-background-color: var(--wb-grid-input-bg);
+    --ag-input-border-color: var(--wb-grid-input-border);
   }
 }
 

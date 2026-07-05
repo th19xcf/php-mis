@@ -673,17 +673,17 @@ watch(
   color: #ff4d4f;
 }
 
-html.dark .contract-panel {
+.system-dark .contract-panel {
   background: rgb(24, 24, 28);
   border-color: rgba(255, 255, 255, 0.09);
 }
 
-html.dark .panel-header {
+.system-dark .panel-header {
   background: rgb(36, 36, 40);
   border-color: rgba(255, 255, 255, 0.09);
 }
 
-html.dark .panel-content {
+.system-dark .panel-content {
   background: rgb(24, 24, 28);
 }
 
