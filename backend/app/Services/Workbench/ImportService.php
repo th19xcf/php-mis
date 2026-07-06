@@ -295,6 +295,79 @@ class ImportService
     }
 
     /**
+     * 预校验字段长度（避免 insertToTempTable 时触发 Data too long）
+     *
+     * 在写入临时表前逐行检查每个字段值长度是否超出 def_import_column.字段长度 配置，
+     * 超长时返回行级错误，避免 MySQL 抛 "Data too long for column 'xxx' at row N"
+     * 被控制器 Throwable catch 后仅返回笼统的"导入数据失败"。
+     *
+     * @param array $data          待写入的数据（每行为 [字段名 => 值]）
+     * @param array $importColumns 导入列配置（含 字段名、字段长度、列名）
+     * @return array ['hasError' => bool, 'message' => string, 'errors' => array]
+     */
+    public function validateFieldLength(array $data, array $importColumns): array
+    {
+        if (empty($data) || empty($importColumns)) {
+            return ['hasError' => false, 'message' => '', 'errors' => []];
+        }
+
+        // 构建 字段名 => [字段长度, 列名] 映射
+        $lengthMap = [];
+        foreach ($importColumns as $col) {
+            $fieldName = $col['字段名'] ?? '';
+            if ($fieldName === '') {
+                continue;
+            }
+            $fieldLength = isset($col['字段长度']) ? (int) $col['字段长度'] : 255;
+            if ($fieldLength <= 0) {
+                $fieldLength = 255;
+            }
+            $lengthMap[$fieldName] = [
+                'length'    => $fieldLength,
+                'columnName' => $col['列名'] ?? $fieldName,
+            ];
+        }
+
+        $errors = [];
+        foreach ($data as $idx => $row) {
+            $rowNum = $idx + 1;
+            foreach ($lengthMap as $fieldName => $cfg) {
+                if (!array_key_exists($fieldName, $row)) {
+                    continue;
+                }
+                $value = (string) ($row[$fieldName] ?? '');
+                // 按字符数计算长度（与 MySQL varchar 语义一致，utf8mb4 一个汉字算 1 字符）
+                $valueLen = mb_strlen($value, 'UTF-8');
+                if ($valueLen > $cfg['length']) {
+                    $errors[] = [
+                        'row'       => $rowNum,
+                        'field'     => $fieldName,
+                        'column'    => $cfg['columnName'],
+                        'length'    => $cfg['length'],
+                        'actual'    => $valueLen,
+                        'value'     => mb_substr($value, 0, 30, 'UTF-8'),
+                        'error'     => sprintf(
+                                    '第 %d 行 %s 字段超长：%d 字符 > %d 字符（值：%s）',
+                                    $rowNum,
+                                    $cfg['columnName'],
+                                    $valueLen,
+                                    $cfg['length'],
+                                    mb_substr($value, 0, 30, 'UTF-8')
+                                ),
+                    ];
+                }
+            }
+        }
+
+        if (empty($errors)) {
+            return ['hasError' => false, 'message' => '', 'errors' => []];
+        }
+
+        $message = sprintf('字段长度校验失败，共 %d 处超长', count($errors));
+        return ['hasError' => true, 'message' => $message, 'errors' => $errors];
+    }
+
+    /**
      * 创建临时表
      *
      * @param string $tableName 表名

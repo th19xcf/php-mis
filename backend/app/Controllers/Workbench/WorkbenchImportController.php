@@ -188,6 +188,19 @@ class WorkbenchImportController extends BaseApiController
             }
             $validData = $rowCheck['validData'];
 
+            // 4.5 字段长度预校验（避免 insertToTempTable 时触发 Data too long）
+            $lengthCheck = $this->importService->validateFieldLength($validData, $importColumns);
+            if ($lengthCheck['hasError']) {
+                return $this->success([
+                    'success'      => false,
+                    'message'      => $lengthCheck['message'],
+                    'total'        => count($importData),
+                    'successCount' => 0,
+                    'errorCount'   => count($importData),
+                    'errors'       => $lengthCheck['errors'],
+                ]);
+            }
+
             // 5. 写临时表
             if (!$this->importService->createTempTable($tmpTableName, $importColumns)) {
                 return $this->success($this->importService->buildImportFailure($importData, '导入失败：创建临时表失败'));
@@ -290,7 +303,21 @@ class WorkbenchImportController extends BaseApiController
         } catch (BusinessException $e) {
             return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
-            log_message('error', '导入数据失败: ' . $e->getMessage());
+            log_message('error', '导入数据失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            // 开发环境返回具体错误信息（含文件/行号/异常类型），便于排查
+            // 生产环境保持笼统提示，避免泄露 SQL/文件路径等敏感信息
+            if (env('CI_ENVIRONMENT') === 'development') {
+                return $this->error(
+                    ApiCode::SERVER_ERROR,
+                    sprintf(
+                        '导入数据失败：%s（%s:%d）',
+                        $e->getMessage(),
+                        basename($e->getFile()),
+                        $e->getLine()
+                    ),
+                    ['exception' => get_class($e)]
+                );
+            }
             return $this->error(ApiCode::SERVER_ERROR, '导入数据失败');
         }
     }
