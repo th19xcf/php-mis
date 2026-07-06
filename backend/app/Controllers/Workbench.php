@@ -510,30 +510,31 @@ class Workbench extends BaseApiController
                 throw new ValidationException('没有可导出的列');
             }
 
-            // 无论导出全部还是导出筛选，都需要把全部匹配记录一次性取出：
-            //   - 导出全部：payload['filters'] 由前端置为空，命中 queryConfig['queryWhere'] 的所有记录
-            //   - 导出筛选：payload['filters'] 由条件面板提供，需匹配全部筛选后记录
-            // 之前只对 allData=true 设置 all=true / size=50000，导致导出筛选只返回
-            // 第一页（默认 size=20）的记录，与页面显示的完整筛选结果不一致。
-            $payload['all'] = true;
-            $payload['size'] = 50000;
+            // 分批流式导出：先查询总数，再分批拉取数据写入文件，
+            // 避免一次性加载全部记录到内存导致 OOM。
+            // 之前 size=50000 + all=true 一次性取全部行，5万行即可能占用 GB 级内存。
+            $total = $this->queryService->queryTotalCount($context, $payload);
 
-            $queryResult = $this->queryService->queryRecords($context, $payload);
-            $records = $queryResult['records'] ?? [];
-
-            if (empty($records)) {
+            if ($total === 0) {
                 throw new BusinessException('没有数据可导出');
             }
 
+            log_message('info', sprintf('[Workbench::export] 开始流式导出: functionCode=%s, format=%s, total=%d', $functionCode, $format, $total));
+
+            // 分批拉取数据的回调，每批 1000 行
+            $fetchRecords = function (int $offset, int $size) use ($context, $payload) {
+                return $this->queryService->queryRecordsPaged($context, $payload, 1, $size, $offset);
+            };
+
             if ($format === 'csv') {
-                $filePath = $this->exportService->exportToCsv($columns, $records);
+                $filePath = $this->exportService->exportToCsvBatched($columns, $fetchRecords, 1000);
             } else {
-                $filePath = $this->exportService->exportToExcel($columns, $records, $functionCode);
+                $filePath = $this->exportService->exportToExcelBatched($columns, $fetchRecords, $functionCode, 1000);
             }
 
             $filename = basename($filePath);
 
-            log_message('info', sprintf('[Workbench::export] 导出成功: functionCode=%s, format=%s, records=%d', $functionCode, $format, count($records)));
+            log_message('info', sprintf('[Workbench::export] 导出成功: functionCode=%s, format=%s, total=%d', $functionCode, $format, $total));
 
             $this->outputRawFile($filePath, $filename);
             exit;
