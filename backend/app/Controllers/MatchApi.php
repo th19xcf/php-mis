@@ -148,34 +148,11 @@ class MatchApi extends BaseApiController
     private function getModuleColumns(string $moduleName): array
     {
         // 与普通工作台（如功能编码 500001 -> 公司_财务_收支明细）走同一套列配置流程：
-        // 通过 def_function.模块名称 反查功能编码，再从 view_function 取列定义，
-        // 避免在 def_query_column 和 view_function 两处重复维护列配置导致不一致。
+        // 通过 def_function.模块名称 反查功能编码，再从 view_function 取列定义。
+        // 不回退 def_query_column（旧流程是错误的，会导致列配置来源不一致）。
         $functionCode = $this->resolveFunctionCodeByModule($moduleName);
-
-        // 找不到功能编码时回退到旧的 def_query_column 流程，保证兼容性
         if ($functionCode === '') {
-            $db = \Config\Database::connect('btdc');
-            $rows = $db->table('def_query_column')
-                ->where('查询模块', $moduleName)
-                ->where('顺序 >', 0)
-                ->orderBy('顺序')
-                ->get()
-                ->getResultArray();
-
-            $columns = [];
-            foreach ($rows as $row) {
-                $columns[] = [
-                    'field' => $row['列名'] ?? $row['字段名'] ?? '',
-                    'title' => $row['查询名'] ?? $row['列名'] ?? $row['字段名'] ?? '',
-                    'type' => $row['列类型'] ?? '',
-                    'width' => intval($row['列宽度'] ?? 0),
-                    'hidden' => false,
-                    'editable' => false,
-                    'sortable' => true,
-                    'original' => $row
-                ];
-            }
-            return $columns;
+            return [];
         }
 
         // 复用 ContextService::loadColumns 的 SQL（view_function 视图，含 可匹配 字段）
@@ -217,28 +194,22 @@ class MatchApi extends BaseApiController
     private function getMatchColumns(string $moduleName): array
     {
         // 与 getModuleColumns 一致，统一走 view_function（已包含 可匹配 字段），
-        // 避免匹配字段配置与列配置来源不一致。
+        // 不回退 def_query_column（旧流程是错误的）。
         $functionCode = $this->resolveFunctionCodeByModule($moduleName);
-
         if ($functionCode === '') {
-            // 回退到旧的 def_query_column 流程
-            $db = \Config\Database::connect('btdc');
-            $rows = $db->table('def_query_column')
-                ->where('查询模块', $moduleName)
-                ->get()
-                ->getResultArray();
-        } else {
-            $sql = sprintf(
-                'select 字段名,可匹配
-                from view_function
-                where 功能编码=%s and 列顺序>0
-                group by 列名
-                order by 列顺序',
-                $this->model->quote($functionCode)
-            );
-            $query = $this->model->select($sql);
-            $rows = $query ? $query->getResultArray() : [];
+            return ['key' => '', 'label' => '', 'amount' => '', 'target' => ''];
         }
+
+        $sql = sprintf(
+            'select 字段名,可匹配
+            from view_function
+            where 功能编码=%s and 列顺序>0
+            group by 列名
+            order by 列顺序',
+            $this->model->quote($functionCode)
+        );
+        $query = $this->model->select($sql);
+        $rows = $query ? $query->getResultArray() : [];
 
         $result = ['key' => '', 'label' => '', 'amount' => '', 'target' => ''];
 
