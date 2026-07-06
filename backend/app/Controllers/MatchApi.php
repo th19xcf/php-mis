@@ -120,21 +120,88 @@ class MatchApi extends BaseApiController
         ];
     }
 
-    private function getModuleColumns(string $moduleName): array
+    /**
+     * 根据模块名称反查功能编码（def_function.模块名称 -> 功能编码）
+     *
+     * 用于让 match-data 的列/匹配字段配置与普通工作台走同一套 view_function 流程。
+     * 取有效标识=1 且模块名称精确匹配的第一条（按功能编码升序）。
+     *
+     * @param string $moduleName 模块名称（如 公司_财务_收支明细）
+     * @return string 功能编码（未找到返回空字符串）
+     */
+    private function resolveFunctionCodeByModule(string $moduleName): string
     {
         $db = \Config\Database::connect('btdc');
-        $rows = $db->table('def_query_column')
-            ->where('查询模块', $moduleName)
-            ->where('顺序 >', 0)
-            ->orderBy('顺序')
+        $funcRow = $db->table('def_function')
+            ->select('功能编码')
+            ->where('有效标识', '1')
+            ->where('模块名称', $moduleName)
+            ->orderBy('功能编码')
             ->get()
-            ->getResultArray();
+            ->getRowArray();
+        if ($funcRow && !empty($funcRow['功能编码'])) {
+            return (string) $funcRow['功能编码'];
+        }
+        return '';
+    }
+
+    private function getModuleColumns(string $moduleName): array
+    {
+        // 与普通工作台（如功能编码 500001 -> 公司_财务_收支明细）走同一套列配置流程：
+        // 通过 def_function.模块名称 反查功能编码，再从 view_function 取列定义，
+        // 避免在 def_query_column 和 view_function 两处重复维护列配置导致不一致。
+        $functionCode = $this->resolveFunctionCodeByModule($moduleName);
+
+        // 找不到功能编码时回退到旧的 def_query_column 流程，保证兼容性
+        if ($functionCode === '') {
+            $db = \Config\Database::connect('btdc');
+            $rows = $db->table('def_query_column')
+                ->where('查询模块', $moduleName)
+                ->where('顺序 >', 0)
+                ->orderBy('顺序')
+                ->get()
+                ->getResultArray();
+
+            $columns = [];
+            foreach ($rows as $row) {
+                $columns[] = [
+                    'field' => $row['列名'] ?? $row['字段名'] ?? '',
+                    'title' => $row['查询名'] ?? $row['列名'] ?? $row['字段名'] ?? '',
+                    'type' => $row['列类型'] ?? '',
+                    'width' => intval($row['列宽度'] ?? 0),
+                    'hidden' => false,
+                    'editable' => false,
+                    'sortable' => true,
+                    'original' => $row
+                ];
+            }
+            return $columns;
+        }
+
+        // 复用 ContextService::loadColumns 的 SQL（view_function 视图，含 可匹配 字段）
+        $sql = sprintf(
+            'select 功能编码,字段模块,部门编码字段,部门全称字段,
+                工号字段,属地字段,
+                列名,列类型,列宽度,字段名,查询名,
+                赋值类型,对象,对象名称,对象表名,缺省值,主键,
+                工号限权,可筛选,可汇总,可新增,可修改,不可为空,可颜色标注,
+                提示条件,提示样式设置,异常条件,异常样式设置,字符转换,
+                加密显示,列顺序,可匹配
+            from view_function
+            where 功能编码=%s and 列顺序>0
+            group by 列名
+            order by 列顺序',
+            $this->model->quote($functionCode)
+        );
+        $query = $this->model->select($sql);
+        $rows = $query ? $query->getResultArray() : [];
 
         $columns = [];
         foreach ($rows as $row) {
+            $title = (string) ($row['列名'] ?? '');
             $columns[] = [
-                'field' => $row['列名'] ?? $row['字段名'] ?? '',
-                'title' => $row['查询名'] ?? $row['列名'] ?? $row['字段名'] ?? '',
+                'field' => $title !== '' ? $title : (string) ($row['字段名'] ?? ''),
+                'title' => (string) ($row['查询名'] ?? '') !== '' ? (string) $row['查询名'] : ($title !== '' ? $title : (string) ($row['字段名'] ?? '')),
                 'type' => $row['列类型'] ?? '',
                 'width' => intval($row['列宽度'] ?? 0),
                 'hidden' => false,
@@ -149,28 +216,50 @@ class MatchApi extends BaseApiController
 
     private function getMatchColumns(string $moduleName): array
     {
-        $db = \Config\Database::connect('btdc');
-        $rows = $db->table('def_query_column')
-            ->where('查询模块', $moduleName)
-            ->get()
-            ->getResultArray();
+        // 与 getModuleColumns 一致，统一走 view_function（已包含 可匹配 字段），
+        // 避免匹配字段配置与列配置来源不一致。
+        $functionCode = $this->resolveFunctionCodeByModule($moduleName);
+
+        if ($functionCode === '') {
+            // 回退到旧的 def_query_column 流程
+            $db = \Config\Database::connect('btdc');
+            $rows = $db->table('def_query_column')
+                ->where('查询模块', $moduleName)
+                ->get()
+                ->getResultArray();
+        } else {
+            $sql = sprintf(
+                'select 字段名,可匹配
+                from view_function
+                where 功能编码=%s and 列顺序>0
+                group by 列名
+                order by 列顺序',
+                $this->model->quote($functionCode)
+            );
+            $query = $this->model->select($sql);
+            $rows = $query ? $query->getResultArray() : [];
+        }
 
         $result = ['key' => '', 'label' => '', 'amount' => '', 'target' => ''];
 
         foreach ($rows as $col) {
-            $matchType = $col['可匹配'] ?? '';
+            $matchType = (string) ($col['可匹配'] ?? '');
+            $fieldName = (string) ($col['字段名'] ?? '');
+            if ($fieldName === '') {
+                continue;
+            }
             switch ($matchType) {
                 case '1':
-                    $result['key'] = $col['字段名'];
+                    $result['key'] = $fieldName;
                     break;
                 case '2':
-                    $result['label'] = $col['字段名'];
+                    $result['label'] = $fieldName;
                     break;
                 case '3':
-                    $result['amount'] = $col['字段名'];
+                    $result['amount'] = $fieldName;
                     break;
                 case '4':
-                    $result['target'] = $col['字段名'];
+                    $result['target'] = $fieldName;
                     break;
             }
         }
