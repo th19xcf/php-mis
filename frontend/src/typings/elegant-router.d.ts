@@ -25,6 +25,7 @@ declare module "@elegant-router/types" {
     "home": "/home";
     "iframe-page": "/iframe-page/:url";
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
+    "match-data": "/match-data";
     "menu-bridge": "/menu-bridge";
     "permission-demo": "/permission-demo";
     "personnel": "/personnel";
@@ -76,6 +77,7 @@ declare module "@elegant-router/types" {
     | "home"
     | "iframe-page"
     | "login"
+    | "match-data"
     | "menu-bridge"
     | "permission-demo"
     | "personnel"
@@ -105,6 +107,7 @@ declare module "@elegant-router/types" {
     | "common"
     | "contract"
     | "home"
+    | "match-data"
     | "menu-bridge"
     | "permission-demo"
     | "personnel_employee"

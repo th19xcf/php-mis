@@ -1,7 +1,7 @@
 import { ref, computed, type Ref } from 'vue';
 import { h } from 'vue';
 import { NRadio, NRadioGroup, NButton } from 'naive-ui';
-import { fetchWorkbenchChartDrill, resetWorkbenchChartDrill } from '@/service/api/workbench';
+import { fetchWorkbenchChartDrill } from '@/service/api/workbench';
 import { logger } from '@/utils/logger';
 
 type MessageType = 'success' | 'error' | 'warning' | 'info';
@@ -19,18 +19,39 @@ interface UseWorkbenchChartDrillOptions {
 }
 
 /**
+ * 钻取上下文（前端持有并回传后端，替代旧版 session 累加）
+ *
+ * - condStr：多级钻取条件累加串（字段1^值1;字段2^值2;...）
+ * - titleStr：多级钻取副标题累加串（值1,值2,...）
+ *
+ * 每次钻取请求时回传给后端，后端叠加本次钻取条件后返回新的 drillContext，
+ * 前端持有用于下次请求回传。退出钻取仅在前端清空本地状态即可，无需后端接口。
+ */
+interface DrillContext {
+  condStr: string;
+  titleStr: string;
+}
+
+const EMPTY_DRILL_CONTEXT: DrillContext = { condStr: '', titleStr: '' };
+
+/**
  * 图形钻取组合式函数
  *
  * 完整复刻旧版 Vgrid_aggrid.php 中 chart_drill 流程：
  *   1. 图表点击 → 解析 SID → 弹出钻取选项
  *   2. 用户选择钻取选项 → 调用后端 /workbench/chart-drill
- *   3. 后端返回下一级钻取图形数据 → 前端重新渲染
- *   4. 支持"返回初始图形"按钮（重置钻取状态）
- *   5. 支持"钻取图形"按钮（查看当前钻取结果）
+ *   3. 后端返回下一级钻取图形数据 + 新的 drillContext → 前端重新渲染
+ *   4. 支持"返回初始图形"按钮（前端清空 drillContext + drillLevel 即可）
+ *
+ * 与旧版的差异：钻取状态由前端持有，后端无状态。
+ *  - 多端并发钻取互不干扰（每个前端实例持有独立 drillContext）
+ *  - 消除 session 文件锁竞争
  */
 export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
   // 当前钻取级别，0=初始，1=第一级钻取...
   const drillLevel = ref(0);
+  // 钻取上下文（前端持有并回传后端，替代 session 累加）
+  const drillContext = ref<DrillContext>({ ...EMPTY_DRILL_CONTEXT });
   // 是否处于钻取状态
   const isDrilled = computed(() => drillLevel.value > 0);
 
@@ -172,10 +193,11 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
   /**
    * 执行图形钻取
    *
-   * 多级钻取：
-   *  - 请求体里 钻取级别 = 当前级别（0=初始，1=第一级钻取中，2=第二级钻取中 ...）
-   *  - 后端通过 session 累加各级钻取条件，并在响应中以 drillLevel = 当前级别 + 1 作为新级别
-   *  - 前端在 resetDrill / silentResetDrill 时会清空 session，重新从 0 开始
+   * 多级钻取（无状态实现）：
+   *  - 请求体 payload[3] = drillContext { condStr, titleStr }（前端持有并回传）
+   *  - 后端叠加本次钻取条件后返回新的 drillContext，前端持有用于下次请求回传
+   *  - 响应中 drillLevel = 当前级别 + 1，作为前端新的钻取级别
+   *  - 退出钻取由前端清空 drillContext + drillLevel，无需后端 reset 接口
    */
   async function executeChartDrill(optionValue: string, dataItem: Record<string, any>) {
     const functionCode = options.getFunctionCode();
@@ -189,7 +211,13 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
     options.loading.value = true;
 
     try {
-      const payload = [{ 钻取级别: drillLevel.value }, { 钻取选项: optionValue }, dataItem];
+      // 把 drillContext 作为 payload[3] 回传后端（替代 session 累加）
+      const payload = [
+        { 钻取级别: drillLevel.value },
+        { 钻取选项: optionValue },
+        dataItem,
+        drillContext.value
+      ];
 
       const { data, error } = await fetchWorkbenchChartDrill(functionCode, payload);
 
@@ -205,10 +233,15 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
         return;
       }
 
-      // 优先采用后端返回的 drillLevel（后端以 session 累加为权威）
-      // 兜底：前端 drillLevel + 1
+      // 优先采用后端返回的 drillLevel；兜底：前端 drillLevel + 1
       const newLevel = typeof data.drillLevel === 'number' ? data.drillLevel : drillLevel.value + 1;
       drillLevel.value = newLevel;
+
+      // 更新钻取上下文（后端叠加本次钻取条件后的新状态，前端持有用于下次请求回传）
+      if (data.drillContext) {
+        drillContext.value = { ...data.drillContext };
+      }
+
       log('info', `钻取成功, 新级别=${drillLevel.value}, 返回图表数=${data.charts.length}`);
 
       // 通知外部更新图表
@@ -224,25 +257,16 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
 
   /**
    * 返回初始图形
+   *
+   * 后端已无状态（drillContext 由前端持有），仅需清空本地状态。
+   * 实际的"重新加载初始图形"由调用方在 resetDrill 后调 handleOpenChart 完成。
    */
   async function resetDrill() {
-    const functionCode = options.getFunctionCode();
-    if (!functionCode) return;
-
     log('info', `重置钻取状态`);
-
-    options.loading.value = true;
-    try {
-      await resetWorkbenchChartDrill(functionCode);
-      drillLevel.value = 0;
-      log('info', `钻取状态已重置`);
-      options.notify('success', '已返回初始图形');
-    } catch (err) {
-      log('error', `重置钻取状态失败:`, err);
-      options.notify('error', '重置钻取状态失败');
-    } finally {
-      options.loading.value = false;
-    }
+    drillLevel.value = 0;
+    drillContext.value = { ...EMPTY_DRILL_CONTEXT };
+    log('info', `钻取状态已重置`);
+    options.notify('success', '已返回初始图形');
   }
 
   /**
@@ -251,29 +275,19 @@ export function useWorkbenchChartDrill(options: UseWorkbenchChartDrillOptions) {
    * 与 resetDrill 的区别：
    *  - 不显示成功 / 失败通知（适用于关闭图形时的自动清理）
    *  - 不切换外部 loading 状态
-   *  - 前端 drillLevel 立即归零（不等后端响应），保证头部徽章
-   *    `钻取第 N 级 / 初始图形` 在关闭瞬间就反映正确状态
-   *  - 后端 session 清理 fire-and-forget，不阻塞关闭动作
+   *  - 前端状态立即归零，保证头部徽章 `钻取第 N 级 / 初始图形` 在关闭瞬间反映正确状态
+   *
+   * 后端无状态，无需任何网络请求。
    */
   async function silentResetDrill(): Promise<void> {
-    const functionCode = options.getFunctionCode();
-    if (!functionCode) return;
-
     log('info', `静默重置钻取状态`);
-
-    // 立即归零前端状态
     drillLevel.value = 0;
-
-    try {
-      await resetWorkbenchChartDrill(functionCode);
-    } catch (err) {
-      log('error', `静默重置后端钻取状态失败:`, err);
-      // 不弹错误通知，避免干扰用户关闭操作
-    }
+    drillContext.value = { ...EMPTY_DRILL_CONTEXT };
   }
 
   return {
     drillLevel,
+    drillContext,
     isDrilled,
     handleChartClick,
     resetDrill,

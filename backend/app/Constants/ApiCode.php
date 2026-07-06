@@ -40,7 +40,6 @@ final class ApiCode
     public const WORKBENCH_QUERY_FAILED = '5002';
     public const WORKBENCH_PAGED_QUERY_FAILED = '5003';
     public const WORKBENCH_CHART_DRILL_FAILED = '5004';
-    public const WORKBENCH_CHART_DRILL_RESET_FAILED = '5005';
 
     /** @var string[] */
     public const LOGOUT_CODES = [

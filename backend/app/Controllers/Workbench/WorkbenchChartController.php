@@ -69,11 +69,12 @@ class WorkbenchChartController extends BaseApiController
     /**
      * 图形钻取
      *
-     * 支持多级钻取：
+     * 支持多级钻取（无状态实现）：
      *  - 请求 payload[0].钻取级别 = 当前级别（0=初始；1=第一级钻取中；2=第二级钻取中 ...）
-     *  - ChartDrillService 通过 session 累加各级钻取条件
+     *  - 请求 payload[3] = drillContext { condStr, titleStr }（前端持有并回传，替代 session 累加）
      *  - 响应中 drillLevel = 当前级别 + 1，作为前端新的钻取级别
-     *  - 关闭图形 / 退出钻取 时需调用 chartDrillReset 清空 session
+     *  - 响应中 drillContext = 叠加本次钻取条件后的新状态，前端持有用于下次请求回传
+     *  - 关闭图形 / 退出钻取由前端清空本地状态即可，无需后端接口
      */
     public function chartDrill(string $functionCode = '')
     {
@@ -82,12 +83,13 @@ class WorkbenchChartController extends BaseApiController
 
             $drillLevel = isset($payload[0]['钻取级别']) ? (int) $payload[0]['钻取级别'] : 0;
 
-            $charts = $this->chartDrillService->performChartDrill($functionCode, $payload);
+            $result = $this->chartDrillService->performChartDrill($functionCode, $payload);
 
             return $this->success([
-                'charts'     => $charts,
-                'drillLevel' => $drillLevel + 1,
-                'message'    => '钻取成功',
+                'charts'       => $result['charts'],
+                'drillLevel'   => $drillLevel + 1,
+                'drillContext' => $result['drillContext'],
+                'message'      => '钻取成功',
             ]);
         } catch (AuthException $e) {
             return $this->error(ApiCode::AUTH_UNAUTHORIZED, $e->getMessage());
@@ -98,35 +100,6 @@ class WorkbenchChartController extends BaseApiController
         } catch (\Throwable $e) {
             log_message('error', '图形钻取失败: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return $this->error(ApiCode::WORKBENCH_CHART_DRILL_FAILED, '图形钻取失败: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * 退出图形钻取
-     */
-    public function chartDrillReset(string $functionCode = '')
-    {
-        try {
-            $session = \Config\Services::session();
-            $menuId = $session->get('menu_id') ?: $functionCode;
-
-            $session->remove($menuId . '-chart_drill_arr');
-
-            $sessionData = $_SESSION ?? [];
-            foreach (array_keys($sessionData) as $key) {
-                if (strpos((string) $key, (string) $menuId) === 0
-                    && (strpos((string) $key, '-chart_drill_cond_str') !== false
-                        || strpos((string) $key, '-chart_drill_title_str') !== false)) {
-                    $session->remove($key);
-                }
-            }
-
-            return $this->success([
-                'message' => '已退出钻取',
-            ]);
-        } catch (\Throwable $e) {
-            log_message('error', '重置图形钻取失败: ' . $e->getMessage());
-            return $this->error(ApiCode::WORKBENCH_CHART_DRILL_RESET_FAILED, '重置图形钻取失败');
         }
     }
 }

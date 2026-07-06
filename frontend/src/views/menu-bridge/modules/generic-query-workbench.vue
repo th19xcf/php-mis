@@ -791,9 +791,8 @@ function handleCloseRightPanel() {
     chartVisible.value = false;
     chartMaximized.value = false;
     // 关闭图形时静默重置钻取状态：
-    // 1) 前端 drillLevel 立即归零，避免下次打开仍显示"钻取第 N 级"徽章
-    // 2) 同步清理后端 session 钻取栈（chart_drill_arr / cond / title），
-    //    防止用户重新钻取时叠加错误的条件
+    // 前端 drillLevel / drillContext 立即归零，避免下次打开仍显示"钻取第 N 级"徽章
+    // 后端无状态（drillContext 由前端持有），无需任何网络请求
     void silentResetDrill();
   }
 }
@@ -877,7 +876,7 @@ const { options: _drillOptions, getOptionsForChart: getDrillOptionsForChart } = 
 });
 
 /**
- * 重置图形钻取：先清空后端 session 中的钻取状态，再重新加载初始图形
+ * 重置图形钻取：清空前端的 drillContext + drillLevel，再重新加载初始图形
  */
 async function handleResetDrill() {
   if (isDrilled.value) {

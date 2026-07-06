@@ -232,27 +232,21 @@ export function executeUpkeep(functionCode: string) {
 /**
  * 图形钻取
  * @param functionCode 功能编码
- * @param payload 钻取参数 [ { 钻取级别 }, { 钻取选项 }, { ...数据点 } ]
+ * @param payload 钻取参数 [ { 钻取级别 }, { 钻取选项 }, { ...数据点 }, drillContext ]
+ *
+ * 无状态实现：drillContext { condStr, titleStr } 由前端持有并回传，
+ * 后端叠加本次钻取条件后返回新的 drillContext，前端持有用于下次请求回传。
+ * 退出钻取由前端清空本地状态即可，无需后端 reset 接口。
  */
 export function fetchWorkbenchChartDrill(functionCode: string, payload: any[]) {
   return request<{
     charts: any[];
     drillLevel: number;
+    drillContext: { condStr: string; titleStr: string };
     message: string;
   }>({
     url: `/workbench/chart-drill/${encodeURIComponent(functionCode)}`,
     method: 'post',
     data: payload
-  });
-}
-
-/**
- * 重置图形钻取状态
- */
-export function resetWorkbenchChartDrill(functionCode: string) {
-  return request<{ message: string }>({
-    url: `/workbench/chart-drill-reset/${encodeURIComponent(functionCode)}`,
-    method: 'post',
-    skipAuthError: true
   });
 }

@@ -7,7 +7,6 @@ use App\Libraries\MetadataCache;
 use App\Models\Mcommon;
 use App\Services\Workbench\ContextService;
 use App\Traits\ChartColumnConfigTrait;
-use Config\Services;
 
 /**
  * 图形钻取服务类
@@ -15,8 +14,8 @@ use Config\Services;
  * 参考旧版 Frame.php::chart_drill 的设计：
  *  - 根据图表点击的 SID 解析出"图形模块^图形编号"
  *  - 根据 def_chart_drill_config 获取钻取选项及下一级钻取图形配置
- *  - 通过 session 累加各级钻取条件（chart_drill_cond_str），实现多级钻取叠加
- *  - 通过 session 累加钻取标题（chart_drill_title_str），用于图表副标题显示
+ *  - 多级钻取条件累加由前端持有 drillContext 回传（无状态，替代旧版 session 累加）
+ *  - 副标题累加同样由 drillContext 携带，用于图表副标题显示
  */
 class ChartDrillService
 {
@@ -42,22 +41,27 @@ class ChartDrillService
      *   [
      *     { '钻取级别': 0|1|2|... },   // 0=初始，1=第一级钻取，依次累加
      *     { '钻取选项': 'option^chart_module^drill_module' },
-     *     { 'SID': '图形模块^图形编号', ...其他数据点字段 }
+     *     { 'SID': '图形模块^图形编号', ...其他数据点字段 },
+     *     { condStr, titleStr }       // 钻取上下文（前端持有并回传，替代 session）
      *   ]
      *
      * @param string $functionCode 功能编码（用于定位 menu_id）
      * @param array  $payload      前端请求数据
-     * @return array
+     * @return array{charts:array,drillContext:array{condStr:string,titleStr:string}}
      */
     public function performChartDrill(string $functionCode, array $payload): array
     {
-        $session = Services::session();
-        // 兼容多级菜单嵌套场景；若无 menu_id 则使用功能编码
-        $menuId = $session->get('menu_id') ?: $functionCode;
+        // menuId 直接使用 functionCode（旧版从 session 读取 menu_id，但该 key 从未被写入）
+        $menuId = $functionCode;
 
         $drillLevel  = isset($payload[0]['钻取级别']) ? (int) $payload[0]['钻取级别'] : 0;
         $drillOption = isset($payload[1]['钻取选项']) ? (string) $payload[1]['钻取选项'] : '';
         $drillData   = $payload[2] ?? [];
+
+        // 钻取上下文（前端回传，替代 session 累加）：包含历史级别累加的 condStr / titleStr
+        $drillContextIn  = is_array($payload[3] ?? null) ? $payload[3] : [];
+        $chartDrillCondStr  = (string) ($drillContextIn['condStr'] ?? '');
+        $chartDrillTitleStr = (string) ($drillContextIn['titleStr'] ?? '');
 
         if ($drillOption === '') {
             throw new ValidationException('钻取选项不能为空');
@@ -116,13 +120,17 @@ class ChartDrillService
         // 3. 钻取目标图形 = 钻取配置中 图形模块 列指向的 chart
         //    老版直接以 $chart_id = optionValue[1] 作为 钻取目标 加载（Frame.php L3401）
         //    把 $menuId 透传下去，供 SP 占位符 $查询表名 / $[部门全称赋权] 替换
-        $drillTargetCharts = $this->getChartData($menuId, $chartId, '', $drillParam);
+        //    condStr / titleStr 透传给 getChartData（替代旧版从 session 读取）
+        $drillTargetCharts = $this->getChartData(
+            $menuId,
+            $chartId,
+            '',
+            $drillParam,
+            $chartDrillCondStr,
+            $chartDrillTitleStr
+        );
 
-        // 4. 处理多级钻取：把本次钻取条件叠加到 session
-        //    key 沿用老版约定：{menuId}^{chartId}-chart_drill_cond_str
-        $chartDrillCondStr  = $session->get(sprintf('%s^%s-chart_drill_cond_str', $menuId, $chartId)) ?: '';
-        $chartDrillTitleStr = $session->get(sprintf('%s^%s-chart_drill_title_str', $menuId, $chartId)) ?: '';
-
+        // 4. 处理多级钻取：把本次钻取条件叠加到 drillContext（替代 session）
         if ($drillParam !== '') {
             $chartDrillCondStr = $chartDrillCondStr === ''
                 ? $drillParam
@@ -137,15 +145,14 @@ class ChartDrillService
                 : ($chartDrillTitleStr . ',' . $currentTitle);
         }
 
-        $session->set(sprintf('%s^%s-chart_drill_cond_str', $menuId, $chartId), $chartDrillCondStr);
-        $session->set(sprintf('%s^%s-chart_drill_title_str', $menuId, $chartId), $chartDrillTitleStr);
-
-        // 5. 累加到 session 的钻取图形数组，供"返回初始图形"以外的状态使用
-        $chartDrillArr = $session->get($menuId . '-chart_drill_arr') ?: [];
-        $chartDrillArr[] = $drillTargetCharts;
-        $session->set($menuId . '-chart_drill_arr', $chartDrillArr);
-
-        return $drillTargetCharts;
+        // 5. 返回钻取目标图形 + 新的 drillContext（前端持有并回传）
+        return [
+            'charts' => $drillTargetCharts,
+            'drillContext' => [
+                'condStr'  => $chartDrillCondStr,
+                'titleStr' => $chartDrillTitleStr,
+            ],
+        ];
     }
 
     /**
@@ -155,15 +162,18 @@ class ChartDrillService
      * @param string $chartModule   图形模块
      * @param string $chartCode     图形编号（空表示取全部）
      * @param string $drillParam    钻取参数串（字段1^值1;字段2^值2）
+     * @param string $condStr       多级钻取累加条件（由前端 drillContext 回传，替代 session）
+     * @param string $titleStr      多级钻取累加副标题（由前端 drillContext 回传，替代 session）
      * @return array
      */
-    public function getChartData(string $menuId, string $chartModule, string $chartCode, string $drillParam = ''): array
-    {
-        $session = Services::session();
-
-        $condStr   = $session->get(sprintf('%s^%s-chart_drill_cond_str', $menuId, $chartModule)) ?: '';
-        $titleStr  = $session->get(sprintf('%s^%s-chart_drill_title_str', $menuId, $chartModule)) ?: '';
-
+    public function getChartData(
+        string $menuId,
+        string $chartModule,
+        string $chartCode,
+        string $drillParam = '',
+        string $condStr = '',
+        string $titleStr = ''
+    ): array {
         $sql = sprintf(
             'select 图形模块, 图形编号, 图形名称, 图形类型, 取数方式,
                     查询表名, 查询字段, 属地字段, 查询条件, 汇总条件, 排序条件, 记录条数,
@@ -276,28 +286,15 @@ class ChartDrillService
     {
         // 存储过程：直接 call <sp>(...)，$fieldName 用 drillParam 替换
         if (isset($row->取数方式) && (string) $row->取数方式 === '存储过程') {
-            $session = Services::session();
             $spCall  = (string) $row->查询表名;
 
             // 老版约定：$查询表名 / $[部门全称赋权] 占位符
-            // 1) 优先从 session 读取（兼容旧版 Frame::init 链路）
-            // 2) session 缺失时，按 menuId 重建 context 兜底（新版 Workbench 链路）
-            $queryTable  = $session->get($menuId . '-query_table')  ?: '';
-            $deptNameStr = $session->get($menuId . '-dept_name_str') ?: '';
-
-            if (($queryTable === '' || $deptNameStr === '') && $menuId !== '') {
-                [$queryTable, $deptNameStr] = $this->resolveStoredProcedureContext(
-                    $menuId,
-                    $queryTable,
-                    $deptNameStr
-                );
-                // 回填 session，供后续钻取/重入复用
-                if ($queryTable !== '') {
-                    $session->set($menuId . '-query_table', $queryTable);
-                }
-                if ($deptNameStr !== '') {
-                    $session->set($menuId . '-dept_name_str', $deptNameStr);
-                }
+            // 旧版从 session 读取（兼容 Frame::init 链路）；新版统一通过 ContextService 重建
+            // （ContextCacheService 自带 30 分钟 TTL 缓存，不会重复查 DB）
+            $queryTable  = '';
+            $deptNameStr = '';
+            if ($menuId !== '') {
+                [$queryTable, $deptNameStr] = $this->resolveStoredProcedureContext($menuId);
             }
 
             $spCall = str_replace('$查询表名', (string) $queryTable, $spCall);
@@ -468,17 +465,17 @@ class ChartDrillService
     }
 
     /**
-     * 从 ContextService 重建 queryTable / deptNameStr，兜底 session 缺失场景
+     * 从 ContextService 重建 queryTable / deptNameStr（替代旧版 session 读取）
      *
      * - queryTable：来自 def_query_config.查询表名（功能编码 → 查询模块 → 查询表名）
      * - deptNameStr：来自用户/角色 部门全称赋权，老版格式 `"a","b"`
      *
-     * @param string $menuId             菜单/功能编码
-     * @param string $existingQueryTable session 中已有的 queryTable
-     * @param string $existingDeptNameStr session 中已有的 deptNameStr
+     * ContextService 内部走 ContextCacheService（30 分钟 TTL），不会重复查 DB。
+     *
+     * @param string $menuId  菜单/功能编码
      * @return array{0:string,1:string}  [queryTable, deptNameStr]
      */
-    private function resolveStoredProcedureContext(string $menuId, string $existingQueryTable, string $existingDeptNameStr): array
+    private function resolveStoredProcedureContext(string $menuId): array
     {
         try {
             [$context] = $this->contextService->buildWorkbenchContext($menuId);
@@ -488,21 +485,14 @@ class ChartDrillService
                 $menuId,
                 $e->getMessage()
             ));
-            return [$existingQueryTable, $existingDeptNameStr];
+            return ['', ''];
         }
 
-        $queryTable = $existingQueryTable !== ''
-            ? $existingQueryTable
-            : (string) ($context['queryTable'] ?? '');
-
-        if ($existingDeptNameStr === '') {
-            $deptNameStr = $this->formatDeptNameStr((string) ($context['user']['deptNameAuth'] ?? ''));
-        } else {
-            $deptNameStr = $existingDeptNameStr;
-        }
+        $queryTable  = (string) ($context['queryTable'] ?? '');
+        $deptNameStr = $this->formatDeptNameStr((string) ($context['user']['deptNameAuth'] ?? ''));
 
         log_message('debug', sprintf(
-            '[ChartDrillService] 兜底加载 context 成功: menuId=%s, queryTable=%s, deptNameStr=%s',
+            '[ChartDrillService] 通过 ContextService 加载 context: menuId=%s, queryTable=%s, deptNameStr=%s',
             $menuId,
             $queryTable,
             $deptNameStr

@@ -57,7 +57,6 @@ $routes->group('workbench', static function ($routes) {
 	// 图表接口：迁出至 Workbench\WorkbenchChartController
 	$routes->get('chart/(:segment)', 'Workbench\WorkbenchChartController::chart/$1');
 	$routes->post('chart-drill/(:segment)', 'Workbench\WorkbenchChartController::chartDrill/$1');
-	$routes->post('chart-drill-reset/(:segment)', 'Workbench\WorkbenchChartController::chartDrillReset/$1');
 	// 弹窗接口：迁出至 Workbench\WorkbenchPopupController
 	$routes->get('popup-data/(:segment)', 'Workbench\WorkbenchPopupController::popupData/$1');
 	$routes->get('popup-levels/(:segment)', 'Workbench\WorkbenchPopupController::popupLevels/$1');
