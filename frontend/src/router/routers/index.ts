@@ -27,7 +27,7 @@ export function createStaticRoutes() {
 
     // 一级菜单图标补充
     const menuIconMap: Record<string, string> = {
-      system: 'mdi:settings',
+      system: 'mdi:cog-outline',
       info: 'mdi:database',
       personnel: 'mdi:account-heart',
       income: 'mdi:cash',
@@ -36,11 +36,16 @@ export function createStaticRoutes() {
     };
     // 兼容中文 title
     const zhTitleIconMap: Record<string, string> = {
-      系统管理: 'mdi:settings',
+      数据匹配: 'mdi:merge',
+      首页: 'mdi:monitor-dashboard',
+      系统管理: 'mdi:cog-outline',
       管理信息: 'mdi:database',
       人员管理: 'mdi:account-heart',
       收入成本: 'mdi:cash',
-      经营分析: 'mdi:chart-line'
+      经营分析: 'mdi:chart-line',
+      合同管理: 'mdi:file-sign',
+      房产租赁: 'mdi:home-variant-outline',
+      财务管理: 'mdi:wallet'
     };
     if (route.name && menuIconMap[route.name]) {
       if (!route.meta) {

@@ -62,7 +62,7 @@ export function createStaticRoutes() {
       };
     }
 
-    // 隐藏与后端动态菜单重复的静态菜单（合同管理、人员管理）
+    // 隐藏与后端动态菜单重复的静态路由（合同管理、人员管理）
     if (route.name === 'contract' || route.name === 'personnel') {
       route.meta = {
         ...route.meta,

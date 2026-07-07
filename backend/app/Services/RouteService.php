@@ -248,7 +248,7 @@ class RouteService
                     'component' => 'layout.base',
                     'meta' => [
                         'title' => $row->一级菜单,
-                        'icon' => 'mdi:menu'
+                        'icon' => $this->getMenuIcon($row->一级菜单)
                     ],
                     'children' => []
                 ];
@@ -287,5 +287,26 @@ class RouteService
         }
 
         return preg_replace('/[^\x{4e00}-\x{9fa5}]/u', '', $str);
+    }
+
+    /**
+     * 根据一级菜单名返回对应的 MDI 图标
+     */
+    private function getMenuIcon(string $menuName): string
+    {
+        $iconMap = [
+            '数据匹配' => 'mdi:merge',
+            '首页' => 'mdi:monitor-dashboard',
+            '系统管理' => 'mdi:cog-outline',
+            '管理信息' => 'mdi:database',
+            '人员管理' => 'mdi:account-heart',
+            '收入成本' => 'mdi:cash',
+            '经营分析' => 'mdi:chart-line',
+            '合同管理' => 'mdi:file-sign',
+            '房产租赁' => 'mdi:home-variant-outline',
+            '财务管理' => 'mdi:wallet'
+        ];
+
+        return $iconMap[$menuName] ?? 'mdi:menu';
     }
 }
