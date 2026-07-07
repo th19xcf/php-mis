@@ -775,10 +775,16 @@ class ImportService
     /**
      * 执行导入前处理模块
      *
+     * 支持在 def_import_config.前处理模块 中配置带参数的存储过程，例如：
+     *   sp_公司_财务_银行收支明细_兴业_导入前处理($源表, @out)
+     *   - $源表：占位符，会被替换为本次导入的临时表名
+     *   - @out：可选，MySQL 用户变量，用于返回前处理执行后的消息
+     *
      * @param string $importModule 导入模块
+     * @param string $tmpTableName 本次导入临时表名
      * @return array ['success' => bool, 'message' => string]
      */
-    public function executeBeforeProcess(string $importModule): array
+    public function executeBeforeProcess(string $importModule, string $tmpTableName): array
     {
         try {
             $sql = sprintf(
@@ -797,16 +803,43 @@ class ImportService
             }
 
             $beforeProcess = $row['前处理模块'];
-            $spSql = sprintf('call %s', $beforeProcess);
+
+            // 替换 $源表 为本次导入的临时表名字符串字面量。
+            // 占位符两侧若已有单/双引号会一并去掉，然后用 model->quote 重新包裹，
+            // 确保传给存储过程的是一个合法的 SQL 字符串值。
+            $beforeProcess = preg_replace('/[\'"]?\$源表[\'"]?/', $this->model->quote($tmpTableName), $beforeProcess);
+
+            // 兼容旧配置：如果配置里没写 call 前缀，自动补全
+            if (strpos(ltrim($beforeProcess), 'call ') !== 0) {
+                $beforeProcess = 'call ' . $beforeProcess;
+            }
+
+            // 若存储过程使用了 @out 输出参数，先初始化该会话变量
+            $hasOutParam = strpos($beforeProcess, '@out') !== false;
+            if ($hasOutParam) {
+                $this->model->select("set @out = ''");
+            }
 
             ob_start();
             try {
-                $this->model->select($spSql);
+                $this->model->select($beforeProcess);
             } finally {
                 ob_end_clean();
             }
 
-            return ['success' => true, 'message' => '前处理执行成功'];
+            $message = '前处理执行成功';
+            if ($hasOutParam) {
+                $outResult = $this->model->select('select @out as out_message');
+                if ($outResult) {
+                    $outRow = $outResult->getRowArray();
+                    $outMessage = $outRow['out_message'] ?? '';
+                    if ($outMessage !== '') {
+                        $message = (string) $outMessage;
+                    }
+                }
+            }
+
+            return ['success' => true, 'message' => $message];
         } catch (\Throwable $e) {
             log_message('error', '执行前处理模块失败: ' . $e->getMessage());
             return ['success' => false, 'message' => '执行前处理模块失败: ' . $e->getMessage()];

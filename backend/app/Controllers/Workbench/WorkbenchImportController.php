@@ -246,7 +246,7 @@ class WorkbenchImportController extends BaseApiController
 
             // 8. 导入前处理
             if ($importModule !== '') {
-                $beforeProcessResult = $this->importService->executeBeforeProcess($importModule);
+                $beforeProcessResult = $this->importService->executeBeforeProcess($importModule, $tmpTableName);
                 if (!$beforeProcessResult['success']) {
                     $this->importService->dropTempTable($tmpTableName);
                     return $this->success([
