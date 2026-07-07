@@ -116,7 +116,11 @@ const columnDefs = computed<ColDef[]>(() => {
       field: col.field,
       width: col.width || 120,
       sortable: col.sortable !== false,
-      editable: false,
+      // 允许双击进入编辑器（方便键盘选中 Ctrl+C 拷贝文本），
+      // 但通过 valueSetter 返回 false 拒绝写入新值，
+      // 退出编辑后 cell 自动恢复原内容，不污染对账数据
+      editable: true,
+      valueSetter: () => false,
       resizable: true,
       hide: isGuidColumn
     };
