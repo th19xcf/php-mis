@@ -27,6 +27,10 @@ const functionCode = ref('');
 const pageTitle = ref('');
 const aModule = ref('');
 const bModule = ref('');
+const aFunctionCode = ref('');
+const bFunctionCode = ref('');
+const aConfig = ref<any>(null);
+const bConfig = ref<any>(null);
 
 const aTableRef = ref<InstanceType<typeof MatchTablePanel> | null>(null);
 const bTableRef = ref<InstanceType<typeof MatchTablePanel> | null>(null);
@@ -86,6 +90,10 @@ async function init() {
 
     aModule.value = meta.aModule;
     bModule.value = meta.bModule;
+    aFunctionCode.value = meta.aFunctionCode || '';
+    bFunctionCode.value = meta.bFunctionCode || '';
+    aConfig.value = meta.aConfig;
+    bConfig.value = meta.bConfig;
 
     store.loadData(
       funcCode,
@@ -266,29 +274,32 @@ onMounted(() => {
               <div class="match-card-header-left">
                 <span class="match-section-badge badge-a">A</span>
                 <span class="section-title">{{ aModule }}</span>
+                <span class="section-function-code">{{ aFunctionCode }}</span>
               </div>
-              <div class="match-card-header-center">
-                <NSpace size="small" wrap>
-                  <NButton size="small" type="default" @click="handleRefresh">刷新</NButton>
-                  <NButton size="small" type="default" @click="handleAReset">重置</NButton>
-                  <NButton size="small" type="default" @click="handleAOpenPinColumn">固定列</NButton>
-                  <NButton size="small" type="default" @click="handleAOpenFieldSelector">字段选择</NButton>
-                  <NButton size="small" type="default" @click="handleAScrollToMatched" :disabled="store.aSelectedKeys.value.length === 0">
-                    定位匹配
-                  </NButton>
-                  <NInput
-                    v-model:value="aQuickKeyword"
-                    size="small"
-                    placeholder="快速检索"
-                    style="width: 180px;"
-                  />
-                  <span class="match-count-text">
-                    已选 {{ store.aSelectedKeys.value.length }} 行 · 共 {{ aDisplayedCount }} 条
-                  </span>
-                </NSpace>
-              </div>
-              <div class="match-card-header-right">
-                {{ aMatchedCount }}/{{ store.aData.value.rows.length }} 已匹配 · {{ aProgress }}%
+              <div class="match-card-header-right-group">
+                <div class="match-card-header-center">
+                  <NSpace size="small" wrap justify="end">
+                    <NButton size="small" type="default" @click="handleRefresh">刷新</NButton>
+                    <NButton size="small" type="default" @click="handleAReset">重置</NButton>
+                    <NButton size="small" type="default" @click="handleAOpenPinColumn">固定列</NButton>
+                    <NButton size="small" type="default" @click="handleAOpenFieldSelector">字段选择</NButton>
+                    <NButton size="small" type="default" @click="handleAScrollToMatched" :disabled="store.aSelectedKeys.value.length === 0">
+                      定位匹配
+                    </NButton>
+                    <NInput
+                      v-model:value="aQuickKeyword"
+                      size="small"
+                      placeholder="快速检索"
+                      style="width: 180px;"
+                    />
+                    <span class="match-count-text">
+                      已选 {{ store.aSelectedKeys.value.length }} 行 · 共 {{ aDisplayedCount }} 条
+                    </span>
+                  </NSpace>
+                </div>
+                <div class="match-card-header-right">
+                  {{ aMatchedCount }}/{{ store.aData.value.rows.length }} 已匹配 · {{ aProgress }}%
+                </div>
               </div>
             </div>
           </template>
@@ -319,29 +330,32 @@ onMounted(() => {
               <div class="match-card-header-left">
                 <span class="match-section-badge badge-b">B</span>
                 <span class="section-title">{{ bModule }}</span>
+                <span class="section-function-code">{{ bFunctionCode }}</span>
               </div>
-              <div class="match-card-header-center">
-                <NSpace size="small" wrap>
-                  <NButton size="small" type="default" @click="handleRefresh">刷新</NButton>
-                  <NButton size="small" type="default" @click="handleBReset">重置</NButton>
-                  <NButton size="small" type="default" @click="handleBOpenPinColumn">固定列</NButton>
-                  <NButton size="small" type="default" @click="handleBOpenFieldSelector">字段选择</NButton>
-                  <NButton size="small" type="default" @click="handleBScrollToMatched" :disabled="store.bSelectedKeys.value.length === 0">
-                    定位匹配
-                  </NButton>
-                  <NInput
-                    v-model:value="bQuickKeyword"
-                    size="small"
-                    placeholder="快速检索"
-                    style="width: 180px;"
-                  />
-                  <span class="match-count-text">
-                    已选 {{ store.bSelectedKeys.value.length }} 行 · 共 {{ bDisplayedCount }} 条
-                  </span>
-                </NSpace>
-              </div>
-              <div class="match-card-header-right">
-                {{ bMatchedCount }}/{{ store.bData.value.rows.length }} 已匹配 · {{ bProgress }}%
+              <div class="match-card-header-right-group">
+                <div class="match-card-header-center">
+                  <NSpace size="small" wrap justify="end">
+                    <NButton size="small" type="default" @click="handleRefresh">刷新</NButton>
+                    <NButton size="small" type="default" @click="handleBReset">重置</NButton>
+                    <NButton size="small" type="default" @click="handleBOpenPinColumn">固定列</NButton>
+                    <NButton size="small" type="default" @click="handleBOpenFieldSelector">字段选择</NButton>
+                    <NButton size="small" type="default" @click="handleBScrollToMatched" :disabled="store.bSelectedKeys.value.length === 0">
+                      定位匹配
+                    </NButton>
+                    <NInput
+                      v-model:value="bQuickKeyword"
+                      size="small"
+                      placeholder="快速检索"
+                      style="width: 180px;"
+                    />
+                    <span class="match-count-text">
+                      已选 {{ store.bSelectedKeys.value.length }} 行 · 共 {{ bDisplayedCount }} 条
+                    </span>
+                  </NSpace>
+                </div>
+                <div class="match-card-header-right">
+                  {{ bMatchedCount }}/{{ store.bData.value.rows.length }} 已匹配 · {{ bProgress }}%
+                </div>
               </div>
             </div>
           </template>
@@ -446,9 +460,10 @@ onMounted(() => {
 .match-card-header-left {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
-  width: 160px;
+  min-width: 0;
+  max-width: 40%;
   white-space: nowrap;
   overflow: hidden;
 }
@@ -462,15 +477,31 @@ onMounted(() => {
   text-overflow: ellipsis;
 }
 
-.match-card-header-center {
-  flex: 1;
+.section-function-code {
+  font-size: 12px;
+  color: #999;
+  font-family: 'Courier New', monospace;
+  padding: 2px 6px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.match-card-header-right-group {
   display: flex;
-  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.match-card-header-center {
+  display: flex;
+  justify-content: flex-end;
   min-width: 0;
-  padding-left: 4px;
 
   :deep(.n-space) {
-    justify-content: flex-start;
+    justify-content: flex-end;
     gap: 6px !important;
   }
 }
@@ -575,6 +606,11 @@ onMounted(() => {
 
   .section-title {
     color: #e0e0e0;
+  }
+
+  .section-function-code {
+    color: #888;
+    background: #333;
   }
 
   .match-card-header-right {

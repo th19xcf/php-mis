@@ -42,6 +42,10 @@ class MatchApi extends BaseApiController
             $aData = $this->queryModuleData($aModule, $aConfig['queryTable'], $aConfig['queryWhere'], $aConfig['queryOrder'], $aMatchCols['target']);
             $bData = $this->queryModuleData($bModule, $bConfig['queryTable'], $bConfig['queryWhere'], $bConfig['queryOrder'], $bMatchCols['target']);
 
+            // 通过 def_function.模块名称 反查每个表对应的功能编码，供前端显示
+            $aFunctionCode = $this->resolveFunctionCodeByModule($aModule);
+            $bFunctionCode = $this->resolveFunctionCodeByModule($bModule);
+
             return $this->success([
                 'meta' => [
                     'functionCode' => $functionCode,
@@ -52,6 +56,8 @@ class MatchApi extends BaseApiController
                     'params' => $funcRow['参数'] ?? '',
                     'aModule' => $aModule,
                     'bModule' => $bModule,
+                    'aFunctionCode' => $aFunctionCode,
+                    'bFunctionCode' => $bFunctionCode,
                     'aConfig' => $aConfig,
                     'bConfig' => $bConfig,
                     'aColumns' => $aColumns,

@@ -32,6 +32,8 @@ export interface MatchMeta {
   params: string;
   aModule: string;
   bModule: string;
+  aFunctionCode: string;
+  bFunctionCode: string;
   aConfig: MatchConfig;
   bConfig: MatchConfig;
   aColumns: MatchColumn[];
