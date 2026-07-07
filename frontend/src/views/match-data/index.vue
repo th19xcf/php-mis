@@ -148,14 +148,27 @@ const bProgress = computed(() => {
   return Math.round((bMatchedCount.value / total) * 100);
 });
 
-async function handleRefresh() {
-  await init();
+async function handleARefresh() {
+  try {
+    await store.refreshSide('A');
+  } catch (err: any) {
+    console.error('A 侧刷新失败:', err);
+  }
+}
+
+async function handleBRefresh() {
+  try {
+    await store.refreshSide('B');
+  } catch (err: any) {
+    console.error('B 侧刷新失败:', err);
+  }
 }
 
 async function handleBuild() {
   try {
-    await store.buildMatch();
-    handleRefresh();
+    await store.buildRelation();
+    // 建立匹配影响两侧关系，需同时刷新
+    await init();
   } catch (err: any) {
     console.error('建立匹配失败:', err);
   }
@@ -163,8 +176,9 @@ async function handleBuild() {
 
 async function handleRevoke() {
   try {
-    await store.revokeMatch();
-    handleRefresh();
+    await store.revokeRelation();
+    // 撤销匹配影响两侧关系，需同时刷新
+    await init();
   } catch (err: any) {
     console.error('撤销匹配失败:', err);
   }
@@ -279,7 +293,7 @@ onMounted(() => {
               <div class="match-card-header-right-group">
                 <div class="match-card-header-center">
                   <NSpace size="small" wrap justify="end">
-                    <NButton size="small" type="default" @click="handleRefresh">刷新</NButton>
+                    <NButton size="small" type="default" @click="handleARefresh">刷新</NButton>
                     <NButton size="small" type="default" @click="handleAReset">重置</NButton>
                     <NButton size="small" type="default" @click="handleAOpenPinColumn">固定列</NButton>
                     <NButton size="small" type="default" @click="handleAOpenFieldSelector">字段选择</NButton>
@@ -335,7 +349,7 @@ onMounted(() => {
               <div class="match-card-header-right-group">
                 <div class="match-card-header-center">
                   <NSpace size="small" wrap justify="end">
-                    <NButton size="small" type="default" @click="handleRefresh">刷新</NButton>
+                    <NButton size="small" type="default" @click="handleBRefresh">刷新</NButton>
                     <NButton size="small" type="default" @click="handleBReset">重置</NButton>
                     <NButton size="small" type="default" @click="handleBOpenPinColumn">固定列</NButton>
                     <NButton size="small" type="default" @click="handleBOpenFieldSelector">字段选择</NButton>

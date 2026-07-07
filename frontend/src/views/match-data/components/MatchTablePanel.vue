@@ -117,10 +117,8 @@ const columnDefs = computed<ColDef[]>(() => {
       width: col.width || 120,
       sortable: col.sortable !== false,
       // 允许双击进入编辑器（方便键盘选中 Ctrl+C 拷贝文本），
-      // 但通过 valueSetter 返回 false 拒绝写入新值，
-      // 退出编辑后 cell 自动恢复原内容，不污染对账数据
+      // 实际写入通过 cellValueChanged 事件恢复原值，保证表格只读
       editable: true,
-      valueSetter: () => false,
       resizable: true,
       hide: isGuidColumn
     };
@@ -161,6 +159,8 @@ const columnDefs = computed<ColDef[]>(() => {
   return cols;
 });
 
+let isRestoringCellValue = false;
+
 function onGridReady(event: GridReadyEvent) {
   gridApi.value = event.api;
   emit('set-grid-api', event.api);
@@ -172,6 +172,19 @@ function onSelectionChanged() {
   const kf = keyField.value;
   const keys = selectedRows.map(row => String(row[kf] ?? ''));
   emit('update:selected', keys);
+}
+
+function onCellValueChanged(event: any) {
+  if (isRestoringCellValue) return;
+  // 对账表格只读，编辑后自动恢复原值（仅允许进入编辑器拷贝文本）
+  isRestoringCellValue = true;
+  const rowNode = event.node;
+  const field = event.colDef.field;
+  const originalValue = event.oldValue;
+  rowNode.setDataValue(field, originalValue);
+  setTimeout(() => {
+    isRestoringCellValue = false;
+  }, 0);
 }
 
 function getRowId(params: any) {
@@ -287,9 +300,17 @@ watch(() => props.selectedKeys, () => {
 watch(() => props.data.rows, () => {
   if (!gridApi.value) return;
   nextTick(() => {
-    gridApi.value!.refreshCells();
+    const api = gridApi.value!;
+    const rows = displayedRows.value;
+    // 用 setGridOption 更新 rowData（AG Grid v32 推荐方式）
+    if (typeof api.setGridOption === 'function') {
+      api.setGridOption('rowData', rows);
+    } else {
+      api.updateGridOptions({ rowData: rows });
+    }
+    api.refreshCells({ force: true });
   });
-}, { deep: true });
+}, { deep: false });
 
 watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
   if (!gridApi.value) return;
@@ -329,6 +350,7 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
         overlay-loading-template="<span style='padding: 20px; display: block; text-align: center;'>正在加载数据，请稍候...</span>"
         @grid-ready="onGridReady"
         @selection-changed="onSelectionChanged"
+        @cell-value-changed="onCellValueChanged"
       />
     </div>
 
