@@ -697,65 +697,42 @@ watch(
 }
 
 /* ============ ag-grid 共享样式（来自 _ag-grid-shared.scss）============ */
-@include ag-grid-cell-borders('contract-grid', #c1ccc7, #4b5965);
+@include ag-grid-base-layout('contract-grid');
+@include ag-grid-cell-borders('contract-grid', #e8eef4, rgba(255, 255, 255, 0.06));
 @include ag-grid-selection-column('contract-grid');
 @include ag-grid-checkbox-theme('contract-grid');
+@include ag-grid-cell-focus('contract-grid');
 @include ag-grid-checkbox-dark('contract-grid');
 @include ag-grid-base-dark('contract-grid');
 @include ag-grid-controls-dark('contract-grid');
 
 /* ============ Component-specific styles ============ */
 
+/* Light mode subtle zebra stripe */
+:deep(.contract-grid .ag-row-even) {
+  background-color: rgba(24, 144, 255, 0.02) !important;
+}
+
 /* Light mode row-selected highlight */
-:deep(.contract-grid .ag-row-selected::before) {
-  background-color: #b7d7f5 !important;
+:deep(.contract-grid .ag-row-selected) {
+  background-color: rgba(24, 144, 255, 0.08) !important;
 }
 
-:deep(.contract-grid .ag-row-hover.ag-row-selected::before) {
-  background-color: #c8e4ff !important;
-  background-image: none !important;
+:deep(.contract-grid .ag-row-selected .ag-cell) {
+  background-color: rgba(24, 144, 255, 0.08) !important;
 }
 
-/* Light mode cell-focus（4-side border，不同于 workbench 的 outline 方案）*/
-:deep(.contract-grid .ag-cell-focus),
-:deep(.contract-grid .ag-cell-range-selected) {
-  border-right: 1px solid #2196f3 !important;
-  border-left: 1px solid #2196f3 !important;
-  border-top: 1px solid #2196f3 !important;
-  border-bottom: 1px solid #2196f3 !important;
+:deep(.contract-grid .ag-row-hover.ag-row-selected .ag-cell) {
+  background-color: rgba(24, 144, 255, 0.12) !important;
 }
 
-/* Dark mode header border-bottom-color（mixin 未覆盖）*/
-.system-dark :deep(.contract-grid .ag-header) {
-  border-bottom-color: #2b3a49;
+/* Light mode header background */
+:deep(.contract-grid .ag-header-row) {
+  background-color: rgba(248, 250, 252, 0.95) !important;
 }
 
-/* Dark mode row border-color（mixin 未覆盖）*/
-.system-dark :deep(.contract-grid .ag-row) {
-  border-color: #2b3a49;
-}
-
-/* Dark mode row-even background（mixin 未覆盖）*/
-.system-dark :deep(.contract-grid .ag-row-even) {
-  background-color: rgb(var(--container-bg-color));
-}
-
-/* Dark mode cell-focus（4-side border）*/
-.system-dark :deep(.contract-grid .ag-cell-focus),
-.system-dark :deep(.contract-grid .ag-cell-range-selected) {
-  border-right: 2px solid #64b5f6 !important;
-  border-left: 2px solid #64b5f6 !important;
-  border-top: 2px solid #64b5f6 !important;
-  border-bottom: 2px solid #64b5f6 !important;
-}
-
-/* Dark mode row-selected */
-.system-dark :deep(.contract-grid .ag-row-selected::before) {
-  background-color: #34516f !important;
-}
-
-.system-dark :deep(.contract-grid .ag-row-hover.ag-row-selected::before) {
-  background-color: #406281 !important;
+:deep(.contract-grid .ag-header-cell) {
+  background-color: rgba(248, 250, 252, 0.95) !important;
 }
 
 /* Contract selection column 额外定位规则（mixin 提供基础，此处补充）*/
@@ -793,61 +770,39 @@ watch(
   height: 100% !important;
 }
 
-/* Dark mode set-filter-item（mixin 未覆盖）*/
-.system-dark :deep(.contract-grid .ag-set-filter-item) {
-  color: rgb(var(--base-text-color));
-}
+/* Dark mode enhanced colors */
+.system-dark {
+  :deep(.contract-grid .ag-header-row) {
+    background-color: rgba(36, 44, 56, 0.95) !important;
+  }
 
-.system-dark :deep(.contract-grid .ag-set-filter-item:hover) {
-  background-color: rgba(122, 167, 214, 0.18);
-}
+  :deep(.contract-grid .ag-header-cell) {
+    background-color: rgba(36, 44, 56, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.06) !important;
+  }
 
-.system-dark :deep(.contract-grid .ag-set-filter-item.ag-selected) {
-  background-color: #34516f;
-}
+  :deep(.contract-grid .ag-row-even) {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+  }
 
-/* Dark mode floating filter（mixin 未覆盖）*/
-.system-dark :deep(.contract-grid .ag-floating-filter) {
-  background-color: rgb(var(--container-bg-color));
-  border-top-color: #2b3a49;
-}
+  :deep(.contract-grid .ag-row-selected) {
+    background-color: rgba(100, 181, 246, 0.1) !important;
+  }
 
-.system-dark :deep(.contract-grid .ag-floating-filter-input) {
-  background-color: #1b2a38;
-  border-color: #43576b;
-  color: rgb(var(--base-text-color));
-}
+  :deep(.contract-grid .ag-row-selected .ag-cell) {
+    background-color: rgba(100, 181, 246, 0.1) !important;
+  }
 
-.system-dark :deep(.contract-grid .ag-floating-filter-input::placeholder) {
-  color: rgb(var(--base-text-color) / 0.5);
-}
+  :deep(.contract-grid .ag-row-hover.ag-row-selected .ag-cell) {
+    background-color: rgba(100, 181, 246, 0.15) !important;
+  }
 
-.system-dark :deep(.contract-grid .ag-floating-filter-button) {
-  color: rgb(var(--base-text-color));
-}
+  :deep(.contract-grid .ag-header) {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
 
-.system-dark :deep(.contract-grid .ag-floating-filter-button:hover) {
-  color: #f3f8ff;
-}
-
-/* Dark mode input fields（mixin 未覆盖）*/
-.system-dark :deep(.contract-grid input.ag-input-field-input) {
-  background-color: #1b2a38;
-  border-color: #43576b;
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid input.ag-input-field-input::placeholder) {
-  color: rgb(var(--base-text-color) / 0.5);
-}
-
-.system-dark :deep(.contract-grid .ag-text-field-input) {
-  background-color: #1b2a38;
-  border-color: #43576b;
-  color: rgb(var(--base-text-color));
-}
-
-.system-dark :deep(.contract-grid .ag-text-field-input::placeholder) {
-  color: rgb(var(--base-text-color) / 0.5);
+  :deep(.contract-grid .ag-row) {
+    border-color: rgba(255, 255, 255, 0.06);
+  }
 }
 </style>
