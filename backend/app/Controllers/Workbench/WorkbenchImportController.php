@@ -260,9 +260,9 @@ class WorkbenchImportController extends BaseApiController
                 }
             }
 
-            // 9. 正式导入（INSERT INTO ... SELECT）
+            // 9. 正式导入（INSERT INTO ... SELECT，支持 def_import_config.导入条件 过滤）
             $importResult = $this->importService->importFromTempTable(
-                $dataTable, $tmpTableName, $importColumns
+                $dataTable, $tmpTableName, $importColumns, $importModule
             );
             log_message('debug', '[WorkbenchImport] importFromTempTable 结果: ' . json_encode($importResult, JSON_UNESCAPED_UNICODE));
 
