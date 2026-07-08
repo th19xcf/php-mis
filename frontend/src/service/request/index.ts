@@ -70,12 +70,30 @@ export const request = createFlatRequest(
               queryRecords: '数据查询',
               total: '服务端总耗时'
             };
-            Object.entries(traceData as Record<string, number | boolean>).forEach(([key, value]) => {
+            Object.entries(traceData as Record<string, number | boolean | Array<{sql: string; ms: number}>>).forEach(([key, value]) => {
               const label = labelMap[key] || key;
               if (typeof value === 'number') {
                 markTrace(`  ↳ ${label}: ${value.toFixed(2)}ms`);
               } else if (typeof value === 'boolean') {
                 markTrace(`  ↳ ${label}: ${value ? '命中' : '未命中'}`);
+              } else if (key === 'sqlTrace' && Array.isArray(value)) {
+                markTrace(`  ↳ SQL执行追踪 (${value.length}条):`);
+                value.forEach((item, idx) => {
+                  // base64 解码 UTF-8 字符串
+                  let sqlText = item.sql;
+                  try {
+                    const binary = atob(item.sql);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) {
+                      bytes[i] = binary.charCodeAt(i);
+                    }
+                    sqlText = new TextDecoder('utf-8').decode(bytes);
+                  } catch {
+                    // 解码失败则使用原始值
+                  }
+                  const sqlPreview = sqlText.replace(/\s+/g, ' ').slice(0, 80);
+                  markTrace(`    ${idx + 1}. ${item.ms.toFixed(2)}ms | ${sqlPreview}...`);
+                });
               }
             });
           } catch {

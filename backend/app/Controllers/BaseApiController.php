@@ -66,8 +66,14 @@ class BaseApiController extends BaseController
             $response->setHeader('X-Server-Time-Ms', (string) round($serverElapsedMs, 2));
         }
 
+        // 合并 SQL 执行耗时追踪
+        $sqlTrace = \App\Models\Mcommon::getSqlTrace();
+        if (!empty($sqlTrace)) {
+            $this->serverTrace['sqlTrace'] = $sqlTrace;
+        }
+
         if (!empty($this->serverTrace)) {
-            $traceJson = json_encode($this->serverTrace, JSON_UNESCAPED_UNICODE);
+            $traceJson = json_encode($this->serverTrace, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($traceJson !== false) {
                 $response->setHeader('X-Server-Trace', $traceJson);
             }

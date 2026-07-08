@@ -23,13 +23,50 @@ class Mcommon extends Model
      */
     private static array $requestCache = [];
 
+    /**
+     * 请求级 SQL 执行耗时追踪（static 跨实例共享）
+     * 用于性能追踪，记录每条 SQL 的耗时
+     */
+    private static array $sqlTrace = [];
+
+    /**
+     * 获取并清空 SQL 执行耗时追踪数据
+     */
+    public static function getSqlTrace(): array
+    {
+        $trace = self::$sqlTrace;
+        self::$sqlTrace = [];
+        return $trace;
+    }
+
     private function getDb(): object
     {
         if ($this->dbInstance === null) {
+            $t0 = hrtime(true);
             $this->dbInstance = db_connect('btdc');
+            $connectMs = (hrtime(true) - $t0) / 1e6;
+            log_message('debug', sprintf('[Mcommon] 数据库连接耗时: %.2fms', $connectMs));
+
+            // 记录数据库连接耗时到追踪数组（使用英文标签避免 HTTP Header 编码问题）
+            self::$sqlTrace[] = [
+                'sql' => '[DB Connect]',
+                'ms' => round($connectMs, 2)
+            ];
+
             // 设置查询超时（30秒），防止远端MySQL慢查询卡死PHP单线程服务器
             try {
+                $t1 = hrtime(true);
                 $this->dbInstance->query('SET SESSION max_execution_time = 30000');
+                $setMaxMs = (hrtime(true) - $t1) / 1e6;
+                log_message('debug', sprintf('[Mcommon] SET max_execution_time 耗时: %.2fms', $setMaxMs));
+
+                // 记录 SET 命令耗时（仅当超过 10ms 时记录）
+                if ($setMaxMs > 10) {
+                    self::$sqlTrace[] = [
+                        'sql' => '[SET max_execution_time]',
+                        'ms' => round($setMaxMs, 2)
+                    ];
+                }
             } catch (\Throwable $e) {
                 log_message('warning', '[Mcommon] 设置 max_execution_time 失败: ' . $e->getMessage());
             }
@@ -46,7 +83,23 @@ class Mcommon extends Model
         }
 
         $db = $this->getDb();
+        $t0 = hrtime(true);
         $result = $db->query($sql);
+        $queryMs = (hrtime(true) - $t0) / 1e6;
+
+        // 只记录慢查询（>50ms）到追踪数组，避免 Header 过长
+        if ($queryMs > 50) {
+            // base64 编码 SQL 内容，避免 HTTP Header 中文编码问题
+            $sqlPreview = substr($sql, 0, 200);
+            self::$sqlTrace[] = [
+                'sql' => base64_encode($sqlPreview),
+                'ms' => round($queryMs, 2)
+            ];
+            log_message('warning', sprintf('[Mcommon] 慢查询 %.2fms: %s', $queryMs, $sqlPreview));
+        } else {
+            log_message('debug', sprintf('[Mcommon] SQL耗时: %.2fms | %s', $queryMs, substr($sql, 0, 80)));
+        }
+
         self::$requestCache[$cacheKey] = $result;
         return $result;
     }

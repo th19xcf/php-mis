@@ -380,7 +380,15 @@ class ContextService
             $this->model->quote($functionCode)
         );
 
-        $result = $this->model->select($sql)->getResultArray();
+        log_message('debug', '[loadColumns] SQL: ' . $sql);
+
+        try {
+            $result = $this->model->select($sql)->getResultArray();
+        } catch (\Throwable $e) {
+            log_message('error', '[loadColumns] SQL 执行失败: ' . $e->getMessage() . ' | SQL: ' . $sql);
+            throw new \RuntimeException('loadColumns SQL执行失败: ' . $e->getMessage() . ' | SQL: ' . $sql, 0, $e);
+        }
+
         log_message('debug', '[loadColumns] 完成, 返回 ' . count($result) . ' 行');
         return $result;
     }

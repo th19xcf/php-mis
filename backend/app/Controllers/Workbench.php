@@ -154,8 +154,9 @@ class Workbench extends BaseApiController
         } catch (BusinessException $e) {
             return $this->error(ApiCode::BUSINESS_ERROR, $e->getMessage());
         } catch (\Throwable $e) {
-            log_message('error', '[Workbench::pageWithData] Throwable: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
-            return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '页面初始化失败: ' . $e->getMessage());
+            $detail = $e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')';
+            log_message('error', '[Workbench::pageWithData] Throwable: ' . $detail);
+            return $this->error(ApiCode::WORKBENCH_PAGED_QUERY_FAILED, '页面初始化失败: ' . $detail);
         }
     }
 
