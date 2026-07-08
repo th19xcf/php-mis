@@ -79,17 +79,20 @@ export const request = createFlatRequest(
               } else if (key === 'sqlTrace' && Array.isArray(value)) {
                 markTrace(`  ↳ SQL执行追踪 (${value.length}条):`);
                 value.forEach((item, idx) => {
-                  // base64 解码 UTF-8 字符串
+                  // 判断是否为 base64 编码（纯文本诊断标签如 [DNS解析] 直接显示）
+                  const isBase64 = (str: string) => /^[A-Za-z0-9+/]*={0,2}$/.test(str) && str.length % 4 === 0 && str.length > 0;
                   let sqlText = item.sql;
-                  try {
-                    const binary = atob(item.sql);
-                    const bytes = new Uint8Array(binary.length);
-                    for (let i = 0; i < binary.length; i++) {
-                      bytes[i] = binary.charCodeAt(i);
+                  if (isBase64(item.sql)) {
+                    try {
+                      const binary = atob(item.sql);
+                      const bytes = new Uint8Array(binary.length);
+                      for (let i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i);
+                      }
+                      sqlText = new TextDecoder('utf-8').decode(bytes);
+                    } catch {
+                      // 解码失败则使用原始值
                     }
-                    sqlText = new TextDecoder('utf-8').decode(bytes);
-                  } catch {
-                    // 解码失败则使用原始值
                   }
                   const sqlPreview = sqlText.replace(/\s+/g, ' ').slice(0, 80);
                   markTrace(`    ${idx + 1}. ${item.ms.toFixed(2)}ms | ${sqlPreview}...`);

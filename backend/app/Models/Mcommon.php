@@ -42,34 +42,56 @@ class Mcommon extends Model
     private function getDb(): object
     {
         if ($this->dbInstance === null) {
-            $t0 = hrtime(true);
-            $this->dbInstance = db_connect('btdc');
-            $connectMs = (hrtime(true) - $t0) / 1e6;
-            log_message('debug', sprintf('[Mcommon] 数据库连接耗时: %.2fms', $connectMs));
+            $overallT0 = hrtime(true);
 
-            // 记录数据库连接耗时到追踪数组（使用英文标签避免 HTTP Header 编码问题）
+            // 1. DNS 解析诊断
+            $hostname = env('database.btdc.hostname', 'localhost');
+            $dnsT0 = hrtime(true);
+            $ip = gethostbyname($hostname);
+            $dnsMs = (hrtime(true) - $dnsT0) / 1e6;
+            log_message('debug', sprintf('[Mcommon][连接诊断] DNS解析 %s -> %s: %.2fms', $hostname, $ip, $dnsMs));
             self::$sqlTrace[] = [
-                'sql' => '[DB Connect]',
-                'ms' => round($connectMs, 2)
+                'sql' => base64_encode('[DNS解析]'),
+                'ms' => round($dnsMs, 2)
             ];
 
-            // 设置查询超时（30秒），防止远端MySQL慢查询卡死PHP单线程服务器
-            try {
-                $t1 = hrtime(true);
-                $this->dbInstance->query('SET SESSION max_execution_time = 30000');
-                $setMaxMs = (hrtime(true) - $t1) / 1e6;
-                log_message('debug', sprintf('[Mcommon] SET max_execution_time 耗时: %.2fms', $setMaxMs));
+            // 2. db_connect() 对象创建（CodeIgniter 可能延迟建立实际连接）
+            $connectT0 = hrtime(true);
+            $this->dbInstance = db_connect('btdc');
+            $connectObjMs = (hrtime(true) - $connectT0) / 1e6;
+            log_message('debug', sprintf('[Mcommon][连接诊断] db_connect() 对象创建: %.2fms', $connectObjMs));
+            self::$sqlTrace[] = [
+                'sql' => base64_encode('[db_connect() 对象创建]'),
+                'ms' => round($connectObjMs, 2)
+            ];
 
-                // 记录 SET 命令耗时（仅当超过 10ms 时记录）
-                if ($setMaxMs > 10) {
-                    self::$sqlTrace[] = [
-                        'sql' => '[SET max_execution_time]',
-                        'ms' => round($setMaxMs, 2)
-                    ];
-                }
+            // 3. 执行首次查询强制建立实际 TCP + MySQL 连接
+            $firstQueryT0 = hrtime(true);
+            $this->dbInstance->query('SELECT 1');
+            $firstQueryMs = (hrtime(true) - $firstQueryT0) / 1e6;
+            log_message('debug', sprintf('[Mcommon][连接诊断] 首次查询 SELECT 1 (触发实际连接): %.2fms', $firstQueryMs));
+            self::$sqlTrace[] = [
+                'sql' => base64_encode('[首次查询 SELECT 1]'),
+                'ms' => round($firstQueryMs, 2)
+            ];
+
+            // 4. 设置查询超时（30秒），防止远端MySQL慢查询卡死PHP单线程服务器
+            try {
+                $setT0 = hrtime(true);
+                $this->dbInstance->query('SET SESSION max_execution_time = 30000');
+                $setMs = (hrtime(true) - $setT0) / 1e6;
+                log_message('debug', sprintf('[Mcommon][连接诊断] SET max_execution_time: %.2fms', $setMs));
+
+                self::$sqlTrace[] = [
+                    'sql' => base64_encode('[SET max_execution_time]'),
+                    'ms' => round($setMs, 2)
+                ];
             } catch (\Throwable $e) {
                 log_message('warning', '[Mcommon] 设置 max_execution_time 失败: ' . $e->getMessage());
             }
+
+            $overallMs = (hrtime(true) - $overallT0) / 1e6;
+            log_message('debug', sprintf('[Mcommon][连接诊断] 连接全流程总耗时: %.2fms', $overallMs));
         }
         return $this->dbInstance;
     }
