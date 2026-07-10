@@ -66,16 +66,16 @@ function handleDrop(_e: DragEvent) {
             <span>数据预览</span>
             <span class="import-preview-count">共 {{ previewData.length }} 条数据</span>
           </div>
-          <div class="import-preview-table-wrapper">
-            <NDataTable
-              :data="previewData.slice(0, 10)"
-              :columns="previewColumns"
-              size="small"
-              bordered
-              :scroll-x="1800"
-              :pagination="false"
-            />
-          </div>
+          <NDataTable
+            class="import-preview-table"
+            :data="previewData.slice(0, 10)"
+            :columns="previewColumns"
+            size="small"
+            bordered
+            :scroll-x="previewColumns.reduce((sum, col) => sum + (col.width || 100), 0)"
+            :scroll-y="300"
+            :pagination="false"
+          />
           <div v-if="previewData.length > 10" class="import-preview-more">
             还有 {{ previewData.length - 10 }} 条数据未显示...
           </div>
@@ -182,9 +182,8 @@ function handleDrop(_e: DragEvent) {
   font-weight: normal;
 }
 
-.import-preview-table-wrapper {
-  max-height: 300px;
-  overflow: auto;
+.import-preview-table {
+  width: 100%;
 }
 
 .import-preview-more {
