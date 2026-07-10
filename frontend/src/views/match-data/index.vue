@@ -305,6 +305,7 @@ onMounted(() => {
                       size="small"
                       placeholder="快速检索"
                       style="width: 180px;"
+                      :clearable="true"
                     />
                     <span class="match-count-text">
                       已选 {{ store.aSelectedKeys.value.length }} 行 · 共 {{ aDisplayedCount }} 条
@@ -361,6 +362,7 @@ onMounted(() => {
                       size="small"
                       placeholder="快速检索"
                       style="width: 180px;"
+                      :clearable="true"
                     />
                     <span class="match-count-text">
                       已选 {{ store.bSelectedKeys.value.length }} 行 · 共 {{ bDisplayedCount }} 条
