@@ -689,9 +689,10 @@ class ImportService
      * @param string $targetTable 目标表
      * @param string $tempTable 临时表
      * @param array $importColumns 导入列配置
+     * @param string $importModule 导入模块（用于读取 def_import_config.导入条件）
      * @return array ['success' => bool, 'count' => int, 'message' => string, 'errors' => array]
      */
-    public function importFromTempTable(string $targetTable, string $tempTable, array $importColumns): array
+    public function importFromTempTable(string $targetTable, string $tempTable, array $importColumns, string $importModule = ''): array
     {
         try {
             $db = db_connect('btdc');
@@ -726,12 +727,17 @@ class ImportService
                 ];
             }
 
+            // 读取导入条件（SQL 片段，引用临时表字段，由管理员在 def_import_config 中维护）
+            $whereClause = $this->getImportCondition($importModule);
+            $whereSql = $whereClause !== '' ? ' WHERE ' . $whereClause : '';
+
             $sql = sprintf(
-                'INSERT INTO `%s` (%s) SELECT %s FROM `%s`',
+                'INSERT INTO `%s` (%s) SELECT %s FROM `%s`%s',
                 $targetTable,
                 implode(', ', $fieldNames),
                 implode(', ', $selectParts),
-                $tempTable
+                $tempTable,
+                $whereSql
             );
 
             log_message('debug', '[ImportService] 导入SQL: ' . $sql);
@@ -925,7 +931,7 @@ class ImportService
                 $insertToTempTableSql = $this->buildInsertToTempTableSql($tmpTableName, $sampleData, $importColumns);
             }
 
-            $importFromTempTableSql = $this->buildImportFromTempTableSql($dataTable, $tmpTableName, $importColumns);
+            $importFromTempTableSql = $this->buildImportFromTempTableSql($dataTable, $tmpTableName, $importColumns, $importModule);
 
             return [
                 'success'               => true,
@@ -1034,9 +1040,10 @@ class ImportService
      * @param string $targetTable 目标表
      * @param string $tempTable 临时表
      * @param array $importColumns 导入列配置
+     * @param string $importModule 导入模块（用于读取 def_import_config.导入条件）
      * @return string
      */
-    private function buildImportFromTempTableSql(string $targetTable, string $tempTable, array $importColumns): string
+    private function buildImportFromTempTableSql(string $targetTable, string $tempTable, array $importColumns, string $importModule = ''): string
     {
         $fieldNames = [];
         $selectParts = [];
@@ -1062,11 +1069,59 @@ class ImportService
             return '-- 没有可导入的字段';
         }
 
-        return sprintf('INSERT INTO `%s` (%s) SELECT %s FROM `%s`',
+        // 读取导入条件（与 importFromTempTable 保持一致，便于调试预览真实 SQL）
+        $whereClause = $this->getImportCondition($importModule);
+        $whereSql = $whereClause !== '' ? ' WHERE ' . $whereClause : '';
+
+        return sprintf('INSERT INTO `%s` (%s) SELECT %s FROM `%s`%s',
             $targetTable,
             implode(', ', $fieldNames),
             implode(', ', $selectParts),
-            $tempTable
+            $tempTable,
+            $whereSql
         );
+    }
+
+    /**
+     * 读取导入条件（def_import_config.导入条件 字段）
+     *
+     * 该字段为 SQL 片段，引用临时表字段，由管理员在 def_import_config 中维护。
+     * 与 滤重字段/前处理模块/后处理模块 等字段处理方式一致，直接拼接使用。
+     * 空值或查询失败时返回空字符串，保持原有行为不变。
+     *
+     * @param string $importModule 导入模块
+     * @return string 导入条件 SQL 片段（不含 WHERE 关键字）
+     */
+    private function getImportCondition(string $importModule): string
+    {
+        if ($importModule === '') {
+            return '';
+        }
+
+        try {
+            $sql = sprintf(
+                'select 导入条件 from def_import_config where 导入模块=%s',
+                $this->model->quote($importModule)
+            );
+
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return '';
+            }
+
+            $row = $result->getRowArray();
+            if (!$row) {
+                return '';
+            }
+
+            $condition = trim((string) ($row['导入条件'] ?? ''));
+            if ($condition !== '') {
+                log_message('debug', sprintf('[ImportService] 命中导入条件: %s', $condition));
+            }
+            return $condition;
+        } catch (\Throwable $e) {
+            log_message('error', '读取导入条件失败: ' . $e->getMessage());
+            return '';
+        }
     }
 }
