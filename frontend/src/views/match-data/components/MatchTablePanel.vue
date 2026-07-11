@@ -29,6 +29,7 @@ interface Props {
   matchedKeys: Map<string, string[]>;
   quickKeyword?: string;
   candidateKeys?: Set<string>;
+  hasSelectedConditions: boolean;
 }
 
 const props = defineProps<Props>();
@@ -43,6 +44,7 @@ const loading = computed(() => props.data.loading);
 
 const fieldSelectorVisible = ref(false);
 const pinColumnVisible = ref(false);
+const conditionWarningVisible = ref(false);
 const selectedVisibleFields = ref<string[]>([]);
 const pinColumnFields = ref<string[]>([]);
 const pinDirection = ref<'left' | 'right' | null>('left');
@@ -211,6 +213,11 @@ function onGridReady(event: GridReadyEvent) {
 function onSelectionChanged() {
   if (!gridApi.value) return;
   const selectedRows = gridApi.value.getSelectedRows();
+  if (selectedRows.length > 0 && !props.hasSelectedConditions) {
+    conditionWarningVisible.value = true;
+    gridApi.value.deselectAll();
+    return;
+  }
   const kf = keyField.value;
   const keys = selectedRows.map(row => String(row[kf] ?? ''));
   emit('update:selected', keys);
@@ -442,6 +449,18 @@ watch([() => props.displayFilter, () => props.quickKeyword], () => {
           />
         </NSpace>
       </NCheckboxGroup>
+    </NModal>
+
+    <NModal
+      v-model:show="conditionWarningVisible"
+      title="提示"
+      preset="card"
+      :style="{ width: '360px' }"
+      :mask-closable="true"
+    >
+      <div style="padding: 16px;">
+        <p style="margin-bottom: 0;">请先选择匹配条件，再勾选记录。</p>
+      </div>
     </NModal>
 
     <NModal

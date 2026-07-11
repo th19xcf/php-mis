@@ -342,6 +342,7 @@ onMounted(() => {
             :matched-keys="store.aMatchedKeys"
             :quick-keyword="aQuickKeyword"
             :candidate-keys="store.aCandidateKeys"
+            :has-selected-conditions="store.selectedConditionIndices.value.length > 0"
             @update:selected="store.updateASelected"
             @set-grid-api="store.setAGridApi"
           />
@@ -399,6 +400,7 @@ onMounted(() => {
             :matched-keys="store.bMatchedKeys"
             :quick-keyword="bQuickKeyword"
             :candidate-keys="store.bCandidateKeys"
+            :has-selected-conditions="store.selectedConditionIndices.value.length > 0"
             @update:selected="store.updateBSelected"
             @set-grid-api="store.setBGridApi"
           />
