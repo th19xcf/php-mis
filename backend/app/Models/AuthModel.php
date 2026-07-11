@@ -6,6 +6,9 @@ class AuthModel
 {
     private Mcommon $common;
 
+    /** @var array<string, string[]> 请求内 getRoleCodes 记忆化缓存，键为 workId|region */
+    private array $roleCodesCache = [];
+
     public function __construct()
     {
         $this->common = new Mcommon();
@@ -276,6 +279,11 @@ class AuthModel
      */
     private function getRoleCodes(string $userWorkId, string $region): array
     {
+        $cacheKey = $userWorkId . '|' . $region;
+        if (isset($this->roleCodesCache[$cacheKey])) {
+            return $this->roleCodesCache[$cacheKey];
+        }
+
         $sql = sprintf('
             select
                 case
@@ -307,18 +315,18 @@ class AuthModel
         $row = $this->common->select($sql)->getRowArray();
 
         if (!$row) {
-            return [];
+            return $this->roleCodesCache[$cacheKey] = [];
         }
 
         $roleCodeStr = (string) ($row['角色编码'] ?? '');
         if ($roleCodeStr === '') {
-            return [];
+            return $this->roleCodesCache[$cacheKey] = [];
         }
 
         $parts = array_map('trim', explode(',', $roleCodeStr));
         $parts = array_filter($parts, static fn(string $item): bool => $item !== '');
 
-        return array_values(array_unique($parts));
+        return $this->roleCodesCache[$cacheKey] = array_values(array_unique($parts));
     }
 
     /**

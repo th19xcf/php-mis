@@ -82,12 +82,20 @@ class Auth extends BaseApiController
 
         $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
         $tRoleAuthz = hrtime(true);
-        $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
+
+        // 属地/部门全称/部门编码三项赋权合并为一次 SQL 查询
+        $authorizationService = $this->getAuthorizationService();
+        $authFields = $authorizationService->loadUserAuthFields(
+            ['属地赋权', '部门全称赋权', '部门编码赋权'],
+            $user['work_id'],
+            $user['region']
+        );
+        $user['location_authz'] = $authFields['属地赋权'] ?? '';
+        $user['dept_name_authz'] = $authFields['部门全称赋权'] ?? '';
+        $user['dept_code_authz'] = $authFields['部门编码赋权'] ?? '';
         $tLocAuthz = hrtime(true);
-        $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-        $tDeptNameAuthz = hrtime(true);
-        $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
-        $tDeptCodeAuthz = hrtime(true);
+        $tDeptNameAuthz = $tLocAuthz;
+        $tDeptCodeAuthz = $tLocAuthz;
 
         $accessToken = $this->jwtTokenService->generateAccessToken($user);
         $tAccessToken = hrtime(true);
@@ -107,9 +115,7 @@ class Auth extends BaseApiController
             '验证用户' => $tVerify,
             '初始化Session' => $tSession,
             '角色赋权' => $tRoleAuthz,
-            '属地赋权' => $tLocAuthz,
-            '部门全称赋权' => $tDeptNameAuthz,
-            '部门编码赋权' => $tDeptCodeAuthz,
+            '属地+部门赋权(合并)' => $tLocAuthz,
             '生成AccessToken' => $tAccessToken,
             '生成RefreshToken' => $tRefreshToken,
             'Token解码+注入' => $tSessionCtx,
