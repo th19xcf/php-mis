@@ -711,20 +711,33 @@ class MatchApi extends BaseApiController
             $db->transStart();
 
             // 预读 A、B 记录（用于解析字段源值）
+            // 使用 WHERE pk IN (...) 批量查询，避免逐条 SELECT 产生 N+1 问题
             $aRecords = [];
             $bRecords = [];
             if (!empty($writes['aToB']) || !empty($writes['bToA'])) {
-                foreach ($aKeys as $aKey) {
-                    $aRecords[$aKey] = $db->table($aTable)
-                        ->where($aCols['key'], $aKey)
+                if (!empty($aKeys)) {
+                    $aRows = $db->table($aTable)
+                        ->whereIn($aCols['key'], $aKeys)
                         ->get()
-                        ->getRowArray() ?? [];
+                        ->getResultArray();
+                    foreach ($aRows as $row) {
+                        $keyVal = (string) ($row[$aCols['key']] ?? '');
+                        if ($keyVal !== '') {
+                            $aRecords[$keyVal] = $row;
+                        }
+                    }
                 }
-                foreach ($bKeys as $bKey) {
-                    $bRecords[$bKey] = $db->table($bTable)
-                        ->where($bCols['key'], $bKey)
+                if (!empty($bKeys)) {
+                    $bRows = $db->table($bTable)
+                        ->whereIn($bCols['key'], $bKeys)
                         ->get()
-                        ->getRowArray() ?? [];
+                        ->getResultArray();
+                    foreach ($bRows as $row) {
+                        $keyVal = (string) ($row[$bCols['key']] ?? '');
+                        if ($keyVal !== '') {
+                            $bRecords[$keyVal] = $row;
+                        }
+                    }
                 }
             }
 
