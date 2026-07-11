@@ -16,9 +16,7 @@ export function recordTabSwitchEnd() {
 
   const endTime = performance.now();
   const duration = endTime - tabSwitchStartTime;
-  logger.info(
-    `[🔀 switchTab] 切换完成: ${tabSwitchLabel}, 当前动作用时: ${duration.toFixed(2)}ms, 总用时: ${duration.toFixed(2)}ms`
-  );
+  logger.info(`[🔀 switchTab] 点击标签页: ${tabSwitchLabel}, 用时: ${duration.toFixed(2)}ms`);
 
   tabSwitchStartTime = 0;
 }

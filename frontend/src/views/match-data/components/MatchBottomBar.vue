@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { NButton, NAlert, NSpace } from 'naive-ui';
+import { ref, computed } from 'vue';
+import { NButton, NAlert, NSpace, NModal, NCheckboxGroup, NCheckbox } from 'naive-ui';
 
 import type { MatchModuleData } from '@/hooks/business/use-match-store';
+import type { MatchCondition } from '@/service/api/match';
 
 interface Props {
   aData: MatchModuleData;
@@ -12,7 +13,9 @@ interface Props {
   aMatchedKeys: Map<string, string[]>;
   bMatchedKeys: Map<string, string[]>;
   onlyUnmatched: boolean;
-  isSaving: boolean;
+  isSaving?: boolean;
+  matchConditions?: MatchCondition[];
+  selectedConditionIndices?: number[];
 }
 
 const props = defineProps<Props>();
@@ -20,8 +23,22 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   build: [];
   revoke: [];
-  toggleUnmatched: [];
+  toggleUnmatched: [value: boolean];
+  updateConditions: [indices: number[]];
 }>();
+
+const conditionModalVisible = ref(false);
+const tempSelectedIndices = ref<number[]>([]);
+
+function openConditionModal() {
+  tempSelectedIndices.value = [...(props.selectedConditionIndices || [])];
+  conditionModalVisible.value = true;
+}
+
+function confirmConditions() {
+  emit('updateConditions', tempSelectedIndices.value);
+  conditionModalVisible.value = false;
+}
 
 const previewText = computed(() => {
   if (props.aSelectedKeys.length === 0 && props.bSelectedKeys.length === 0) {
@@ -126,9 +143,18 @@ const canRevoke = computed(() => {
 
       <NSpace align="center">
         <label class="match-bottom-checkbox">
-          <NCheckbox :checked="onlyUnmatched" @update:checked="emit('toggleUnmatched')" />
+          <NCheckbox :checked="onlyUnmatched" @update:checked="emit('toggleUnmatched', $event)" />
           <span class="text-sm">只看未匹配</span>
         </label>
+
+        <NButton
+          v-if="matchConditions && matchConditions.length > 0"
+          type="default"
+          size="small"
+          @click="openConditionModal"
+        >
+          匹配条件{{ selectedConditionIndices && selectedConditionIndices.length > 0 ? `(${selectedConditionIndices.length})` : '' }}
+        </NButton>
 
         <NButton
           type="primary"
@@ -151,6 +177,31 @@ const canRevoke = computed(() => {
         </NButton>
       </NSpace>
     </NSpace>
+
+    <NModal
+      v-model:show="conditionModalVisible"
+      preset="card"
+      title="选择匹配条件"
+      style="width: 500px;"
+      :bordered="false"
+    >
+      <NCheckboxGroup v-model:value="tempSelectedIndices">
+        <NSpace vertical>
+          <NCheckbox
+            v-for="(cond, idx) in matchConditions"
+            :key="idx"
+            :value="idx"
+            :label="cond.text"
+          />
+        </NSpace>
+      </NCheckboxGroup>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton size="small" @click="conditionModalVisible = false">取消</NButton>
+          <NButton size="small" type="primary" @click="confirmConditions">确定</NButton>
+        </NSpace>
+      </template>
+    </NModal>
   </div>
 </template>
 

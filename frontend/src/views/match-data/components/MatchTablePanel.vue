@@ -29,6 +29,7 @@ interface Props {
   matchedKeys: Map<string, string[]>;
   otherMatchedKeys: Map<string, string[]>;
   quickKeyword?: string;
+  candidateKeys?: Set<string>;
 }
 
 const props = defineProps<Props>();
@@ -188,16 +189,37 @@ function onCellValueChanged(event: any) {
 }
 
 function getRowId(params: any) {
+  const data = params.data;
+  if (data.GUID) return String(data.GUID);
+  if (data.guid) return String(data.guid);
+  if (data.id) return String(data.id);
+  if (data.ID) return String(data.ID);
   const kf = keyField.value;
-  return String(params.data[kf] ?? '');
+  const keyValue = String(data[kf] ?? '');
+  if (keyValue) {
+    const rowIndex = params.node?.rowIndex;
+    if (rowIndex != null) {
+      return `${keyValue}_${rowIndex}`;
+    }
+    return keyValue;
+  }
+  if (params.node && params.node.rowIndex != null) {
+    return `row_${params.node.rowIndex}`;
+  }
+  return '';
 }
 
 function getRowClass(params: RowClassParams) {
   const kf = keyField.value;
   const key = String(params.data[kf] ?? '');
-  
+
   if (props.selectedKeys.includes(key)) {
     return 'match-selected-row';
+  }
+
+  // 候选行（根据匹配条件筛选出的潜在匹配记录）优先于已匹配/高亮
+  if (props.candidateKeys && props.candidateKeys.size > 0 && props.candidateKeys.has(key)) {
+    return 'match-candidate-row';
   }
 
   const otherKeys = props.otherMatchedKeys.get(key);
@@ -296,6 +318,13 @@ watch(() => props.selectedKeys, () => {
     gridApi.value!.refreshCells();
   });
 });
+
+watch(() => props.candidateKeys, () => {
+  if (!gridApi.value) return;
+  nextTick(() => {
+    gridApi.value!.redrawRows();
+  });
+}, { deep: false });
 
 watch(() => props.data.rows, () => {
   if (!gridApi.value) return;
@@ -489,6 +518,14 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
   background-color: #f6ffed !important;
 }
 
+:deep(.match-candidate-row) {
+  background-color: #fff1b8 !important;
+}
+
+:deep(.match-candidate-row .ag-cell) {
+  background-color: #fff1b8 !important;
+}
+
 /* Dark mode row highlight (component-specific) */
 .system-dark {
   :deep(.match-selected-row) {
@@ -501,6 +538,14 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
 
   :deep(.match-matched-row) {
     background-color: rgba(76, 175, 80, 0.2) !important;
+  }
+
+  :deep(.match-candidate-row) {
+    background-color: rgba(255, 235, 59, 0.15) !important;
+  }
+
+  :deep(.match-candidate-row .ag-cell) {
+    background-color: transparent !important;
   }
 }
 </style>

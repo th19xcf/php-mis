@@ -23,6 +23,12 @@ export interface MatchConfig {
   tableStyle: string;
 }
 
+export interface MatchCondition {
+  aField: string;
+  bField: string;
+  text: string;
+}
+
 export interface MatchMeta {
   functionCode: string;
   title: string;
@@ -40,6 +46,7 @@ export interface MatchMeta {
   bColumns: MatchColumn[];
   aMatchCols: { key: string; label: string; amount: string; target: string };
   bMatchCols: { key: string; label: string; amount: string; target: string };
+  matchConditions?: MatchCondition[];
 }
 
 export interface MatchPageResult {

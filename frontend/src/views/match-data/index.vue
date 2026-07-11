@@ -106,7 +106,8 @@ async function init() {
       meta.aMatchCols,
       meta.bMatchCols,
       pageData.aData.rows,
-      pageData.bData.rows
+      pageData.bData.rows,
+      meta.matchConditions
     );
   } catch (err: any) {
     error.value = err.message || '初始化失败';
@@ -186,6 +187,10 @@ async function handleRevoke() {
 
 function handleToggleUnmatched(value: boolean) {
   store.onlyUnmatched.value = value;
+}
+
+function handleUpdateConditions(indices: number[]) {
+  store.updateSelectedConditions(indices);
 }
 
 function handleAReset() {
@@ -327,6 +332,7 @@ onMounted(() => {
             :matched-keys="store.aMatchedKeys"
             :other-matched-keys="store.bMatchedKeys"
             :quick-keyword="aQuickKeyword"
+            :candidate-keys="store.aCandidateKeys"
             @update:selected="store.updateASelected"
             @set-grid-api="store.setAGridApi"
           />
@@ -384,6 +390,7 @@ onMounted(() => {
             :matched-keys="store.bMatchedKeys"
             :other-matched-keys="store.aMatchedKeys"
             :quick-keyword="bQuickKeyword"
+            :candidate-keys="store.bCandidateKeys"
             @update:selected="store.updateBSelected"
             @set-grid-api="store.setBGridApi"
           />
@@ -403,7 +410,10 @@ onMounted(() => {
       :a-matched-keys="store.aMatchedKeys"
       :b-matched-keys="store.bMatchedKeys"
       :only-unmatched="store.onlyUnmatched.value"
+      :match-conditions="store.matchConditions.value"
+      :selected-condition-indices="store.selectedConditionIndices.value"
       @toggle-unmatched="handleToggleUnmatched"
+      @update-conditions="handleUpdateConditions"
       @build="handleBuild"
       @revoke="handleRevoke"
     />

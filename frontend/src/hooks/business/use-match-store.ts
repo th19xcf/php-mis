@@ -2,7 +2,7 @@ import { ref, computed } from 'vue';
 import type { Ref } from 'vue';
 import type { GridApi } from 'ag-grid-community';
 
-import { fetchMatchPage, buildMatchRelation, revokeMatchRelation, type MatchConfig, type MatchColumn } from '@/service/api/match';
+import { fetchMatchPage, buildMatchRelation, revokeMatchRelation, type MatchConfig, type MatchColumn, type MatchCondition } from '@/service/api/match';
 
 export interface MatchColumnRole {
   key: string;
@@ -30,6 +30,10 @@ export interface MatchStore {
   aSelectedKeys: Ref<string[]>;
   bSelectedKeys: Ref<string[]>;
   isSaving: Ref<boolean>;
+  matchConditions: Ref<MatchCondition[]>;
+  selectedConditionIndices: Ref<number[]>;
+  aCandidateKeys: Set<string>;
+  bCandidateKeys: Set<string>;
 
   loadData: (
     functionCode: string,
@@ -37,12 +41,14 @@ export interface MatchStore {
     aConfig: MatchConfig, bConfig: MatchConfig,
     aColumns: MatchColumn[], bColumns: MatchColumn[],
     aMatchCols: MatchColumnRole, bMatchCols: MatchColumnRole,
-    aRows: any[], bRows: any[]
+    aRows: any[], bRows: any[],
+    matchConditions?: MatchCondition[]
   ) => void;
   setAGridApi: (api: GridApi<any>) => void;
   setBGridApi: (api: GridApi<any>) => void;
   updateASelected: (keys: string[]) => void;
   updateBSelected: (keys: string[]) => void;
+  updateSelectedConditions: (indices: number[]) => void;
   buildRelation: () => Promise<void>;
   revokeRelation: () => Promise<void>;
   refreshData: () => Promise<void>;
@@ -97,9 +103,145 @@ export function useMatchStore(): MatchStore {
   const bSelectedKeys = ref<string[]>([]);
   const isSaving = ref(false);
   const functionCode = ref('');
+  const matchConditions = ref<MatchCondition[]>([]);
+  const selectedConditionIndices = ref<number[]>([]);
 
   const aMatchedKeysComputed = computed(() => buildMatchMapping(aData.value.rows, aData.value.matchCols));
   const bMatchedKeysComputed = computed(() => buildMatchMapping(bData.value.rows, bData.value.matchCols));
+
+  function buildFieldNameMap(columns: MatchColumn[]): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const col of columns) {
+      const fieldName = String(col['字段名'] ?? '');
+      if (!fieldName) continue;
+      const colName = String(col['列名'] ?? '');
+      const queryName = String(col['查询名'] ?? '');
+      if (colName) map.set(colName, fieldName);
+      if (queryName) map.set(queryName, fieldName);
+      map.set(fieldName, fieldName);
+    }
+    return map;
+  }
+
+  const aFieldNameMap = computed(() => buildFieldNameMap(aData.value.columns));
+  const bFieldNameMap = computed(() => buildFieldNameMap(bData.value.columns));
+
+  // 根据选中的匹配条件和选中的行，计算另一侧的候选 key
+  // 勾选 A 表数据 -> 在 B 表中找出满足选中条件的记录
+  const bCandidateKeysComputed = computed<Set<string>>(() => {
+    console.log('[MATCH] bCandidateKeys - aSelectedKeys:', aSelectedKeys.value);
+    console.log('[MATCH] bCandidateKeys - selectedConditionIndices:', selectedConditionIndices.value);
+    console.log('[MATCH] bCandidateKeys - matchConditions:', matchConditions.value);
+    if (aSelectedKeys.value.length === 0 || selectedConditionIndices.value.length === 0) {
+      console.log('[MATCH] bCandidateKeys - 条件不满足，返回空');
+      return new Set<string>();
+    }
+    const conditions = selectedConditionIndices.value
+      .map(i => matchConditions.value[i])
+      .filter(Boolean);
+    console.log('[MATCH] bCandidateKeys - 选中条件:', conditions);
+    if (conditions.length === 0) {
+      console.log('[MATCH] bCandidateKeys - 条件解析为空');
+      return new Set<string>();
+    }
+
+    let aKeyField = aData.value.matchCols.key;
+    if (!aKeyField && aData.value.columns.length > 0) {
+      aKeyField = aData.value.columns[0].field || '';
+    }
+    console.log('[MATCH] bCandidateKeys - aKeyField:', aKeyField);
+    console.log('[MATCH] bCandidateKeys - aData.rows:', aData.value.rows.length);
+    const aRows = aData.value.rows.filter(row =>
+      aSelectedKeys.value.includes(String(row[aKeyField] ?? ''))
+    );
+    console.log('[MATCH] bCandidateKeys - 筛选后的aRows:', aRows.length);
+
+    let bKey = bData.value.matchCols.key;
+    if (!bKey && bData.value.columns.length > 0) {
+      bKey = bData.value.columns[0].field || '';
+    }
+    console.log('[MATCH] bCandidateKeys - bKey:', bKey, 'bData.columns[0].field:', bData.value.columns[0]?.field);
+    const result = new Set<string>();
+    for (const bRow of bData.value.rows) {
+      for (const aRow of aRows) {
+        const allMatch = conditions.every(cond => {
+          let aField = cond.aField;
+          let bField = cond.bField;
+          if (aRow[cond.aField] === undefined) {
+            const mapped = aFieldNameMap.value.get(cond.aField);
+            if (mapped) aField = mapped;
+          }
+          if (bRow[cond.bField] === undefined) {
+            const mapped = bFieldNameMap.value.get(cond.bField);
+            if (mapped) bField = mapped;
+          }
+          const aValue = aRow[aField];
+          const bValue = bRow[bField];
+          console.log('[MATCH] 条件:', cond.text, 'A字段:', aField, 'A值:', aValue, 'B字段:', bField, 'B值:', bValue, '相等:', String(aValue ?? '') === String(bValue ?? ''));
+          return String(aValue ?? '') === String(bValue ?? '');
+        });
+        if (allMatch) {
+          const candidateKey = String(bRow[bKey] ?? '');
+          console.log('[MATCH] 匹配成功，bKey:', bKey, 'bRow[bKey]:', candidateKey, 'bRow keys:', Object.keys(bRow).slice(0, 5));
+          result.add(candidateKey);
+          break;
+        }
+      }
+    }
+    console.log('[MATCH] bCandidateKeys:', Array.from(result));
+    return result;
+  });
+
+  // 勾选 B 表数据 -> 在 A 表中找出满足选中条件的记录
+  const aCandidateKeysComputed = computed<Set<string>>(() => {
+    if (bSelectedKeys.value.length === 0 || selectedConditionIndices.value.length === 0) {
+      return new Set<string>();
+    }
+    const conditions = selectedConditionIndices.value
+      .map(i => matchConditions.value[i])
+      .filter(Boolean);
+    if (conditions.length === 0) return new Set<string>();
+
+    let bKeyField = bData.value.matchCols.key;
+    if (!bKeyField && bData.value.columns.length > 0) {
+      bKeyField = bData.value.columns[0].field || '';
+    }
+    const bRows = bData.value.rows.filter(row =>
+      bSelectedKeys.value.includes(String(row[bKeyField] ?? ''))
+    );
+
+    let aKey = aData.value.matchCols.key;
+    if (!aKey && aData.value.columns.length > 0) {
+      aKey = aData.value.columns[0].field || '';
+    }
+    const result = new Set<string>();
+    for (const aRow of aData.value.rows) {
+      for (const bRow of bRows) {
+        const allMatch = conditions.every(cond => {
+          let aField = cond.aField;
+          let bField = cond.bField;
+          if (aRow[cond.aField] === undefined) {
+            const mapped = aFieldNameMap.value.get(cond.aField);
+            if (mapped) aField = mapped;
+          }
+          if (bRow[cond.bField] === undefined) {
+            const mapped = bFieldNameMap.value.get(cond.bField);
+            if (mapped) bField = mapped;
+          }
+          const aValue = aRow[aField];
+          const bValue = bRow[bField];
+          console.log('[MATCH] 条件:', cond.text, 'A字段:', aField, 'A值:', aValue, 'B字段:', bField, 'B值:', bValue, '相等:', String(aValue ?? '') === String(bValue ?? ''));
+          return String(aValue ?? '') === String(bValue ?? '');
+        });
+        if (allMatch) {
+          result.add(String(aRow[aKey] ?? ''));
+          break;
+        }
+      }
+    }
+    console.log('[MATCH] aCandidateKeys:', Array.from(result));
+    return result;
+  });
 
   function loadData(
     fc: string,
@@ -107,7 +249,8 @@ export function useMatchStore(): MatchStore {
     aConfig: MatchConfig, bConfig: MatchConfig,
     aColumns: MatchColumn[], bColumns: MatchColumn[],
     aMatchCols: MatchColumnRole, bMatchCols: MatchColumnRole,
-    aRows: any[], bRows: any[]
+    aRows: any[], bRows: any[],
+    conditions?: MatchCondition[]
   ) {
     functionCode.value = fc;
 
@@ -137,6 +280,8 @@ export function useMatchStore(): MatchStore {
 
     aSelectedKeys.value = [];
     bSelectedKeys.value = [];
+    matchConditions.value = conditions || [];
+    selectedConditionIndices.value = [];
   }
 
   function setAGridApi(api: GridApi<any>) {
@@ -153,6 +298,10 @@ export function useMatchStore(): MatchStore {
 
   function updateBSelected(keys: string[]) {
     bSelectedKeys.value = keys;
+  }
+
+  function updateSelectedConditions(indices: number[]) {
+    selectedConditionIndices.value = indices;
   }
 
   async function buildRelation() {
@@ -220,7 +369,8 @@ export function useMatchStore(): MatchStore {
       data.meta.aMatchCols,
       data.meta.bMatchCols,
       data.aData.rows,
-      data.bData.rows
+      data.bData.rows,
+      data.meta.matchConditions
     );
   }
 
@@ -276,16 +426,21 @@ export function useMatchStore(): MatchStore {
     aSelectedKeys,
     bSelectedKeys,
     isSaving,
+    matchConditions,
+    selectedConditionIndices,
     loadData,
     setAGridApi,
     setBGridApi,
     updateASelected,
     updateBSelected,
+    updateSelectedConditions,
     buildRelation,
     revokeRelation,
     refreshData,
     refreshSide,
     get aMatchedKeys() { return aMatchedKeysComputed.value; },
-    get bMatchedKeys() { return bMatchedKeysComputed.value; }
+    get bMatchedKeys() { return bMatchedKeysComputed.value; },
+    get aCandidateKeys() { return aCandidateKeysComputed.value; },
+    get bCandidateKeys() { return bCandidateKeysComputed.value; }
   };
 }

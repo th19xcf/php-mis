@@ -46,6 +46,8 @@ class MatchApi extends BaseApiController
             $aFunctionCode = $this->resolveFunctionCodeByModule($aModule);
             $bFunctionCode = $this->resolveFunctionCodeByModule($bModule);
 
+            $matchConditions = $this->getMatchConditions($functionCode);
+
             return $this->success([
                 'meta' => [
                     'functionCode' => $functionCode,
@@ -64,6 +66,7 @@ class MatchApi extends BaseApiController
                     'bColumns' => $bColumns,
                     'aMatchCols' => $aMatchCols,
                     'bMatchCols' => $bMatchCols,
+                    'matchConditions' => $matchConditions,
                 ],
                 'aData' => $aData,
                 'bData' => $bData,
@@ -149,6 +152,53 @@ class MatchApi extends BaseApiController
             return (string) $funcRow['功能编码'];
         }
         return '';
+    }
+
+    /**
+     * 读取 def_match_config 表的匹配条件并解析
+     *
+     * 匹配条件字段格式：A.<A表字段>=B.<B表字段>，多条用英文分号分隔
+     * 例如：A.贷方金额=B.财务计收金额;A.对方名称=B.对方名称
+     *
+     * 返回解析后的条件数组，每项含 aField、bField、text（原始文本）
+     *
+     * @param string $functionCode 功能编码
+     * @return array 解析后的匹配条件数组，无配置时返回空数组
+     */
+    private function getMatchConditions(string $functionCode): array
+    {
+        $db = \Config\Database::connect('btdc');
+        $row = $db->table('def_match_config')
+            ->where('功能编码', $functionCode)
+            ->get()
+            ->getRowArray();
+
+        if (!$row) {
+            return [];
+        }
+
+        $rawConditions = trim((string) ($row['匹配条件'] ?? ''));
+        if ($rawConditions === '') {
+            return [];
+        }
+
+        $parts = array_map('trim', explode(';', $rawConditions));
+        $result = [];
+        foreach ($parts as $part) {
+            if ($part === '') {
+                continue;
+            }
+            // 解析 A.<aField>=B.<bField>
+            if (preg_match('/^A\.(.+?)=B\.(.+)$/', $part, $m)) {
+                $result[] = [
+                    'aField' => trim($m[1]),
+                    'bField' => trim($m[2]),
+                    'text' => $part,
+                ];
+            }
+        }
+
+        return $result;
     }
 
     private function getModuleColumns(string $moduleName): array
