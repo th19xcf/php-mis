@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
-import { NButton, NAlert, NSpace, NModal, NCheckboxGroup, NCheckbox } from 'naive-ui';
+import { NButton, NAlert, NSpace, NModal, NCheckboxGroup, NCheckbox, NDropdown } from 'naive-ui';
 
 import type { MatchModuleData } from '@/hooks/business/use-match-store';
 import type { MatchCondition } from '@/service/api/match';
+
+type DisplayFilter = 'all' | 'matched' | 'unmatched';
 
 interface Props {
   aData: MatchModuleData;
@@ -12,7 +14,7 @@ interface Props {
   bSelectedKeys: string[];
   aMatchedKeys: Map<string, string[]>;
   bMatchedKeys: Map<string, string[]>;
-  onlyUnmatched: boolean;
+  displayFilter: DisplayFilter;
   isSaving?: boolean;
   matchConditions?: MatchCondition[];
   selectedConditionIndices?: number[];
@@ -23,9 +25,29 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   build: [];
   revoke: [];
-  toggleUnmatched: [value: boolean];
+  changeDisplayFilter: [value: DisplayFilter];
   updateConditions: [indices: number[]];
 }>();
+
+const displayFilterOptions: { label: string; value: DisplayFilter }[] = [
+  { label: '全部', value: 'all' },
+  { label: '已匹配', value: 'matched' },
+  { label: '未匹配', value: 'unmatched' }
+];
+
+const displayFilterLabel = computed(() => {
+  const item = displayFilterOptions.find(o => o.value === props.displayFilter);
+  return item ? item.label : '全部';
+});
+
+const displayFilterMenuOptions = displayFilterOptions.map(o => ({
+  label: o.label,
+  key: o.value
+}));
+
+function handleDisplayFilterSelect(key: string) {
+  emit('changeDisplayFilter', key as DisplayFilter);
+}
 
 const conditionModalVisible = ref(false);
 const tempSelectedIndices = ref<number[]>([]);
@@ -142,10 +164,15 @@ const canRevoke = computed(() => {
       </div>
 
       <NSpace align="center">
-        <label class="match-bottom-checkbox">
-          <NCheckbox :checked="onlyUnmatched" @update:checked="emit('toggleUnmatched', $event)" />
-          <span class="text-sm">只看未匹配</span>
-        </label>
+        <NDropdown
+          trigger="click"
+          :options="displayFilterMenuOptions"
+          @select="handleDisplayFilterSelect"
+        >
+          <NButton size="small" type="default">
+            显示数据-{{ displayFilterLabel }}
+          </NButton>
+        </NDropdown>
 
         <NButton
           v-if="matchConditions && matchConditions.length > 0"
@@ -227,29 +254,6 @@ const canRevoke = computed(() => {
 
   :deep(.n-alert) {
     margin-bottom: 4px;
-  }
-}
-
-.match-bottom-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  line-height: 1;
-
-  :deep(.n-checkbox) {
-    display: inline-flex;
-    align-items: center;
-    margin: 0;
-    padding: 0;
-  }
-
-  :deep(.n-checkbox-box) {
-    margin: 0;
-  }
-
-  .text-sm {
-    line-height: 1;
   }
 }
 </style>

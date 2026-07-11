@@ -177,8 +177,8 @@ async function handleRevoke() {
   }
 }
 
-function handleToggleUnmatched(value: boolean) {
-  store.onlyUnmatched.value = value;
+function handleChangeDisplayFilter(value: 'all' | 'matched' | 'unmatched') {
+  store.displayFilter.value = value;
 }
 
 function handleUpdateConditions(indices: number[]) {
@@ -225,8 +225,10 @@ function handleBScrollToMatched() {
 
 const aDisplayedCount = computed(() => {
   let rows = store.aData.value.rows;
-  if (store.onlyUnmatched.value) {
+  if (store.displayFilter.value === 'unmatched') {
     rows = rows.filter(row => !row.__matched);
+  } else if (store.displayFilter.value === 'matched') {
+    rows = rows.filter(row => row.__matched);
   }
   if (aQuickKeyword.value) {
     const kw = aQuickKeyword.value.toLowerCase();
@@ -239,8 +241,10 @@ const aDisplayedCount = computed(() => {
 
 const bDisplayedCount = computed(() => {
   let rows = store.bData.value.rows;
-  if (store.onlyUnmatched.value) {
+  if (store.displayFilter.value === 'unmatched') {
     rows = rows.filter(row => !row.__matched);
+  } else if (store.displayFilter.value === 'matched') {
+    rows = rows.filter(row => row.__matched);
   }
   if (bQuickKeyword.value) {
     const kw = bQuickKeyword.value.toLowerCase();
@@ -309,7 +313,7 @@ onMounted(() => {
             ref="aTableRef"
             side="A"
             :data="store.aData.value"
-            :only-unmatched="store.onlyUnmatched.value"
+            :display-filter="store.displayFilter.value"
             :selected-keys="store.aSelectedKeys.value"
             :matched-keys="store.aMatchedKeys"
             :quick-keyword="aQuickKeyword"
@@ -366,7 +370,7 @@ onMounted(() => {
             ref="bTableRef"
             side="B"
             :data="store.bData.value"
-            :only-unmatched="store.onlyUnmatched.value"
+            :display-filter="store.displayFilter.value"
             :selected-keys="store.bSelectedKeys.value"
             :matched-keys="store.bMatchedKeys"
             :quick-keyword="bQuickKeyword"
@@ -389,10 +393,10 @@ onMounted(() => {
       :b-selected-keys="store.bSelectedKeys.value"
       :a-matched-keys="store.aMatchedKeys"
       :b-matched-keys="store.bMatchedKeys"
-      :only-unmatched="store.onlyUnmatched.value"
+      :display-filter="store.displayFilter.value"
       :match-conditions="store.matchConditions.value"
       :selected-condition-indices="store.selectedConditionIndices.value"
-      @toggle-unmatched="handleToggleUnmatched"
+      @change-display-filter="handleChangeDisplayFilter"
       @update-conditions="handleUpdateConditions"
       @build="handleBuild"
       @revoke="handleRevoke"

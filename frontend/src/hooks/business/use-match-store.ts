@@ -26,7 +26,7 @@ export interface MatchModuleData {
 export interface MatchStore {
   aData: Ref<MatchModuleData>;
   bData: Ref<MatchModuleData>;
-  onlyUnmatched: Ref<boolean>;
+  displayFilter: Ref<'all' | 'matched' | 'unmatched'>;
   aSelectedKeys: Ref<string[]>;
   bSelectedKeys: Ref<string[]>;
   isSaving: Ref<boolean>;
@@ -73,6 +73,17 @@ function buildMatchMapping(
   return map;
 }
 
+/**
+ * 取列定义中第一个业务字段（跳过序号列），用作主键回退
+ */
+function firstBizField(columns: MatchColumn[]): string {
+  const col = columns.find(c => {
+    const f = String(c.field ?? '');
+    return f && f !== '序号';
+  });
+  return col ? String(col.field) : '';
+}
+
 export function useMatchStore(): MatchStore {
   const aData = ref<MatchModuleData>({
     functionCode: '',
@@ -98,7 +109,7 @@ export function useMatchStore(): MatchStore {
     gridApi: null
   });
 
-  const onlyUnmatched = ref(true);
+  const displayFilter = ref<'all' | 'matched' | 'unmatched'>('all');
   const aSelectedKeys = ref<string[]>([]);
   const bSelectedKeys = ref<string[]>([]);
   const isSaving = ref(false);
@@ -140,16 +151,16 @@ export function useMatchStore(): MatchStore {
     }
 
     let aKeyField = aData.value.matchCols.key;
-    if (!aKeyField && aData.value.columns.length > 0) {
-      aKeyField = aData.value.columns[0].field || '';
+    if (!aKeyField) {
+      aKeyField = firstBizField(aData.value.columns);
     }
     const aRows = aData.value.rows.filter(row =>
       aSelectedKeys.value.includes(String(row[aKeyField] ?? ''))
     );
 
     let bKey = bData.value.matchCols.key;
-    if (!bKey && bData.value.columns.length > 0) {
-      bKey = bData.value.columns[0].field || '';
+    if (!bKey) {
+      bKey = firstBizField(bData.value.columns);
     }
     const result = new Set<string>();
     for (const bRow of bData.value.rows) {
@@ -190,16 +201,16 @@ export function useMatchStore(): MatchStore {
     if (conditions.length === 0) return new Set<string>();
 
     let bKeyField = bData.value.matchCols.key;
-    if (!bKeyField && bData.value.columns.length > 0) {
-      bKeyField = bData.value.columns[0].field || '';
+    if (!bKeyField) {
+      bKeyField = firstBizField(bData.value.columns);
     }
     const bRows = bData.value.rows.filter(row =>
       bSelectedKeys.value.includes(String(row[bKeyField] ?? ''))
     );
 
     let aKey = aData.value.matchCols.key;
-    if (!aKey && aData.value.columns.length > 0) {
-      aKey = aData.value.columns[0].field || '';
+    if (!aKey) {
+      aKey = firstBizField(aData.value.columns);
     }
     const result = new Set<string>();
     for (const aRow of aData.value.rows) {
@@ -238,6 +249,10 @@ export function useMatchStore(): MatchStore {
     conditions?: MatchCondition[]
   ) {
     functionCode.value = fc;
+
+    // 为行分配序号（与普通工作台一致，序号列由后端列定义提供）
+    aRows.forEach((row, index) => { row['序号'] = index + 1; });
+    bRows.forEach((row, index) => { row['序号'] = index + 1; });
 
     aData.value = {
       functionCode: '',
@@ -378,26 +393,30 @@ export function useMatchStore(): MatchStore {
     }
 
     if (side === 'A') {
+      const aRows = data.aData.rows;
+      aRows.forEach((row, index) => { row['序号'] = index + 1; });
       aData.value = {
         functionCode: '',
         moduleName: data.meta.aModule,
         config: data.meta.aConfig,
         columns: data.meta.aColumns,
-        rows: data.aData.rows,
-        total: data.aData.rows.length,
+        rows: aRows,
+        total: aRows.length,
         matchCols: data.meta.aMatchCols,
         loading: false,
         gridApi: aData.value.gridApi
       };
       aSelectedKeys.value = [];
     } else {
+      const bRows = data.bData.rows;
+      bRows.forEach((row, index) => { row['序号'] = index + 1; });
       bData.value = {
         functionCode: '',
         moduleName: data.meta.bModule,
         config: data.meta.bConfig,
         columns: data.meta.bColumns,
-        rows: data.bData.rows,
-        total: data.bData.rows.length,
+        rows: bRows,
+        total: bRows.length,
         matchCols: data.meta.bMatchCols,
         loading: false,
         gridApi: bData.value.gridApi
@@ -409,7 +428,7 @@ export function useMatchStore(): MatchStore {
   return {
     aData,
     bData,
-    onlyUnmatched,
+    displayFilter,
     aSelectedKeys,
     bSelectedKeys,
     isSaving,

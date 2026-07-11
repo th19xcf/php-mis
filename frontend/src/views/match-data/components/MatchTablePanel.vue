@@ -24,7 +24,7 @@ const gridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTh
 interface Props {
   side: 'A' | 'B';
   data: MatchModuleData;
-  onlyUnmatched: boolean;
+  displayFilter: 'all' | 'matched' | 'unmatched';
   selectedKeys: string[];
   matchedKeys: Map<string, string[]>;
   quickKeyword?: string;
@@ -62,7 +62,9 @@ const pinDirectionOptions = [
 const keyField = computed(() => {
   if (props.data.matchCols.key) return props.data.matchCols.key;
   if (props.data.columns && props.data.columns.length > 0) {
-    return props.data.columns[0].field || '';
+    // 跳过序号列，取第一个业务字段作为回退主键
+    const bizCol = props.data.columns.find(c => c.field && c.field !== '序号');
+    return bizCol ? bizCol.field : '';
   }
   return '';
 });
@@ -80,8 +82,10 @@ const defaultColDef = {
 const displayedRows = computed(() => {
   let rows = props.data.rows;
 
-  if (props.onlyUnmatched) {
+  if (props.displayFilter === 'unmatched') {
     rows = rows.filter(row => !row.__matched);
+  } else if (props.displayFilter === 'matched') {
+    rows = rows.filter(row => row.__matched);
   }
 
   if (props.quickKeyword) {
@@ -326,7 +330,7 @@ watch(() => props.data.rows, () => {
   });
 }, { deep: false });
 
-watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
+watch([() => props.displayFilter, () => props.quickKeyword], () => {
   if (!gridApi.value) return;
   nextTick(() => {
     gridApi.value!.refreshCells();
