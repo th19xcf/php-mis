@@ -27,7 +27,6 @@ interface Props {
   onlyUnmatched: boolean;
   selectedKeys: string[];
   matchedKeys: Map<string, string[]>;
-  otherMatchedKeys: Map<string, string[]>;
   quickKeyword?: string;
   candidateKeys?: Set<string>;
 }
@@ -82,12 +81,7 @@ const displayedRows = computed(() => {
   let rows = props.data.rows;
 
   if (props.onlyUnmatched) {
-    const kf = keyField.value;
-    rows = rows.filter(row => {
-      const key = String(row[kf] ?? '');
-      const targets = props.matchedKeys.get(key) || [];
-      return targets.length === 0;
-    });
+    rows = rows.filter(row => !row.__matched);
   }
 
   if (props.quickKeyword) {
@@ -147,10 +141,7 @@ const columnDefs = computed<ColDef[]>(() => {
     sortable: false,
     filter: false,
     cellRenderer: (params: any) => {
-      const kf = keyField.value;
-      const key = String(params.data[kf] ?? '');
-      const targets = props.matchedKeys.get(key) || [];
-      if (targets.length > 0) {
+      if (params.data?.__matched) {
         return '<span style="color:#52c41a;">● 已匹配</span>';
       }
       return '<span style="color:#bfbfbf;">○ 未匹配</span>';
@@ -222,13 +213,7 @@ function getRowClass(params: RowClassParams) {
     return 'match-candidate-row';
   }
 
-  const otherKeys = props.otherMatchedKeys.get(key);
-  if (otherKeys && otherKeys.length > 0) {
-    return 'match-highlight-row';
-  }
-
-  const targets = props.matchedKeys.get(key) || [];
-  if (targets.length > 0) {
+  if (params.data?.__matched) {
     return 'match-matched-row';
   }
 
@@ -510,12 +495,24 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
   background-color: #e6f7ff !important;
 }
 
+:deep(.match-selected-row .ag-cell) {
+  background-color: #e6f7ff !important;
+}
+
 :deep(.match-highlight-row) {
   background-color: #fff7e6 !important;
 }
 
+:deep(.match-highlight-row .ag-cell) {
+  background-color: #fff7e6 !important;
+}
+
 :deep(.match-matched-row) {
-  background-color: #f6ffed !important;
+  background-color: #d9f7be !important;
+}
+
+:deep(.match-matched-row .ag-cell) {
+  background-color: #d9f7be !important;
 }
 
 :deep(.match-candidate-row) {
@@ -532,12 +529,24 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
     background-color: rgba(99, 179, 255, 0.2) !important;
   }
 
+  :deep(.match-selected-row .ag-cell) {
+    background-color: transparent !important;
+  }
+
   :deep(.match-highlight-row) {
     background-color: rgba(255, 193, 7, 0.2) !important;
   }
 
+  :deep(.match-highlight-row .ag-cell) {
+    background-color: transparent !important;
+  }
+
   :deep(.match-matched-row) {
     background-color: rgba(76, 175, 80, 0.2) !important;
+  }
+
+  :deep(.match-matched-row .ag-cell) {
+    background-color: transparent !important;
   }
 
   :deep(.match-candidate-row) {

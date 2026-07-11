@@ -122,19 +122,11 @@ watch(() => props.meta, () => {
 }, { deep: true });
 
 const aMatchedCount = computed(() => {
-  let count = 0;
-  store.aMatchedKeys.forEach(targets => {
-    if (targets.length > 0) count++;
-  });
-  return count;
+  return store.aData.value.rows.filter(row => row.__matched).length;
 });
 
 const bMatchedCount = computed(() => {
-  let count = 0;
-  store.bMatchedKeys.forEach(targets => {
-    if (targets.length > 0) count++;
-  });
-  return count;
+  return store.bData.value.rows.filter(row => row.__matched).length;
 });
 
 const aProgress = computed(() => {
@@ -234,12 +226,7 @@ function handleBScrollToMatched() {
 const aDisplayedCount = computed(() => {
   let rows = store.aData.value.rows;
   if (store.onlyUnmatched.value) {
-    const kf = store.aData.value.matchCols.key || (store.aData.value.columns[0]?.field || '');
-    rows = rows.filter(row => {
-      const key = String(row[kf] ?? '');
-      const targets = store.aMatchedKeys.get(key) || [];
-      return targets.length === 0;
-    });
+    rows = rows.filter(row => !row.__matched);
   }
   if (aQuickKeyword.value) {
     const kw = aQuickKeyword.value.toLowerCase();
@@ -253,12 +240,7 @@ const aDisplayedCount = computed(() => {
 const bDisplayedCount = computed(() => {
   let rows = store.bData.value.rows;
   if (store.onlyUnmatched.value) {
-    const kf = store.bData.value.matchCols.key || (store.bData.value.columns[0]?.field || '');
-    rows = rows.filter(row => {
-      const key = String(row[kf] ?? '');
-      const targets = store.bMatchedKeys.get(key) || [];
-      return targets.length === 0;
-    });
+    rows = rows.filter(row => !row.__matched);
   }
   if (bQuickKeyword.value) {
     const kw = bQuickKeyword.value.toLowerCase();
@@ -330,7 +312,6 @@ onMounted(() => {
             :only-unmatched="store.onlyUnmatched.value"
             :selected-keys="store.aSelectedKeys.value"
             :matched-keys="store.aMatchedKeys"
-            :other-matched-keys="store.bMatchedKeys"
             :quick-keyword="aQuickKeyword"
             :candidate-keys="store.aCandidateKeys"
             @update:selected="store.updateASelected"
@@ -388,7 +369,6 @@ onMounted(() => {
             :only-unmatched="store.onlyUnmatched.value"
             :selected-keys="store.bSelectedKeys.value"
             :matched-keys="store.bMatchedKeys"
-            :other-matched-keys="store.aMatchedKeys"
             :quick-keyword="bQuickKeyword"
             :candidate-keys="store.bCandidateKeys"
             @update:selected="store.updateBSelected"

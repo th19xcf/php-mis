@@ -297,6 +297,7 @@ export function useMatchStore(): MatchStore {
     isSaving.value = true;
     try {
       await buildMatchRelation({
+        functionCode: functionCode.value,
         aModule: aData.value.moduleName,
         bModule: bData.value.moduleName,
         aKeys: aSelectedKeys.value,
@@ -319,6 +320,7 @@ export function useMatchStore(): MatchStore {
     isSaving.value = true;
     try {
       await revokeMatchRelation({
+        functionCode: functionCode.value,
         aModule: aData.value.moduleName,
         bModule: bData.value.moduleName,
         aKeys: aSelectedKeys.value,
