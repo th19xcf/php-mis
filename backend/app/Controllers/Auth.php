@@ -286,12 +286,18 @@ class Auth extends BaseApiController
             $user['is_super_admin'] = (bool) ($decoded->isSuperAdmin ?? false);
             $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
             $tRole = hrtime(true);
-            $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
-            $tLoc = hrtime(true);
-            $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-            $tDeptName = hrtime(true);
-            $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
-            $tDeptCode = hrtime(true);
+
+            // 属地/部门全称/部门编码三项赋权合并为一次 SQL 查询
+            $authorizationService = $this->getAuthorizationService();
+            $authFields = $authorizationService->loadUserAuthFields(
+                ['属地赋权', '部门全称赋权', '部门编码赋权'],
+                $user['work_id'],
+                $user['region']
+            );
+            $user['location_authz'] = $authFields['属地赋权'] ?? '';
+            $user['dept_name_authz'] = $authFields['部门全称赋权'] ?? '';
+            $user['dept_code_authz'] = $authFields['部门编码赋权'] ?? '';
+            $tLocAuthz = hrtime(true);
 
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
             $tAccessToken = hrtime(true);
@@ -306,9 +312,7 @@ class Auth extends BaseApiController
                 'Token解码' => $tDecode,
                 '查用户' => $tGetUser,
                 '角色赋权' => $tRole,
-                '属地赋权' => $tLoc,
-                '部门全称赋权' => $tDeptName,
-                '部门编码赋权' => $tDeptCode,
+                '属地+部门赋权(合并)' => $tLocAuthz,
                 '生成AccessToken' => $tAccessToken,
                 '生成RefreshToken' => $tRefreshToken,
                 '旧Token拉黑' => $tBlacklist
