@@ -26,7 +26,7 @@ export interface MatchModuleData {
 export interface MatchStore {
   aData: Ref<MatchModuleData>;
   bData: Ref<MatchModuleData>;
-  displayFilter: Ref<'all' | 'matched' | 'unmatched'>;
+  displayFilter: Ref<'all' | 'matched' | 'unmatched' | 'candidate'>;
   aSelectedKeys: Ref<string[]>;
   bSelectedKeys: Ref<string[]>;
   isSaving: Ref<boolean>;
@@ -109,7 +109,7 @@ export function useMatchStore(): MatchStore {
     gridApi: null
   });
 
-  const displayFilter = ref<'all' | 'matched' | 'unmatched'>('all');
+  const displayFilter = ref<'all' | 'matched' | 'unmatched' | 'candidate'>('all');
   const aSelectedKeys = ref<string[]>([]);
   const bSelectedKeys = ref<string[]>([]);
   const isSaving = ref(false);

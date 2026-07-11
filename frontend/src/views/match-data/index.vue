@@ -177,7 +177,7 @@ async function handleRevoke() {
   }
 }
 
-function handleChangeDisplayFilter(value: 'all' | 'matched' | 'unmatched') {
+function handleChangeDisplayFilter(value: 'all' | 'matched' | 'unmatched' | 'candidate') {
   store.displayFilter.value = value;
 }
 
@@ -229,6 +229,18 @@ const aDisplayedCount = computed(() => {
     rows = rows.filter(row => !row.__matched);
   } else if (store.displayFilter.value === 'matched') {
     rows = rows.filter(row => row.__matched);
+  } else if (store.displayFilter.value === 'candidate') {
+    const kf = store.aData.value.matchCols.key;
+    if (kf) {
+      const ck = store.aCandidateKeys;
+      const selectedSet = new Set(store.aSelectedKeys.value);
+      rows = rows.filter(row => {
+        const key = String(row[kf] ?? '');
+        return (ck && ck.has(key)) || selectedSet.has(key);
+      });
+    } else {
+      rows = [];
+    }
   }
   if (aQuickKeyword.value) {
     const kw = aQuickKeyword.value.toLowerCase();
@@ -245,6 +257,18 @@ const bDisplayedCount = computed(() => {
     rows = rows.filter(row => !row.__matched);
   } else if (store.displayFilter.value === 'matched') {
     rows = rows.filter(row => row.__matched);
+  } else if (store.displayFilter.value === 'candidate') {
+    const kf = store.bData.value.matchCols.key;
+    if (kf) {
+      const ck = store.bCandidateKeys;
+      const selectedSet = new Set(store.bSelectedKeys.value);
+      rows = rows.filter(row => {
+        const key = String(row[kf] ?? '');
+        return (ck && ck.has(key)) || selectedSet.has(key);
+      });
+    } else {
+      rows = [];
+    }
   }
   if (bQuickKeyword.value) {
     const kw = bQuickKeyword.value.toLowerCase();

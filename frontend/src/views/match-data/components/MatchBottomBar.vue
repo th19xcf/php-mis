@@ -5,7 +5,7 @@ import { NButton, NAlert, NSpace, NModal, NCheckboxGroup, NCheckbox, NDropdown }
 import type { MatchModuleData } from '@/hooks/business/use-match-store';
 import type { MatchCondition } from '@/service/api/match';
 
-type DisplayFilter = 'all' | 'matched' | 'unmatched';
+type DisplayFilter = 'all' | 'matched' | 'unmatched' | 'candidate';
 
 interface Props {
   aData: MatchModuleData;
@@ -32,7 +32,8 @@ const emit = defineEmits<{
 const displayFilterOptions: { label: string; value: DisplayFilter }[] = [
   { label: '全部', value: 'all' },
   { label: '已匹配', value: 'matched' },
-  { label: '未匹配', value: 'unmatched' }
+  { label: '未匹配', value: 'unmatched' },
+  { label: '满足条件', value: 'candidate' }
 ];
 
 const displayFilterLabel = computed(() => {
