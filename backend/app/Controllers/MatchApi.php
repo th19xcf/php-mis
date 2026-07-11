@@ -948,6 +948,7 @@ class MatchApi extends BaseApiController
                         ->update();
                 }
             } else {
+                // specific 模式：仅移除被撤销的 key，保留其他合法关系
                 if (!empty($aKeys)) {
                     foreach ($aKeys as $aKey) {
                         $existing = $db->table($aTable)
@@ -957,16 +958,15 @@ class MatchApi extends BaseApiController
                             ->getRowArray();
 
                         $currentTargets = $existing[$aCols['target']] ?? '';
-                        $targetArray = $currentTargets ? explode(',', $currentTargets) : [];
+                        // 兼容分号（写入指令）和逗号（旧版 key 回退）两种分隔符
+                        $targetArray = $currentTargets ? preg_split('/[;,]/', $currentTargets) : [];
+                        $targetArray = array_map('trim', $targetArray);
                         $newTargets = array_diff($targetArray, $bKeys);
-                        $newTargetStr = implode(',', $newTargets);
+                        $newTargetStr = implode(';', array_filter($newTargets, fn($v) => $v !== ''));
 
-                        $updateData = [$aCols['target'] => $newTargetStr];
-                        foreach (array_keys($aClearFields) as $field) {
-                            $updateData[$field] = '';
-                        }
+                        // 仅更新 target 字段，不清空其他写入字段，避免破坏其他合法关系
                         $db->table($aTable)
-                            ->set($updateData)
+                            ->set($aCols['target'], $newTargetStr)
                             ->where($aCols['key'], $aKey)
                             ->update();
                     }
@@ -981,16 +981,13 @@ class MatchApi extends BaseApiController
                             ->getRowArray();
 
                         $currentTargets = $existing[$bCols['target']] ?? '';
-                        $targetArray = $currentTargets ? explode(',', $currentTargets) : [];
+                        $targetArray = $currentTargets ? preg_split('/[;,]/', $currentTargets) : [];
+                        $targetArray = array_map('trim', $targetArray);
                         $newTargets = array_diff($targetArray, $aKeys);
-                        $newTargetStr = implode(',', $newTargets);
+                        $newTargetStr = implode(';', array_filter($newTargets, fn($v) => $v !== ''));
 
-                        $updateData = [$bCols['target'] => $newTargetStr];
-                        foreach (array_keys($bClearFields) as $field) {
-                            $updateData[$field] = '';
-                        }
                         $db->table($bTable)
-                            ->set($updateData)
+                            ->set($bCols['target'], $newTargetStr)
                             ->where($bCols['key'], $bKey)
                             ->update();
                     }
