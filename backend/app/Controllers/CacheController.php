@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Constants\ApiCode;
 use App\Libraries\MetadataCache;
 use App\Libraries\SessionUserContext;
 use CodeIgniter\Controller;
@@ -113,25 +114,25 @@ class CacheController extends Controller
     }
 
     /**
-     * 成功响应
+     * 成功响应（遵循全站标准结构 {code, msg, data}）
      */
     private function success(string $message, array $data = []): \CodeIgniter\HTTP\JSONResponse
     {
         return $this->response->setJSON([
-            'success' => true,
-            'message' => $message,
+            'code' => ApiCode::SUCCESS,
+            'msg' => $message,
             'data' => $data
         ]);
     }
 
     /**
-     * 失败响应
+     * 失败响应（遵循全站标准结构 {code, msg}）
      */
     private function fail(string $message): \CodeIgniter\HTTP\JSONResponse
     {
         return $this->response->setJSON([
-            'success' => false,
-            'message' => $message
+            'code' => ApiCode::BUSINESS_ERROR,
+            'msg' => $message,
         ]);
     }
 }

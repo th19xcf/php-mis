@@ -24,10 +24,6 @@ final class ApiCode
     public const AUTH_TOKEN_EXPIRED_ALT = '9998';
     public const AUTH_TOKEN_EXPIRED_LEGACY = '3333';
 
-    // 兼容历史错误码：客户端 (≤1.x) 使用此码判定"未登录 / 会话失效"
-    public const AUTH_TOKEN_REQUIRED_LEGACY = '4010';
-    public const AUTH_SESSION_EXPIRED_LEGACY = '4011';
-
     // System errors
     public const PARAM_ERROR = '2001';
     public const NOT_FOUND = '2002';
@@ -45,12 +41,6 @@ final class ApiCode
     public const LOGOUT_CODES = [
         self::AUTH_UNAUTHORIZED,
         self::AUTH_REFRESH_TOKEN_INVALID,
-    ];
-
-    /** @var string[] */
-    public const MODAL_LOGOUT_CODES = [
-        '7777',
-        '7778',
     ];
 
     /** @var string[] */

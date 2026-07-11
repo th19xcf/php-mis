@@ -37,6 +37,8 @@ class ApiExceptionHandler implements ExceptionHandlerInterface
         int $statusCode
     ): void {
         [$code, $msg] = $this->resolveException($exception);
+        // 按异常语义映射 HTTP 状态码，让监控、网关、客户端能基于状态码识别失败类型
+        $httpStatus = $this->resolveHttpStatus($exception, $statusCode);
 
         $traceId = $request->getHeaderLine('X-Request-Id') ?: 'trace-' . bin2hex(random_bytes(8));
 
@@ -65,11 +67,37 @@ class ApiExceptionHandler implements ExceptionHandlerInterface
         }
 
         $response
-            ->setStatusCode($statusCode >= 400 ? $statusCode : 500)
+            ->setStatusCode($httpStatus)
             ->setContentType('application/json', 'utf-8')
             ->setHeader('X-Request-Id', $traceId)
             ->setJSON($body)
             ->send();
+    }
+
+    /**
+     * 根据异常类型映射 HTTP 状态码
+     *
+     * 业务码与 HTTP 语义对齐：
+     * - AuthException（未登录/登录态失效）→ 401
+     * - ValidationException（参数校验失败）→ 422
+     * - BusinessException（业务规则失败）→ 400
+     * - 框架已确定的 4xx（如 404 路由不存在）→ 保留原值
+     * - 其他未识别异常 → 500
+     */
+    private function resolveHttpStatus(Throwable $exception, int $frameworkStatusCode): int
+    {
+        if ($exception instanceof AuthException) {
+            return 401;
+        }
+        if ($exception instanceof ValidationException) {
+            return 422;
+        }
+        if ($exception instanceof BusinessException) {
+            return 400;
+        }
+
+        // 框架已确定的 4xx/5xx（如 PageNotFoundException→404）保留原值
+        return $frameworkStatusCode >= 400 ? $frameworkStatusCode : 500;
     }
 
     private function handleCli(Throwable $exception, int $statusCode, int $exitCode): void
