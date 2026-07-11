@@ -129,19 +129,13 @@ export function useMatchStore(): MatchStore {
   // 根据选中的匹配条件和选中的行，计算另一侧的候选 key
   // 勾选 A 表数据 -> 在 B 表中找出满足选中条件的记录
   const bCandidateKeysComputed = computed<Set<string>>(() => {
-    console.log('[MATCH] bCandidateKeys - aSelectedKeys:', aSelectedKeys.value);
-    console.log('[MATCH] bCandidateKeys - selectedConditionIndices:', selectedConditionIndices.value);
-    console.log('[MATCH] bCandidateKeys - matchConditions:', matchConditions.value);
     if (aSelectedKeys.value.length === 0 || selectedConditionIndices.value.length === 0) {
-      console.log('[MATCH] bCandidateKeys - 条件不满足，返回空');
       return new Set<string>();
     }
     const conditions = selectedConditionIndices.value
       .map(i => matchConditions.value[i])
       .filter(Boolean);
-    console.log('[MATCH] bCandidateKeys - 选中条件:', conditions);
     if (conditions.length === 0) {
-      console.log('[MATCH] bCandidateKeys - 条件解析为空');
       return new Set<string>();
     }
 
@@ -149,18 +143,14 @@ export function useMatchStore(): MatchStore {
     if (!aKeyField && aData.value.columns.length > 0) {
       aKeyField = aData.value.columns[0].field || '';
     }
-    console.log('[MATCH] bCandidateKeys - aKeyField:', aKeyField);
-    console.log('[MATCH] bCandidateKeys - aData.rows:', aData.value.rows.length);
     const aRows = aData.value.rows.filter(row =>
       aSelectedKeys.value.includes(String(row[aKeyField] ?? ''))
     );
-    console.log('[MATCH] bCandidateKeys - 筛选后的aRows:', aRows.length);
 
     let bKey = bData.value.matchCols.key;
     if (!bKey && bData.value.columns.length > 0) {
       bKey = bData.value.columns[0].field || '';
     }
-    console.log('[MATCH] bCandidateKeys - bKey:', bKey, 'bData.columns[0].field:', bData.value.columns[0]?.field);
     const result = new Set<string>();
     for (const bRow of bData.value.rows) {
       for (const aRow of aRows) {
@@ -177,18 +167,15 @@ export function useMatchStore(): MatchStore {
           }
           const aValue = aRow[aField];
           const bValue = bRow[bField];
-          console.log('[MATCH] 条件:', cond.text, 'A字段:', aField, 'A值:', aValue, 'B字段:', bField, 'B值:', bValue, '相等:', String(aValue ?? '') === String(bValue ?? ''));
           return String(aValue ?? '') === String(bValue ?? '');
         });
         if (allMatch) {
           const candidateKey = String(bRow[bKey] ?? '');
-          console.log('[MATCH] 匹配成功，bKey:', bKey, 'bRow[bKey]:', candidateKey, 'bRow keys:', Object.keys(bRow).slice(0, 5));
           result.add(candidateKey);
           break;
         }
       }
     }
-    console.log('[MATCH] bCandidateKeys:', Array.from(result));
     return result;
   });
 
@@ -230,7 +217,6 @@ export function useMatchStore(): MatchStore {
           }
           const aValue = aRow[aField];
           const bValue = bRow[bField];
-          console.log('[MATCH] 条件:', cond.text, 'A字段:', aField, 'A值:', aValue, 'B字段:', bField, 'B值:', bValue, '相等:', String(aValue ?? '') === String(bValue ?? ''));
           return String(aValue ?? '') === String(bValue ?? '');
         });
         if (allMatch) {
@@ -239,7 +225,6 @@ export function useMatchStore(): MatchStore {
         }
       }
     }
-    console.log('[MATCH] aCandidateKeys:', Array.from(result));
     return result;
   });
 
