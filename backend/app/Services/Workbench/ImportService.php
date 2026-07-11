@@ -3,6 +3,7 @@
 namespace App\Services\Workbench;
 
 use App\Models\Mcommon;
+use App\Libraries\MetadataCache;
 
 /**
  * 导入服务类
@@ -11,10 +12,12 @@ use App\Models\Mcommon;
 class ImportService
 {
     private Mcommon $model;
+    private MetadataCache $metadataCache;
 
     public function __construct()
     {
         $this->model = new Mcommon();
+        $this->metadataCache = new MetadataCache();
     }
 
     /**
@@ -44,23 +47,13 @@ class ImportService
      */
     public function getImportColumns(string $functionCode): array
     {
-        $sql = sprintf(
-            'select 导入模块 from def_query_config 
-            where 查询模块 in (
-                select 模块名称 from def_function 
-                where 有效标识="1" and 功能编码=%s
-            )',
-            $this->model->quote($functionCode)
-        );
-
-        $query = $this->model->select($sql);
-        if ($query === false) {
+        $config = $this->metadataCache->getQueryConfigByFunction($functionCode);
+        if ($config === null) {
             log_message('error', '查询 def_query_config 失败');
             return ['columns' => [], 'headerRow' => 1, 'dataRow' => 2];
         }
 
-        $row = $query->getRowArray();
-        $importModule = (string) ($row['导入模块'] ?? '');
+        $importModule = (string) ($config['导入模块'] ?? '');
 
         $headerRow = 1;
         $dataRow = 2;

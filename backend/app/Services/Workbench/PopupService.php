@@ -34,22 +34,16 @@ class PopupService
      */
     public function getPopupConfig(string $functionCode, string $objectName): ?array
     {
-        $sql = sprintf(
-            'select 对象, 对象名称, 对象表名
-            from view_function
-            where 赋值类型="弹窗" and 功能编码=%s and 对象=%s
-            group by 对象',
-            $this->model->quote($functionCode),
-            $this->model->quote($objectName)
-        );
+        $allColumns = $this->metadataCache->getViewFunctionColumns($functionCode);
 
-        $result = $this->model->select($sql);
-        if ($result === false) {
-            return null;
-        }
-        $row = $result->getRowArray();
-        if ($row !== null) {
-            return $row;
+        foreach ($allColumns as $col) {
+            if (($col['赋值类型'] ?? '') === '弹窗' && ($col['对象'] ?? '') === $objectName) {
+                return [
+                    '对象' => $col['对象'] ?? '',
+                    '对象名称' => $col['对象名称'] ?? '',
+                    '对象表名' => $col['对象表名'] ?? '',
+                ];
+            }
         }
 
         return $this->metadataCache->getPopupConfigByObject($objectName);

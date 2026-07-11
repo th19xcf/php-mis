@@ -47,25 +47,11 @@ class FieldConfigService
                 return ['fields' => []];
             }
 
-            $sql = sprintf(
-                'select
-                    列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 可新增, 列顺序
-                from view_function
-                where 功能编码=%s and 列顺序>0 and 可新增="1"
-                group by 列名
-                order by 列顺序',
-                $this->model->quote($functionCode)
-            );
+            $allColumns = $this->metadataCache->getViewFunctionColumns($functionCode);
 
-            log_message('info', "getAddFields SQL: {$sql}");
-
-            $result = $this->model->select($sql);
-            if ($result === false) {
-                log_message('error', "getAddFields: query failed for functionCode={$functionCode}");
-                return ['fields' => []];
-            }
-
-            $columns = $result->getResultArray();
+            // 筛选可新增字段
+            $columns = array_filter($allColumns, fn($c) => ($c['可新增'] ?? '0') === '1');
+            $columns = array_values($columns);
             log_message('info', "getAddFields: found " . count($columns) . " columns");
 
             $popupColumnMap = $this->getPopupColumnMap();
@@ -164,22 +150,7 @@ class FieldConfigService
                 return ['fields' => []];
             }
 
-            $sql = sprintf(
-                'select
-                    列名, 字段名, 列类型, 列宽度, 可修改, 不可为空, 列顺序
-                from view_function
-                where 功能编码=%s and 列顺序>0
-                group by 列名
-                order by 列顺序',
-                $this->model->quote($functionCode)
-            );
-
-            $result = $this->model->select($sql);
-            if ($result === false) {
-                return ['fields' => []];
-            }
-
-            $columns = $result->getResultArray();
+            $columns = $this->metadataCache->getViewFunctionColumns($functionCode);
             $fields = [];
 
             foreach ($columns as $col) {
@@ -218,22 +189,11 @@ class FieldConfigService
                 return ['fields' => []];
             }
 
-            $sql = sprintf(
-                'select
-                    列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 列顺序
-                from view_function
-                where 功能编码=%s and 列顺序>0 and 可修改="2"
-                group by 列名
-                order by 列顺序',
-                $this->model->quote($functionCode)
-            );
+            $allColumns = $this->metadataCache->getViewFunctionColumns($functionCode);
 
-            $result = $this->model->select($sql);
-            if ($result === false) {
-                return ['fields' => []];
-            }
-
-            $columns = $result->getResultArray();
+            // 筛选可批量修改字段（可修改="2"）
+            $columns = array_filter($allColumns, fn($c) => ($c['可修改'] ?? '0') === '2');
+            $columns = array_values($columns);
             $fields = [];
 
             $popupColumnMap = $this->getPopupColumnMap();
@@ -319,22 +279,11 @@ class FieldConfigService
     public function getUpdateFields(string $functionCode, array $keyValues, string $primaryKey, string $dataTable): array
     {
         try {
-            $sql = sprintf(
-                'select
-                    列名, 字段名, 列类型, 赋值类型, 对象, 缺省值, 不可为空, 可修改, 列顺序
-                from view_function
-                where 功能编码=%s and 列顺序>0 and (可修改="1" or 可修改="2")
-                group by 列名
-                order by 列顺序',
-                $this->model->quote($functionCode)
-            );
+            $allColumns = $this->metadataCache->getViewFunctionColumns($functionCode);
 
-            $result = $this->model->select($sql);
-            if ($result === false) {
-                return ['fields' => [], 'currentData' => []];
-            }
-
-            $columns = $result->getResultArray();
+            // 筛选可修改字段（可修改="1" 或 "2"）
+            $columns = array_filter($allColumns, fn($c) => in_array(($c['可修改'] ?? '0'), ['1', '2'], true));
+            $columns = array_values($columns);
             $fields = [];
 
             $popupColumnMap = $this->getPopupColumnMap();
@@ -432,18 +381,8 @@ class FieldConfigService
         $primaryKey = $session->get($functionCode . '-primary_key');
 
         if (empty($dataTable)) {
-            $sql = sprintf(
-                'select 数据表名, 数据模式, 新增前处理模块, 新增后处理模块, 主键字段
-                from def_query_config
-                where 查询模块 in (
-                    select 模块名称 from def_function where 功能编码=%s
-                )',
-                $this->model->quote($functionCode)
-            );
-
-            $result = $this->model->select($sql);
-            if ($result !== false) {
-                $row = $result->getRowArray();
+            $row = $this->metadataCache->getQueryConfigByFunction($functionCode);
+            if ($row) {
                 $dataTable = $row['数据表名'] ?? '';
                 $dataModel = $row['数据模式'] ?? '0';
                 $beforeInsert = $row['新增前处理模块'] ?? '';
@@ -528,20 +467,8 @@ class FieldConfigService
      */
     private function getFieldModule(string $functionCode): string
     {
-        $sql = sprintf(
-            'select 字段模块 from def_query_config where 查询模块 in (
-                select 模块名称 from def_function where 有效标识="1" and 功能编码=%s
-            )',
-            $this->model->quote($functionCode)
-        );
-
-        $result = $this->model->select($sql);
-        if ($result !== false) {
-            $row = $result->getRowArray();
-            return $row['字段模块'] ?? '';
-        }
-
-        return '';
+        $config = $this->metadataCache->getQueryConfigByFunction($functionCode);
+        return $config['字段模块'] ?? '';
     }
 
     /**

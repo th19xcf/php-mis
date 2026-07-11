@@ -12,12 +12,8 @@ class MatchApi extends BaseApiController
     public function page(string $functionCode = '')
     {
         try {
-            $db = \Config\Database::connect('btdc');
-            $funcRow = $db->table('def_function')
-                ->where('有效标识', '1')
-                ->where('功能编码', $functionCode)
-                ->get()
-                ->getRowArray();
+            $metadataCache = new MetadataCache();
+            $funcRow = $metadataCache->getFunctionConfig($functionCode);
 
             if (!$funcRow) {
                 return $this->businessError("功能编码 {$functionCode} 不存在或已禁用");
@@ -323,14 +319,8 @@ class MatchApi extends BaseApiController
      */
     private function resolveFunctionCodeByModule(string $moduleName): string
     {
-        $db = \Config\Database::connect('btdc');
-        $funcRow = $db->table('def_function')
-            ->select('功能编码')
-            ->where('有效标识', '1')
-            ->where('模块名称', $moduleName)
-            ->orderBy('功能编码')
-            ->get()
-            ->getRowArray();
+        $metadataCache = new MetadataCache();
+        $funcRow = $metadataCache->getFunctionConfigByModule($moduleName);
         if ($funcRow && !empty($funcRow['功能编码'])) {
             return (string) $funcRow['功能编码'];
         }
@@ -549,23 +539,9 @@ class MatchApi extends BaseApiController
             return [];
         }
 
-        // 复用 ContextService::loadColumns 的 SQL（view_function 视图，含 可匹配 字段）
-        $sql = sprintf(
-            'select 功能编码,字段模块,部门编码字段,部门全称字段,
-                工号字段,属地字段,
-                列名,列类型,列宽度,字段名,查询名,
-                赋值类型,对象,对象名称,对象表名,缺省值,主键,
-                工号限权,可筛选,可汇总,可新增,可修改,不可为空,可颜色标注,
-                提示条件,提示样式设置,异常条件,异常样式设置,字符转换,
-                加密显示,列顺序,可匹配
-            from view_function
-            where 功能编码=%s and 列顺序>0
-            group by 列名
-            order by 列顺序',
-            $this->model->quote($functionCode)
-        );
-        $query = $this->model->select($sql);
-        $rows = $query ? $query->getResultArray() : [];
+        // 通过 MetadataCache 获取 view_function 列定义（含 可匹配 字段）
+        $metadataCache = new MetadataCache();
+        $rows = $metadataCache->getViewFunctionColumns($functionCode);
 
         $columns = [[
             'field' => '序号',
@@ -603,16 +579,8 @@ class MatchApi extends BaseApiController
             return ['key' => '', 'label' => '', 'amount' => '', 'target' => ''];
         }
 
-        $sql = sprintf(
-            'select 字段名,可匹配
-            from view_function
-            where 功能编码=%s and 列顺序>0
-            group by 列名
-            order by 列顺序',
-            $this->model->quote($functionCode)
-        );
-        $query = $this->model->select($sql);
-        $rows = $query ? $query->getResultArray() : [];
+        $metadataCache = new MetadataCache();
+        $rows = $metadataCache->getViewFunctionColumns($functionCode);
 
         $result = ['key' => '', 'label' => '', 'amount' => '', 'target' => ''];
 
