@@ -801,7 +801,6 @@ class MatchApi extends BaseApiController
                 $aRecord = $aRecords[$aKey] ?? [];
                 foreach ($writes['bToA'] as $write) {
                     if ($write['sourceType'] === 'field' && $write['sourceTable'] === 'B') {
-                        // 收集所有 B 记录的源字段值，用英文分号拼接
                         $values = [];
                         foreach ($bKeys as $bKey) {
                             $bRecord = $bRecords[$bKey] ?? [];
@@ -811,8 +810,13 @@ class MatchApi extends BaseApiController
                             }
                         }
                         $value = implode(';', $values);
+                    } elseif ($write['sourceType'] === 'uuid') {
+                        $values = [];
+                        foreach ($bKeys as $_) {
+                            $values[] = $this->generateUuid();
+                        }
+                        $value = implode(';', $values);
                     } else {
-                        // uuid / literal / A 字段：单值
                         $firstBKey = $bKeys[0] ?? '';
                         $firstBRecord = $bRecords[$firstBKey] ?? [];
                         $value = $this->resolveWriteSourceValue($write, $aRecord, $firstBRecord);
