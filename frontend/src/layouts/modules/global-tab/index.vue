@@ -119,7 +119,7 @@ function switchTab(e: MouseEvent, tab: App.Global.Tab) {
   const startTime = performance.now();
   setTabSwitchStartTime(startTime, tab.label);
   logger.info(
-    `[🔀 switchTab] 点击标签页: ${tab.label}, functionCode=${tab.fullPath}, 开始时间: ${startTime.toFixed(1)}ms`
+    `[🔀 switchTab] 点击标签页: ${tab.label}, functionCode=${decodeURIComponent(tab.fullPath)}, 开始时间: ${startTime.toFixed(1)}ms`
   );
   tabStore.switchRouteByTab(tab);
 }
