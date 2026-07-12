@@ -215,7 +215,9 @@ class Auth extends BaseApiController
                     'region' => $user['region'],
                     'menuLevel1' => $menuData['level1'],
                     'menuLevel2' => $menuData['level2'],
-                    'menus' => $menuData['menus']
+                    'menus' => $menuData['menus'],
+                    // 从 JWT payload 读取调试权限，供前端做差异化错误展示（开发/授权用户可查看技术详情）
+                    'debugEnabled' => (bool) ($decoded->debugEnabled ?? false),
                 ]
             ]);
         } catch (\Throwable $e) {

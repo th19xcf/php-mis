@@ -41,19 +41,22 @@ export async function handleExpiredRequest(state: RequestInstanceState) {
   return success;
 }
 
-export function showErrorMsg(state: RequestInstanceState, message: string) {
+export function showErrorMsg(state: RequestInstanceState, message: string, traceId?: string) {
   if (!state.errMsgStack?.length) {
     state.errMsgStack = [];
   }
 
-  const isExist = state.errMsgStack.includes(message);
+  // 追加 traceId 便于用户上报错误，后端可据此快速定位请求链路
+  const fullMessage = traceId && traceId !== 'unknown' ? `${message}\n[trace: ${traceId}]` : message;
+
+  const isExist = state.errMsgStack.includes(fullMessage);
 
   if (!isExist) {
-    state.errMsgStack.push(message);
+    state.errMsgStack.push(fullMessage);
 
-    window.$message?.error(message, {
+    window.$message?.error(fullMessage, {
       onLeave: () => {
-        state.errMsgStack = state.errMsgStack.filter(msg => msg !== message);
+        state.errMsgStack = state.errMsgStack.filter(msg => msg !== fullMessage);
 
         setTimeout(() => {
           state.errMsgStack = [];

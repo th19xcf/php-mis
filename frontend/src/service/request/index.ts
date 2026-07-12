@@ -171,7 +171,8 @@ export const request = createFlatRequest(
         console.error(`[TraceId: ${traceId}] 请求错误: ${message}`);
       }
 
-      showErrorMsg(request.state, message);
+      // 所有用户都能在 toast 中看到 traceId，便于上报给后端定位问题
+      showErrorMsg(request.state, message, traceId);
     }
   }
 );

@@ -28,12 +28,13 @@ function normalizeFields(fields: any[]) {
 
 /**
  * 从请求错误中提取可读的提示信息
- * 优先取后端业务返回的 msg 字段；若无则回退到 AxiosError.message；再无则使用默认提示
+ * 优先拼接操作上下文 + 后端业务返回的 msg 字段；若无 msg 则回退到 AxiosError.message；再无则使用默认提示
+ * 例如：fallback="新增失败"，backendMsg="工号已存在" → "新增失败：工号已存在"
  */
 function extractErrorMessage(error: any, fallback: string): string {
   const backendMsg = error?.response?.data?.msg;
   if (typeof backendMsg === 'string' && backendMsg.trim() !== '') {
-    return backendMsg;
+    return `${fallback}：${backendMsg}`;
   }
   return error?.message || fallback;
 }
