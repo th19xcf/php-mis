@@ -194,9 +194,9 @@ const columnDefs = computed<ColDef[]>(() => {
     filter: false,
     cellRenderer: (params: any) => {
       if (params.data?.__matched) {
-        return '<span style="color:#52c41a;">● 已匹配</span>';
+        return '<span class="match-status-matched">● 已匹配</span>';
       }
-      return '<span style="color:#bfbfbf;">○ 未匹配</span>';
+      return '<span class="match-status-unmatched">○ 未匹配</span>';
     }
   });
 
@@ -566,6 +566,14 @@ watch([() => props.displayFilter, () => props.quickKeyword], () => {
 @include ag-grid-checkbox-dark('match-grid');
 @include ag-grid-base-dark('match-grid');
 
+:deep(.match-status-matched) {
+  color: #237804;
+}
+
+:deep(.match-status-unmatched) {
+  color: #8c8c8c;
+}
+
 /* Row highlight classes (component-specific) */
 :deep(.match-selected-row) {
   background-color: #e6f7ff !important;
@@ -602,7 +610,7 @@ watch([() => props.displayFilter, () => props.quickKeyword], () => {
 /* Dark mode row highlight (component-specific) */
 .system-dark {
   :deep(.match-selected-row) {
-    background-color: rgba(99, 179, 255, 0.2) !important;
+    background-color: rgba(22, 119, 255, 0.38) !important;
   }
 
   :deep(.match-selected-row .ag-cell) {
@@ -610,7 +618,7 @@ watch([() => props.displayFilter, () => props.quickKeyword], () => {
   }
 
   :deep(.match-highlight-row) {
-    background-color: rgba(255, 193, 7, 0.2) !important;
+    background-color: rgba(250, 173, 20, 0.35) !important;
   }
 
   :deep(.match-highlight-row .ag-cell) {
@@ -618,7 +626,7 @@ watch([() => props.displayFilter, () => props.quickKeyword], () => {
   }
 
   :deep(.match-matched-row) {
-    background-color: rgba(76, 175, 80, 0.2) !important;
+    background-color: rgba(56, 158, 13, 0.42) !important;
   }
 
   :deep(.match-matched-row .ag-cell) {
@@ -626,11 +634,19 @@ watch([() => props.displayFilter, () => props.quickKeyword], () => {
   }
 
   :deep(.match-candidate-row) {
-    background-color: rgba(255, 235, 59, 0.15) !important;
+    background-color: rgba(250, 219, 20, 0.35) !important;
   }
 
   :deep(.match-candidate-row .ag-cell) {
     background-color: transparent !important;
+  }
+
+  :deep(.match-status-matched) {
+    color: #95de64;
+  }
+
+  :deep(.match-status-unmatched) {
+    color: #a6a6a6;
   }
 }
 </style>
