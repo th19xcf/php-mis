@@ -49,6 +49,14 @@ export function useWorkbenchPageDebug(options: UseWorkbenchPageDebugOptions) {
         : data.userAuth.deptNameAuth || '(无)'
     );
     logger.info('  - 调试权限:', data.userAuth.debugAuth ? '有' : '无');
+
+    // 输出每个角色编码对应的部门全称赋权
+    if (data.roleDeptNameAuthzList && Object.keys(data.roleDeptNameAuthzList).length > 0) {
+      logger.info('\n  角色级部门全称赋权:');
+      Object.entries(data.roleDeptNameAuthzList).forEach(([roleCode, deptNameAuthz]) => {
+        logger.info(`    - ${roleCode}: ${deptNameAuthz || '(无)'}`);
+      });
+    }
   }
 
   function printFunctionAuth(data: Api.Workbench.DebugData) {

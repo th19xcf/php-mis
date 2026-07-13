@@ -281,6 +281,12 @@ class Workbench extends BaseApiController
                 $chartSql = $this->chartService->buildChartQueriesForDebug($chartModule);
             }
 
+            // 获取每个角色编码对应的部门全称赋权（用于调试输出）
+            $roleDeptNameAuthzList = $this->getAuthorizationService()->getRoleDeptNameAuthzList(
+                $functionCode,
+                $userAuth['roleCodesRaw']
+            );
+
             return $this->success([
                 'functionCode'  => $functionCode,
                 'queryTable'    => $debug['queryTable'],
@@ -309,6 +315,8 @@ class Workbench extends BaseApiController
                     'deptNameAuth'   => $userAuth['deptNameAuth'],
                     'debugAuth'      => $userAuth['debugAuth'],
                 ],
+                // 每个角色编码对应的部门全称赋权（用于调试输出）
+                'roleDeptNameAuthzList' => $roleDeptNameAuthzList,
                 'functionAuth'  => [
                     'module'             => $functionAuth['module'],
                     'params'             => $functionAuth['params'],

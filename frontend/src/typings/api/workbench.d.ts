@@ -53,6 +53,8 @@ declare namespace Api {
       fieldModule: string;
       commentModule: string;
       chartModule: string;
+      dataTable: string;
+      primaryKey: string;
       toolbar: ToolbarMeta;
       conditions: ConditionMeta[];
       columns: ColumnMeta[];
@@ -117,6 +119,8 @@ declare namespace Api {
 
     interface ImportColumnsData {
       columns: ImportColumn[];
+      headerRow?: number;
+      dataRow?: number;
     }
 
     interface ImportError {
@@ -258,6 +262,8 @@ declare namespace Api {
         deptNameAuth: string[];
         debugAuth: boolean;
       };
+      /** 每个角色编码对应的部门全称赋权（用于调试输出） */
+      roleDeptNameAuthzList: Record<string, string>;
       functionAuth: {
         module: string;
         params: string;

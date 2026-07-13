@@ -146,7 +146,7 @@ class ContextService
                 'tableEdit' => $functionAuth['tableAuth'],
                 'debugSql' => $userAuth['debugAuth'],
                 'upkeep' => $functionAuth['upkeepAuth'] && $queryConfig['upkeepModule'] !== '',
-                'cacheRefresh' => $userAuth['upkeepAuth']
+                'cacheRefresh' => $userAuth['upkeepAuth'] || $userAuth['debugAuth']
             ],
             'conditions' => $this->buildConditionDefinitions($columns),
             'columns' => $columnDefinitions,
@@ -249,7 +249,7 @@ class ContextService
             'roleCodesRaw' => (string) ($row['角色编码'] ?? ''),
             'locationAuth' => $this->authorizationService->normalize((string) ($row['属地赋权'] ?? '')),
             'employeeRegion' => (string) ($row['员工属地'] ?? $companyId),
-            'deptCodeAuth' => $this->splitCsv((string) ($row['部门编码赋权'] ?? '')),
+            'deptCodeAuth' => $this->authorizationService->normalize((string) ($row['部门编码赋权'] ?? '')),
             'deptNameAuth' => $this->authorizationService->normalize((string) ($row['部门全称赋权'] ?? '')),
             'employeeDeptName' => (string) ($row['员工部门全称'] ?? ''),
             'workIdAuth' => (string) ($row['工号限权'] ?? '0'),
@@ -440,7 +440,8 @@ class ContextService
     /**
      * 构建功能部门编码授权条件
      *
-     * 使用预查询的部门编码赋权值，通过 buildExactMatchCondition 生成精确匹配 SQL 条件。
+     * 用户级和角色级的部门赋权是 AND 关系：记录必须同时满足用户级条件和角色级条件。
+     * 分别生成两个 WHERE 条件，用 AND 连接。
      */
     private function buildFunctionDeptCodeAuth(array $functionRow, array $userAuth, string $deptCodeAuthz): string
     {
@@ -449,13 +450,34 @@ class ContextService
             return '';
         }
 
-        return $this->authorizationService->buildExactMatchCondition($field, $deptCodeAuthz);
+        $conditions = [];
+
+        if ($userAuth['deptCodeAuth'] !== '') {
+            $userCond = $this->authorizationService->buildExactMatchCondition($field, $userAuth['deptCodeAuth']);
+            if ($userCond !== '') {
+                $conditions[] = $userCond;
+            }
+        }
+
+        if ($deptCodeAuthz !== '') {
+            $roleCond = $this->authorizationService->buildExactMatchCondition($field, $deptCodeAuthz);
+            if ($roleCond !== '') {
+                $conditions[] = $roleCond;
+            }
+        }
+
+        if (empty($conditions)) {
+            return '';
+        }
+
+        return '(' . implode(') AND (', $conditions) . ')';
     }
 
     /**
      * 构建功能部门全称授权条件
      *
-     * 使用预查询的部门全称赋权值，通过 resolve + buildDeptNameCondition 生成 SQL 条件。
+     * 用户级和角色级的部门赋权是 AND 关系：记录必须同时满足用户级条件和角色级条件。
+     * 分别生成两个 WHERE 条件，用 AND 连接。
      */
     private function buildFunctionDeptNameAuth(string $functionCode, array $functionRow, array $userAuth, string $deptNameAuthz): string
     {
@@ -464,19 +486,34 @@ class ContextService
             return '';
         }
 
-        $resolvedAuth = $this->authorizationService->resolveDeptName(
-            $userAuth['deptNameAuth'],
-            $deptNameAuthz,
-            $userAuth['employeeDeptName']
-        );
+        $conditions = [];
 
-        return $this->authorizationService->buildDeptNameCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
+        if ($userAuth['deptNameAuth'] !== '') {
+            $userCond = $this->authorizationService->buildDeptNameCondition($field, $userAuth['deptNameAuth'], $userAuth['upkeepAuth']);
+            if ($userCond !== '') {
+                $conditions[] = $userCond;
+            }
+        }
+
+        if ($deptNameAuthz !== '') {
+            $roleCond = $this->authorizationService->buildDeptNameCondition($field, $deptNameAuthz, $userAuth['upkeepAuth']);
+            if ($roleCond !== '') {
+                $conditions[] = $roleCond;
+            }
+        }
+
+        if (empty($conditions)) {
+            return '';
+        }
+
+        return '(' . implode(') AND (', $conditions) . ')';
     }
 
     /**
      * 构建功能属地授权条件
      *
-     * 使用预查询的属地赋权值，通过 resolve + buildCondition 生成 SQL 条件。
+     * 用户级和角色级的属地赋权是 AND 关系：记录必须同时满足用户级条件和角色级条件。
+     * 分别生成两个 WHERE 条件，用 AND 连接。
      * 当部门级授权已存在时，属地授权条件为空（部门授权优先）。
      */
     private function buildFunctionLocationAuth(string $functionCode, array $functionRow, array $userAuth, string $deptCodeAuth, string $deptNameAuth, string $locationAuthz): string
@@ -490,13 +527,27 @@ class ContextService
             return '';
         }
 
-        $resolvedAuth = $this->authorizationService->resolve(
-            $userAuth['locationAuth'],
-            $locationAuthz,
-            $userAuth['employeeRegion']
-        );
+        $conditions = [];
 
-        return $this->authorizationService->buildCondition($field, $resolvedAuth, $userAuth['upkeepAuth']);
+        if ($userAuth['locationAuth'] !== '') {
+            $userCond = $this->authorizationService->buildCondition($field, $userAuth['locationAuth'], $userAuth['upkeepAuth']);
+            if ($userCond !== '') {
+                $conditions[] = $userCond;
+            }
+        }
+
+        if ($locationAuthz !== '') {
+            $roleCond = $this->authorizationService->buildCondition($field, $locationAuthz, $userAuth['upkeepAuth']);
+            if ($roleCond !== '') {
+                $conditions[] = $roleCond;
+            }
+        }
+
+        if (empty($conditions)) {
+            return '';
+        }
+
+        return '(' . implode(') AND (', $conditions) . ')';
     }
 
     /**

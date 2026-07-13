@@ -25,7 +25,6 @@ class AuthorizationService
 
         $normalized = str_replace('，', ',', $value);
         $parts = array_map('trim', explode(',', $normalized));
-        $parts = array_filter($parts, static fn(string $item): bool => $item !== '');
         $parts = array_unique($parts);
 
         return implode(',', array_values($parts));
@@ -41,7 +40,7 @@ class AuthorizationService
         }
 
         if ($user !== '' && $role !== '') {
-            return $this->intersect($user, $role);
+            return $user . '|' . $role;
         }
 
         if ($user !== '') {
@@ -67,7 +66,6 @@ class AuthorizationService
         }
 
         $parts = array_map('trim', explode(',', $resolvedAuth));
-        $parts = array_filter($parts, static fn(string $item): bool => $item !== '');
 
         return array_values($parts);
     }
@@ -78,24 +76,39 @@ class AuthorizationService
             return '';
         }
 
-        $values = $this->split($resolvedAuth);
-        $clauses = [];
-        foreach ($values as $value) {
-            // 使用前缀模糊匹配替代 instr，使字段索引可被利用
-            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
-            $clauses[] = sprintf('%s like "%s%%" escape char(92)', $field, $escaped);
+        $andParts = explode('|', $resolvedAuth);
+        $conditions = [];
+
+        foreach ($andParts as $part) {
+            $values = $this->split($part);
+            $clauses = [];
+            $hasEmptyValue = false;
+            foreach ($values as $value) {
+                if ($value === '' || $value === '""') {
+                    $hasEmptyValue = true;
+                    $clauses[] = sprintf('%s=""', $field);
+                } else {
+                    $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value);
+                    $clauses[] = sprintf('%s like "%s%%" escape char(92)', $field, $escaped);
+                }
+            }
+
+            if (!$clauses) {
+                continue;
+            }
+
+            $expr = implode(' or ', $clauses);
+            if ($upkeepAuth && !$hasEmptyValue) {
+                $expr .= sprintf(' or %s=""', $field);
+            }
+            $conditions[] = '(' . $expr . ')';
         }
 
-        if (!$clauses) {
+        if (empty($conditions)) {
             return '';
         }
 
-        $expr = implode(' or ', $clauses);
-        if ($upkeepAuth) {
-            $expr .= sprintf(' or %s=""', $field);
-        }
-
-        return $expr;
+        return implode(' AND ', $conditions);
     }
 
     public function buildDeptNameCondition(string $field, string $resolvedAuth, bool $upkeepAuth): string
@@ -245,6 +258,56 @@ class AuthorizationService
         foreach ($fieldNames as $fn) {
             $raw = (string) ($row[$fn] ?? '');
             $output[$fn] = $this->normalize($raw);
+        }
+
+        return $output;
+    }
+
+    /**
+     * 获取每个角色编码对应的部门全称赋权列表（用于调试输出）
+     *
+     * 从 view_role 表查询指定功能编码下、每个角色的"部门全称赋权"字段值，
+     * 返回一个数组，key 是角色编码，value 是该角色的部门全称赋权（规范化后）。
+     *
+     * @param string $functionCode 功能编码
+     * @param string $roleAuthz    角色编码列表（逗号分隔）
+     * @return array<string, string> 角色编码 → 部门全称赋权 的映射
+     */
+    public function getRoleDeptNameAuthzList(string $functionCode, string $roleAuthz): array
+    {
+        $roleAuthz = trim($roleAuthz);
+        if ($roleAuthz === '' || $functionCode === '') {
+            return [];
+        }
+
+        // 安全：将角色编码逐个 quote 后再拼入 IN 子句
+        $roleParts = array_map(
+            fn($r) => $this->model->quote(trim($r)),
+            explode(',', $roleAuthz)
+        );
+        $roleList = implode(',', $roleParts);
+
+        $sql = sprintf(
+            'select 角色编码, replace(replace(部门全称赋权,"，",",")," ","") as 部门全称赋权
+            from view_role
+            where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s',
+            $roleList,
+            $this->model->quote($functionCode)
+        );
+
+        $result = $this->model->select($sql);
+        if ($result === false) {
+            return [];
+        }
+
+        $rows = $result->getResultArray();
+        $output = [];
+        foreach ($rows as $row) {
+            $roleCode = (string) ($row['角色编码'] ?? '');
+            $deptNameAuthz = $this->normalize((string) ($row['部门全称赋权'] ?? ''));
+            if ($roleCode !== '') {
+                $output[$roleCode] = $deptNameAuthz;
+            }
         }
 
         return $output;
