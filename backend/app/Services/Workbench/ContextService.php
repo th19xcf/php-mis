@@ -145,7 +145,8 @@ class ContextService
                 'export' => $functionAuth['exportAuth'],
                 'tableEdit' => $functionAuth['tableAuth'],
                 'debugSql' => $userAuth['debugAuth'],
-                'upkeep' => $functionAuth['upkeepAuth'] && $queryConfig['upkeepModule'] !== ''
+                'upkeep' => $functionAuth['upkeepAuth'] && $queryConfig['upkeepModule'] !== '',
+                'cacheRefresh' => $userAuth['upkeepAuth']
             ],
             'conditions' => $this->buildConditionDefinitions($columns),
             'columns' => $columnDefinitions,

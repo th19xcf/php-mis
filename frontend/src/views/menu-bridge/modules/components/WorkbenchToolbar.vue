@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue';
-import { NButton, NInput, NTag, NCard, NDropdown } from 'naive-ui';
+import { NButton, NInput, NTag, NCard, NDropdown, useMessage } from 'naive-ui';
 import SvgIcon from '@/components/custom/svg-icon.vue';
+import { invalidateAllCache } from '@/service/api/cache';
 
 defineProps<{
   quickKeyword: string;
@@ -36,7 +37,24 @@ const emit = defineEmits<{
   handleExport: [exportAll: boolean];
   handleDebug: [];
   upkeep: [];
+  refreshCache: [];
 }>();
+
+const ms = useMessage();
+const cacheRefreshing = ref(false);
+
+async function handleRefreshCache() {
+  if (cacheRefreshing.value) return;
+  cacheRefreshing.value = true;
+  try {
+    await invalidateAllCache();
+    ms.success('缓存刷新成功');
+  } catch (e: any) {
+    ms.error(e?.message || '缓存刷新失败');
+  } finally {
+    cacheRefreshing.value = false;
+  }
+}
 
 const exportAll = ref<string>('true');
 
@@ -155,6 +173,13 @@ defineExpose({ checkScrollPosition });
               <SvgIcon icon="ant-design:down-outlined" class="ml-4px" />
             </NButton>
           </NDropdown>
+          <NButton
+            v-if="pageMeta?.toolbar.cacheRefresh"
+            :loading="cacheRefreshing"
+            @click="handleRefreshCache"
+          >
+            刷新缓存
+          </NButton>
           <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="emit('handleDebug')">
             调试
           </NButton>
