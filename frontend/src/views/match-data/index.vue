@@ -106,7 +106,8 @@ async function init() {
       meta.aMatchCols,
       meta.bMatchCols,
       pageData.aData.rows,
-      pageData.bData.rows
+      pageData.bData.rows,
+      meta.matchConditions
     );
   } catch (err: any) {
     error.value = err.message || '初始化失败';
@@ -121,19 +122,11 @@ watch(() => props.meta, () => {
 }, { deep: true });
 
 const aMatchedCount = computed(() => {
-  let count = 0;
-  store.aMatchedKeys.forEach(targets => {
-    if (targets.length > 0) count++;
-  });
-  return count;
+  return store.aData.value.rows.filter(row => row.__matched).length;
 });
 
 const bMatchedCount = computed(() => {
-  let count = 0;
-  store.bMatchedKeys.forEach(targets => {
-    if (targets.length > 0) count++;
-  });
-  return count;
+  return store.bData.value.rows.filter(row => row.__matched).length;
 });
 
 const aProgress = computed(() => {
@@ -184,8 +177,12 @@ async function handleRevoke() {
   }
 }
 
-function handleToggleUnmatched(value: boolean) {
-  store.onlyUnmatched.value = value;
+function handleChangeDisplayFilter(value: 'all' | 'matched' | 'unmatched' | 'candidate') {
+  store.displayFilter.value = value;
+}
+
+function handleUpdateConditions(indices: number[]) {
+  store.updateSelectedConditions(indices);
 }
 
 function handleAReset() {
@@ -228,13 +225,22 @@ function handleBScrollToMatched() {
 
 const aDisplayedCount = computed(() => {
   let rows = store.aData.value.rows;
-  if (store.onlyUnmatched.value) {
-    const kf = store.aData.value.matchCols.key || (store.aData.value.columns[0]?.field || '');
-    rows = rows.filter(row => {
-      const key = String(row[kf] ?? '');
-      const targets = store.aMatchedKeys.get(key) || [];
-      return targets.length === 0;
-    });
+  if (store.displayFilter.value === 'unmatched') {
+    rows = rows.filter(row => !row.__matched);
+  } else if (store.displayFilter.value === 'matched') {
+    rows = rows.filter(row => row.__matched);
+  } else if (store.displayFilter.value === 'candidate') {
+    const kf = store.aData.value.matchCols.key;
+    if (kf) {
+      const ck = store.aCandidateKeys;
+      const selectedSet = new Set(store.aSelectedKeys.value);
+      rows = rows.filter(row => {
+        const key = String(row[kf] ?? '');
+        return (ck && ck.has(key)) || selectedSet.has(key);
+      });
+    } else {
+      rows = [];
+    }
   }
   if (aQuickKeyword.value) {
     const kw = aQuickKeyword.value.toLowerCase();
@@ -247,13 +253,22 @@ const aDisplayedCount = computed(() => {
 
 const bDisplayedCount = computed(() => {
   let rows = store.bData.value.rows;
-  if (store.onlyUnmatched.value) {
-    const kf = store.bData.value.matchCols.key || (store.bData.value.columns[0]?.field || '');
-    rows = rows.filter(row => {
-      const key = String(row[kf] ?? '');
-      const targets = store.bMatchedKeys.get(key) || [];
-      return targets.length === 0;
-    });
+  if (store.displayFilter.value === 'unmatched') {
+    rows = rows.filter(row => !row.__matched);
+  } else if (store.displayFilter.value === 'matched') {
+    rows = rows.filter(row => row.__matched);
+  } else if (store.displayFilter.value === 'candidate') {
+    const kf = store.bData.value.matchCols.key;
+    if (kf) {
+      const ck = store.bCandidateKeys;
+      const selectedSet = new Set(store.bSelectedKeys.value);
+      rows = rows.filter(row => {
+        const key = String(row[kf] ?? '');
+        return (ck && ck.has(key)) || selectedSet.has(key);
+      });
+    } else {
+      rows = [];
+    }
   }
   if (bQuickKeyword.value) {
     const kw = bQuickKeyword.value.toLowerCase();
@@ -305,6 +320,7 @@ onMounted(() => {
                       size="small"
                       placeholder="快速检索"
                       style="width: 180px;"
+                      :clearable="true"
                     />
                     <span class="match-count-text">
                       已选 {{ store.aSelectedKeys.value.length }} 行 · 共 {{ aDisplayedCount }} 条
@@ -321,11 +337,12 @@ onMounted(() => {
             ref="aTableRef"
             side="A"
             :data="store.aData.value"
-            :only-unmatched="store.onlyUnmatched.value"
+            :display-filter="store.displayFilter.value"
             :selected-keys="store.aSelectedKeys.value"
             :matched-keys="store.aMatchedKeys"
-            :other-matched-keys="store.bMatchedKeys"
             :quick-keyword="aQuickKeyword"
+            :candidate-keys="store.aCandidateKeys"
+            :has-selected-conditions="store.selectedConditionIndices.value.length > 0"
             @update:selected="store.updateASelected"
             @set-grid-api="store.setAGridApi"
           />
@@ -361,6 +378,7 @@ onMounted(() => {
                       size="small"
                       placeholder="快速检索"
                       style="width: 180px;"
+                      :clearable="true"
                     />
                     <span class="match-count-text">
                       已选 {{ store.bSelectedKeys.value.length }} 行 · 共 {{ bDisplayedCount }} 条
@@ -377,11 +395,12 @@ onMounted(() => {
             ref="bTableRef"
             side="B"
             :data="store.bData.value"
-            :only-unmatched="store.onlyUnmatched.value"
+            :display-filter="store.displayFilter.value"
             :selected-keys="store.bSelectedKeys.value"
             :matched-keys="store.bMatchedKeys"
-            :other-matched-keys="store.aMatchedKeys"
             :quick-keyword="bQuickKeyword"
+            :candidate-keys="store.bCandidateKeys"
+            :has-selected-conditions="store.selectedConditionIndices.value.length > 0"
             @update:selected="store.updateBSelected"
             @set-grid-api="store.setBGridApi"
           />
@@ -400,8 +419,11 @@ onMounted(() => {
       :b-selected-keys="store.bSelectedKeys.value"
       :a-matched-keys="store.aMatchedKeys"
       :b-matched-keys="store.bMatchedKeys"
-      :only-unmatched="store.onlyUnmatched.value"
-      @toggle-unmatched="handleToggleUnmatched"
+      :display-filter="store.displayFilter.value"
+      :match-conditions="store.matchConditions.value"
+      :selected-condition-indices="store.selectedConditionIndices.value"
+      @change-display-filter="handleChangeDisplayFilter"
+      @update-conditions="handleUpdateConditions"
       @build="handleBuild"
       @revoke="handleRevoke"
     />

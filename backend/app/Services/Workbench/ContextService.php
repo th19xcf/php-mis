@@ -364,29 +364,13 @@ class ContextService
      */
     private function loadColumns(string $functionCode): array
     {
-        log_message('debug', '[loadColumns] 开始执行 SQL 查询, functionCode=' . $functionCode);
-        $sql = sprintf(
-            'select 功能编码,字段模块,部门编码字段,部门全称字段,
-                工号字段,属地字段,
-                列名,列类型,列宽度,字段名,查询名,
-                赋值类型,对象,对象名称,对象表名,缺省值,主键,
-                工号限权,可筛选,可汇总,可新增,可修改,不可为空,可颜色标注,
-                提示条件,提示样式设置,异常条件,异常样式设置,字符转换,
-                加密显示,列顺序
-            from view_function
-            where 功能编码=%s and 列顺序>0
-            group by 列名
-            order by 列顺序',
-            $this->model->quote($functionCode)
-        );
-
-        log_message('debug', '[loadColumns] SQL: ' . $sql);
+        log_message('debug', '[loadColumns] 通过 MetadataCache 加载, functionCode=' . $functionCode);
 
         try {
-            $result = $this->model->select($sql)->getResultArray();
+            $result = $this->metadataCache->getViewFunctionColumns($functionCode);
         } catch (\Throwable $e) {
-            log_message('error', '[loadColumns] SQL 执行失败: ' . $e->getMessage() . ' | SQL: ' . $sql);
-            throw new \RuntimeException('loadColumns SQL执行失败: ' . $e->getMessage() . ' | SQL: ' . $sql, 0, $e);
+            log_message('error', '[loadColumns] 加载失败: ' . $e->getMessage());
+            throw new \RuntimeException('loadColumns 加载失败: ' . $e->getMessage(), 0, $e);
         }
 
         log_message('debug', '[loadColumns] 完成, 返回 ' . count($result) . ' 行');

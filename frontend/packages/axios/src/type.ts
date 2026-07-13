@@ -84,8 +84,8 @@ export type MappedType<R extends ResponseType, JsonType = any> = R extends keyof
 export type CustomAxiosRequestConfig<R extends ResponseType = 'json'> = Omit<AxiosRequestConfig, 'responseType'> & {
   responseType?: R;
   /**
-   * 设为 `true` 后，业务请求即便收到业务码（与 `SERVICE_CODE_CONFIG.logoutCodes` /
-   * `modalLogoutCodes` 重叠）也不会被拦截器强制登出。详见
+   * 设为 `true` 后，业务请求即便收到业务码（与 `SERVICE_CODE_CONFIG.logoutCodes`
+   * 重叠）也不会被拦截器强制登出。详见
    * `src/service/request/index.ts` 的 `onBackendFail`。
    */
   skipAuthError?: boolean;

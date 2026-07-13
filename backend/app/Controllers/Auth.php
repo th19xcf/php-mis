@@ -82,12 +82,20 @@ class Auth extends BaseApiController
 
         $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
         $tRoleAuthz = hrtime(true);
-        $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
+
+        // 属地/部门全称/部门编码三项赋权合并为一次 SQL 查询
+        $authorizationService = $this->getAuthorizationService();
+        $authFields = $authorizationService->loadUserAuthFields(
+            ['属地赋权', '部门全称赋权', '部门编码赋权'],
+            $user['work_id'],
+            $user['region']
+        );
+        $user['location_authz'] = $authFields['属地赋权'] ?? '';
+        $user['dept_name_authz'] = $authFields['部门全称赋权'] ?? '';
+        $user['dept_code_authz'] = $authFields['部门编码赋权'] ?? '';
         $tLocAuthz = hrtime(true);
-        $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-        $tDeptNameAuthz = hrtime(true);
-        $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
-        $tDeptCodeAuthz = hrtime(true);
+        $tDeptNameAuthz = $tLocAuthz;
+        $tDeptCodeAuthz = $tLocAuthz;
 
         $accessToken = $this->jwtTokenService->generateAccessToken($user);
         $tAccessToken = hrtime(true);
@@ -107,9 +115,7 @@ class Auth extends BaseApiController
             '验证用户' => $tVerify,
             '初始化Session' => $tSession,
             '角色赋权' => $tRoleAuthz,
-            '属地赋权' => $tLocAuthz,
-            '部门全称赋权' => $tDeptNameAuthz,
-            '部门编码赋权' => $tDeptCodeAuthz,
+            '属地+部门赋权(合并)' => $tLocAuthz,
             '生成AccessToken' => $tAccessToken,
             '生成RefreshToken' => $tRefreshToken,
             'Token解码+注入' => $tSessionCtx,
@@ -209,7 +215,9 @@ class Auth extends BaseApiController
                     'region' => $user['region'],
                     'menuLevel1' => $menuData['level1'],
                     'menuLevel2' => $menuData['level2'],
-                    'menus' => $menuData['menus']
+                    'menus' => $menuData['menus'],
+                    // 从 JWT payload 读取调试权限，供前端做差异化错误展示（开发/授权用户可查看技术详情）
+                    'debugEnabled' => (bool) ($decoded->debugEnabled ?? false),
                 ]
             ]);
         } catch (\Throwable $e) {
@@ -280,12 +288,18 @@ class Auth extends BaseApiController
             $user['is_super_admin'] = (bool) ($decoded->isSuperAdmin ?? false);
             $user['role_authz'] = $this->computeRoleAuthz($user['work_id'], $user['region']);
             $tRole = hrtime(true);
-            $user['location_authz'] = $this->computeLocationAuthz($user['work_id'], $user['region']);
-            $tLoc = hrtime(true);
-            $user['dept_name_authz'] = $this->computeDeptNameAuthz($user['work_id'], $user['region']);
-            $tDeptName = hrtime(true);
-            $user['dept_code_authz'] = $this->computeDeptCodeAuthz($user['work_id'], $user['region']);
-            $tDeptCode = hrtime(true);
+
+            // 属地/部门全称/部门编码三项赋权合并为一次 SQL 查询
+            $authorizationService = $this->getAuthorizationService();
+            $authFields = $authorizationService->loadUserAuthFields(
+                ['属地赋权', '部门全称赋权', '部门编码赋权'],
+                $user['work_id'],
+                $user['region']
+            );
+            $user['location_authz'] = $authFields['属地赋权'] ?? '';
+            $user['dept_name_authz'] = $authFields['部门全称赋权'] ?? '';
+            $user['dept_code_authz'] = $authFields['部门编码赋权'] ?? '';
+            $tLocAuthz = hrtime(true);
 
             $newAccessToken = $this->jwtTokenService->generateAccessToken($user);
             $tAccessToken = hrtime(true);
@@ -300,9 +314,7 @@ class Auth extends BaseApiController
                 'Token解码' => $tDecode,
                 '查用户' => $tGetUser,
                 '角色赋权' => $tRole,
-                '属地赋权' => $tLoc,
-                '部门全称赋权' => $tDeptName,
-                '部门编码赋权' => $tDeptCode,
+                '属地+部门赋权(合并)' => $tLocAuthz,
                 '生成AccessToken' => $tAccessToken,
                 '生成RefreshToken' => $tRefreshToken,
                 '旧Token拉黑' => $tBlacklist

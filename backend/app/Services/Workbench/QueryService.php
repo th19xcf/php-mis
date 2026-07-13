@@ -374,7 +374,9 @@ class QueryService
             foreach ($columns as $column) {
                 $title = (string) ($column['列名'] ?? '');
                 if ($title !== '' && array_key_exists($title, $row) && (string) ($column['列类型'] ?? '') === '数值' && is_numeric($row[$title])) {
-                    $row[$title] = strpos((string) $row[$title], '.') === false ? (int) $row[$title] : (float) $row[$title];
+                    // 保持原始字符串，不做 float 强转，避免金额等数值精度丢失
+                    // AG Grid 前端会自动识别数值类型进行排序和聚合
+                    $row[$title] = (string) $row[$title];
                 }
             }
         }

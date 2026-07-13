@@ -93,10 +93,7 @@ onActivated(() => {
   activeView.value = 'workbench';
   iframeLoaded.value = false;
 
-  // 延迟记录切换完成，等待数据加载
-  setTimeout(() => {
-    recordTabSwitchEnd();
-  }, 300);
+  recordTabSwitchEnd();
 });
 
 // 监听 route.query.menu2 变化，更新 Tab 标签（处理钻取场景）

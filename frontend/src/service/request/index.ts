@@ -3,7 +3,6 @@ import { BACKEND_ERROR_CODE, createFlatRequest, createRequest } from '@sa/axios'
 import { useAuthStore } from '@/store/modules/auth';
 import { localStg } from '@/utils/storage';
 import { getServiceBaseURL } from '@/utils/service';
-import { $t } from '@/locales';
 import { SERVICE_CODE_CONFIG } from '@/constants/service-code';
 import { getAuthorization, handleExpiredRequest, showErrorMsg } from './shared';
 import type { RequestInstanceState } from './type';
@@ -113,7 +112,7 @@ export const request = createFlatRequest(
 
       // 写接口（add/update/delete/batch/submit/upkeep/reset/import）已在 config
       // 上设置 `skipAuthError: true`，表示允许后端把业务校验错误复用
-      // logout/modalLogout 业务码而不强制登出。详见
+      // logout 业务码而不强制登出。详见
       // src/service/api/workbench.ts 顶部说明。
       const skipAuthError =
         (response.config as unknown as { skipAuthError?: boolean } | undefined)?.skipAuthError === true;
@@ -121,52 +120,14 @@ export const request = createFlatRequest(
         return null;
       }
 
-      function handleLogout() {
-        authStore.resetStore();
-      }
-
-      function logoutAndCleanup() {
-        handleLogout();
-        window.removeEventListener('beforeunload', handleLogout);
-
-        request.state.errMsgStack = request.state.errMsgStack.filter(msg => msg !== response.data.msg);
-      }
-
       // when the backend response code is in `logoutCodes`, it means the user will be logged out and redirected to login page
       if (SERVICE_CODE_CONFIG.logoutCodes.includes(responseCode)) {
-        handleLogout();
-        return null;
-      }
-
-      // when the backend response code is in `modalLogoutCodes`, it means the user will be logged out by displaying a modal
-      if (
-        SERVICE_CODE_CONFIG.modalLogoutCodes.includes(responseCode) &&
-        !request.state.errMsgStack?.includes(response.data.msg)
-      ) {
-        request.state.errMsgStack = [...(request.state.errMsgStack || []), response.data.msg];
-
-        // prevent the user from refreshing the page
-        window.addEventListener('beforeunload', handleLogout);
-
-        window.$dialog?.error({
-          title: $t('common.error'),
-          content: response.data.msg,
-          positiveText: $t('common.confirm'),
-          maskClosable: false,
-          closeOnEsc: false,
-          onPositiveClick() {
-            logoutAndCleanup();
-          },
-          onClose() {
-            logoutAndCleanup();
-          }
-        });
-
+        authStore.resetStore();
         return null;
       }
 
       // when the backend response code is in `expiredTokenCodes`, it means the token is expired, and refresh token
-      // the api `refreshToken` can not return error code in `expiredTokenCodes`, otherwise it will be a dead loop, should return `logoutCodes` or `modalLogoutCodes`
+      // the api `refreshToken` can not return error code in `expiredTokenCodes`, otherwise it will be a dead loop, should return `logoutCodes`
       if (SERVICE_CODE_CONFIG.expiredTokenCodes.includes(responseCode)) {
         const success = await handleExpiredRequest(request.state);
         if (success) {
@@ -182,6 +143,14 @@ export const request = createFlatRequest(
     onError(error) {
       // when the request is fail, you can show error message
 
+      // HTTP 401 表示后端 ApiExceptionHandler 捕获到 AuthException（如 SessionUserContext
+      // 取不到登录态），登录态已失效，直接登出跳登录页，与业务码 8888 行为一致
+      if (error.response?.status === 401) {
+        const authStore = useAuthStore();
+        authStore.resetStore();
+        return;
+      }
+
       let message = error.message;
       let backendErrorCode = '';
 
@@ -192,11 +161,6 @@ export const request = createFlatRequest(
       if (error.code === BACKEND_ERROR_CODE) {
         message = error.response?.data?.msg || message;
         backendErrorCode = String(error.response?.data?.code || '');
-      }
-
-      // the error message is displayed in the modal
-      if (SERVICE_CODE_CONFIG.modalLogoutCodes.includes(backendErrorCode)) {
-        return;
       }
 
       // when the token is expired, refresh token and retry request, so no need to show error message
@@ -210,7 +174,8 @@ export const request = createFlatRequest(
         console.error(`[TraceId: ${traceId}] 请求错误: ${message}`);
       }
 
-      showErrorMsg(request.state, message);
+      // 所有用户都能在 toast 中看到 traceId，便于上报给后端定位问题
+      showErrorMsg(request.state, message, traceId);
     }
   }
 );

@@ -206,6 +206,26 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
       const headers = jsonData[headerIndex] as string[];
       const rows = jsonData.slice(dataStartIndex).filter(row => row.some(cell => cell !== undefined && cell !== ''));
 
+      // 计算所有行的最大列数（含表头行），确保尾部空列不丢失
+      const maxColCount = Math.max(
+        headers.length,
+        ...rows.map(r => r.length)
+      );
+      // 补齐表头行
+      if (headers.length < maxColCount) {
+        for (let i = headers.length; i < maxColCount; i++) {
+          headers[i] = '';
+        }
+      }
+      // 补齐数据行
+      rows.forEach(row => {
+        if (row.length < maxColCount) {
+          for (let i = row.length; i < maxColCount; i++) {
+            row[i] = '';
+          }
+        }
+      });
+
       // 调试：打印解析结果
       console.log('[IMPORT] 解析出的表头 headers:', headers);
       console.log('[IMPORT] 第一行数据:', rows[0]);
@@ -221,19 +241,9 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
       importPreviewData.value = rows.map((row, index) => {
         const obj: Record<string, any> = { _rowIndex: index + dataRow.value };
         headers.forEach((header, colIndex) => {
-          if (header) {
-            let cellValue = row[colIndex] ?? '';
-            // 如果是字符串类型的日期（raw: false 时日期单元格返回格式化的字符串），
-            // 去掉末尾的时间部分（如 "2026-05-08 00:00:00" -> "2026-05-08"），
-            // 避免写入临时表时多出时间。
-            if (typeof cellValue === 'string') {
-              const dateLikeMatch = cellValue.match(/^(\d{4}-\d{2}-\d{2})[ T]/);
-              if (dateLikeMatch) {
-                cellValue = dateLikeMatch[1];
-              }
-            }
-            obj[header] = cellValue;
-          }
+          const colName = header ? String(header).trim() : `第${colIndex + 1}列`;
+          let cellValue = row[colIndex] ?? '';
+          obj[colName] = cellValue;
         });
         return obj;
       });

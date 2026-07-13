@@ -23,6 +23,25 @@ export interface MatchConfig {
   tableStyle: string;
 }
 
+export interface MatchCondition {
+  aField: string;
+  bField: string;
+  text: string;
+}
+
+export interface MatchWriteInstruction {
+  targetField: string;
+  sourceType: 'field' | 'uuid' | 'literal';
+  sourceTable: string;
+  sourceField: string;
+  text: string;
+}
+
+export interface MatchWrites {
+  aToB: MatchWriteInstruction[];
+  bToA: MatchWriteInstruction[];
+}
+
 export interface MatchMeta {
   functionCode: string;
   title: string;
@@ -40,6 +59,8 @@ export interface MatchMeta {
   bColumns: MatchColumn[];
   aMatchCols: { key: string; label: string; amount: string; target: string };
   bMatchCols: { key: string; label: string; amount: string; target: string };
+  matchConditions?: MatchCondition[];
+  matchWrites?: MatchWrites;
 }
 
 export interface MatchPageResult {
@@ -49,6 +70,7 @@ export interface MatchPageResult {
 }
 
 export interface MatchBuildRelationParams {
+  functionCode: string;
   aModule: string;
   bModule: string;
   aKeys: string[];
@@ -56,6 +78,7 @@ export interface MatchBuildRelationParams {
 }
 
 export interface MatchRevokeRelationParams {
+  functionCode: string;
   aModule: string;
   bModule: string;
   aKeys: string[];

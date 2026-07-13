@@ -2,6 +2,8 @@
 
 namespace App\Controllers;
 
+use App\Libraries\MetadataCache;
+
 class Comment extends BaseApiController
 {
     public function list(string $functionCode = '')
@@ -276,40 +278,50 @@ class Comment extends BaseApiController
 
     private function getCommentConfig(string $functionCode): ?array
     {
+        $metadataCache = new MetadataCache();
+
+        // 1. 从缓存获取 def_function 和 def_query_config 数据
+        $funcRow = $metadataCache->getFunctionConfig($functionCode);
+        $moduleName = $funcRow['模块名称'] ?? '';
+
+        $configRow = $metadataCache->getQueryConfigByFunction($functionCode);
+        $remarkModule = $configRow['备注模块'] ?? '';
+        $dataTable = $configRow['数据表名'] ?? '';
+
+        // 2. 直接查 def_comment_config（单表，无 JOIN）
         $sql = sprintf(
-            'select 
-                t1.备注模块,t1.备注表名,t1.功能编码,t1.原表字段,
-                ifnull(t2.模块名称,"") as 模块名称,
-                ifnull(t3.数据表名,"") as 数据表名
-            from def_comment_config as t1
-            left join def_function as t2 on t1.功能编码=t2.功能编码
-            left join def_query_config as t3 on t2.模块名称=t3.查询模块
-            where t1.功能编码=%s
+            'select 备注模块,备注表名,功能编码,原表字段
+            from def_comment_config
+            where 功能编码=%s
             limit 1',
             $this->model->quote($functionCode)
         );
-
         $row = $this->model->select($sql)->getRowArray();
-        if ($row && !empty($row['数据表名'])) {
+
+        if ($row && !empty($dataTable)) {
+            $row['模块名称'] = $moduleName;
+            $row['数据表名'] = $dataTable;
             return $row;
         }
 
-        $sql = sprintf(
-            'select
-                t2.备注模块,t2.备注表名,t2.功能编码,t2.原表字段,
-                t1.模块名称,
-                t2.备注表名 as 数据表名
-            from def_function as t1
-            inner join def_query_config as t3 on t1.模块名称=t3.查询模块
-            left join def_comment_config as t2 on t3.备注模块=t2.备注模块
-            where t1.功能编码=%s
-            limit 1',
-            $this->model->quote($functionCode)
-        );
+        // 3. 回退：通过备注模块间接查 def_comment_config
+        if (!empty($remarkModule)) {
+            $sql = sprintf(
+                'select 备注模块,备注表名,功能编码,原表字段
+                from def_comment_config
+                where 备注模块=%s
+                limit 1',
+                $this->model->quote($remarkModule)
+            );
+            $row = $this->model->select($sql)->getRowArray();
+            if ($row) {
+                $row['模块名称'] = $moduleName;
+                $row['数据表名'] = $row['备注表名'] ?? '';
+                return $row;
+            }
+        }
 
-        $row = $this->model->select($sql)->getRowArray();
-
-        return $row ?: null;
+        return null;
     }
 
     private function checkCommentAuth(string $functionCode): bool

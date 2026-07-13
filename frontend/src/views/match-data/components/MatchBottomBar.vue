@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { NButton, NAlert, NSpace } from 'naive-ui';
+import { ref, computed } from 'vue';
+import { NButton, NAlert, NSpace, NModal, NCheckboxGroup, NCheckbox, NDropdown } from 'naive-ui';
 
 import type { MatchModuleData } from '@/hooks/business/use-match-store';
+import type { MatchCondition } from '@/service/api/match';
+
+type DisplayFilter = 'all' | 'matched' | 'unmatched' | 'candidate';
 
 interface Props {
   aData: MatchModuleData;
@@ -11,8 +14,10 @@ interface Props {
   bSelectedKeys: string[];
   aMatchedKeys: Map<string, string[]>;
   bMatchedKeys: Map<string, string[]>;
-  onlyUnmatched: boolean;
-  isSaving: boolean;
+  displayFilter: DisplayFilter;
+  isSaving?: boolean;
+  matchConditions?: MatchCondition[];
+  selectedConditionIndices?: number[];
 }
 
 const props = defineProps<Props>();
@@ -20,8 +25,43 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   build: [];
   revoke: [];
-  toggleUnmatched: [];
+  changeDisplayFilter: [value: DisplayFilter];
+  updateConditions: [indices: number[]];
 }>();
+
+const displayFilterOptions: { label: string; value: DisplayFilter }[] = [
+  { label: '全部', value: 'all' },
+  { label: '已匹配', value: 'matched' },
+  { label: '未匹配', value: 'unmatched' },
+  { label: '满足条件', value: 'candidate' }
+];
+
+const displayFilterLabel = computed(() => {
+  const item = displayFilterOptions.find(o => o.value === props.displayFilter);
+  return item ? item.label : '全部';
+});
+
+const displayFilterMenuOptions = displayFilterOptions.map(o => ({
+  label: o.label,
+  key: o.value
+}));
+
+function handleDisplayFilterSelect(key: string) {
+  emit('changeDisplayFilter', key as DisplayFilter);
+}
+
+const conditionModalVisible = ref(false);
+const tempSelectedIndices = ref<number[]>([]);
+
+function openConditionModal() {
+  tempSelectedIndices.value = [...(props.selectedConditionIndices || [])];
+  conditionModalVisible.value = true;
+}
+
+function confirmConditions() {
+  emit('updateConditions', tempSelectedIndices.value);
+  conditionModalVisible.value = false;
+}
 
 const previewText = computed(() => {
   if (props.aSelectedKeys.length === 0 && props.bSelectedKeys.length === 0) {
@@ -125,10 +165,24 @@ const canRevoke = computed(() => {
       </div>
 
       <NSpace align="center">
-        <label class="match-bottom-checkbox">
-          <NCheckbox :checked="onlyUnmatched" @update:checked="emit('toggleUnmatched')" />
-          <span class="text-sm">只看未匹配</span>
-        </label>
+        <NDropdown
+          trigger="click"
+          :options="displayFilterMenuOptions"
+          @select="handleDisplayFilterSelect"
+        >
+          <NButton size="small" type="default">
+            显示数据-{{ displayFilterLabel }}
+          </NButton>
+        </NDropdown>
+
+        <NButton
+          v-if="matchConditions && matchConditions.length > 0"
+          type="default"
+          size="small"
+          @click="openConditionModal"
+        >
+          匹配条件{{ selectedConditionIndices && selectedConditionIndices.length > 0 ? `(${selectedConditionIndices.length})` : '' }}
+        </NButton>
 
         <NButton
           type="primary"
@@ -151,6 +205,31 @@ const canRevoke = computed(() => {
         </NButton>
       </NSpace>
     </NSpace>
+
+    <NModal
+      v-model:show="conditionModalVisible"
+      preset="card"
+      title="选择匹配条件"
+      style="width: 500px;"
+      :bordered="false"
+    >
+      <NCheckboxGroup v-model:value="tempSelectedIndices">
+        <NSpace vertical>
+          <NCheckbox
+            v-for="(cond, idx) in matchConditions"
+            :key="idx"
+            :value="idx"
+            :label="cond.text"
+          />
+        </NSpace>
+      </NCheckboxGroup>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton size="small" @click="conditionModalVisible = false">取消</NButton>
+          <NButton size="small" type="primary" @click="confirmConditions">确定</NButton>
+        </NSpace>
+      </template>
+    </NModal>
   </div>
 </template>
 
@@ -176,29 +255,6 @@ const canRevoke = computed(() => {
 
   :deep(.n-alert) {
     margin-bottom: 4px;
-  }
-}
-
-.match-bottom-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  line-height: 1;
-
-  :deep(.n-checkbox) {
-    display: inline-flex;
-    align-items: center;
-    margin: 0;
-    padding: 0;
-  }
-
-  :deep(.n-checkbox-box) {
-    margin: 0;
-  }
-
-  .text-sm {
-    line-height: 1;
   }
 }
 </style>

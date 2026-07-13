@@ -24,11 +24,12 @@ const gridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTh
 interface Props {
   side: 'A' | 'B';
   data: MatchModuleData;
-  onlyUnmatched: boolean;
+  displayFilter: 'all' | 'matched' | 'unmatched' | 'candidate';
   selectedKeys: string[];
   matchedKeys: Map<string, string[]>;
-  otherMatchedKeys: Map<string, string[]>;
   quickKeyword?: string;
+  candidateKeys?: Set<string>;
+  hasSelectedConditions: boolean;
 }
 
 const props = defineProps<Props>();
@@ -43,6 +44,7 @@ const loading = computed(() => props.data.loading);
 
 const fieldSelectorVisible = ref(false);
 const pinColumnVisible = ref(false);
+const conditionWarningVisible = ref(false);
 const selectedVisibleFields = ref<string[]>([]);
 const pinColumnFields = ref<string[]>([]);
 const pinDirection = ref<'left' | 'right' | null>('left');
@@ -62,7 +64,9 @@ const pinDirectionOptions = [
 const keyField = computed(() => {
   if (props.data.matchCols.key) return props.data.matchCols.key;
   if (props.data.columns && props.data.columns.length > 0) {
-    return props.data.columns[0].field || '';
+    // 跳过序号列，取第一个业务字段作为回退主键
+    const bizCol = props.data.columns.find(c => c.field && c.field !== '序号');
+    return bizCol ? bizCol.field : '';
   }
   return '';
 });
@@ -80,19 +84,24 @@ const defaultColDef = {
 const displayedRows = computed(() => {
   let rows = props.data.rows;
 
-  if (props.onlyUnmatched) {
+  if (props.displayFilter === 'unmatched') {
+    rows = rows.filter(row => !row.__matched);
+  } else if (props.displayFilter === 'matched') {
+    rows = rows.filter(row => row.__matched);
+  } else if (props.displayFilter === 'candidate') {
     const kf = keyField.value;
+    const ck = props.candidateKeys;
+    const selectedSet = new Set(props.selectedKeys);
     rows = rows.filter(row => {
       const key = String(row[kf] ?? '');
-      const targets = props.matchedKeys.get(key) || [];
-      return targets.length === 0;
+      return (ck && ck.has(key)) || selectedSet.has(key);
     });
   }
 
   if (props.quickKeyword) {
     const kw = props.quickKeyword.toLowerCase();
     rows = rows.filter(row => {
-      return Object.values(row).some(v => 
+      return Object.values(row).some(v =>
         String(v ?? '').toLowerCase().includes(kw)
       );
     });
@@ -100,6 +109,44 @@ const displayedRows = computed(() => {
 
   return rows;
 });
+
+/**
+ * 外部筛选：通过 AG Grid 的 isExternalFilterPresent/doesExternalFilterPass
+ * 控制行显示，而非替换 rowData，避免选中状态丢失。
+ */
+const candidateSelectedSet = computed(() => new Set(props.selectedKeys));
+
+function isExternalFilterPresent() {
+  return props.displayFilter !== 'all' || !!props.quickKeyword;
+}
+
+function doesExternalFilterPass(node: any) {
+  const row = node.data;
+  if (!row) return false;
+
+  if (props.displayFilter === 'unmatched') {
+    if (row.__matched) return false;
+  } else if (props.displayFilter === 'matched') {
+    if (!row.__matched) return false;
+  } else if (props.displayFilter === 'candidate') {
+    const kf = keyField.value;
+    const key = String(row[kf] ?? '');
+    const ck = props.candidateKeys;
+    const selectedSet = candidateSelectedSet.value;
+    // 显示候选记录或本侧已选中记录（保证勾选行可见）
+    if (!(ck && ck.has(key)) && !selectedSet.has(key)) return false;
+  }
+
+  if (props.quickKeyword) {
+    const kw = props.quickKeyword.toLowerCase();
+    const hasMatch = Object.values(row).some(v =>
+      String(v ?? '').toLowerCase().includes(kw)
+    );
+    if (!hasMatch) return false;
+  }
+
+  return true;
+}
 
 const columnDefs = computed<ColDef[]>(() => {
   if (!props.data.columns || props.data.columns.length === 0) return [];
@@ -146,10 +193,7 @@ const columnDefs = computed<ColDef[]>(() => {
     sortable: false,
     filter: false,
     cellRenderer: (params: any) => {
-      const kf = keyField.value;
-      const key = String(params.data[kf] ?? '');
-      const targets = props.matchedKeys.get(key) || [];
-      if (targets.length > 0) {
+      if (params.data?.__matched) {
         return '<span style="color:#52c41a;">● 已匹配</span>';
       }
       return '<span style="color:#bfbfbf;">○ 未匹配</span>';
@@ -169,6 +213,11 @@ function onGridReady(event: GridReadyEvent) {
 function onSelectionChanged() {
   if (!gridApi.value) return;
   const selectedRows = gridApi.value.getSelectedRows();
+  if (selectedRows.length > 0 && !props.hasSelectedConditions) {
+    conditionWarningVisible.value = true;
+    gridApi.value.deselectAll();
+    return;
+  }
   const kf = keyField.value;
   const keys = selectedRows.map(row => String(row[kf] ?? ''));
   emit('update:selected', keys);
@@ -188,25 +237,40 @@ function onCellValueChanged(event: any) {
 }
 
 function getRowId(params: any) {
+  const data = params.data;
+  if (data.GUID) return String(data.GUID);
+  if (data.guid) return String(data.guid);
+  if (data.id) return String(data.id);
+  if (data.ID) return String(data.ID);
   const kf = keyField.value;
-  return String(params.data[kf] ?? '');
+  const keyValue = String(data[kf] ?? '');
+  if (keyValue) {
+    const rowIndex = params.node?.rowIndex;
+    if (rowIndex != null) {
+      return `${keyValue}_${rowIndex}`;
+    }
+    return keyValue;
+  }
+  if (params.node && params.node.rowIndex != null) {
+    return `row_${params.node.rowIndex}`;
+  }
+  return '';
 }
 
 function getRowClass(params: RowClassParams) {
   const kf = keyField.value;
   const key = String(params.data[kf] ?? '');
-  
+
   if (props.selectedKeys.includes(key)) {
     return 'match-selected-row';
   }
 
-  const otherKeys = props.otherMatchedKeys.get(key);
-  if (otherKeys && otherKeys.length > 0) {
-    return 'match-highlight-row';
+  // 候选行（根据匹配条件筛选出的潜在匹配记录）优先于已匹配/高亮
+  if (props.candidateKeys && props.candidateKeys.size > 0 && props.candidateKeys.has(key)) {
+    return 'match-candidate-row';
   }
 
-  const targets = props.matchedKeys.get(key) || [];
-  if (targets.length > 0) {
+  if (params.data?.__matched) {
     return 'match-matched-row';
   }
 
@@ -293,29 +357,41 @@ defineExpose({
 watch(() => props.selectedKeys, () => {
   if (!gridApi.value) return;
   nextTick(() => {
-    gridApi.value!.refreshCells();
+    const api = gridApi.value!;
+    // candidate 模式下 selectedKeys 影响筛选结果（已选行需可见），需触发外部筛选刷新
+    if (props.displayFilter === 'candidate') {
+      api.onFilterChanged();
+    } else {
+      api.refreshCells();
+    }
   });
-});
+}, { deep: false });
+
+watch(() => props.candidateKeys, () => {
+  if (!gridApi.value) return;
+  nextTick(() => {
+    const api = gridApi.value!;
+    // candidate 模式下候选集变化需触发外部筛选刷新；其他模式仅需重绘以刷新高亮
+    if (props.displayFilter === 'candidate') {
+      api.onFilterChanged();
+    } else {
+      api.redrawRows();
+    }
+  });
+}, { deep: false });
 
 watch(() => props.data.rows, () => {
   if (!gridApi.value) return;
   nextTick(() => {
-    const api = gridApi.value!;
-    const rows = displayedRows.value;
-    // 用 setGridOption 更新 rowData（AG Grid v32 推荐方式）
-    if (typeof api.setGridOption === 'function') {
-      api.setGridOption('rowData', rows);
-    } else {
-      api.updateGridOptions({ rowData: rows });
-    }
-    api.refreshCells({ force: true });
+    gridApi.value!.refreshCells({ force: true });
   });
 }, { deep: false });
 
-watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
+watch([() => props.displayFilter, () => props.quickKeyword], () => {
   if (!gridApi.value) return;
   nextTick(() => {
-    gridApi.value!.refreshCells();
+    // displayFilter/quickKeyword 变化通过外部筛选刷新，不替换 rowData
+    gridApi.value!.onFilterChanged();
   });
 });
 </script>
@@ -330,7 +406,7 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
         :theme="gridTheme"
         class="match-grid"
         :column-defs="columnDefs"
-        :row-data="displayedRows"
+        :row-data="data.rows"
         :default-col-def="defaultColDef"
         :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: false, selectAll: 'filtered' }"
         :selection-column-def="{
@@ -342,6 +418,8 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
         }"
         :get-row-id="getRowId"
         :get-row-class="getRowClass"
+        :is-external-filter-present="isExternalFilterPresent"
+        :does-external-filter-pass="doesExternalFilterPass"
         :locale-text="AG_GRID_LOCALE_CN"
         :row-height="35"
         :header-height="40"
@@ -371,6 +449,18 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
           />
         </NSpace>
       </NCheckboxGroup>
+    </NModal>
+
+    <NModal
+      v-model:show="conditionWarningVisible"
+      title="提示"
+      preset="card"
+      :style="{ width: '360px' }"
+      :mask-closable="true"
+    >
+      <div style="padding: 16px;">
+        <p style="margin-bottom: 0;">请先选择匹配条件，再勾选记录。</p>
+      </div>
     </NModal>
 
     <NModal
@@ -481,12 +571,32 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
   background-color: #e6f7ff !important;
 }
 
+:deep(.match-selected-row .ag-cell) {
+  background-color: #e6f7ff !important;
+}
+
 :deep(.match-highlight-row) {
   background-color: #fff7e6 !important;
 }
 
+:deep(.match-highlight-row .ag-cell) {
+  background-color: #fff7e6 !important;
+}
+
 :deep(.match-matched-row) {
-  background-color: #f6ffed !important;
+  background-color: #d9f7be !important;
+}
+
+:deep(.match-matched-row .ag-cell) {
+  background-color: #d9f7be !important;
+}
+
+:deep(.match-candidate-row) {
+  background-color: #fff1b8 !important;
+}
+
+:deep(.match-candidate-row .ag-cell) {
+  background-color: #fff1b8 !important;
 }
 
 /* Dark mode row highlight (component-specific) */
@@ -495,12 +605,32 @@ watch([() => props.onlyUnmatched, () => props.quickKeyword], () => {
     background-color: rgba(99, 179, 255, 0.2) !important;
   }
 
+  :deep(.match-selected-row .ag-cell) {
+    background-color: transparent !important;
+  }
+
   :deep(.match-highlight-row) {
     background-color: rgba(255, 193, 7, 0.2) !important;
   }
 
+  :deep(.match-highlight-row .ag-cell) {
+    background-color: transparent !important;
+  }
+
   :deep(.match-matched-row) {
     background-color: rgba(76, 175, 80, 0.2) !important;
+  }
+
+  :deep(.match-matched-row .ag-cell) {
+    background-color: transparent !important;
+  }
+
+  :deep(.match-candidate-row) {
+    background-color: rgba(255, 235, 59, 0.15) !important;
+  }
+
+  :deep(.match-candidate-row .ag-cell) {
+    background-color: transparent !important;
   }
 }
 </style>

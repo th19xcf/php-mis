@@ -15,6 +15,8 @@ class MetadataCache
     private const TTL_DEF_CHART_DRILL_CONFIG = 3600;
     private const TTL_DEF_QUERY_CONFIG = 7200;
     private const TTL_DEF_USER = 1800;
+    private const TTL_DEF_FUNCTION = 7200;
+    private const TTL_VIEW_FUNCTION = 3600;
     // 索引 TTL 远大于数据 TTL，避免索引过早失效导致清理时漏删
     // 索引中残留已过期的数据键不影响正确性（delete 时 cache->get 返回 false）
     private const INDEX_TTL_SECONDS = 86400;
@@ -28,8 +30,10 @@ class MetadataCache
     private const TABLE_KEY_PREFIXES = [
         'def_query_column'      => ['metadata_popup_column_map', 'metadata_popup_config_'],
         'def_chart_drill_config' => ['metadata_chart_drill_'],
-        'def_query_config'      => ['metadata_query_config_'],
+        'def_query_config'      => ['metadata_query_config_', 'metadata_query_config_by_fn_', 'metadata_primary_key_'],
         'def_user'              => ['metadata_user_info_'],
+        'def_function'          => ['metadata_function_', 'metadata_function_by_module_', 'metadata_query_config_by_fn_', 'metadata_primary_key_'],
+        'view_function'         => ['metadata_view_function_'],
     ];
 
     private CacheInterface $cache;
@@ -376,7 +380,7 @@ class MetadataCache
                 查询条件,汇总条件,排序条件,初始条数,
                 新增前处理模块,新增后处理模块,
                 更新前处理模块,更新后处理模块,
-                数据整理模块,备注模块,导入模块,图形模块,表样式
+                数据整理模块,备注模块,导入模块,图形模块,表样式,主键字段
             from def_query_config
             where 查询模块 in
                 (
@@ -462,6 +466,124 @@ class MetadataCache
         }
 
         return '';
+    }
+
+    /**
+     * 获取 def_function 单行配置（跨用户共享缓存）
+     *
+     * 缓存 def_function 表中按功能编码查询的完整行数据。
+     * 各服务通过此方法统一读取，避免多处直接 SQL 查询 def_function。
+     *
+     * @param string $functionCode 功能编码
+     * @return array|null 单行配置（原始字段）
+     */
+    public function getFunctionConfig(string $functionCode): ?array
+    {
+        $cacheKey = self::CACHE_PREFIX . 'function_' . md5($functionCode);
+        $cached = $this->cache->get($cacheKey);
+        if (is_array($cached)) {
+            log_message('debug', '[MetadataCache] getFunctionConfig 缓存命中: ' . $functionCode);
+            return $cached;
+        }
+
+        $sql = sprintf(
+            'select * from def_function where 有效标识="1" and 功能编码=%s limit 1',
+            $this->model->quote($functionCode)
+        );
+
+        $result = $this->model->select($sql);
+        if ($result === false) {
+            return null;
+        }
+
+        $row = $result->getRowArray();
+        if ($row !== null) {
+            $this->cache->save($cacheKey, $row, self::TTL_DEF_FUNCTION);
+            $this->addToIndex('def_function', $cacheKey);
+            log_message('debug', '[MetadataCache] getFunctionConfig 缓存写入: ' . $functionCode);
+        }
+
+        return $row;
+    }
+
+    /**
+     * 通过模块名称反查 def_function 配置（跨用户共享缓存）
+     *
+     * 用于 MatchApi 等需要通过 模块名称 反查 功能编码 的场景。
+     *
+     * @param string $moduleName 模块名称
+     * @return array|null 单行配置（含 功能编码、模块名称 等全字段）
+     */
+    public function getFunctionConfigByModule(string $moduleName): ?array
+    {
+        $cacheKey = self::CACHE_PREFIX . 'function_by_module_' . md5($moduleName);
+        $cached = $this->cache->get($cacheKey);
+        if (is_array($cached)) {
+            log_message('debug', '[MetadataCache] getFunctionConfigByModule 缓存命中: ' . $moduleName);
+            return $cached;
+        }
+
+        $sql = sprintf(
+            'select * from def_function where 有效标识="1" and 模块名称=%s order by 功能编码 limit 1',
+            $this->model->quote($moduleName)
+        );
+
+        $result = $this->model->select($sql);
+        if ($result === false) {
+            return null;
+        }
+
+        $row = $result->getRowArray();
+        if ($row !== null) {
+            $this->cache->save($cacheKey, $row, self::TTL_DEF_FUNCTION);
+            $this->addToIndex('def_function', $cacheKey);
+            log_message('debug', '[MetadataCache] getFunctionConfigByModule 缓存写入: ' . $moduleName);
+        }
+
+        return $row;
+    }
+
+    /**
+     * 获取 view_function 列定义（跨用户共享缓存）
+     *
+     * 缓存 view_function 视图中按功能编码查询的全量列定义（所有字段、列顺序>0、group by 列名）。
+     * 各服务在 PHP 端从返回结果中筛选所需字段，避免多处独立查询同一视图。
+     *
+     * @param string $functionCode 功能编码
+     * @return array 列定义数组（每行为 view_function 的完整字段）
+     */
+    public function getViewFunctionColumns(string $functionCode): array
+    {
+        $cacheKey = self::CACHE_PREFIX . 'view_function_' . md5($functionCode);
+        $cached = $this->cache->get($cacheKey);
+        if (is_array($cached)) {
+            log_message('debug', '[MetadataCache] getViewFunctionColumns 缓存命中: ' . $functionCode);
+            return $cached;
+        }
+
+        $sql = sprintf(
+            'select 功能编码,字段模块,部门编码字段,部门全称字段,
+                工号字段,属地字段,
+                列名,列类型,列宽度,字段名,查询名,
+                赋值类型,对象,对象名称,对象表名,缺省值,主键,
+                工号限权,可筛选,可汇总,可新增,可修改,不可为空,可颜色标注,
+                提示条件,提示样式设置,异常条件,异常样式设置,字符转换,
+                加密显示,列顺序,可匹配
+            from view_function
+            where 功能编码=%s and 列顺序>0
+            group by 列名
+            order by 列顺序',
+            $this->model->quote($functionCode)
+        );
+
+        $result = $this->model->select($sql);
+        $rows = ($result !== false) ? $result->getResultArray() : [];
+
+        $this->cache->save($cacheKey, $rows, self::TTL_VIEW_FUNCTION);
+        $this->addToIndex('view_function', $cacheKey);
+        log_message('debug', '[MetadataCache] getViewFunctionColumns 缓存写入: ' . $functionCode . ' (' . count($rows) . ' rows)');
+
+        return $rows;
     }
 
     /**

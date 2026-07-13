@@ -15,6 +15,8 @@ declare namespace Api {
       userName: string;
       roles: string[];
       buttons: string[];
+      /** 调试权限（从 JWT payload 读取），用于前端差异化错误展示 */
+      debugEnabled?: boolean;
     }
   }
 }

@@ -104,7 +104,8 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     userId: '',
     userName: '',
     roles: [],
-    buttons: []
+    buttons: [],
+    debugEnabled: false
   });
 
   /** is super role in static route */
@@ -136,6 +137,7 @@ export const useAuthStore = defineStore(SetupStoreId.Auth, () => {
     userInfo.userName = '';
     userInfo.roles = [];
     userInfo.buttons = [];
+    userInfo.debugEnabled = false;
 
     if (!route.meta.constant) {
       await toLogin();
