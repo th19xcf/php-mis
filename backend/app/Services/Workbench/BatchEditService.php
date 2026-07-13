@@ -3,6 +3,8 @@
 namespace App\Services\Workbench;
 
 use App\Models\Mcommon;
+use App\Libraries\MetadataCache;
+use App\Services\Workbench\ContextService;
 
 /**
  * 批量编辑服务类
@@ -72,6 +74,7 @@ class BatchEditService
                     ]);
                     $num += $this->model->exec($sql);
                 }
+                $this->invalidateConfigCache($dataTable);
                 return $num;
 
             case '1':
@@ -146,6 +149,7 @@ class BatchEditService
                     ]);
                     $num += $this->model->exec($sqlInsert);
                 }
+                $this->invalidateConfigCache($dataTable);
                 return $num;
 
             default:
@@ -293,6 +297,7 @@ class BatchEditService
                         $num += $this->model->exec($sql);
                     }
                 }
+                $this->invalidateConfigCache($dataTable);
                 return ['success' => true, 'count' => $num, 'message' => sprintf('表级修改提交成功,修改了 %d 条记录', $num)];
 
             case '1':
@@ -410,6 +415,7 @@ class BatchEditService
                     $num += $this->model->exec($sqlInsert);
                 }
 
+                $this->invalidateConfigCache($dataTable);
                 return ['success' => $num > 0, 'count' => $num, 'message' => $num > 0
                     ? sprintf('表级修改提交成功,修改了 %d 条记录', $num)
                     : sprintf('表级修改失败:未命中任何记录,请检查主键值是否正确(主键=%s,表=%s,共提交 %d 行)', $primaryKey, $dataTable, count($rows))];
@@ -439,5 +445,39 @@ class BatchEditService
         }
 
         return implode(' and ', $conditions);
+    }
+
+    private function invalidateConfigCache(string $dataTable): void
+    {
+        static $configTables = [
+            'def_query_column', 'def_query_config', 'def_function', 'def_user',
+            'def_chart_config', 'def_chart_column', 'def_chart_drill_config',
+            'def_role_group', 'def_role', 'def_function_group',
+            'def_drill_config', 'def_import_config', 'def_import_column',
+            'def_comment_config', 'def_object', 'def_match_config'
+        ];
+        $tableName = strtolower(trim($dataTable));
+        if (!in_array($tableName, $configTables, true)) {
+            return;
+        }
+
+        try {
+            $metadataCache = new MetadataCache();
+            $metadataCache->invalidateTable($tableName);
+
+            $contextService = new ContextService();
+            $contextService->clearCache();
+
+            log_message('info', sprintf(
+                '[BatchEditService] 配置表 %s 已修改，缓存自动失效',
+                $tableName
+            ));
+        } catch (\Throwable $e) {
+            log_message('error', sprintf(
+                '[BatchEditService] 配置表 %s 缓存失效失败: %s',
+                $tableName,
+                $e->getMessage()
+            ));
+        }
     }
 }

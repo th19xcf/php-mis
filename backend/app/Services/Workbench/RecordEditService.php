@@ -3,6 +3,8 @@
 namespace App\Services\Workbench;
 
 use App\Models\Mcommon;
+use App\Libraries\MetadataCache;
+use App\Services\Workbench\ContextService;
 
 /**
  * 单条记录编辑服务类
@@ -101,8 +103,9 @@ class RecordEditService
         $sql = sprintf('insert into %s (%s) values (%s)', $dataTable, $fieldList, $placeholders);
 
         $this->model->query($sql, $values);
-
-        return $this->model->affectedRows();
+        $affected = $this->model->affectedRows();
+        $this->invalidateConfigCache($dataTable);
+        return $affected;
     }
 
     /**
@@ -132,8 +135,9 @@ class RecordEditService
         $sql = sprintf('insert into %s (%s) values (%s)', $dataTable, $fieldList, $placeholders);
 
         $this->model->query($sql, $values);
-
-        return $this->model->affectedRows();
+        $affected = $this->model->affectedRows();
+        $this->invalidateConfigCache($dataTable);
+        return $affected;
     }
 
     /**
@@ -163,8 +167,9 @@ class RecordEditService
         $sql = sprintf('insert into %s (%s) values (%s)', $dataTable, $fieldList, $placeholders);
 
         $this->model->query($sql, $values);
-
-        return $this->model->affectedRows();
+        $affected = $this->model->affectedRows();
+        $this->invalidateConfigCache($dataTable);
+        return $affected;
     }
 
     /**
@@ -217,7 +222,9 @@ class RecordEditService
                     'fields' => $formData,
                     'note' => '直接UPDATE',
                 ]);
-                return $this->model->exec($sql);
+                $affected = $this->model->exec($sql);
+                $this->invalidateConfigCache($dataTable);
+                return $affected;
 
             case '1':
             case '2':
@@ -286,7 +293,9 @@ class RecordEditService
                     'fields' => $formData,
                     'note' => '流水插新版本',
                 ]);
-                return $this->model->exec($sqlInsert);
+                $affected = $this->model->exec($sqlInsert);
+                $this->invalidateConfigCache($dataTable);
+                return $affected;
 
             default:
                 return -1;
@@ -324,7 +333,9 @@ class RecordEditService
                     'pk_values' => $keyValues,
                     'note' => '硬删除',
                 ]);
-                return $this->model->exec($sql);
+                $affected = $this->model->exec($sql);
+                $this->invalidateConfigCache($dataTable);
+                return $affected;
 
             case '1':
             case '2':
@@ -342,10 +353,46 @@ class RecordEditService
                     'pk_values' => $keyValues,
                     'note' => '流水软删除',
                 ]);
-                return $this->model->exec($sql);
+                $affected = $this->model->exec($sql);
+                $this->invalidateConfigCache($dataTable);
+                return $affected;
 
             default:
                 return -1;
+        }
+    }
+
+    private function invalidateConfigCache(string $dataTable): void
+    {
+        static $configTables = [
+            'def_query_column', 'def_query_config', 'def_function', 'def_user',
+            'def_chart_config', 'def_chart_column', 'def_chart_drill_config',
+            'def_role_group', 'def_role', 'def_function_group',
+            'def_drill_config', 'def_import_config', 'def_import_column',
+            'def_comment_config', 'def_object', 'def_match_config'
+        ];
+        $tableName = strtolower(trim($dataTable));
+        if (!in_array($tableName, $configTables, true)) {
+            return;
+        }
+
+        try {
+            $metadataCache = new MetadataCache();
+            $metadataCache->invalidateTable($tableName);
+
+            $contextService = new ContextService();
+            $contextService->clearCache();
+
+            log_message('info', sprintf(
+                '[RecordEditService] 配置表 %s 已修改，缓存自动失效',
+                $tableName
+            ));
+        } catch (\Throwable $e) {
+            log_message('error', sprintf(
+                '[RecordEditService] 配置表 %s 缓存失效失败: %s',
+                $tableName,
+                $e->getMessage()
+            ));
         }
     }
 }
