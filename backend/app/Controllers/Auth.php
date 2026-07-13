@@ -415,31 +415,4 @@ class Auth extends BaseApiController
         return $roleAuthz;
     }
 
-    /**
-     * 计算属地赋权
-     */
-    private function computeLocationAuthz(string $workId, string $region): string
-    {
-        $authorizationService = $this->getAuthorizationService();
-        return $authorizationService->normalize($authorizationService->loadUserAuthField('属地赋权', $workId, $region));
-    }
-
-    /**
-     * 计算部门全称赋权
-     */
-    private function computeDeptNameAuthz(string $workId, string $region): string
-    {
-        $authorizationService = $this->getAuthorizationService();
-        return $authorizationService->normalize($authorizationService->loadUserAuthField('部门全称赋权', $workId, $region));
-    }
-
-    /**
-     * 计算部门编码赋权
-     */
-    private function computeDeptCodeAuthz(string $workId, string $region): string
-    {
-        $authorizationService = $this->getAuthorizationService();
-        return $authorizationService->normalize($authorizationService->loadUserAuthField('部门编码赋权', $workId, $region));
-    }
-
 }
