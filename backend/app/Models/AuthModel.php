@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use App\Libraries\MetadataCache;
+
 class AuthModel
 {
     private Mcommon $common;
+    private MetadataCache $metadataCache;
 
     /** @var array<string, string[]> 请求内 getRoleCodes 记忆化缓存，键为 workId|region */
     private array $roleCodesCache = [];
@@ -12,6 +15,7 @@ class AuthModel
     public function __construct()
     {
         $this->common = new Mcommon();
+        $this->metadataCache = new MetadataCache();
     }
 
     public function verifyUser(string $userWorkId, string $password, string $region): ?array
@@ -284,37 +288,10 @@ class AuthModel
             return $this->roleCodesCache[$cacheKey];
         }
 
-        $sql = sprintf('
-            select
-                case
-                    when t1.角色组!="" and t1.角色编码="" and t2.角色组 is not null then t2.角色编码
-                    when t1.角色组!="" and t1.角色编码!="" and t2.角色组 is not null then concat(t2.角色编码,",",t1.角色编码)
-                    else t1.角色编码
-                end as 角色编码
-            from
-            (
-                select
-                    角色组,
-                    replace(replace(角色编码,"，",",")," ","") as 角色编码
-                from def_user
-                where 有效标识="1" and 员工属地=%s and 工号=%s
-                group by 员工属地,工号
-            ) as t1
-            left join
-            (
-                select
-                    角色组,
-                    replace(replace(角色编码,"，",",")," ","") as 角色编码
-                from def_role_group
-                where 有效标识="1"
-            ) as t2 on t1.角色组=t2.角色组',
-            $this->common->quote($region),
-            $this->common->quote($userWorkId)
-        );
-
-        $row = $this->common->select($sql)->getRowArray();
-
-        if (!$row) {
+        // 走 MetadataCache 跨请求缓存（Redis + def_user 表指纹校验）
+        // 复用 getUserAuthorization 的 SQL（CASE WHEN + LEFT JOIN def_role_group + CSV 清洗）
+        $row = $this->metadataCache->getUserAuthorization($userWorkId, $region);
+        if ($row === null) {
             return $this->roleCodesCache[$cacheKey] = [];
         }
 
