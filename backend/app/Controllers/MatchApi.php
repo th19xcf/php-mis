@@ -37,6 +37,10 @@ class MatchApi extends BaseApiController
             $aFunctionCode = $this->resolveFunctionCodeByModule($aModule);
             $bFunctionCode = $this->resolveFunctionCodeByModule($bModule);
 
+            // 为 A/B 模块分别构建部门全称赋权等授权条件（参考通用工作台）
+            $aConfig['queryWhere'] = $this->buildModuleAuthCondition($aFunctionCode, $aConfig);
+            $bConfig['queryWhere'] = $this->buildModuleAuthCondition($bFunctionCode, $bConfig);
+
             $matchConditions = $this->getMatchConditions($functionCode);
             $matchWrites = $this->getMatchWrites($functionCode);
             $matchKeyFields = $this->getMatchKeyFields($functionCode, $aModule, $bModule);
@@ -305,6 +309,9 @@ class MatchApi extends BaseApiController
             'commentModule' => $row['备注模块'] ?? '',
             'chartModule' => $row['图形模块'] ?? '',
             'tableStyle' => $row['表样式'] ?? '',
+            'deptCodeField' => $row['部门编码字段'] ?? '',
+            'deptNameField' => $row['部门全称字段'] ?? '',
+            'locationField' => $row['属地字段'] ?? '',
         ];
     }
 
@@ -325,6 +332,183 @@ class MatchApi extends BaseApiController
             return (string) $funcRow['功能编码'];
         }
         return '';
+    }
+
+    /**
+     * 为模块构建授权条件并处理 queryWhere 中的占位符
+     *
+     * 参考通用工作台 ContextService 的授权逻辑：
+     * 1. 加载用户级赋权（部门编码/部门全称/属地）
+     * 2. 加载角色级赋权（通过 functionCode 查 view_role）
+     * 3. 用户级与角色级 AND 关系组合
+     * 4. 替换 $部门授权 / $属地授权 占位符；无占位符时 AND 追加
+     *
+     * @param string $functionCode 模块对应的功能编码（用于查角色赋权）
+     * @param array  $moduleConfig getModuleConfig 返回的配置（含 deptNameField 等）
+     * @return string 处理后的 queryWhere（已替换占位符 + 已追加授权条件）
+     */
+    private function buildModuleAuthCondition(string $functionCode, array $moduleConfig): string
+    {
+        $queryWhere = (string) ($moduleConfig['queryWhere'] ?? '');
+
+        // 无功能编码或无授权字段配置时，直接返回原始条件
+        if ($functionCode === '') {
+            return $queryWhere;
+        }
+
+        $deptCodeField = (string) ($moduleConfig['deptCodeField'] ?? '');
+        $deptNameField = (string) ($moduleConfig['deptNameField'] ?? '');
+        $locationField = (string) ($moduleConfig['locationField'] ?? '');
+
+        if ($deptCodeField === '' && $deptNameField === '' && $locationField === '') {
+            return $queryWhere;
+        }
+
+        $authorizationService = $this->getAuthorizationService();
+        $metadataCache = new MetadataCache();
+
+        // 加载用户级授权信息
+        $user = $this->userContext->requireLogin();
+        $userAuthRow = $metadataCache->getUserAuthorization($user['workId'], $user['companyId']);
+        if (!$userAuthRow) {
+            return $queryWhere;
+        }
+
+        $userDeptCodeAuth = $authorizationService->normalize((string) ($userAuthRow['部门编码赋权'] ?? ''));
+        $userDeptNameAuth = $authorizationService->normalize((string) ($userAuthRow['部门全称赋权'] ?? ''));
+        $userLocationAuth = $authorizationService->normalize((string) ($userAuthRow['属地赋权'] ?? ''));
+        $upkeepAuth = (string) ($userAuthRow['维护赋权'] ?? '0') === '1';
+        $roleCodesRaw = (string) ($userAuthRow['角色编码'] ?? '');
+
+        if ($roleCodesRaw === '') {
+            return $queryWhere;
+        }
+
+        // 加载角色级赋权（一次查询获取 3 个字段）
+        $roleAuthFields = $authorizationService->loadRoleAuthFields(
+            $functionCode,
+            [
+                ['fieldName' => '部门编码赋权', 'aliasName' => '编码赋权'],
+                ['fieldName' => '部门全称赋权', 'aliasName' => '全称赋权'],
+                ['fieldName' => '属地赋权', 'aliasName' => '角色表属地'],
+            ],
+            $roleCodesRaw
+        );
+
+        // 构建部门编码条件（用户级 AND 角色级）
+        $deptCodeCond = $this->buildAuthConditionWithAnd(
+            $deptCodeField,
+            $userDeptCodeAuth,
+            $roleAuthFields['部门编码赋权'] ?? '',
+            fn(string $field, string $auth, bool $upkeep) => $authorizationService->buildExactMatchCondition($field, $auth),
+            $upkeepAuth
+        );
+
+        // 构建部门全称条件（用户级 AND 角色级）
+        $deptNameCond = $this->buildAuthConditionWithAnd(
+            $deptNameField,
+            $userDeptNameAuth,
+            $roleAuthFields['部门全称赋权'] ?? '',
+            fn(string $field, string $auth, bool $upkeep) => $authorizationService->buildDeptNameCondition($field, $auth, $upkeep),
+            $upkeepAuth
+        );
+
+        // 组合部门授权条件（部门编码 OR 部门全称）
+        $deptAuthCond = '';
+        if ($deptCodeCond !== '' && $deptNameCond !== '') {
+            $deptAuthCond = sprintf('(%s or %s)', $deptCodeCond, $deptNameCond);
+        } elseif ($deptCodeCond !== '') {
+            $deptAuthCond = sprintf('(%s)', $deptCodeCond);
+        } elseif ($deptNameCond !== '') {
+            $deptAuthCond = sprintf('(%s)', $deptNameCond);
+        }
+
+        // 构建属地授权条件（用户级 AND 角色级）
+        $locationCond = $this->buildAuthConditionWithAnd(
+            $locationField,
+            $userLocationAuth,
+            $roleAuthFields['属地赋权'] ?? '',
+            fn(string $field, string $auth, bool $upkeep) => $authorizationService->buildCondition($field, $auth, $upkeep),
+            $upkeepAuth
+        );
+        if ($locationCond !== '') {
+            $locationCond = sprintf('(%s)', $locationCond);
+        }
+
+        // 替换占位符
+        $hasDeptPlaceholder = strpos($queryWhere, '$部门授权') !== false;
+        $hasLocationPlaceholder = strpos($queryWhere, '$属地授权') !== false;
+
+        if ($hasDeptPlaceholder) {
+            $queryWhere = str_replace('$部门授权', $deptAuthCond !== '' ? $deptAuthCond : '1=1', $queryWhere);
+        }
+        if ($hasLocationPlaceholder) {
+            $queryWhere = str_replace('$属地授权', $locationCond !== '' ? $locationCond : '1=1', $queryWhere);
+        }
+
+        // 无占位符时，AND 追加授权条件
+        $extraConditions = [];
+        if ($deptAuthCond !== '' && !$hasDeptPlaceholder) {
+            $extraConditions[] = $deptAuthCond;
+        }
+        if ($locationCond !== '' && !$hasLocationPlaceholder) {
+            $extraConditions[] = $locationCond;
+        }
+        if (!empty($extraConditions) && $queryWhere !== '') {
+            $queryWhere = '(' . $queryWhere . ') AND ' . implode(' AND ', $extraConditions);
+        } elseif (!empty($extraConditions)) {
+            $queryWhere = implode(' AND ', $extraConditions);
+        }
+
+        return $queryWhere;
+    }
+
+    /**
+     * 构建用户级 AND 角色级授权条件
+     *
+     * 用户级和角色级赋权是 AND 关系：记录必须同时满足两者。
+     * 闭包 $buildFunc 签名为 (string $field, string $auth, bool $upkeep): string，
+     * 不需要 upkeep 的调用方在闭包内忽略该参数即可。
+     *
+     * @param string   $field      字段名
+     * @param string   $userAuth   用户级赋权值
+     * @param string   $roleAuth   角色级赋权值
+     * @param callable $buildFunc  条件构建回调
+     * @param bool     $upkeepAuth 维护权限标识
+     * @return string SQL 条件（空字符串表示无条件）
+     */
+    private function buildAuthConditionWithAnd(
+        string $field,
+        string $userAuth,
+        string $roleAuth,
+        callable $buildFunc,
+        bool $upkeepAuth
+    ): string {
+        if ($field === '') {
+            return '';
+        }
+
+        $conditions = [];
+
+        if ($userAuth !== '') {
+            $userCond = $buildFunc($field, $userAuth, $upkeepAuth);
+            if ($userCond !== '') {
+                $conditions[] = $userCond;
+            }
+        }
+
+        if ($roleAuth !== '') {
+            $roleCond = $buildFunc($field, $roleAuth, $upkeepAuth);
+            if ($roleCond !== '') {
+                $conditions[] = $roleCond;
+            }
+        }
+
+        if (empty($conditions)) {
+            return '';
+        }
+
+        return '(' . implode(') AND (', $conditions) . ')';
     }
 
     /**
