@@ -108,6 +108,21 @@ class SessionUserContext
     }
 
     /**
+     * 当前用户是否开启调试权限（JWT payload debugEnabled）
+     *
+     * 用于控制 X-Server-Trace 等含敏感信息（SQL 结构）的诊断输出
+     */
+    public function isDebugEnabled(): bool
+    {
+        try {
+            return (bool) ($this->getSessionUser()['debugEnabled'] ?? false);
+        } catch (AuthException $e) {
+            // 未登录场景（如登录接口本身），保守返回 false
+            return false;
+        }
+    }
+
+    /**
      * 将 JWT payload 映射为统一的用户信息格式
      */
     private function mapJwtUserToSessionFormat(object $jwt): array

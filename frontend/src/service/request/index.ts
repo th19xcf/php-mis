@@ -53,53 +53,57 @@ export const request = createFlatRequest(
         const url = response.config?.url || '';
         markTrace(`API响应接收: ${url}`);
 
-        const serverTrace = response.headers?.['x-server-trace'];
-        if (serverTrace) {
-          try {
-            const traceData = typeof serverTrace === 'string' ? JSON.parse(serverTrace) : serverTrace;
-            const labelMap: Record<string, string> = {
-              requireLogin: '用户认证',
-              contextBuild: '上下文构建',
-              contextCacheHit: '上下文缓存',
-              loadUserAuthorization: '用户授权查询',
-              loadFunctionAuthorization: '功能授权查询',
-              loadQueryConfig: '查询配置加载',
-              loadColumns: '列配置加载',
-              queryTotal: 'COUNT统计',
-              queryRecords: '数据查询',
-              total: '服务端总耗时'
-            };
-            Object.entries(traceData as Record<string, number | boolean | Array<{sql: string; ms: number}>>).forEach(([key, value]) => {
-              const label = labelMap[key] || key;
-              if (typeof value === 'number') {
-                markTrace(`  ↳ ${label}: ${value.toFixed(2)}ms`);
-              } else if (typeof value === 'boolean') {
-                markTrace(`  ↳ ${label}: ${value ? '命中' : '未命中'}`);
-              } else if (key === 'sqlTrace' && Array.isArray(value)) {
-                markTrace(`  ↳ SQL执行追踪 (${value.length}条):`);
-                value.forEach((item, idx) => {
-                  // 判断是否为 base64 编码（纯文本诊断标签如 [DNS解析] 直接显示）
-                  const isBase64 = (str: string) => /^[A-Za-z0-9+/]*={0,2}$/.test(str) && str.length % 4 === 0 && str.length > 0;
-                  let sqlText = item.sql;
-                  if (isBase64(item.sql)) {
-                    try {
-                      const binary = atob(item.sql);
-                      const bytes = new Uint8Array(binary.length);
-                      for (let i = 0; i < binary.length; i++) {
-                        bytes[i] = binary.charCodeAt(i);
+        // X-Server-Trace 含 SQL 结构等敏感信息，后端仅在非生产环境或 debugEnabled=true 时输出
+        // 前端同步加 DEV 判断，生产环境跳过 JSON.parse + atob 解码，节省 CPU
+        if (import.meta.env.DEV) {
+          const serverTrace = response.headers?.['x-server-trace'];
+          if (serverTrace) {
+            try {
+              const traceData = typeof serverTrace === 'string' ? JSON.parse(serverTrace) : serverTrace;
+              const labelMap: Record<string, string> = {
+                requireLogin: '用户认证',
+                contextBuild: '上下文构建',
+                contextCacheHit: '上下文缓存',
+                loadUserAuthorization: '用户授权查询',
+                loadFunctionAuthorization: '功能授权查询',
+                loadQueryConfig: '查询配置加载',
+                loadColumns: '列配置加载',
+                queryTotal: 'COUNT统计',
+                queryRecords: '数据查询',
+                total: '服务端总耗时'
+              };
+              Object.entries(traceData as Record<string, number | boolean | Array<{sql: string; ms: number}>>).forEach(([key, value]) => {
+                const label = labelMap[key] || key;
+                if (typeof value === 'number') {
+                  markTrace(`  ↳ ${label}: ${value.toFixed(2)}ms`);
+                } else if (typeof value === 'boolean') {
+                  markTrace(`  ↳ ${label}: ${value ? '命中' : '未命中'}`);
+                } else if (key === 'sqlTrace' && Array.isArray(value)) {
+                  markTrace(`  ↳ SQL执行追踪 (${value.length}条):`);
+                  value.forEach((item, idx) => {
+                    // 判断是否为 base64 编码（纯文本诊断标签如 [DNS解析] 直接显示）
+                    const isBase64 = (str: string) => /^[A-Za-z0-9+/]*={0,2}$/.test(str) && str.length % 4 === 0 && str.length > 0;
+                    let sqlText = item.sql;
+                    if (isBase64(item.sql)) {
+                      try {
+                        const binary = atob(item.sql);
+                        const bytes = new Uint8Array(binary.length);
+                        for (let i = 0; i < binary.length; i++) {
+                          bytes[i] = binary.charCodeAt(i);
+                        }
+                        sqlText = new TextDecoder('utf-8').decode(bytes);
+                      } catch {
+                        // 解码失败则使用原始值
                       }
-                      sqlText = new TextDecoder('utf-8').decode(bytes);
-                    } catch {
-                      // 解码失败则使用原始值
                     }
-                  }
-                  const sqlPreview = sqlText.replace(/\s+/g, ' ').slice(0, 80);
-                  markTrace(`    ${idx + 1}. ${item.ms.toFixed(2)}ms | ${sqlPreview}...`);
-                });
-              }
-            });
-          } catch {
-            // 解析失败忽略
+                    const sqlPreview = sqlText.replace(/\s+/g, ' ').slice(0, 80);
+                    markTrace(`    ${idx + 1}. ${item.ms.toFixed(2)}ms | ${sqlPreview}...`);
+                  });
+                }
+              });
+            } catch {
+              // 解析失败忽略
+            }
           }
         }
       }

@@ -72,7 +72,14 @@ class BaseApiController extends BaseController
             $this->serverTrace['sqlTrace'] = $sqlTrace;
         }
 
-        if (!empty($this->serverTrace)) {
+        // X-Server-Trace 含 SQL 结构等敏感信息，仅在以下情况输出：
+        // - 非生产环境（开发/测试）
+        // - 生产环境下 JWT debugEnabled=true 的授权用户
+        // 生产环境普通用户不输出，避免泄露 SQL 结构（安全考虑）+ 减少 Header 体积
+        $shouldOutputTrace = !empty($this->serverTrace)
+            && (ENVIRONMENT !== 'production' || $this->userContext->isDebugEnabled());
+
+        if ($shouldOutputTrace) {
             $traceJson = json_encode($this->serverTrace, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($traceJson !== false) {
                 $response->setHeader('X-Server-Trace', $traceJson);
