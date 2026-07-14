@@ -48,6 +48,8 @@ class MetadataCache
         'def_comment_config'      => [],
         'def_object'              => [],
         'def_match_config'        => [],
+        // def_config_table 自身：用于配置表清单维护，需联动清除指纹监控清单缓存
+        'def_config_table'        => [],
     ];
 
     private CacheInterface $cache;
@@ -710,6 +712,13 @@ class MetadataCache
 
         // 联动清除该表的指纹缓存（避免下次读取时指纹仍为旧值导致校验通过错误缓存）
         $this->getFingerprintService()->invalidate($tableName);
+
+        // def_config_table 被修改时，同步清除监控表清单缓存
+        // （下次访问时从 DB 重新读取最新的监控表清单）
+        if ($tableName === 'def_config_table') {
+            $this->getFingerprintService()->invalidateMonitoredTablesCache();
+            log_message('info', '[MetadataCache] def_config_table 变更，已联动清除监控表清单缓存');
+        }
 
         log_message('info', sprintf(
             '[MetadataCache] %s 缓存已失效，删除 %d 条',

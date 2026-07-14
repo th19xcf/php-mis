@@ -366,10 +366,11 @@ class RecordEditService
     {
         static $configTables = [
             'def_query_column', 'def_query_config', 'def_function', 'def_user',
-            'def_chart_config', 'def_chart_column', 'def_chart_drill_config',
+            'def_chart_config', 'def_chart_chart_column', 'def_chart_drill_config',
             'def_role_group', 'def_role', 'def_function_group',
             'def_drill_config', 'def_import_config', 'def_import_column',
-            'def_comment_config', 'def_object', 'def_match_config'
+            'def_comment_config', 'def_object', 'def_match_config',
+            'def_config_table'
         ];
         $tableName = strtolower(trim($dataTable));
         if (!in_array($tableName, $configTables, true)) {

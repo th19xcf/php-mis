@@ -29,11 +29,18 @@ class ConfigTableFingerprint
     private const FP_CACHE_PREFIX = 'config_fp_';
     private const FP_CACHE_TTL = 60;
 
+    /** 监控表清单缓存键（独立键，避免与单表指纹缓存混淆） */
+    private const MONITORED_TABLES_CACHE_KEY = 'config_fp_monitored_tables';
+    private const MONITORED_TABLES_CACHE_TTL = 3600;
+
     /** 进程内指纹缓存（避免同一请求内重复查 information_schema） */
     private static array $localCache = [];
 
-    /** 被监控的配置表清单（与 RecordEditService/BatchEditService 保持一致） */
-    public const MONITORED_TABLES = [
+    /** 进程内监控表清单缓存 */
+    private static ?array $monitoredTablesCache = null;
+
+    /** 默认监控清单（def_config_table 表不可用时的兜底） */
+    public const DEFAULT_MONITORED_TABLES = [
         'def_query_column',
         'def_query_config',
         'def_function',
@@ -54,6 +61,9 @@ class ConfigTableFingerprint
         'view_function',
     ];
 
+    /** 向后兼容：保留 MONITORED_TABLES 常量，指向默认清单 */
+    public const MONITORED_TABLES = self::DEFAULT_MONITORED_TABLES;
+
     private CacheInterface $cache;
     private Mcommon $model;
     private ?string $databaseName = null;
@@ -62,6 +72,97 @@ class ConfigTableFingerprint
     {
         $this->cache = Services::cache();
         $this->model = new Mcommon();
+    }
+
+    /**
+     * 获取被监控的配置表清单（从 def_config_table 表读取，带指纹校验）
+     *
+     * def_config_table 自身也纳入指纹监控，确保绕过应用层的直接 SQL 修改
+     * （如 DBA 手工增删记录、改有效标识）能被准实时感知。
+     *
+     * 优先级：
+     *  1. 进程内缓存（同一请求内复用，不校验指纹——PHP-FPM 单请求内表不会变）
+     *  2. 缓存驱动（3600s TTL，读取时校验 def_config_table 指纹）
+     *  3. 查 def_config_table WHERE 有效标识="1"
+     *  4. 查询失败回退到 DEFAULT_MONITORED_TABLES
+     *
+     * @return array 表名列表（已小写化、去空白）
+     */
+    public function getMonitoredTables(): array
+    {
+        // 1. 进程内缓存（同请求内不校验指纹，因为 PHP-FPM 单请求内 def_config_table 不会变）
+        if (self::$monitoredTablesCache !== null) {
+            return self::$monitoredTablesCache;
+        }
+
+        // 2. 缓存驱动（带 def_config_table 指纹校验）
+        $cached = $this->cache->get(self::MONITORED_TABLES_CACHE_KEY);
+        if (is_array($cached) && isset($cached['tables']) && !empty($cached['tables'])) {
+            $cachedFp = (string) ($cached['fp'] ?? '');
+            $currentFp = $this->getFingerprint('def_config_table');
+            if ($cachedFp !== '' && $cachedFp === $currentFp) {
+                self::$monitoredTablesCache = $cached['tables'];
+                return $cached['tables'];
+            }
+            // 指纹不一致，说明 def_config_table 已被修改，继续重新读取
+            log_message('debug', '[ConfigTableFingerprint] def_config_table 指纹变更，重新读取监控清单');
+        }
+
+        // 3. 查 def_config_table
+        $tables = $this->queryMonitoredTablesFromDB();
+
+        // 4. 查询失败回退
+        if (empty($tables)) {
+            log_message('warning', '[ConfigTableFingerprint] def_config_table 查询失败或为空，回退到默认清单');
+            $tables = self::DEFAULT_MONITORED_TABLES;
+        }
+
+        // 写入缓存（含 def_config_table 的当前指纹，供下次读取校验）
+        $currentFp = $this->getFingerprint('def_config_table');
+        $this->cache->save(self::MONITORED_TABLES_CACHE_KEY, [
+            'tables' => $tables,
+            'fp' => $currentFp,
+        ], self::MONITORED_TABLES_CACHE_TTL);
+        self::$monitoredTablesCache = $tables;
+
+        return $tables;
+    }
+
+    /**
+     * 从 def_config_table 表读取监控表清单
+     *
+     * @return array 表名列表（小写），查询失败返回空数组
+     */
+    private function queryMonitoredTablesFromDB(): array
+    {
+        try {
+            $sql = 'SELECT 表名 FROM def_config_table WHERE 有效标识="1"';
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                return [];
+            }
+
+            $tables = [];
+            foreach ($result->getResultArray() as $row) {
+                $name = strtolower(trim((string) ($row['表名'] ?? '')));
+                if ($name !== '') {
+                    $tables[] = $name;
+                }
+            }
+            return $tables;
+        } catch (\Throwable $e) {
+            log_message('error', '[ConfigTableFingerprint] 读取 def_config_table 失败: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * 清除监控表清单缓存（def_config_table 被修改后调用）
+     */
+    public function invalidateMonitoredTablesCache(): void
+    {
+        $this->cache->delete(self::MONITORED_TABLES_CACHE_KEY);
+        self::$monitoredTablesCache = null;
     }
 
     /**
@@ -185,10 +286,12 @@ class ConfigTableFingerprint
      */
     public function invalidateAll(): void
     {
-        foreach (self::MONITORED_TABLES as $table) {
+        foreach ($this->getMonitoredTables() as $table) {
             $this->cache->delete(self::FP_CACHE_PREFIX . $table);
             unset(self::$localCache[$table]);
         }
+        // 同步清除监控表清单缓存（def_config_table 可能也被修改）
+        $this->invalidateMonitoredTablesCache();
     }
 
     /**
