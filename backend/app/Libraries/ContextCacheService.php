@@ -28,11 +28,39 @@ class ContextCacheService
     private const CACHE_TTL_SECONDS = 1800;
     private const INDEX_TTL_SECONDS = 86400;
 
+    /**
+     * 上下文缓存关联的配置表清单
+     *
+     * 工作台上下文由以下表的查询结果组合而成，任一表变更都应使上下文缓存失效：
+     *  - def_user + def_role_group：用户授权信息
+     *  - def_function：功能授权
+     *  - def_query_config：查询配置
+     *  - view_function：列定义（依赖 def_query_column + def_function）
+     *  - def_role：角色级赋权
+     */
+    private const FP_TABLES = [
+        'def_user',
+        'def_role_group',
+        'def_role',
+        'def_function',
+        'def_query_config',
+        'view_function',
+    ];
+
     private CacheInterface $cache;
+    private ?ConfigTableFingerprint $fingerprintService = null;
 
     public function __construct()
     {
         $this->cache = Services::cache();
+    }
+
+    /**
+     * 获取指纹服务（懒加载）
+     */
+    private function getFingerprintService(): ConfigTableFingerprint
+    {
+        return $this->fingerprintService ??= new ConfigTableFingerprint();
     }
 
     /**
@@ -50,31 +78,87 @@ class ContextCacheService
     }
 
     /**
-     * 读取缓存
+     * 读取缓存（带多表指纹校验）
      *
-     * @return array|null 命中返回 [context, definition, ...]，未命中返回 null
+     * 方案 C：先读缓存，再校验关联的所有配置表指纹。
+     * 任一表指纹不一致即视为缓存失效，触发重建。
+     *
+     * @return array|null 命中且指纹一致返回 [context, definition, ...]，否则返回 null
      */
     public function get(string $cacheKey): ?array
     {
         $cached = $this->cache->get($cacheKey);
-        if (is_array($cached) && isset($cached['context'], $cached['definition'])) {
-            return $cached;
+        if (!is_array($cached) || !isset($cached['context'], $cached['definition'])) {
+            return null;
         }
-        return null;
+
+        // 校验指纹（批量查询所有关联表，一次 SQL 完成）
+        $cachedFingerprints = $cached['__fingerprints'] ?? [];
+        if (!$this->validateFingerprints($cachedFingerprints)) {
+            log_message('debug', sprintf(
+                '[ContextCacheService] 指纹校验失败，缓存失效: key=%s',
+                $cacheKey
+            ));
+            $this->cache->delete($cacheKey);
+            return null;
+        }
+
+        return $cached;
     }
 
     /**
-     * 写入缓存并同步更新反向索引
+     * 写入缓存并同步更新反向索引（含多表指纹）
+     *
+     * @param string $cacheKey    缓存键
+     * @param array  $context     上下文数据
+     * @param array  $definition  前端定义
      */
     public function save(string $cacheKey, array $context, array $definition): void
     {
+        // 批量获取所有关联表的当前指纹（一次 SQL）
+        $fingerprints = $this->getFingerprintService()->getFingerprints(self::FP_TABLES);
+
         $this->cache->save($cacheKey, [
             'context' => $context,
             'definition' => $definition,
+            '__fingerprints' => $fingerprints,
             'cachedAt' => time(),
         ], self::CACHE_TTL_SECONDS);
 
         $this->addToIndex($cacheKey);
+    }
+
+    /**
+     * 校验缓存中的指纹是否与当前表指纹一致
+     *
+     * @param array $cachedFingerprints 缓存中存储的指纹映射 [tableName => fingerprint]
+     * @return bool true=全部一致，false=任一不一致或缺失
+     */
+    private function validateFingerprints(array $cachedFingerprints): bool
+    {
+        if (empty($cachedFingerprints)) {
+            // 旧版本缓存无指纹，保守视为无效
+            return false;
+        }
+
+        // 批量查当前指纹（一次 SQL 查询所有关联表）
+        $currentFingerprints = $this->getFingerprintService()->getFingerprints(self::FP_TABLES);
+
+        foreach (self::FP_TABLES as $table) {
+            $cached = (string) ($cachedFingerprints[$table] ?? '');
+            $current = (string) ($currentFingerprints[$table] ?? '');
+            if ($cached !== $current) {
+                log_message('debug', sprintf(
+                    '[ContextCacheService] 指纹不一致: table=%s, cached=%s, current=%s',
+                    $table,
+                    $cached,
+                    $current
+                ));
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

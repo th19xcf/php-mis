@@ -26,24 +26,105 @@ class MetadataCache
      *
      * 用于 invalidateTable 时反查需要清理的索引归属。
      * 注意：popup_column_map 是无 hash 的固定键，单独列出。
+     * 扩展覆盖全部 16 张配置表 + view_function，与 RecordEditService/BatchEditService 的监控清单对齐。
      */
     private const TABLE_KEY_PREFIXES = [
-        'def_query_column'      => ['metadata_popup_column_map', 'metadata_popup_config_'],
-        'def_chart_drill_config' => ['metadata_chart_drill_'],
-        'def_query_config'      => ['metadata_query_config_', 'metadata_query_config_by_fn_', 'metadata_primary_key_'],
-        'def_user'              => ['metadata_user_info_'],
-        'def_function'          => ['metadata_function_', 'metadata_function_by_module_', 'metadata_query_config_by_fn_', 'metadata_primary_key_'],
-        'view_function'         => ['metadata_view_function_'],
+        'def_query_column'        => ['metadata_popup_column_map', 'metadata_popup_config_'],
+        'def_chart_drill_config'  => ['metadata_chart_drill_'],
+        'def_query_config'        => ['metadata_query_config_', 'metadata_query_config_by_fn_', 'metadata_primary_key_'],
+        'def_user'                => ['metadata_user_info_', 'metadata_user_auth_'],
+        'def_function'            => ['metadata_function_', 'metadata_function_by_module_', 'metadata_query_config_by_fn_', 'metadata_primary_key_'],
+        'view_function'           => ['metadata_view_function_'],
+        // 以下表原先无对应缓存键前缀，现补充空数组以使 invalidateTable 不再拒绝它们
+        // （这些表的数据通过 ContextCacheService 的上下文缓存间接缓存，主动失效时由 ContextService.clearCache 联动处理）
+        'def_chart_config'        => [],
+        'def_chart_chart_column'  => [],
+        'def_role_group'          => [],
+        'def_role'                => [],
+        'def_function_group'      => [],
+        'def_drill_config'        => [],
+        'def_import_config'       => [],
+        'def_import_column'       => [],
+        'def_comment_config'      => [],
+        'def_object'              => [],
+        'def_match_config'        => [],
     ];
 
     private CacheInterface $cache;
     private Mcommon $model;
     private array $listeners = [];
+    private ?ConfigTableFingerprint $fingerprintService = null;
 
     public function __construct()
     {
         $this->cache = Services::cache();
         $this->model = new Mcommon();
+    }
+
+    /**
+     * 获取指纹服务（懒加载）
+     */
+    private function getFingerprintService(): ConfigTableFingerprint
+    {
+        return $this->fingerprintService ??= new ConfigTableFingerprint();
+    }
+
+    /**
+     * 带指纹校验的缓存读取
+     *
+     * 方案 C：先读缓存（同时拿到数据和指纹），再校验指纹是否与当前表一致。
+     * - 缓存未命中 → 返回 null（由调用方查 DB 重建）
+     * - 缓存命中但指纹不一致 → 删除旧缓存返回 null（触发重建）
+     * - 缓存命中且指纹一致 → 返回数据
+     *
+     * @param string $cacheKey   缓存键
+     * @param string $tableName  关联的配置表名（用于指纹校验）
+     * @return array|null 命中且指纹一致返回数据数组，否则返回 null
+     */
+    private function getWithFingerprint(string $cacheKey, string $tableName): ?array
+    {
+        $cached = $this->cache->get($cacheKey);
+        if (!is_array($cached) || !isset($cached['__data'])) {
+            return null;
+        }
+
+        // 缓存命中，校验指纹
+        $cachedFp = (string) ($cached['__fp'] ?? '');
+        if (!$this->getFingerprintService()->isValid($tableName, $cachedFp)) {
+            log_message('debug', sprintf(
+                '[MetadataCache] 指纹校验失败，缓存失效: table=%s, key=%s',
+                $tableName,
+                $cacheKey
+            ));
+            $this->cache->delete($cacheKey);
+            return null;
+        }
+
+        return $cached['__data'];
+    }
+
+    /**
+     * 带指纹的缓存写入
+     *
+     * 将数据和表指纹一起打包存储，供读取时校验。
+     *
+     * @param string $cacheKey   缓存键
+     * @param array  $data       业务数据
+     * @param string $tableName  关联的配置表名
+     * @param int    $ttl        缓存 TTL（秒）
+     */
+    private function saveWithFingerprint(string $cacheKey, array $data, string $tableName, int $ttl): void
+    {
+        $fingerprint = $this->getFingerprintService()->getFingerprint($tableName);
+
+        $this->cache->save($cacheKey, [
+            '__data' => $data,
+            '__fp' => $fingerprint,
+            '__fpTable' => $tableName,
+            '__cachedAt' => time(),
+        ], $ttl);
+
+        $this->addToIndex($tableName, $cacheKey);
     }
 
     /**
@@ -79,8 +160,8 @@ class MetadataCache
     public function getPopupColumnMap(): array
     {
         $cacheKey = self::CACHE_PREFIX . 'popup_column_map';
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_query_column');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getPopupColumnMap 缓存命中');
             return $cached;
         }
@@ -115,8 +196,7 @@ class MetadataCache
             }
         }
 
-        $this->cache->save($cacheKey, $map, self::TTL_DEF_QUERY_COLUMN);
-        $this->addToIndex('def_query_column', $cacheKey);
+        $this->saveWithFingerprint($cacheKey, $map, 'def_query_column', self::TTL_DEF_QUERY_COLUMN);
         log_message('info', '[MetadataCache] getPopupColumnMap 缓存写入, ' . count($map) . ' 条');
 
         return $map;
@@ -131,8 +211,8 @@ class MetadataCache
     public function getPopupConfigByObject(string $objectName): ?array
     {
         $cacheKey = self::CACHE_PREFIX . 'popup_config_' . md5($objectName);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_query_column');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getPopupConfigByObject 缓存命中: ' . $objectName);
             return $cached;
         }
@@ -162,8 +242,7 @@ class MetadataCache
             '对象表名' => $row['对象表名'],
         ];
 
-        $this->cache->save($cacheKey, $config, self::TTL_DEF_QUERY_COLUMN);
-        $this->addToIndex('def_query_column', $cacheKey);
+        $this->saveWithFingerprint($cacheKey, $config, 'def_query_column', self::TTL_DEF_QUERY_COLUMN);
         log_message('debug', '[MetadataCache] getPopupConfigByObject 缓存写入: ' . $objectName);
 
         return $config;
@@ -178,8 +257,8 @@ class MetadataCache
     public function getChartDrillConfig(string $drillModule): array
     {
         $cacheKey = self::CACHE_PREFIX . 'chart_drill_' . md5($drillModule);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_chart_drill_config');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getChartDrillConfig 缓存命中: ' . $drillModule);
             return $cached;
         }
@@ -197,8 +276,7 @@ class MetadataCache
         }
 
         $config = $result->getResultArray();
-        $this->cache->save($cacheKey, $config, self::TTL_DEF_CHART_DRILL_CONFIG);
-        $this->addToIndex('def_chart_drill_config', $cacheKey);
+        $this->saveWithFingerprint($cacheKey, $config, 'def_chart_drill_config', self::TTL_DEF_CHART_DRILL_CONFIG);
         log_message('debug', '[MetadataCache] getChartDrillConfig 缓存写入: ' . $drillModule . ', ' . count($config) . ' 条');
 
         return $config;
@@ -213,8 +291,8 @@ class MetadataCache
     public function getQueryConfig(string $functionCode): ?array
     {
         $cacheKey = self::CACHE_PREFIX . 'query_config_' . md5($functionCode);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_query_config');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getQueryConfig 缓存命中: ' . $functionCode);
             return $cached;
         }
@@ -231,8 +309,7 @@ class MetadataCache
 
         $config = $result->getRowArray();
         if ($config !== null) {
-            $this->cache->save($cacheKey, $config, self::TTL_DEF_QUERY_CONFIG);
-            $this->addToIndex('def_query_config', $cacheKey);
+            $this->saveWithFingerprint($cacheKey, $config, 'def_query_config', self::TTL_DEF_QUERY_CONFIG);
             log_message('debug', '[MetadataCache] getQueryConfig 缓存写入: ' . $functionCode);
         }
 
@@ -249,8 +326,8 @@ class MetadataCache
     public function getUserInfo(string $workId, string $region): ?array
     {
         $cacheKey = self::CACHE_PREFIX . 'user_info_' . md5($workId . $region);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_user');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getUserInfo 缓存命中: ' . $workId);
             return $cached;
         }
@@ -270,8 +347,7 @@ class MetadataCache
 
         $user = $result->getRowArray();
         if ($user !== null) {
-            $this->cache->save($cacheKey, $user, self::TTL_DEF_USER);
-            $this->addToIndex('def_user', $cacheKey);
+            $this->saveWithFingerprint($cacheKey, $user, 'def_user', self::TTL_DEF_USER);
             log_message('debug', '[MetadataCache] getUserInfo 缓存写入: ' . $workId);
         }
 
@@ -295,8 +371,8 @@ class MetadataCache
     public function getUserAuthorization(string $workId, string $region): ?array
     {
         $cacheKey = self::CACHE_PREFIX . 'user_auth_' . md5($workId . $region);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_user');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getUserAuthorization 缓存命中: ' . $workId);
             return $cached;
         }
@@ -343,8 +419,7 @@ class MetadataCache
 
         $row = $result->getRowArray();
         if ($row !== null) {
-            $this->cache->save($cacheKey, $row, self::TTL_DEF_USER);
-            $this->addToIndex('def_user', $cacheKey);
+            $this->saveWithFingerprint($cacheKey, $row, 'def_user', self::TTL_DEF_USER);
             log_message('debug', '[MetadataCache] getUserAuthorization 缓存写入: ' . $workId);
         }
 
@@ -367,8 +442,8 @@ class MetadataCache
     public function getQueryConfigByFunction(string $functionCode): ?array
     {
         $cacheKey = self::CACHE_PREFIX . 'query_config_by_fn_' . md5($functionCode);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_query_config');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getQueryConfigByFunction 缓存命中: ' . $functionCode);
             return $cached;
         }
@@ -398,8 +473,7 @@ class MetadataCache
 
         $row = $result->getRowArray();
         if ($row !== null) {
-            $this->cache->save($cacheKey, $row, self::TTL_DEF_QUERY_CONFIG);
-            $this->addToIndex('def_query_config', $cacheKey);
+            $this->saveWithFingerprint($cacheKey, $row, 'def_query_config', self::TTL_DEF_QUERY_CONFIG);
             log_message('debug', '[MetadataCache] getQueryConfigByFunction 缓存写入: ' . $functionCode);
         }
 
@@ -428,9 +502,16 @@ class MetadataCache
     {
         $cacheKey = self::CACHE_PREFIX . 'primary_key_' . md5($functionCode);
         $cached = $this->cache->get($cacheKey);
-        if (is_string($cached) && $cached !== '') {
-            log_message('debug', '[MetadataCache] getPrimaryKey 缓存命中: ' . $functionCode);
-            return $cached;
+        // getPrimaryKey 返回字符串，无法用 getWithFingerprint（要求数组）
+        // 这里采用内联指纹校验：缓存格式为 ['__data' => pk, '__fp' => fingerprint]
+        if (is_array($cached) && isset($cached['__data']) && is_string($cached['__data']) && $cached['__data'] !== '') {
+            $cachedFp = (string) ($cached['__fp'] ?? '');
+            if ($this->getFingerprintService()->isValid('def_query_config', $cachedFp)) {
+                log_message('debug', '[MetadataCache] getPrimaryKey 缓存命中: ' . $functionCode);
+                return $cached['__data'];
+            }
+            log_message('debug', '[MetadataCache] getPrimaryKey 指纹校验失败，重建: ' . $functionCode);
+            $this->cache->delete($cacheKey);
         }
 
         // 1. 优先查 def_query_config.主键字段
@@ -443,8 +524,7 @@ class MetadataCache
         $result = $this->model->select($sql);
         if ($result !== false && ($row = $result->getRowArray()) && !empty($row['主键字段'])) {
             $primaryKey = (string) $row['主键字段'];
-            $this->cache->save($cacheKey, $primaryKey, self::INDEX_TTL_SECONDS);
-            $this->addToIndex('def_query_config', $cacheKey);
+            $this->savePrimaryKeyWithFingerprint($cacheKey, $primaryKey);
             log_message('debug', '[MetadataCache] getPrimaryKey 缓存写入(def_query_config): ' . $functionCode);
             return $primaryKey;
         }
@@ -458,14 +538,33 @@ class MetadataCache
         if ($result !== false && ($row = $result->getRowArray())) {
             $primaryKey = (string) ($row['Column_name'] ?? '');
             if ($primaryKey !== '') {
-                $this->cache->save($cacheKey, $primaryKey, self::INDEX_TTL_SECONDS);
-                $this->addToIndex('def_query_config', $cacheKey);
+                $this->savePrimaryKeyWithFingerprint($cacheKey, $primaryKey);
                 log_message('debug', '[MetadataCache] getPrimaryKey 缓存写入(SHOW INDEX): ' . $functionCode);
             }
             return $primaryKey;
         }
 
         return '';
+    }
+
+    /**
+     * 保存主键缓存（字符串值）并附带表指纹
+     *
+     * getPrimaryKey 返回类型为 string，无法直接用 saveWithFingerprint（要求数组），
+     * 这里单独封装字符串版本的指纹写入。
+     */
+    private function savePrimaryKeyWithFingerprint(string $cacheKey, string $primaryKey): void
+    {
+        $fingerprint = $this->getFingerprintService()->getFingerprint('def_query_config');
+
+        $this->cache->save($cacheKey, [
+            '__data' => $primaryKey,
+            '__fp' => $fingerprint,
+            '__fpTable' => 'def_query_config',
+            '__cachedAt' => time(),
+        ], self::INDEX_TTL_SECONDS);
+
+        $this->addToIndex('def_query_config', $cacheKey);
     }
 
     /**
@@ -480,8 +579,8 @@ class MetadataCache
     public function getFunctionConfig(string $functionCode): ?array
     {
         $cacheKey = self::CACHE_PREFIX . 'function_' . md5($functionCode);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_function');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getFunctionConfig 缓存命中: ' . $functionCode);
             return $cached;
         }
@@ -498,8 +597,7 @@ class MetadataCache
 
         $row = $result->getRowArray();
         if ($row !== null) {
-            $this->cache->save($cacheKey, $row, self::TTL_DEF_FUNCTION);
-            $this->addToIndex('def_function', $cacheKey);
+            $this->saveWithFingerprint($cacheKey, $row, 'def_function', self::TTL_DEF_FUNCTION);
             log_message('debug', '[MetadataCache] getFunctionConfig 缓存写入: ' . $functionCode);
         }
 
@@ -517,8 +615,8 @@ class MetadataCache
     public function getFunctionConfigByModule(string $moduleName): ?array
     {
         $cacheKey = self::CACHE_PREFIX . 'function_by_module_' . md5($moduleName);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'def_function');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getFunctionConfigByModule 缓存命中: ' . $moduleName);
             return $cached;
         }
@@ -535,8 +633,7 @@ class MetadataCache
 
         $row = $result->getRowArray();
         if ($row !== null) {
-            $this->cache->save($cacheKey, $row, self::TTL_DEF_FUNCTION);
-            $this->addToIndex('def_function', $cacheKey);
+            $this->saveWithFingerprint($cacheKey, $row, 'def_function', self::TTL_DEF_FUNCTION);
             log_message('debug', '[MetadataCache] getFunctionConfigByModule 缓存写入: ' . $moduleName);
         }
 
@@ -555,8 +652,8 @@ class MetadataCache
     public function getViewFunctionColumns(string $functionCode): array
     {
         $cacheKey = self::CACHE_PREFIX . 'view_function_' . md5($functionCode);
-        $cached = $this->cache->get($cacheKey);
-        if (is_array($cached)) {
+        $cached = $this->getWithFingerprint($cacheKey, 'view_function');
+        if ($cached !== null) {
             log_message('debug', '[MetadataCache] getViewFunctionColumns 缓存命中: ' . $functionCode);
             return $cached;
         }
@@ -579,8 +676,7 @@ class MetadataCache
         $result = $this->model->select($sql);
         $rows = ($result !== false) ? $result->getResultArray() : [];
 
-        $this->cache->save($cacheKey, $rows, self::TTL_VIEW_FUNCTION);
-        $this->addToIndex('view_function', $cacheKey);
+        $this->saveWithFingerprint($cacheKey, $rows, 'view_function', self::TTL_VIEW_FUNCTION);
         log_message('debug', '[MetadataCache] getViewFunctionColumns 缓存写入: ' . $functionCode . ' (' . count($rows) . ' rows)');
 
         return $rows;
@@ -612,6 +708,9 @@ class MetadataCache
             $this->cache->delete(self::CACHE_PREFIX . 'popup_column_map');
         }
 
+        // 联动清除该表的指纹缓存（避免下次读取时指纹仍为旧值导致校验通过错误缓存）
+        $this->getFingerprintService()->invalidate($tableName);
+
         log_message('info', sprintf(
             '[MetadataCache] %s 缓存已失效，删除 %d 条',
             $tableName,
@@ -629,6 +728,8 @@ class MetadataCache
     public function invalidateAll(): void
     {
         $this->cache->clean();
+        // 全量清理时同步清除所有指纹缓存，避免下次读取命中旧指纹
+        $this->getFingerprintService()->invalidateAll();
         log_message('info', '[MetadataCache] 所有元数据缓存已失效（全量清理）');
         $this->triggerInvalidate('all');
     }
