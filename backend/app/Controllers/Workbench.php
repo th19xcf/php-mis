@@ -3,7 +3,6 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
-use App\Controllers\Workbench\WorkbenchResponseTrait;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
@@ -27,8 +26,6 @@ use App\Services\Workbench\ContextService;
  */
 class Workbench extends BaseApiController
 {
-    use WorkbenchResponseTrait;
-
     private ChartService $chartService;
     private DrillService $drillService;
     private EditService $editService;

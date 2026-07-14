@@ -18,8 +18,6 @@ use App\Services\Workbench\ImportService;
  */
 class WorkbenchImportController extends BaseApiController
 {
-    use WorkbenchResponseTrait;
-
     private ImportService $importService;
 
     public function initController(
@@ -48,7 +46,7 @@ class WorkbenchImportController extends BaseApiController
             $userWorkid = $payload['userWorkid'] ?? '';
             $sampleData = $payload['sampleData'] ?? [];
 
-            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            $queryConfig = $this->getAuthorizationService()->loadQueryConfig($functionCode, '');
             $dataTable = $queryConfig['dataTable'] ?? '';
             $importModule = $queryConfig['importModule'] ?? '';
 
@@ -151,7 +149,7 @@ class WorkbenchImportController extends BaseApiController
             ];
 
             // 2. 加载查询配置
-            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            $queryConfig = $this->getAuthorizationService()->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
                 throw new BusinessException('未找到数据表配置');
             }

@@ -6,8 +6,9 @@ class InvitationApi extends BaseApiController
 {
     public function tree()
     {
-        $resolvedAuth = $this->resolveLocationAuthz('2015');
-        $locationAuthzCond = $this->buildLocationCondition('属地', $resolvedAuth);
+        $service = $this->getAuthorizationService();
+        $resolvedAuth = $service->resolveLocationAuth('2015');
+        $locationAuthzCond = $service->buildCondition('属地', $resolvedAuth, false);
         if ($locationAuthzCond === '') {
             $locationAuthzCond = '1=1';
         }
@@ -188,7 +189,7 @@ class InvitationApi extends BaseApiController
 
     public function options()
     {
-        $resolvedAuth = $this->resolveLocationAuthz('2015');
+        $resolvedAuth = $this->getAuthorizationService()->resolveLocationAuth('2015');
         $locationAuthz = $resolvedAuth;
 
         $regionSql = sprintf('

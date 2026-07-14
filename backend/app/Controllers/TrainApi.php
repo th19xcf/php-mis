@@ -6,8 +6,9 @@ class TrainApi extends BaseApiController
 {
     public function tree()
     {
-        $resolvedAuth = $this->resolveLocationAuthz('2035');
-        $locationAuthzCond = $this->buildLocationCondition('属地', $resolvedAuth);
+        $service = $this->getAuthorizationService();
+        $resolvedAuth = $service->resolveLocationAuth('2035');
+        $locationAuthzCond = $service->buildCondition('属地', $resolvedAuth, false);
         if ($locationAuthzCond === '') {
             $locationAuthzCond = '1=1';
         }
@@ -254,7 +255,7 @@ class TrainApi extends BaseApiController
 
     public function options()
     {
-        $resolvedAuth = $this->resolveLocationAuthz('2035');
+        $resolvedAuth = $this->getAuthorizationService()->resolveLocationAuth('2035');
         $locationAuthz = $resolvedAuth;
 
         $regionSql = sprintf('

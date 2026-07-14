@@ -15,8 +15,9 @@ class EmployeeApi extends BaseApiController
 
     public function tree()
     {
-        $resolvedAuth = $this->resolveLocationAuthz('2045');
-        $locationAuthzCond = $this->buildLocationCondition('属地', $resolvedAuth);
+        $service = $this->getAuthorizationService();
+        $resolvedAuth = $service->resolveLocationAuth('2045');
+        $locationAuthzCond = $service->buildCondition('属地', $resolvedAuth, false);
 
         $data = $this->getService()->getEmployeeList($locationAuthzCond);
         $tree = $this->getService()->buildGroupedEmployeeTree($data);
@@ -120,7 +121,7 @@ class EmployeeApi extends BaseApiController
 
     public function options()
     {
-        $resolvedAuth = $this->resolveLocationAuthz('2045');
+        $resolvedAuth = $this->getAuthorizationService()->resolveLocationAuth('2045');
         $options = $this->getService()->getEmployeeOptions($resolvedAuth);
 
         return $this->success($options);

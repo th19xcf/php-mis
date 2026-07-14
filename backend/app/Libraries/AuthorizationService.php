@@ -117,6 +117,26 @@ class AuthorizationService
     }
 
     /**
+     * 解析属地授权（完整流程：加载用户级 + 角色级 → resolve）
+     *
+     * 替代 BaseApiController::resolveLocationAuthz，控制器直接调用此方法。
+     *
+     * @param string $functionCode 功能编码
+     * @return string 解析后的授权值（逗号分隔，或 | 分隔的用户级|角色级）
+     */
+    public function resolveLocationAuth(string $functionCode): string
+    {
+        $sessionUser = (new SessionUserContext())->getSessionUser();
+        $employeeRegion = (string) ($sessionUser['location'] ?? '');
+        $roleAuthz = (string) ($sessionUser['roleAuthz'] ?? '');
+
+        $userAuth = $this->loadUserAuthField('属地赋权', (string) ($sessionUser['workId'] ?? ''), $employeeRegion);
+        $roleAuth = $this->loadRoleAuthField($functionCode, '属地赋权', '角色表属地', $roleAuthz);
+
+        return $this->resolve($userAuth, $roleAuth, $employeeRegion);
+    }
+
+    /**
      * 加载 def_user 上"按人员/属地"的赋权字段（如 属地赋权 / 部门全称赋权）。
      *
      * 默认从 SessionUserContext 取 workId 与 region；

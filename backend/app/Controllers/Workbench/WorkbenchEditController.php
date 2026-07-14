@@ -18,8 +18,6 @@ use App\Services\Workbench\EditService;
  */
 class WorkbenchEditController extends BaseApiController
 {
-    use WorkbenchResponseTrait;
-
     private EditService $editService;
 
     public function initController(
@@ -163,9 +161,9 @@ class WorkbenchEditController extends BaseApiController
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '未指定要修改的记录');
             }
 
-            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            $queryConfig = $this->getAuthorizationService()->loadQueryConfig($functionCode, '');
             $dataTable  = $queryConfig['dataTable'] ?? '';
-            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            $primaryKey = (new \App\Libraries\MetadataCache())->getPrimaryKey($functionCode, $queryConfig['dataTable'] ?? '');
 
             $result = $this->editService->getUpdateFields(
                 $functionCode,
@@ -202,14 +200,14 @@ class WorkbenchEditController extends BaseApiController
 
             $userWorkid = $this->userContext->getWorkId();
 
-            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            $queryConfig = $this->getAuthorizationService()->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'] ?? '0';
 
-            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            $primaryKey = (new \App\Libraries\MetadataCache())->getPrimaryKey($functionCode, $queryConfig['dataTable'] ?? '');
             if (empty($primaryKey)) {
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到主键字段');
             }
@@ -263,14 +261,14 @@ class WorkbenchEditController extends BaseApiController
 
             $userWorkid = $this->userContext->getWorkId();
 
-            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            $queryConfig = $this->getAuthorizationService()->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'] ?? '0';
 
-            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            $primaryKey = (new \App\Libraries\MetadataCache())->getPrimaryKey($functionCode, $queryConfig['dataTable'] ?? '');
             if (empty($primaryKey)) {
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到主键字段');
             }
@@ -320,14 +318,14 @@ class WorkbenchEditController extends BaseApiController
 
             $userWorkid = $this->userContext->getWorkId();
 
-            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            $queryConfig = $this->getAuthorizationService()->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '删除失败：未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'] ?? '0';
 
-            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            $primaryKey = (new \App\Libraries\MetadataCache())->getPrimaryKey($functionCode, $queryConfig['dataTable'] ?? '');
             if (empty($primaryKey)) {
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '删除失败：未找到主键字段');
             }
@@ -375,14 +373,14 @@ class WorkbenchEditController extends BaseApiController
 
             $userWorkid = $this->userContext->getWorkId();
 
-            $queryConfig = $this->loadQueryConfig($functionCode, '');
+            $queryConfig = $this->getAuthorizationService()->loadQueryConfig($functionCode, '');
             if (!$queryConfig || ($queryConfig['dataTable'] ?? '') === '') {
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到数据表配置');
             }
             $dataTable = $queryConfig['dataTable'];
             $dataModel = $queryConfig['dataModel'] ?? '0';
 
-            $primaryKey = $this->getPrimaryKey($functionCode, $queryConfig);
+            $primaryKey = (new \App\Libraries\MetadataCache())->getPrimaryKey($functionCode, $queryConfig['dataTable'] ?? '');
             if (empty($primaryKey)) {
                 return $this->error(ApiCode::WORKBENCH_TABLE_CONFIG_MISSING, '修改失败：未找到主键字段');
             }

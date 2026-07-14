@@ -14,8 +14,6 @@ use App\Services\Workbench\PopupService;
  */
 class WorkbenchPopupController extends BaseApiController
 {
-    use WorkbenchResponseTrait;
-
     private PopupService $popupService;
 
     public function initController(

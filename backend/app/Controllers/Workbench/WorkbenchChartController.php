@@ -19,8 +19,6 @@ use App\Services\Workbench\ContextService;
  */
 class WorkbenchChartController extends BaseApiController
 {
-    use WorkbenchResponseTrait;
-
     private ChartService $chartService;
     private ChartDrillService $chartDrillService;
     private ContextService $contextService;

@@ -153,55 +153,6 @@ class BaseApiController extends BaseController
         return $this->userContext->getDeptAuthz();
     }
 
-    protected function getLocationAuthz(): string
-    {
-        return $this->userContext->getLocationAuthz();
-    }
-
-    protected function resolveLocationAuthz(string $functionCode): string
-    {
-        $user = $this->userContext->getSessionUser();
-        $employeeRegion = (string) ($user['location'] ?? '');
-
-        $service = $this->getAuthorizationService();
-        $userLocationAuth = $service->loadUserAuthField('属地赋权');
-        $roleLocationAuth = $service->loadRoleAuthField(
-            $functionCode,
-            '属地赋权',
-            '角色表属地',
-            (string) ($user['roleAuthz'] ?? '')
-        );
-
-        return $service->resolve($userLocationAuth, $roleLocationAuth, $employeeRegion);
-    }
-
-    protected function buildLocationCondition(string $field, string $resolvedAuth, bool $upkeepAuth = false): string
-    {
-        return $this->getAuthorizationService()->buildCondition($field, $resolvedAuth, $upkeepAuth);
-    }
-
-    protected function resolveDeptNameAuthz(string $functionCode): string
-    {
-        $user = $this->userContext->getSessionUser();
-        $employeeDeptName = (string) ($user['deptName'] ?? '');
-
-        $service = $this->getAuthorizationService();
-        $userDeptNameAuth = $service->loadUserAuthField('部门全称赋权');
-        $roleDeptNameAuth = $service->loadRoleAuthField(
-            $functionCode,
-            '部门全称赋权',
-            '全称赋权',
-            (string) ($user['roleAuthz'] ?? '')
-        );
-
-        return $service->resolveDeptName($userDeptNameAuth, $roleDeptNameAuth, $employeeDeptName);
-    }
-
-    protected function buildDeptNameCondition(string $field, string $resolvedAuth, bool $upkeepAuth = false): string
-    {
-        return $this->getAuthorizationService()->buildDeptNameCondition($field, $resolvedAuth, $upkeepAuth);
-    }
-
     /**
      * 获取 AuthorizationService 单例（请求内缓存，避免重复实例化）
      */
