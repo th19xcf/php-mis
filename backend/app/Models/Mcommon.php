@@ -42,56 +42,17 @@ class Mcommon extends Model
     private function getDb(): object
     {
         if ($this->dbInstance === null) {
-            $overallT0 = hrtime(true);
-
-            // 1. DNS 解析诊断
-            $hostname = env('database.btdc.hostname', 'localhost');
-            $dnsT0 = hrtime(true);
-            $ip = gethostbyname($hostname);
-            $dnsMs = (hrtime(true) - $dnsT0) / 1e6;
-            log_message('debug', sprintf('[Mcommon][连接诊断] DNS解析 %s -> %s: %.2fms', $hostname, $ip, $dnsMs));
-            self::$sqlTrace[] = [
-                'sql' => base64_encode('[DNS解析]'),
-                'ms' => round($dnsMs, 2)
-            ];
-
-            // 2. db_connect() 对象创建（CodeIgniter 可能延迟建立实际连接）
-            $connectT0 = hrtime(true);
+            // pConnect=true 时复用 PHP-FPM worker 内的 TCP+MySQL 持久连接
+            // CodeIgniter 默认延迟连接,首次业务 SQL 会自动触发建连,无需手动 SELECT 1 预热
             $this->dbInstance = db_connect('btdc');
-            $connectObjMs = (hrtime(true) - $connectT0) / 1e6;
-            log_message('debug', sprintf('[Mcommon][连接诊断] db_connect() 对象创建: %.2fms', $connectObjMs));
-            self::$sqlTrace[] = [
-                'sql' => base64_encode('[db_connect() 对象创建]'),
-                'ms' => round($connectObjMs, 2)
-            ];
 
-            // 3. 执行首次查询强制建立实际 TCP + MySQL 连接
-            $firstQueryT0 = hrtime(true);
-            $this->dbInstance->query('SELECT 1');
-            $firstQueryMs = (hrtime(true) - $firstQueryT0) / 1e6;
-            log_message('debug', sprintf('[Mcommon][连接诊断] 首次查询 SELECT 1 (触发实际连接): %.2fms', $firstQueryMs));
-            self::$sqlTrace[] = [
-                'sql' => base64_encode('[首次查询 SELECT 1]'),
-                'ms' => round($firstQueryMs, 2)
-            ];
-
-            // 4. 设置查询超时（30秒），防止远端MySQL慢查询卡死PHP单线程服务器
+            // 设置查询超时（30秒），防止远端 MySQL 慢查询卡死 PHP-FPM 同步服务器
+            // 若 MySQL 服务端有 SUPER 权限,可通过 SET GLOBAL max_execution_time=30000 下沉到服务端
             try {
-                $setT0 = hrtime(true);
                 $this->dbInstance->query('SET SESSION max_execution_time = 30000');
-                $setMs = (hrtime(true) - $setT0) / 1e6;
-                log_message('debug', sprintf('[Mcommon][连接诊断] SET max_execution_time: %.2fms', $setMs));
-
-                self::$sqlTrace[] = [
-                    'sql' => base64_encode('[SET max_execution_time]'),
-                    'ms' => round($setMs, 2)
-                ];
             } catch (\Throwable $e) {
                 log_message('warning', '[Mcommon] 设置 max_execution_time 失败: ' . $e->getMessage());
             }
-
-            $overallMs = (hrtime(true) - $overallT0) / 1e6;
-            log_message('debug', sprintf('[Mcommon][连接诊断] 连接全流程总耗时: %.2fms', $overallMs));
         }
         return $this->dbInstance;
     }
