@@ -233,11 +233,16 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
 
     // 一级菜单图标映射
     const zhTitleIconMap: Record<string, string> = {
+      数据匹配: 'mdi:merge',
+      首页: 'mdi:monitor-dashboard',
       系统管理: 'mdi:cog-outline',
       管理信息: 'mdi:database',
       人员管理: 'mdi:account-heart',
       收入成本: 'mdi:cash',
-      经营分析: 'mdi:chart-line'
+      经营分析: 'mdi:chart-line',
+      合同管理: 'mdi:file-sign',
+      房产租赁: 'mdi:home-variant-outline',
+      财务管理: 'mdi:wallet'
     };
 
     const routes: ElegantConstRoute[] = [];
