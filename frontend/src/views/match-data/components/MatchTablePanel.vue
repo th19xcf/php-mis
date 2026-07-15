@@ -172,6 +172,9 @@ const columnDefs = computed<ColDef[]>(() => {
 
     if (col.type === '数值') {
       colDef.type = 'numericColumn';
+      colDef.headerClass = (colDef.headerClass ? colDef.headerClass + ' ' : '') + 'wb-numeric-header';
+      // 直接通过 inline style 右对齐，不依赖 CSS class
+      colDef.cellStyle = { textAlign: 'right', justifyContent: 'flex-end' };
     }
 
     if (col.field === props.data.matchCols.key) {

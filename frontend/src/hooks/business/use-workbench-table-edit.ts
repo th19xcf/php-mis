@@ -129,8 +129,17 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
         headerClass: headerClasses
       };
 
-      if (column.type === '数值') {
+      // 数值列右对齐基础样式：作用于 .ag-cell（flex 容器），
+      // 用 justify-content 把 .ag-cell-value（flex 子项）推到右侧。
+      // 同时保留 textAlign 作为非 flex 布局的兜底。
+      const isNumericColumn = column.type === '数值';
+      const numericBaseStyle: Record<string, string> | null = isNumericColumn
+        ? { textAlign: 'right', justifyContent: 'flex-end' }
+        : null;
+
+      if (isNumericColumn) {
         definition.type = 'numericColumn';
+        headerClasses.push('wb-numeric-header');
       }
 
       definition.cellStyle = (params: any) => {
@@ -141,9 +150,9 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
         const modifiedFields = modifiedRowsData.value.get(rowId);
         if (modifiedFields && column.field in modifiedFields) {
           if (options.isDarkMode.value) {
-            return { backgroundColor: '#856404', color: '#ffffff', border: 'none', outline: 'none', boxShadow: 'none' };
+            return { ...numericBaseStyle, backgroundColor: '#856404', color: '#ffffff', border: 'none', outline: 'none', boxShadow: 'none' };
           }
-          return { backgroundColor: '#fff3cd', color: '#000000', border: 'none', outline: 'none', boxShadow: 'none' };
+          return { ...numericBaseStyle, backgroundColor: '#fff3cd', color: '#000000', border: 'none', outline: 'none', boxShadow: 'none' };
         }
 
         if (column.colorMarkEnabled && options.colorMarkConfig.value) {
@@ -172,25 +181,25 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
                 match = val1 !== val2;
                 break;
             }
-            if (match) return style;
+            if (match) return { ...numericBaseStyle, ...style };
           }
         }
 
         if (column.errorCondition) {
           const errorKey = `异常^${column.field}`;
           if (data[errorKey] === '1' || data[errorKey] === 1) {
-            return parseStyleString(column.errorStyle || '');
+            return { ...numericBaseStyle, ...parseStyleString(column.errorStyle || '') };
           }
         }
 
         if (column.hintCondition) {
           const hintKey = `提示^${column.field}`;
           if (data[hintKey] === '1' || data[hintKey] === 1) {
-            return parseStyleString(column.hintStyle || '');
+            return { ...numericBaseStyle, ...parseStyleString(column.hintStyle || '') };
           }
         }
 
-        return null;
+        return numericBaseStyle;
       };
 
       return definition;
