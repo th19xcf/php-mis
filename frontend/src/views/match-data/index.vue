@@ -107,7 +107,9 @@ async function init() {
       meta.bMatchCols,
       pageData.aData.rows,
       pageData.bData.rows,
-      meta.matchConditions
+      meta.matchConditions,
+      meta.aCalcFields,
+      meta.bCalcFields
     );
   } catch (err: any) {
     error.value = err.message || '初始化失败';

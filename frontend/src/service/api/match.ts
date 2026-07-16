@@ -61,6 +61,8 @@ export interface MatchMeta {
   bMatchCols: { key: string; label: string; amount: string; target: string };
   matchConditions?: MatchCondition[];
   matchWrites?: MatchWrites;
+  aCalcFields?: string[];
+  bCalcFields?: string[];
 }
 
 export interface MatchPageResult {

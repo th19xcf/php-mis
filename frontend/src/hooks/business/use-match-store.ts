@@ -19,6 +19,7 @@ export interface MatchModuleData {
   rows: any[];
   total: number;
   matchCols: MatchColumnRole;
+  calcFields: string[];
   loading: boolean;
   gridApi: GridApi<any> | null;
 }
@@ -42,7 +43,9 @@ export interface MatchStore {
     aColumns: MatchColumn[], bColumns: MatchColumn[],
     aMatchCols: MatchColumnRole, bMatchCols: MatchColumnRole,
     aRows: any[], bRows: any[],
-    matchConditions?: MatchCondition[]
+    matchConditions?: MatchCondition[],
+    aCalcFields?: string[],
+    bCalcFields?: string[]
   ) => void;
   setAGridApi: (api: GridApi<any>) => void;
   setBGridApi: (api: GridApi<any>) => void;
@@ -93,6 +96,7 @@ export function useMatchStore(): MatchStore {
     rows: [],
     total: 0,
     matchCols: { key: '', label: '', amount: '', target: '' },
+    calcFields: [],
     loading: false,
     gridApi: null
   });
@@ -105,6 +109,7 @@ export function useMatchStore(): MatchStore {
     rows: [],
     total: 0,
     matchCols: { key: '', label: '', amount: '', target: '' },
+    calcFields: [],
     loading: false,
     gridApi: null
   });
@@ -246,7 +251,9 @@ export function useMatchStore(): MatchStore {
     aColumns: MatchColumn[], bColumns: MatchColumn[],
     aMatchCols: MatchColumnRole, bMatchCols: MatchColumnRole,
     aRows: any[], bRows: any[],
-    conditions?: MatchCondition[]
+    conditions?: MatchCondition[],
+    aCalcFields?: string[],
+    bCalcFields?: string[]
   ) {
     functionCode.value = fc;
 
@@ -262,6 +269,7 @@ export function useMatchStore(): MatchStore {
       rows: aRows,
       total: aRows.length,
       matchCols: aMatchCols,
+      calcFields: aCalcFields || [],
       loading: false,
       gridApi: aData.value.gridApi
     };
@@ -274,6 +282,7 @@ export function useMatchStore(): MatchStore {
       rows: bRows,
       total: bRows.length,
       matchCols: bMatchCols,
+      calcFields: bCalcFields || [],
       loading: false,
       gridApi: bData.value.gridApi
     };
@@ -403,6 +412,7 @@ export function useMatchStore(): MatchStore {
         rows: aRows,
         total: aRows.length,
         matchCols: data.meta.aMatchCols,
+        calcFields: data.meta.aCalcFields || aData.value.calcFields,
         loading: false,
         gridApi: aData.value.gridApi
       };
@@ -418,6 +428,7 @@ export function useMatchStore(): MatchStore {
         rows: bRows,
         total: bRows.length,
         matchCols: data.meta.bMatchCols,
+        calcFields: data.meta.bCalcFields || bData.value.calcFields,
         loading: false,
         gridApi: bData.value.gridApi
       };

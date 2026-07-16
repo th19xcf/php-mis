@@ -44,6 +44,7 @@ class MatchApi extends BaseApiController
             $matchConditions = $this->getMatchConditions($functionCode);
             $matchWrites = $this->getMatchWrites($functionCode);
             $matchKeyFields = $this->getMatchKeyFields($functionCode, $aModule, $bModule);
+            $matchCalcFields = $this->getMatchCalcFields($functionCode);
 
             // 构建 matchCols：key 从 def_match_config.A表主键/B表主键 读取
             // target 从写入指令的 targetField 推导（若无则回退到 view_function.可匹配=4）
@@ -90,6 +91,8 @@ class MatchApi extends BaseApiController
                     'bMatchCols' => $bMatchCols,
                     'matchConditions' => $matchConditions,
                     'matchWrites' => $matchWrites,
+                    'aCalcFields' => $matchCalcFields['aCalcFields'],
+                    'bCalcFields' => $matchCalcFields['bCalcFields'],
                 ],
                 'aData' => $aData,
                 'bData' => $bData,
@@ -815,6 +818,37 @@ class MatchApi extends BaseApiController
         $bKey = $cfgBKey !== '' ? $cfgBKey : ($this->getMatchColumns($bModule)['key'] ?? '');
 
         return ['aKey' => $aKey, 'bKey' => $bKey];
+    }
+
+    /**
+     * 读取 def_match_config 的 A表计算字段/B表计算字段
+     *
+     * def_match_config.A表计算字段/B表计算字段 存储的是需在底部工具栏汇总比较的字段名，
+     * 多字段用英文逗号分隔，例如 "贷方金额,手续费"。
+     * A/B 两侧按位置一一对应配对，逐对求和并比较（等于则满足条件）。
+     *
+     * @param string $functionCode 功能编码
+     * @return array ['aCalcFields' => string[], 'bCalcFields' => string[]]
+     */
+    private function getMatchCalcFields(string $functionCode): array
+    {
+        $row = $this->getMatchConfigRow($functionCode);
+        $aRaw = trim((string) ($row['A表计算字段'] ?? ''));
+        $bRaw = trim((string) ($row['B表计算字段'] ?? ''));
+
+        $parse = static function (string $raw): array {
+            if ($raw === '') {
+                return [];
+            }
+            $parts = array_map('trim', explode(',', $raw));
+            $parts = array_filter($parts, static fn($v) => $v !== '');
+            return array_values($parts);
+        };
+
+        return [
+            'aCalcFields' => $parse($aRaw),
+            'bCalcFields' => $parse($bRaw),
+        ];
     }
 
     private function getModuleTable(string $moduleName): string
