@@ -493,6 +493,7 @@ class Workbench extends BaseApiController
 
             $allData = filter_var($payload['allData'] ?? true, FILTER_VALIDATE_BOOLEAN);
             $selectedColumns = $payload['columns'] ?? [];
+            $mergeColumns = $payload['mergeColumns'] ?? [];
 
             [$context, $definition] = $this->contextService->buildWorkbenchContext($functionCode);
 
@@ -535,7 +536,7 @@ class Workbench extends BaseApiController
             if ($format === 'csv') {
                 $filePath = $this->exportService->exportToCsvBatched($columns, $fetchRecords, 1000);
             } else {
-                $filePath = $this->exportService->exportToExcelBatched($columns, $fetchRecords, $functionCode, 1000);
+                $filePath = $this->exportService->exportToExcelBatched($columns, $fetchRecords, $functionCode, 1000, $mergeColumns);
             }
 
             $filename = basename($filePath);

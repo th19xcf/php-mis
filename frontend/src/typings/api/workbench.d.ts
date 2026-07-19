@@ -29,6 +29,8 @@ declare namespace Api {
       errorStyle?: string;
       // 颜色标注相关配置
       colorMarkEnabled?: boolean;
+      // 可行合并（后端"可行合并=1"映射）：相邻同值跨行合并
+      canMerge?: boolean;
     }
 
     interface ConditionMeta {

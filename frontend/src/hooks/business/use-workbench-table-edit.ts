@@ -121,13 +121,23 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
       const definition: ColDef<Api.Workbench.QueryRecord> = {
         field: column.field,
         headerName: column.title,
-        // 不使用后端返回的宽度，而是由前端自动调整
         hide: column.hidden || isGuidColumn,
         sortable: column.sortable,
         filter: true,
         resizable: true,
         headerClass: headerClasses
       };
+
+      if (column.canMerge) {
+        console.log(`[spanRows setup] 为列 ${column.field} 设置 spanRows 回调`);
+        // ag-grid 要求 spanRows 列不能是 editable，这里显式覆盖
+        definition.editable = false;
+        definition.spanRows = (params: any) => {
+          const { valueA, valueB } = params;
+          const shouldSpan = valueA !== null && valueA !== undefined && valueA !== '' && valueA === valueB;
+          return shouldSpan;
+        };
+      }
 
       // 数值列右对齐基础样式：作用于 .ag-cell（flex 容器），
       // 用 justify-content 把 .ag-cell-value（flex 子项）推到右侧。

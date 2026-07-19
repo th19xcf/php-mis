@@ -304,9 +304,10 @@ class ExportService
      * @param callable $fetchRecords 回调函数，签名 (int $offset, int $size): array
      * @param string $sheetName 工作表名称
      * @param int $batchSize 每批大小
+     * @param array $mergeColumns 需要跨行合并的列名列表（连续相同值合并）
      * @return string Excel 文件路径
      */
-    public function exportToExcelBatched(array $columns, callable $fetchRecords, string $sheetName = '数据', int $batchSize = 1000): string
+    public function exportToExcelBatched(array $columns, callable $fetchRecords, string $sheetName = '数据', int $batchSize = 1000, array $mergeColumns = []): string
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -355,6 +356,20 @@ class ExportService
             $sheet->getColumnDimension($columnLetter)->setWidth($width);
         }
 
+        // 构造合并列追踪器：每个合并列记录当前合并区间的起始行号与值
+        // 流式分批写入时跨批维持状态，遇到不同值则关闭上一区间并开启新区间
+        $mergeTrackers = [];
+        foreach ($mergeColumns as $colName) {
+            $colIdx = array_search($colName, $headers, true);
+            if ($colIdx !== false) {
+                $mergeTrackers[] = [
+                    'colIdx' => $colIdx,
+                    'startRow' => null,
+                    'currentValue' => null,
+                ];
+            }
+        }
+
         $rowIndex = 2;
         $offset = 0;
         $totalRows = 0;
@@ -373,6 +388,27 @@ class ExportService
                     $colLetter = Coordinate::stringFromColumnIndex($i + 1);
                     $sheet->setCellValue($colLetter . $rowIndex, $value);
                 }
+
+                // 更新合并追踪器：相邻同值合并，不同值则关闭前一区间
+                foreach ($mergeTrackers as &$tracker) {
+                    $fieldName = $columns[$tracker['colIdx']]['列名'] ?? $columns[$tracker['colIdx']]['字段名'] ?? '';
+                    $value = (string) ($record[$fieldName] ?? '');
+
+                    if ($tracker['startRow'] === null) {
+                        $tracker['startRow'] = $rowIndex;
+                        $tracker['currentValue'] = $value;
+                    } elseif ($value !== $tracker['currentValue']) {
+                        // 关闭前一区间（仅当跨越多于 1 行时才需要 merge）
+                        if ($rowIndex - 1 > $tracker['startRow']) {
+                            $colLetter = Coordinate::stringFromColumnIndex($tracker['colIdx'] + 1);
+                            $sheet->mergeCells($colLetter . $tracker['startRow'] . ':' . $colLetter . ($rowIndex - 1));
+                        }
+                        $tracker['startRow'] = $rowIndex;
+                        $tracker['currentValue'] = $value;
+                    }
+                }
+                unset($tracker);
+
                 $rowIndex++;
             }
 
@@ -381,6 +417,15 @@ class ExportService
 
             if (count($records) < $batchSize) {
                 break;
+            }
+        }
+
+        // 关闭所有未关闭的合并区间（最后一批数据）
+        $lastRow = $rowIndex - 1;
+        foreach ($mergeTrackers as $tracker) {
+            if ($tracker['startRow'] !== null && $lastRow > $tracker['startRow']) {
+                $colLetter = Coordinate::stringFromColumnIndex($tracker['colIdx'] + 1);
+                $sheet->mergeCells($colLetter . $tracker['startRow'] . ':' . $colLetter . $lastRow);
             }
         }
 
@@ -396,12 +441,15 @@ class ExportService
                 ],
             ],
         ];
-        $lastRow = $rowIndex - 1;
         if ($lastRow >= 2) {
             $sheet->getStyle('A2:' . $lastColumnLetter . $lastRow)->applyFromArray($dataStyle);
         }
 
         $sheet->getRowDimension(1)->setRowHeight(25);
+
+        if (!empty($mergeTrackers)) {
+            log_message('info', sprintf('[ExportService] 跨行合并已应用: %d 列', count($mergeTrackers)));
+        }
 
         $filename = 'export_' . date('Ymd_His') . '.xlsx';
         $filePath = WRITEPATH . 'exports/' . $filename;

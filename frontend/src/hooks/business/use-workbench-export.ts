@@ -102,6 +102,27 @@ export function collectColumnFilters(gridApi: GridApi<Api.Workbench.QueryRecord>
   return result;
 }
 
+/**
+ * 收集需要跨行合并的列名（colDef.spanRows=true 的可见列 field）
+ *
+ * 用于导出时告知后端哪些列需要按连续相同值合并。
+ * 与 ag-grid 显示侧共用同一份真相源（colDef.spanRows），确保所见即所得。
+ */
+export function collectMergeColumns(gridApi: GridApi<Api.Workbench.QueryRecord> | null): string[] {
+  if (!gridApi || gridApi.isDestroyed()) {
+    return [];
+  }
+  const columns = gridApi.getColumns() || [];
+  const result: string[] = [];
+  for (const col of columns) {
+    const colDef = col.getColDef();
+    if (!colDef.hide && colDef.spanRows && colDef.field) {
+      result.push(colDef.field);
+    }
+  }
+  return result;
+}
+
 export interface ExportOptions {
   format?: 'xlsx' | 'csv';
   /** 是否导出全部数据（忽略筛选条件），默认 true */
@@ -124,6 +145,9 @@ export function useWorkbenchExport(options: UseWorkbenchExportOptions) {
     try {
       const filters = exportAll ? [] : (options.getFilters?.() ?? []);
 
+      // 从 ag-grid 列定义中提取需要跨行合并的列名（canMerge=true 的可见列 field）
+      const mergeColumns = collectMergeColumns(options.gridApi.value);
+
       const Authorization = getAuthorization();
 
       const apiUrl = `${baseURL}/workbench/export/${encodeURIComponent(functionCode)}`;
@@ -137,7 +161,8 @@ export function useWorkbenchExport(options: UseWorkbenchExportOptions) {
           format,
           allData: exportAll,
           columns,
-          filters
+          filters,
+          mergeColumns
         })
       });
 

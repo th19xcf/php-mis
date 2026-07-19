@@ -430,7 +430,8 @@ class ContextService
                 'hintCondition' => (string) ($column['提示条件'] ?? ''),
                 'hintStyle' => (string) ($column['提示样式设置'] ?? ''),
                 'errorCondition' => (string) ($column['异常条件'] ?? ''),
-                'errorStyle' => (string) ($column['异常样式设置'] ?? '')
+                'errorStyle' => (string) ($column['异常样式设置'] ?? ''),
+                'canMerge' => (string) ($column['可行合并'] ?? '0') === '1'
             ];
         }
 

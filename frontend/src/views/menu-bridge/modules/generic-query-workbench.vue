@@ -229,6 +229,21 @@ const colorMarkEnabledColumns = computed(() => {
 // 是否有可颜色标注的列
 const hasColorMarkEnabledColumns = computed(() => colorMarkEnabledColumns.value.length > 0);
 
+// 是否存在可行合并列：决定是否启用 ag-grid cellSpan（initial property，创建后不可变更）
+const hasMergeableColumns = computed(() => {
+  const columns = pageMeta.value?.columns || [];
+  const result = columns.some(column => column.canMerge === true);
+  console.log('[hasMergeableColumns] 计算:', result);
+  return result;
+});
+
+// grid 是否就绪（pageMeta 已加载），用于确保 initial properties 在创建时就正确
+const gridReady = computed(() => {
+  const ready = !!pageMeta.value;
+  console.log('[gridReady] 计算:', ready, 'pageMeta:', !!pageMeta.value);
+  return ready;
+});
+
 // 是否有图形模块配置
 const hasChartEnabled = computed(() => !!pageMeta.value?.chartModule && pageMeta.value.chartModule !== '');
 
@@ -1093,6 +1108,21 @@ const { handleGridReady } = useWorkbenchGridReady({
   getParams,
   fieldColumnOptions: () => fieldColumnOptions.value
 });
+
+function onGridReady(event: any) {
+  console.log('[gridReady] Grid 就绪');
+  console.log('[gridReady] enableCellSpan:', event.api.getGridOption('enableCellSpan'));
+  console.log('[gridReady] suppressRowTransform:', event.api.getGridOption('suppressRowTransform'));
+  const colDefs = event.api.getColumnDefs();
+  const mergeCol = colDefs?.find((c: any) => c.field === '对方名称');
+  if (mergeCol) {
+    console.log('[gridReady] 对方名称列定义:', mergeCol);
+    console.log('[gridReady] 对方名称 rowSpan:', typeof mergeCol.rowSpan);
+  } else {
+    console.log('[gridReady] 未找到 对方名称 列');
+  }
+  handleGridReady(event);
+}
 </script>
 
 <template>
@@ -1182,6 +1212,8 @@ const { handleGridReady } = useWorkbenchGridReady({
               :pagination="true"
               :pagination-page-size="pageSize"
               :pagination-page-size-selector="paginationPageSizeSelector"
+              :enable-cell-span="true"
+              :suppress-row-virtualisation="false"
               :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: false, selectAll: 'filtered' }"
               :selection-column-def="{
                 width: 37,
@@ -1192,12 +1224,11 @@ const { handleGridReady } = useWorkbenchGridReady({
               }"
               :row-buffer="20"
               :suppress-column-virtualisation="false"
-              :suppress-row-virtualisation="false"
               :animate-rows="false"
               overlay-no-rows-template="<span style='padding: 20px; display: block; text-align: center;'>无数据</span>"
               overlay-loading-template="<span style='padding: 20px; display: block; text-align: center;'>正在加载数据，请稍候...</span>"
               class="query-grid"
-              @grid-ready="handleGridReady"
+              @grid-ready="onGridReady"
               @cell-value-changed="(e: any) => handleCellValueChanged(e, hasTableEditAuth)"
             />
             <!-- 分片加载进度提示 -->
