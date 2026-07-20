@@ -101,11 +101,15 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
   }
 
   const gridColumns = computed<ColDef<Api.Workbench.QueryRecord>[]>(() => {
-    return (options.pageMeta.value?.columns || []).map(column => {
+    const allColumns = options.pageMeta.value?.columns || [];
+    const mergeableFields = allColumns
+      .filter(col => col.canMerge)
+      .map(col => col.field);
+
+    return allColumns.map(column => {
       const headerClasses: string[] = [];
 
       if (column.editable) {
-        // Keep legacy visual cue for editable columns.
         headerClasses.push('editable-column');
       }
 
@@ -129,13 +133,19 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
       };
 
       if (column.canMerge) {
-        console.log(`[spanRows setup] 为列 ${column.field} 设置 spanRows 回调`);
-        // ag-grid 要求 spanRows 列不能是 editable，这里显式覆盖
         definition.editable = false;
         definition.spanRows = (params: any) => {
-          const { valueA, valueB } = params;
-          const shouldSpan = valueA !== null && valueA !== undefined && valueA !== '' && valueA === valueB;
-          return shouldSpan;
+          const { nodeA, nodeB } = params;
+          if (!nodeA || !nodeB || !nodeA.data || !nodeB.data) return false;
+
+          const currentRow = nodeA.data;
+          const nextRow = nodeB.data;
+
+          return mergeableFields.every(field => {
+            const a = currentRow[field];
+            const b = nextRow[field];
+            return a !== null && a !== undefined && a !== '' && a === b;
+          });
         };
       }
 
