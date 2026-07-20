@@ -221,7 +221,16 @@ const calcFieldsAllMatched = computed(() => {
 });
 
 const canBuild = computed(() => {
-  return props.aSelectedKeys.length > 0 && props.bSelectedKeys.length > 0;
+  if (props.aSelectedKeys.length === 0 || props.bSelectedKeys.length === 0) {
+    return false;
+  }
+
+  const pairs = calcFieldsCompare.value;
+  if (!pairs || pairs.length === 0) {
+    return true;
+  }
+
+  return pairs.every(p => p.matched);
 });
 
 const canRevoke = computed(() => {
