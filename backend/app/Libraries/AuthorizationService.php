@@ -449,6 +449,7 @@ class AuthorizationService
             'upkeepModule'  => (string) ($row['数据整理模块'] ?? ''),
             'chartModule'   => (string) ($row['图形模块'] ?? ''),
             'gridStyle'     => (string) (($row['表样式'] ?? '') === '' ? '表样式_A' : $row['表样式']),
+            'showSequence'  => (string) ($row['显示序号'] ?? '1') === '1',
         ];
 
         if ($logger !== null) {

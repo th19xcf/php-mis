@@ -117,7 +117,7 @@ class ContextService
             throw new BusinessException('功能未配置列信息');
         }
 
-        $columnDefinitions = $this->buildColumnDefinitions($columns);
+        $columnDefinitions = $this->buildColumnDefinitions($columns, $queryConfig);
 
         $primaryKey = $this->resolvePrimaryKey($functionCode, $queryConfig);
 
@@ -403,18 +403,23 @@ class ContextService
     /**
      * 构建列定义
      */
-    private function buildColumnDefinitions(array $columns): array
+    private function buildColumnDefinitions(array $columns, array $queryConfig): array
     {
-        $items = [[
-            'field' => '序号',
-            'title' => '序号',
-            'type' => '数值',
-            'width' => 90,
-            'hidden' => false,
-            'editable' => false,
-            'required' => false,
-            'sortable' => true
-        ]];
+        $items = [];
+
+        $showSequence = $queryConfig['showSequence'] ?? true;
+        if ($showSequence) {
+            $items[] = [
+                'field' => '序号',
+                'title' => '序号',
+                'type' => '数值',
+                'width' => 90,
+                'hidden' => false,
+                'editable' => false,
+                'required' => false,
+                'sortable' => true
+            ];
+        }
 
         foreach ($columns as $column) {
             $title = (string) ($column['列名'] ?? '');

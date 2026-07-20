@@ -232,9 +232,7 @@ const hasColorMarkEnabledColumns = computed(() => colorMarkEnabledColumns.value.
 // 是否存在可行合并列：决定是否启用 ag-grid cellSpan（initial property，创建后不可变更）
 const hasMergeableColumns = computed(() => {
   const columns = pageMeta.value?.columns || [];
-  const result = columns.some(column => column.canMerge === true);
-  console.log('[hasMergeableColumns] 计算:', result);
-  return result;
+  return columns.some(column => column.canMerge === true);
 });
 
 // grid 是否就绪（pageMeta 已加载），用于确保 initial properties 在创建时就正确
@@ -1110,17 +1108,6 @@ const { handleGridReady } = useWorkbenchGridReady({
 });
 
 function onGridReady(event: any) {
-  console.log('[gridReady] Grid 就绪');
-  console.log('[gridReady] enableCellSpan:', event.api.getGridOption('enableCellSpan'));
-  console.log('[gridReady] suppressRowTransform:', event.api.getGridOption('suppressRowTransform'));
-  const colDefs = event.api.getColumnDefs();
-  const mergeCol = colDefs?.find((c: any) => c.field === '对方名称');
-  if (mergeCol) {
-    console.log('[gridReady] 对方名称列定义:', mergeCol);
-    console.log('[gridReady] 对方名称 rowSpan:', typeof mergeCol.rowSpan);
-  } else {
-    console.log('[gridReady] 未找到 对方名称 列');
-  }
   handleGridReady(event);
 }
 </script>
