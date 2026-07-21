@@ -159,6 +159,20 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
 
       if (isNumericColumn) {
         definition.type = 'numericColumn';
+        // 数值列使用数值筛选器（提供 > < >= <= 等数值比较运算符，
+        // 否则默认 agTextColumnFilter 会按字符串比较，"10" < "9" 这种判断会出错）
+        definition.filter = 'agNumberColumnFilter';
+        // 数值列按数值大小排序：后端返回的值可能是字符串（PHP mysqli 默认返回字符串），
+        // 默认 comparator 按字符串比较会导致 "10" < "9"，需转换为数值后再比较
+        definition.comparator = (valueA: any, valueB: any) => {
+          const numA = valueA === null || valueA === undefined || valueA === '' ? null : Number(valueA);
+          const numB = valueB === null || valueB === undefined || valueB === '' ? null : Number(valueB);
+          // 空值统一沉底，避免 NaN 干扰
+          if (numA === null && numB === null) return 0;
+          if (numA === null) return 1;
+          if (numB === null) return -1;
+          return numA - numB;
+        };
         headerClasses.push('wb-numeric-header');
       }
 
