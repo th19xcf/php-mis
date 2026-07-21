@@ -141,11 +141,10 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
           const currentRow = nodeA.data;
           const nextRow = nodeB.data;
 
-          return mergeableFields.every(field => {
-            const a = currentRow[field];
-            const b = nextRow[field];
-            return a !== null && a !== undefined && a !== '' && a === b;
-          });
+          // 归一化：null/undefined/'' 视为同一空值，两行都是空值时也合并
+          const normalize = (v: unknown) => (v === null || v === undefined || v === '' ? '' : v);
+
+          return mergeableFields.every(field => normalize(currentRow[field]) === normalize(nextRow[field]));
         };
       }
 

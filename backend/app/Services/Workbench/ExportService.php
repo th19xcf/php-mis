@@ -356,19 +356,19 @@ class ExportService
             $sheet->getColumnDimension($columnLetter)->setWidth($width);
         }
 
-        // 构造合并列追踪器：每个合并列记录当前合并区间的起始行号与值
-        // 流式分批写入时跨批维持状态，遇到不同值则关闭上一区间并开启新区间
-        $mergeTrackers = [];
+        // 组合键合并：所有 mergeColumns 的值拼接作为组合键
+        // 多列标记合并时，必须所有列的值在相邻行都相同才合并（一起开一起关）
+        // 空值归一化：null/'' 视为同一空值，两行都是空值时也合并（与前端 normalize 逻辑一致）
+        $mergeColIndices = [];
         foreach ($mergeColumns as $colName) {
             $colIdx = array_search($colName, $headers, true);
             if ($colIdx !== false) {
-                $mergeTrackers[] = [
-                    'colIdx' => $colIdx,
-                    'startRow' => null,
-                    'currentValue' => null,
-                ];
+                $mergeColIndices[] = $colIdx;
             }
         }
+        $hasMergeCols = !empty($mergeColIndices);
+        $groupStartRow = null;
+        $currentCompositeKey = null;
 
         $rowIndex = 2;
         $offset = 0;
@@ -389,25 +389,33 @@ class ExportService
                     $sheet->setCellValue($colLetter . $rowIndex, $value);
                 }
 
-                // 更新合并追踪器：相邻同值合并，不同值则关闭前一区间
-                foreach ($mergeTrackers as &$tracker) {
-                    $fieldName = $columns[$tracker['colIdx']]['列名'] ?? $columns[$tracker['colIdx']]['字段名'] ?? '';
-                    $value = (string) ($record[$fieldName] ?? '');
+                // 计算当前行组合键：归一化空值（null/'' 视为同一空值），空值也参与合并
+                if ($hasMergeCols) {
+                    $keyParts = [];
+                    foreach ($mergeColIndices as $colIdx) {
+                        $fieldName = $columns[$colIdx]['列名'] ?? $columns[$colIdx]['字段名'] ?? '';
+                        $value = $record[$fieldName] ?? '';
+                        // 归一化：null/'' 统一为空字符串，与前端 normalize 逻辑一致
+                        $normalized = ($value === null || $value === '') ? '' : (string) $value;
+                        $keyParts[] = $normalized;
+                    }
+                    $compositeKey = implode("\x00", $keyParts);
 
-                    if ($tracker['startRow'] === null) {
-                        $tracker['startRow'] = $rowIndex;
-                        $tracker['currentValue'] = $value;
-                    } elseif ($value !== $tracker['currentValue']) {
-                        // 关闭前一区间（仅当跨越多于 1 行时才需要 merge）
-                        if ($rowIndex - 1 > $tracker['startRow']) {
-                            $colLetter = Coordinate::stringFromColumnIndex($tracker['colIdx'] + 1);
-                            $sheet->mergeCells($colLetter . $tracker['startRow'] . ':' . $colLetter . ($rowIndex - 1));
+                    if ($groupStartRow === null) {
+                        $groupStartRow = $rowIndex;
+                        $currentCompositeKey = $compositeKey;
+                    } elseif ($compositeKey !== $currentCompositeKey) {
+                        // 组合键变化：关闭前一区间（所有合并列一起关）
+                        if ($rowIndex - 1 > $groupStartRow) {
+                            foreach ($mergeColIndices as $colIdx) {
+                                $colLetter = Coordinate::stringFromColumnIndex($colIdx + 1);
+                                $sheet->mergeCells($colLetter . $groupStartRow . ':' . $colLetter . ($rowIndex - 1));
+                            }
                         }
-                        $tracker['startRow'] = $rowIndex;
-                        $tracker['currentValue'] = $value;
+                        $groupStartRow = $rowIndex;
+                        $currentCompositeKey = $compositeKey;
                     }
                 }
-                unset($tracker);
 
                 $rowIndex++;
             }
@@ -420,12 +428,12 @@ class ExportService
             }
         }
 
-        // 关闭所有未关闭的合并区间（最后一批数据）
+        // 关闭最后未关闭的合并区间（所有合并列一起关）
         $lastRow = $rowIndex - 1;
-        foreach ($mergeTrackers as $tracker) {
-            if ($tracker['startRow'] !== null && $lastRow > $tracker['startRow']) {
-                $colLetter = Coordinate::stringFromColumnIndex($tracker['colIdx'] + 1);
-                $sheet->mergeCells($colLetter . $tracker['startRow'] . ':' . $colLetter . $lastRow);
+        if ($hasMergeCols && $groupStartRow !== null && $lastRow > $groupStartRow) {
+            foreach ($mergeColIndices as $colIdx) {
+                $colLetter = Coordinate::stringFromColumnIndex($colIdx + 1);
+                $sheet->mergeCells($colLetter . $groupStartRow . ':' . $colLetter . $lastRow);
             }
         }
 
@@ -447,8 +455,8 @@ class ExportService
 
         $sheet->getRowDimension(1)->setRowHeight(25);
 
-        if (!empty($mergeTrackers)) {
-            log_message('info', sprintf('[ExportService] 跨行合并已应用: %d 列', count($mergeTrackers)));
+        if ($hasMergeCols) {
+            log_message('info', sprintf('[ExportService] 跨行合并已应用(组合键模式): %d 列', count($mergeColIndices)));
         }
 
         $filename = 'export_' . date('Ymd_His') . '.xlsx';
