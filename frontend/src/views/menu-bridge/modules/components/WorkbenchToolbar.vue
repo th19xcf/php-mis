@@ -135,6 +135,13 @@ defineExpose({ checkScrollPosition });
           class="toolbar-scroll flex items-center gap-8px flex-nowrap overflow-x-hidden"
           @scroll="checkScrollPosition"
         >
+          <NButton
+            v-if="pageMeta?.toolbar.cacheRefresh"
+            :loading="cacheRefreshing"
+            @click="handleRefreshCache"
+          >
+            刷新缓存
+          </NButton>
           <NButton @click="emit('refresh')">刷新</NButton>
           <NButton @click="emit('reset')">重置</NButton>
           <NButton @click="emit('openPinColumn')">固定列</NButton>
@@ -173,13 +180,6 @@ defineExpose({ checkScrollPosition });
               <SvgIcon icon="ant-design:down-outlined" class="ml-4px" />
             </NButton>
           </NDropdown>
-          <NButton
-            v-if="pageMeta?.toolbar.cacheRefresh"
-            :loading="cacheRefreshing"
-            @click="handleRefreshCache"
-          >
-            刷新缓存
-          </NButton>
           <NButton v-if="pageMeta?.toolbar.debugSql" type="warning" class="debug-btn" @click="emit('handleDebug')">
             调试
           </NButton>
