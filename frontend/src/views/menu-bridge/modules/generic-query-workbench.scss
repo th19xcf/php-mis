@@ -263,25 +263,10 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
   width: 100%;
   height: 100%;
 
-  // 合并单元格容器：提高 z-index，确保覆盖在普通行之上
+  // 合并单元格容器：保持 z-index 为 1，确保覆盖普通单元格内容；
+  // 但低于 focus 单元格的 z-index（2），使下方单元格选中框线不被合并层遮挡。
   :deep(.ag-spanning-container) {
-    z-index: 2 !important;
-  }
-
-  // 合并单元格：隐藏内部 border，设置不透明背景色覆盖行分割线
-  :deep(.ag-spanned-cell-wrapper) {
-    border-top-color: transparent !important;
-    border-bottom-color: transparent !important;
-    background-color: #ffffff !important;
-  }
-
-  :deep(.ag-spanned-cell-wrapper > .ag-spanned-cell) {
-    border-top-color: transparent !important;
-    border-bottom-color: transparent !important;
-  }
-
-  :deep(.ag-spanned-row) {
-    border-bottom-color: transparent !important;
+    z-index: 1 !important;
   }
 
   .system-dark & {
@@ -290,22 +275,7 @@ $wb-shadow-hover: rgba(0, 0, 0, 0.08);
     @include wb-ag-grid-dark;
 
     :deep(.ag-spanning-container) {
-      z-index: 2 !important;
-    }
-
-    :deep(.ag-spanned-cell-wrapper) {
-      border-top-color: transparent !important;
-      border-bottom-color: transparent !important;
-      background-color: var(--wb-dark-bg) !important;
-    }
-
-    :deep(.ag-spanned-cell-wrapper > .ag-spanned-cell) {
-      border-top-color: transparent !important;
-      border-bottom-color: transparent !important;
-    }
-
-    :deep(.ag-spanned-row) {
-      border-bottom-color: transparent !important;
+      z-index: 1 !important;
     }
   }
 }

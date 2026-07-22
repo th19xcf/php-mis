@@ -98,22 +98,23 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   }
 
   :deep(#{$g} .ag-row),
+  :deep(#{$g} .ag-spanned-row),
   :deep(#{$g} .ag-header-row) {
     border-bottom: 1px dotted $light-border !important;
   }
 
-  :deep(#{$g} .ag-spanned-cell-wrapper) {
-    border-top-color: transparent !important;
-    border-bottom-color: transparent !important;
+  // 合并单元格实际内容容器：空值时内部没有 DOM 文本，可能导致内容高度塌陷，
+  // 使得下方分割线与选中框线显示异常。用 ::after 注入一个零宽空格占位，
+  // 确保内容容器始终被内容撑开到内联高度；同时用 inset box-shadow 在底部
+  // 绘制 1px 虚线分割线，不占用额外层级。
+  :deep(#{$g} .ag-spanned-cell-wrapper > .ag-spanned-cell)::after {
+    content: '\200B';
+    display: block;
+    height: 100%;
   }
 
   :deep(#{$g} .ag-spanned-cell-wrapper > .ag-spanned-cell) {
-    border-top-color: transparent !important;
-    border-bottom-color: transparent !important;
-  }
-
-  :deep(#{$g} .ag-spanned-row) {
-    border-bottom-color: transparent !important;
+    box-shadow: inset 0 -1px 0 0 $light-border !important;
   }
 
   .system-dark {
@@ -123,22 +124,13 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     }
 
     :deep(#{$g} .ag-row),
+    :deep(#{$g} .ag-spanned-row),
     :deep(#{$g} .ag-header-row) {
       border-bottom-color: $dark-border !important;
     }
 
-    :deep(#{$g} .ag-spanned-cell-wrapper) {
-      border-top-color: transparent !important;
-      border-bottom-color: transparent !important;
-    }
-
     :deep(#{$g} .ag-spanned-cell-wrapper > .ag-spanned-cell) {
-      border-top-color: transparent !important;
-      border-bottom-color: transparent !important;
-    }
-
-    :deep(#{$g} .ag-spanned-row) {
-      border-bottom-color: transparent !important;
+      box-shadow: inset 0 -1px 0 0 $dark-border !important;
     }
   }
 }
