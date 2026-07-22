@@ -17,14 +17,48 @@ interface UseWorkbenchExportOptions {
 }
 
 /**
- * ag-grid 文本筛选条件转后端筛选格式
+ * 通用：收集 ag-grid 组合筛选条件中的非空子条件。
  *
- * ag-grid v32+ 的文本筛选 model 形如：
- *   - 单条件：{ filterType: 'text', type: 'contains', filter: 'value' }
- *   - 组合  ：{ filterType: 'text', operator: 'AND' | 'OR',
+ * ag-grid v32+ 的 model 结构：
+ *   - 单条件：{ type: 'contains', filter: 'value' }
+ *   - 组合  ：{ operator: 'AND' | 'OR',
  *              type: 'contains', filter: 'value1',
  *              condition1: { type: 'contains', filter: 'value2' },
  *              condition2: { type: 'contains', filter: 'value3' } }
+ *
+ * 空值/非空值筛选（blank / notBlank / empty / notEmpty）没有 filter 字段，
+ * 需要通过 nullOpMap 单独识别并映射为 isNull / isNotNull。
+ */
+function collectAgGridConditions(
+  model: any,
+  opMap: Record<string, string>,
+  nullOpMap?: Record<string, string>
+): Array<{ operator: string; value: string }> {
+  const conditions: Array<{ operator: string; value: string }> = [];
+  const nullTypeSet = new Set(nullOpMap ? Object.keys(nullOpMap) : []);
+
+  const collect = (m: any) => {
+    if (!m) return;
+    const type = m.type;
+    if (type === undefined || type === null) return;
+
+    const isNullType = nullTypeSet.has(type);
+    if (!isNullType && (m.filter === undefined || m.filter === null || m.filter === '')) return;
+
+    const op = isNullType
+      ? (nullOpMap?.[type] ?? 'contains')
+      : (opMap[type] || opMap.default || 'contains');
+    conditions.push({ operator: op, value: isNullType ? '' : String(m.filter) });
+  };
+
+  collect(model);
+  collect(model.condition1);
+  collect(model.condition2);
+  return conditions;
+}
+
+/**
+ * ag-grid 文本筛选条件转后端筛选格式
  *
  * 后端 buildWhereConditions 支持三种：
  *   - { fieldKey, operator, value }                       单条件
@@ -39,38 +73,23 @@ export function convertAgGridTextFilterToBackend(colId: string, model: any): any
   const typeMap: Record<string, string> = {
     contains: 'contains',
     equals: 'equals',
-    notEqual: 'equals',
+    notEqual: 'notEqual',
     startsWith: 'startsWith',
     endsWith: 'endsWith'
   };
 
+  // 空值/非空值筛选：ag-grid 中文 locale 可能显示为"空"、"非空"，
+  // 底层 model.type 常见为 blank / notBlank / empty / notEmpty。
+  const nullOpMap: Record<string, string> = {
+    blank: 'isNull',
+    notBlank: 'isNotNull',
+    empty: 'isNull',
+    notEmpty: 'isNotNull'
+  };
+
   const fieldKey = colId;
   const combineOp: string | undefined = model.operator;
-  const hasCondition1 = !!model.condition1;
-  const hasCondition2 = !!model.condition2;
-
-  // 单条件：没有 operator + condition1
-  if (!combineOp && !hasCondition1) {
-    if (model.filter === undefined || model.filter === null || model.filter === '') {
-      return [];
-    }
-    const op = typeMap[model.type] || 'contains';
-    return [{ fieldKey, operator: op, value: String(model.filter) }];
-  }
-
-  // 组合条件：收集所有非空条件
-  const conditions: Array<{ operator: string; value: string }> = [];
-  const collect = (m: any) => {
-    if (!m) return;
-    if (m.filter === undefined || m.filter === null || m.filter === '') return;
-    conditions.push({
-      operator: typeMap[m.type] || 'contains',
-      value: String(m.filter)
-    });
-  };
-  collect(model);
-  collect(model.condition1);
-  collect(model.condition2);
+  const conditions = collectAgGridConditions(model, typeMap, nullOpMap);
 
   if (conditions.length === 0) {
     return [];
@@ -85,6 +104,120 @@ export function convertAgGridTextFilterToBackend(colId: string, model: any): any
 }
 
 /**
+ * ag-grid 数值筛选条件转后端筛选格式
+ *
+ * model 示例：
+ *   - { filterType: 'number', type: 'equals', filter: 100 }
+ *   - { filterType: 'number', operator: 'AND',
+ *       type: 'greaterThan', filter: 100,
+ *       condition1: { type: 'lessThan', filter: 200 } }
+ *   - { filterType: 'number', type: 'inRange', filter: 100, filterTo: 200 }
+ */
+export function convertAgGridNumberFilterToBackend(colId: string, model: any): any[] {
+  if (!model || model.filterType !== 'number') {
+    return [];
+  }
+
+  const fieldKey = colId;
+
+  // 范围筛选：拆成 >= min 和 <= max 两条独立 filter（后端 AND 连接）
+  if (model.type === 'inRange') {
+    const min = model.filter;
+    const max = model.filterTo;
+    const result: any[] = [];
+    if (min !== undefined && min !== null && min !== '') {
+      result.push({ fieldKey, operator: 'greaterThanOrEqual', value: String(min) });
+    }
+    if (max !== undefined && max !== null && max !== '') {
+      result.push({ fieldKey, operator: 'lessThanOrEqual', value: String(max) });
+    }
+    return result;
+  }
+
+  const typeMap: Record<string, string> = {
+    equals: 'equals',
+    notEqual: 'notEqual',
+    greaterThan: 'greaterThan',
+    greaterThanOrEqual: 'greaterThanOrEqual',
+    lessThan: 'lessThan',
+    lessThanOrEqual: 'lessThanOrEqual'
+  };
+
+  const nullOpMap: Record<string, string> = {
+    blank: 'isNull',
+    notBlank: 'isNotNull'
+  };
+
+  const combineOp: string | undefined = model.operator;
+  const conditions = collectAgGridConditions(model, typeMap, nullOpMap);
+
+  if (conditions.length === 0) {
+    return [];
+  }
+
+  if (combineOp === 'OR' && conditions.length > 1) {
+    return [{ fieldOrFilter: { fieldKey, conditions } }];
+  }
+
+  return conditions.map(c => ({ fieldKey, ...c }));
+}
+
+/**
+ * ag-grid 日期筛选条件转后端筛选格式
+ *
+ * model 示例：
+ *   - { filterType: 'date', type: 'equals', filter: '2024-01-01' }
+ *   - { filterType: 'date', type: 'inRange', filter: '2024-01-01', filterTo: '2024-01-31' }
+ */
+export function convertAgGridDateFilterToBackend(colId: string, model: any): any[] {
+  if (!model || model.filterType !== 'date') {
+    return [];
+  }
+
+  const fieldKey = colId;
+
+  if (model.type === 'inRange') {
+    const min = model.filter;
+    const max = model.filterTo;
+    const result: any[] = [];
+    if (min !== undefined && min !== null && min !== '') {
+      result.push({ fieldKey, operator: 'greaterThanOrEqual', value: String(min) });
+    }
+    if (max !== undefined && max !== null && max !== '') {
+      result.push({ fieldKey, operator: 'lessThanOrEqual', value: String(max) });
+    }
+    return result;
+  }
+
+  const typeMap: Record<string, string> = {
+    equals: 'equals',
+    notEqual: 'notEqual',
+    greaterThan: 'greaterThan',
+    greaterThanOrEqual: 'greaterThanOrEqual',
+    lessThan: 'lessThan',
+    lessThanOrEqual: 'lessThanOrEqual'
+  };
+
+  const nullOpMap: Record<string, string> = {
+    blank: 'isNull',
+    notBlank: 'isNotNull'
+  };
+
+  const combineOp: string | undefined = model.operator;
+  const conditions = collectAgGridConditions(model, typeMap, nullOpMap);
+
+  if (conditions.length === 0) {
+    return [];
+  }
+
+  if (combineOp === 'OR' && conditions.length > 1) {
+    return [{ fieldOrFilter: { fieldKey, conditions } }];
+  }
+
+  return conditions.map(c => ({ fieldKey, ...c }));
+}
+
+/**
  * 收集 gridApi 当前的列筛选，转换为后端筛选格式
  */
 export function collectColumnFilters(gridApi: GridApi<Api.Workbench.QueryRecord> | null): any[] {
@@ -94,7 +227,18 @@ export function collectColumnFilters(gridApi: GridApi<Api.Workbench.QueryRecord>
   const model = gridApi.getFilterModel() ?? {};
   const result: any[] = [];
   for (const colId of Object.keys(model)) {
-    const filters = convertAgGridTextFilterToBackend(colId, model[colId]);
+    const filterModel = model[colId];
+    const filterType = filterModel?.filterType;
+    let filters: any[] = [];
+
+    if (filterType === 'text') {
+      filters = convertAgGridTextFilterToBackend(colId, filterModel);
+    } else if (filterType === 'number') {
+      filters = convertAgGridNumberFilterToBackend(colId, filterModel);
+    } else if (filterType === 'date') {
+      filters = convertAgGridDateFilterToBackend(colId, filterModel);
+    }
+
     if (filters.length > 0) {
       result.push(...filters);
     }

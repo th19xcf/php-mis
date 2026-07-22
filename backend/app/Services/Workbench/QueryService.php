@@ -264,6 +264,7 @@ class QueryService
         }
 
         $filters = is_array($payload['filters'] ?? null) ? $payload['filters'] : [];
+
         foreach ($filters as $filter) {
             if (!is_array($filter)) {
                 continue;
@@ -295,7 +296,9 @@ class QueryService
             $fieldKey = trim((string) ($filter['fieldKey'] ?? ''));
             $operator = trim((string) ($filter['operator'] ?? 'contains'));
             $value = trim((string) ($filter['value'] ?? ''));
-            if ($fieldKey === '' || $value === '' || !isset($columnMap[$fieldKey])) {
+            // isNull / isNotNull 不需要 value，不能因为 value 为空而跳过
+            $isNullCheck = $operator === 'isNull' || $operator === 'isNotNull';
+            if ($fieldKey === '' || (!$isNullCheck && $value === '') || !isset($columnMap[$fieldKey])) {
                 continue;
             }
 
@@ -336,7 +339,9 @@ class QueryService
             }
             $op = trim((string) ($cond['operator'] ?? 'contains'));
             $val = trim((string) ($cond['value'] ?? ''));
-            if ($val === '') {
+            // isNull / isNotNull 不需要 value，不能因为 val 为空而跳过
+            $isNullCheck = $op === 'isNull' || $op === 'isNotNull';
+            if (!$isNullCheck && $val === '') {
                 continue;
             }
             $orParts[] = WorkbenchSqlHelper::buildSingleCondition($this->model, $fieldName, $op, $val);

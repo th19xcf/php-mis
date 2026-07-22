@@ -4,6 +4,7 @@ namespace App\Services\Workbench;
 
 use App\Models\Mcommon;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
@@ -83,7 +84,13 @@ class ExportService
                 $fieldName = $columns[$i]['列名'] ?? $columns[$i]['字段名'] ?? '';
                 $value = $record[$fieldName] ?? '';
                 $colLetter = Coordinate::stringFromColumnIndex($i + 1);
-                $sheet->setCellValue($colLetter . $rowIndex, $value);
+                // 字符类型列显式写入为字符串，避免纯数字字符串被 Excel 解析为数字（科学计数）
+                $colType = (string) ($columns[$i]['列类型'] ?? '字符');
+                if ($colType === '数值') {
+                    $sheet->setCellValue($colLetter . $rowIndex, $value);
+                } else {
+                    $sheet->setCellValueExplicit($colLetter . $rowIndex, (string) $value, DataType::TYPE_STRING);
+                }
             }
             $rowIndex++;
         }
@@ -386,7 +393,13 @@ class ExportService
                     $fieldName = $columns[$i]['列名'] ?? $columns[$i]['字段名'] ?? '';
                     $value = $record[$fieldName] ?? '';
                     $colLetter = Coordinate::stringFromColumnIndex($i + 1);
-                    $sheet->setCellValue($colLetter . $rowIndex, $value);
+                    // 字符类型列显式写入为字符串，避免纯数字字符串被 Excel 解析为数字（科学计数）
+                    $colType = (string) ($columns[$i]['列类型'] ?? '字符');
+                    if ($colType === '数值') {
+                        $sheet->setCellValue($colLetter . $rowIndex, $value);
+                    } else {
+                        $sheet->setCellValueExplicit($colLetter . $rowIndex, (string) $value, DataType::TYPE_STRING);
+                    }
                 }
 
                 // 计算当前行组合键：归一化空值（null/'' 视为同一空值），空值也参与合并

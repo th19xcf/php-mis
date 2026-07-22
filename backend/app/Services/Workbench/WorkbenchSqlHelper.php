@@ -32,16 +32,39 @@ class WorkbenchSqlHelper
     /**
      * 构建单条 WHERE 条件（fieldName OP value）
      *
-     * - equals    -> fieldName = 'value'
-     * - startsWith-> fieldName like 'value%'
-     * - endsWith  -> fieldName like '%value'
-     * - 其他      -> fieldName like '%value%'
+     * - equals             -> fieldName = 'value'
+     * - notEqual           -> fieldName != 'value'
+     * - greaterThan        -> fieldName > 'value'
+     * - greaterThanOrEqual -> fieldName >= 'value'
+     * - lessThan           -> fieldName < 'value'
+     * - lessThanOrEqual    -> fieldName <= 'value'
+     * - isNull             -> fieldName IS NULL
+     * - isNotNull          -> fieldName IS NOT NULL
+     * - startsWith         -> fieldName like 'value%'
+     * - endsWith           -> fieldName like '%value'
+     * - 其他               -> fieldName like '%value%'
      */
     public static function buildSingleCondition(Mcommon $model, string $fieldName, string $operator, string $value): string
     {
         switch ($operator) {
             case 'equals':
                 return sprintf('%s=%s', $fieldName, $model->quote($value));
+            case 'notEqual':
+                return sprintf('%s!=%s', $fieldName, $model->quote($value));
+            case 'greaterThan':
+                return sprintf('%s>%s', $fieldName, $model->quote($value));
+            case 'greaterThanOrEqual':
+                return sprintf('%s>=%s', $fieldName, $model->quote($value));
+            case 'lessThan':
+                return sprintf('%s<%s', $fieldName, $model->quote($value));
+            case 'lessThanOrEqual':
+                return sprintf('%s<=%s', $fieldName, $model->quote($value));
+            case 'isNull':
+                // ag-grid "空" 语义：NULL 或空字符串
+                return sprintf('(%s IS NULL OR %s=%s)', $fieldName, $fieldName, $model->quote(''));
+            case 'isNotNull':
+                // ag-grid "非空" 语义：既非 NULL 也非空字符串
+                return sprintf('(%s IS NOT NULL AND %s!=%s)', $fieldName, $fieldName, $model->quote(''));
             case 'startsWith':
                 return sprintf('%s like %s', $fieldName, $model->quote($value . '%'));
             case 'endsWith':
