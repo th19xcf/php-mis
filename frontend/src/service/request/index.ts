@@ -46,7 +46,8 @@ export const request = createFlatRequest(
     isBackendSuccess(response) {
       // when the backend response code is "0000"(default), it means the request is success
       // to change this logic by yourself, you can modify the `VITE_SERVICE_SUCCESS_CODE` in `.env` file
-      const isSuccess = String(response.data.code) === SERVICE_CODE_CONFIG.successCode;
+      const responseData = response.data as App.Service.Response<any>;
+      const isSuccess = String(responseData.code) === SERVICE_CODE_CONFIG.successCode;
 
       // 性能追踪：标记 API 响应接收 + 后端分段耗时
       if (isSuccess) {
@@ -112,7 +113,8 @@ export const request = createFlatRequest(
     },
     async onBackendFail(response, instance) {
       const authStore = useAuthStore();
-      const responseCode = String(response.data.code);
+      const responseData = response.data as App.Service.Response<any>;
+      const responseCode = String(responseData.code);
 
       // 写接口（add/update/delete/batch/submit/upkeep/reset/import）已在 config
       // 上设置 `skipAuthError: true`，表示允许后端把业务校验错误复用
@@ -163,8 +165,9 @@ export const request = createFlatRequest(
 
       // get backend error message and code
       if (error.code === BACKEND_ERROR_CODE) {
-        message = error.response?.data?.msg || message;
-        backendErrorCode = String(error.response?.data?.code || '');
+        const errorData = error.response?.data as { msg?: string; code?: string | number } | undefined;
+        message = errorData?.msg || message;
+        backendErrorCode = String(errorData?.code || '');
       }
 
       // when the token is expired, refresh token and retry request, so no need to show error message
@@ -205,7 +208,8 @@ export const demoRequest = createRequest(
     isBackendSuccess(response) {
       // when the backend response code is "200", it means the request is success
       // you can change this logic by yourself
-      return response.data.status === '200';
+      const responseData = response.data as App.Service.DemoResponse;
+      return responseData.status === '200';
     },
     async onBackendFail(_response) {
       // when the backend response code is not "200", it means the request is fail
@@ -218,7 +222,8 @@ export const demoRequest = createRequest(
 
       // show backend error message
       if (error.code === BACKEND_ERROR_CODE) {
-        message = error.response?.data?.message || message;
+        const errorData = error.response?.data as { message?: string } | undefined;
+        message = errorData?.message || message;
       }
 
       window.$message?.error(message);

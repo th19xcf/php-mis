@@ -284,8 +284,9 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
         console.error('[IMPORT] error.response:', error?.response);
         console.error('[IMPORT] error.response.data:', error?.response?.data);
         console.error('[IMPORT] error.response.status:', error?.response?.status);
-        const backendMsg = error?.response?.data?.msg;
-        const backendErrors = error?.response?.data?.data?.errors;
+        const errorData = (error?.response?.data || {}) as { msg?: string; data?: { errors?: any[] } };
+        const backendMsg = errorData?.msg;
+        const backendErrors = errorData?.data?.errors;
         const detail = backendMsg || error?.message || '请稍后重试';
         console.error(`[IMPORT] 导入请求失败: ${detail}`);
         if (backendErrors && Array.isArray(backendErrors) && backendErrors.length > 0) {
