@@ -142,8 +142,68 @@ $routes->group('contract', static function ($routes) {
 	$routes->get('flow/(:segment)', 'ContractApi::flow/$1');
 });
 
+$routes->group('contractV2', static function ($routes) {
+	$routes->get('list', 'ContractV2Api::list');
+	$routes->get('detail', 'ContractV2Api::detail');
+	$routes->post('detail', 'ContractV2Api::detail');
+	$routes->post('create', 'ContractV2Api::create');
+	$routes->post('update', 'ContractV2Api::update');
+	$routes->post('delete', 'ContractV2Api::delete');
+	$routes->post('submit', 'ContractV2Api::submit');
+	$routes->post('approve', 'ContractV2Api::approve');
+	$routes->get('stats', 'ContractV2Api::stats');
+	$routes->post('stats', 'ContractV2Api::stats');
+	$routes->get('options', 'ContractV2Api::options');
+	$routes->get('pendingTasks', 'ContractV2Api::pendingTasks');
+	$routes->post('pendingTasks', 'ContractV2Api::pendingTasks');
+	$routes->get('doneTasks', 'ContractV2Api::doneTasks');
+	$routes->post('doneTasks', 'ContractV2Api::doneTasks');
+	$routes->get('myContracts', 'ContractV2Api::myContracts');
+	$routes->post('myContracts', 'ContractV2Api::myContracts');
+	$routes->get('flowDetail', 'ContractV2Api::flowDetail');
+	$routes->post('flowDetail', 'ContractV2Api::flowDetail');
+});
+
+$routes->group('workflow', static function ($routes) {
+	$routes->get('definition/list', 'WorkflowApi::definitionList');
+	$routes->post('definition/list', 'WorkflowApi::definitionList');
+	$routes->get('definition/detail', 'WorkflowApi::definitionDetail');
+	$routes->post('definition/detail', 'WorkflowApi::definitionDetail');
+	$routes->post('definition/create', 'WorkflowApi::definitionCreate');
+	$routes->post('definition/update', 'WorkflowApi::definitionUpdate');
+	$routes->post('definition/delete', 'WorkflowApi::definitionDelete');
+	$routes->post('definition/activate', 'WorkflowApi::definitionActivate');
+	$routes->post('definition/deactivate', 'WorkflowApi::definitionDeactivate');
+	$routes->get('instance/list', 'WorkflowApi::instanceList');
+	$routes->post('instance/list', 'WorkflowApi::instanceList');
+	$routes->get('instance/detail', 'WorkflowApi::instanceDetail');
+	$routes->post('instance/detail', 'WorkflowApi::instanceDetail');
+	$routes->get('pendingTasks', 'WorkflowApi::pendingTasks');
+	$routes->post('pendingTasks', 'WorkflowApi::pendingTasks');
+	$routes->get('doneTasks', 'WorkflowApi::doneTasks');
+	$routes->post('doneTasks', 'WorkflowApi::doneTasks');
+	$routes->get('myInstances', 'WorkflowApi::myInstances');
+	$routes->post('myInstances', 'WorkflowApi::myInstances');
+	$routes->post('withdraw', 'WorkflowApi::withdraw');
+});
+
+$routes->group('onlyoffice', static function ($routes) {
+	$routes->post('callback', 'OnlyOfficeCallback::index');
+	$routes->get('callback', 'OnlyOfficeCallback::index');
+	$routes->get('config', 'OnlyOfficeCallback::config');
+	$routes->post('config', 'OnlyOfficeCallback::config');
+	$routes->get('download', 'OnlyOfficeCallback::download');
+});
+
 $routes->group('cache', static function ($routes) {
 	$routes->post('invalidate-table', 'CacheController::invalidateTable');
 	$routes->post('invalidate-all', 'CacheController::invalidateAll');
 	$routes->get('status', 'CacheController::status');
+});
+
+// 临时迁移 API（不纳入 JWT 过滤器，执行完后建议删除）
+$routes->group('migration', static function ($routes) {
+	$routes->get('status', 'MigrationApi::status');
+	$routes->get('run', 'MigrationApi::run');
+	$routes->post('run', 'MigrationApi::run');
 });

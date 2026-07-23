@@ -63,7 +63,7 @@ class Database extends Config
         'database'     => '',
         'DBDriver'     => 'MySQLi',
         'DBPrefix'     => '',
-        'pConnect'     => true,
+        'pConnect'     => false,
         'DBDebug'      => ENVIRONMENT !== 'production',
         'charset'      => 'utf8mb4',
         'DBCollat'     => 'utf8mb4_general_ci',

@@ -59,6 +59,15 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'contract-v2',
+    path: '/contract-v2',
+    component: 'layout.base$view.contract-v2',
+    meta: {
+      title: 'contract-v2',
+      i18nKey: 'route.contract-v2'
+    }
+  },
+  {
     name: 'home',
     path: '/home',
     component: 'layout.base$view.home',
@@ -217,5 +226,14 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       }
     ]
+  },
+  {
+    name: 'workflow-manage',
+    path: '/workflow-manage',
+    component: 'layout.base$view.workflow-manage',
+    meta: {
+      title: 'workflow-manage',
+      i18nKey: 'route.workflow-manage'
+    }
   }
 ];

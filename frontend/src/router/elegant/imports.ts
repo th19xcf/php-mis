@@ -21,6 +21,7 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   "iframe-page": () => import("@/views/_builtin/iframe-page/[url].vue"),
   login: () => import("@/views/_builtin/login/index.vue"),
   common: () => import("@/views/common/index.vue"),
+  "contract-v2": () => import("@/views/contract-v2/index.vue"),
   contract: () => import("@/views/contract/index.vue"),
   home: () => import("@/views/home/index.vue"),
   "match-data": () => import("@/views/match-data/index.vue"),
@@ -34,4 +35,5 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   system_dept: () => import("@/views/system/dept/index.vue"),
   system_role: () => import("@/views/system/role/index.vue"),
   system_user: () => import("@/views/system/user/index.vue"),
+  "workflow-manage": () => import("@/views/workflow-manage/index.vue"),
 };

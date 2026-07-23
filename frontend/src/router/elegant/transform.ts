@@ -168,6 +168,7 @@ const routeMap: RouteMap = {
   "500": "/500",
   "common": "/common",
   "contract": "/contract",
+  "contract-v2": "/contract-v2",
   "home": "/home",
   "iframe-page": "/iframe-page/:url",
   "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?",
@@ -183,7 +184,8 @@ const routeMap: RouteMap = {
   "system": "/system",
   "system_dept": "/system/dept",
   "system_role": "/system/role",
-  "system_user": "/system/user"
+  "system_user": "/system/user",
+  "workflow-manage": "/workflow-manage"
 };
 
 /**
