@@ -1212,6 +1212,8 @@ function onGridReady(event: any) {
               :row-buffer="20"
               :suppress-column-virtualisation="false"
               :animate-rows="false"
+              :enable-cell-text-selection="true"
+              :enable-range-selection="true"
               overlay-no-rows-template="<span style='padding: 20px; display: block; text-align: center;'>无数据</span>"
               overlay-loading-template="<span style='padding: 20px; display: block; text-align: center;'>正在加载数据，请稍候...</span>"
               class="query-grid"
