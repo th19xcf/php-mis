@@ -151,13 +151,15 @@ export function useWorkbenchTableEdit(options: UseWorkbenchTableEditOptions) {
       // 数值列右对齐基础样式：作用于 .ag-cell（flex 容器），
       // 用 justify-content 把 .ag-cell-value（flex 子项）推到右侧。
       // 同时保留 textAlign 作为非 flex 布局的兜底。
-      const isNumericColumn = column.type === '数值';
+      // 注意：column.type 可能包含前后空格，需 trim 后再比较
+      const isNumericColumn = (column.type || '').trim() === '数值';
       const numericBaseStyle: Record<string, string> | null = isNumericColumn
         ? { textAlign: 'right', justifyContent: 'flex-end' }
         : null;
 
       if (isNumericColumn) {
         definition.type = 'numericColumn';
+        definition.cellClass = 'wb-numeric-cell';
         // 数值列使用数值筛选器（提供 > < >= <= 等数值比较运算符，
         // 否则默认 agTextColumnFilter 会按字符串比较，"10" < "9" 这种判断会出错）
         definition.filter = 'agNumberColumnFilter';

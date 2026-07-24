@@ -61,7 +61,7 @@ class ContractService
             $where[] = '`创建人`=' . $this->model->quote($params['creator']);
         }
         if (!empty($params['deptCode'])) {
-            $where[] = '`所属部门编码`=' . $this->model->quote($params['deptCode']);
+            $where[] = '`所属部门`=' . $this->model->quote($params['deptCode']);
         }
 
         $whereSql = implode(' and ', $where);
@@ -195,7 +195,7 @@ class ContractService
         $contractNo = $this->generateContractNo();
         $now = date('Y-m-d H:i:s');
 
-        $fields = ['`合同编号`', '`合同名称`', '`合同类型`', '`合同状态`', '`甲方名称`', '`乙方名称`', '`签订日期`', '`生效日期`', '`到期日期`', '`合同金额`', '`付款方式`', '`所属部门编码`', '`所属部门名称`', '`创建人`', '`创建人姓名`', '`创建时间`', '`更新时间`', '`版本号`', '`删除标识`', '`有效标识`'];
+        $fields = ['`合同编号`', '`合同名称`', '`合同类型`', '`合同状态`', '`甲方名称`', '`乙方名称`', '`签订日期`', '`开始日期`', '`结束日期`', '`合同金额`', '`付款方式`', '`所属部门`', '`所属部门名称`', '`创建人`', '`创建时间`', '`更新人`', '`更新时间`', '`版本号`', '`删除标识`', '`有效标识`'];
 
         $values = [
             $this->model->quote($contractNo),
@@ -204,16 +204,16 @@ class ContractService
             $this->model->quote('DRAFT'),
             $this->model->quote($data['甲方名称'] ?? ''),
             $this->model->quote($data['乙方名称'] ?? ''),
-            $this->model->quote($data['签订日期'] ?? ''),
-            $this->model->quote($data['生效日期'] ?? ''),
-            $this->model->quote($data['到期日期'] ?? ''),
+            empty($data['签订日期']) ? 'NULL' : $this->model->quote($data['签订日期']),
+            empty($data['开始日期']) ? 'NULL' : $this->model->quote($data['开始日期']),
+            empty($data['结束日期']) ? 'NULL' : $this->model->quote($data['结束日期']),
             $this->model->quote($data['合同金额'] ?? '0'),
             $this->model->quote($data['付款方式'] ?? ''),
             $this->model->quote($deptCode),
             $this->model->quote($deptName),
             $this->model->quote($creator),
-            $this->model->quote($creatorName),
             $this->model->quote($now),
+            $this->model->quote($creator),
             $this->model->quote($now),
             $this->model->quote('1'),
             $this->model->quote('0'),
@@ -258,11 +258,16 @@ class ContractService
         $now = date('Y-m-d H:i:s');
 
         $updateFields = [];
-        $allowedFields = ['合同名称', '合同类型', '甲方名称', '乙方名称', '签订日期', '生效日期', '到期日期', '合同金额', '付款方式', '合同内容'];
+        $allowedFields = ['合同名称', '合同类型', '甲方名称', '乙方名称', '签订日期', '开始日期', '结束日期', '合同金额', '付款方式', '备注'];
+        $dateFields = ['签订日期', '开始日期', '结束日期'];
 
         foreach ($allowedFields as $field) {
             if (isset($data[$field])) {
-                $updateFields[] = sprintf('`%s`=%s', $field, $this->model->quote((string) $data[$field]));
+                if (in_array($field, $dateFields, true)) {
+                    $updateFields[] = sprintf('`%s`=%s', $field, empty($data[$field]) ? 'NULL' : $this->model->quote((string) $data[$field]));
+                } else {
+                    $updateFields[] = sprintf('`%s`=%s', $field, $this->model->quote((string) $data[$field]));
+                }
             }
         }
 
@@ -482,7 +487,7 @@ class ContractService
         $where = ['`删除标识`=' . $this->model->quote('0'), '`有效标识`=' . $this->model->quote('1')];
 
         if (!empty($filters['deptCode'])) {
-            $where[] = '`所属部门编码`=' . $this->model->quote($filters['deptCode']);
+            $where[] = '`所属部门`=' . $this->model->quote($filters['deptCode']);
         }
         if (!empty($filters['creator'])) {
             $where[] = '`创建人`=' . $this->model->quote($filters['creator']);
@@ -491,9 +496,9 @@ class ContractService
         $whereSql = implode(' and ', $where);
 
         $statusSql = sprintf(
-            'select `合同状态`, count(*) as `cnt` 
-            from %s 
-            where %s 
+            'select `合同状态`, count(*) as `cnt`
+            from %s
+            where %s
             group by `合同状态`',
             $tableName,
             $whereSql
@@ -513,16 +518,16 @@ class ContractService
         }
 
         $expiringSql = sprintf(
-            'select count(*) as `cnt` 
-            from %s 
-            where %s 
-            and `到期日期` != %s 
-            and `到期日期` <= date_add(curdate(), interval 30 day)
-            and `到期日期` >= curdate()
+            'select count(*) as `cnt`
+            from %s
+            where %s
+            and `结束日期` is not null
+            and `结束日期` != 0
+            and `结束日期` <= date_add(curdate(), interval 30 day)
+            and `结束日期` >= curdate()
             and `合同状态`=%s',
             $tableName,
             $whereSql,
-            $this->model->quote(''),
             $this->model->quote('APPROVED')
         );
         $expiringResult = $this->model->select($expiringSql);
@@ -613,10 +618,10 @@ class ContractService
     public function getOptions(string $companyId = 'ALL'): array
     {
         $typeSql = sprintf(
-            'select `类型编码` as `value`, `类型名称` as `label` 
-            from `def_contract_type` 
-            where `有效标识`=%s 
-            order by `排序`',
+            'select `类型编码` as `value`, `类型名称` as `label`
+            from `def_contract_type`
+            where `有效标识`=%s
+            order by `排序号`',
             $this->model->quote('1')
         );
         $typeResult = $this->model->select($typeSql);

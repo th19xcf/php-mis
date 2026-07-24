@@ -170,7 +170,7 @@ const columnDefs = computed<ColDef[]>(() => {
       hide: isGuidColumn
     };
 
-    if (col.type === '数值') {
+    if ((col.type || '').trim() === '数值') {
       colDef.type = 'numericColumn';
       colDef.headerClass = (colDef.headerClass ? colDef.headerClass + ' ' : '') + 'wb-numeric-header';
       // 直接通过 inline style 右对齐，不依赖 CSS class

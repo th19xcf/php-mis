@@ -248,7 +248,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="contract-v2-page">
+  <div class="contract-v2-page" :class="{ 'system-dark': isDarkMode }">
     <div class="page-header">
       <h2>合同管理 V2</h2>
       <div class="stats-cards">
@@ -973,6 +973,328 @@ onMounted(() => {
     align-items: center;
     justify-content: center;
     color: #999;
+  }
+}
+
+// Dark mode overrides
+.contract-v2-page.system-dark {
+  --wb-dark-bg: rgb(var(--container-bg-color));
+
+  .stat-card {
+    background: var(--wb-dark-bg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+
+    .stat-label {
+      color: #b0b0b0;
+    }
+
+    .stat-value {
+      color: #64b5f6;
+    }
+  }
+
+  .left-panel,
+  .right-panel {
+    background: var(--wb-dark-bg);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  }
+
+  .search-bar {
+    .form-item {
+      label {
+        color: #b0b0b0;
+      }
+
+      input,
+      select {
+        background: var(--wb-dark-bg);
+        border-color: rgba(255, 255, 255, 0.15);
+        color: #e0e0e0;
+
+        &::placeholder {
+          color: #888;
+        }
+
+        &:focus {
+          border-color: #64b5f6;
+        }
+      }
+    }
+  }
+
+  .btn-default {
+    background: var(--wb-dark-bg);
+    color: #e0e0e0;
+    border-color: rgba(255, 255, 255, 0.15);
+
+    &:hover {
+      border-color: #64b5f6;
+      color: #64b5f6;
+    }
+  }
+
+  .toolbar {
+    border-bottom-color: rgba(255, 255, 255, 0.09);
+
+    .tab-item {
+      color: #b0b0b0;
+
+      &.active {
+        background: rgba(100, 181, 246, 0.15);
+        color: #64b5f6;
+      }
+
+      &:hover:not(.active) {
+        background: rgba(255, 255, 255, 0.05);
+      }
+    }
+  }
+
+  .task-list {
+    .task-item {
+      border-bottom-color: rgba(255, 255, 255, 0.09);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .task-title {
+        color: #e0e0e0;
+      }
+
+      .task-node {
+        background: rgba(100, 181, 246, 0.15);
+        color: #64b5f6;
+      }
+
+      .task-info {
+        color: #b0b0b0;
+      }
+
+      .task-status {
+        &.RUNNING {
+          background: rgba(100, 181, 246, 0.15);
+          color: #64b5f6;
+        }
+
+        &.COMPLETED {
+          background: rgba(82, 196, 26, 0.15);
+          color: #73d13d;
+        }
+
+        &.TERMINATED {
+          background: rgba(255, 77, 79, 0.15);
+          color: #ff7875;
+        }
+      }
+
+      .task-result {
+        &.APPROVE {
+          background: rgba(82, 196, 26, 0.15);
+          color: #73d13d;
+        }
+
+        &.REJECT {
+          background: rgba(255, 77, 79, 0.15);
+          color: #ff7875;
+        }
+      }
+    }
+
+    .empty-tip {
+      color: #888;
+    }
+  }
+
+  .pagination {
+    border-top-color: rgba(255, 255, 255, 0.09);
+    color: #b0b0b0;
+
+    button {
+      background: var(--wb-dark-bg);
+      border-color: rgba(255, 255, 255, 0.15);
+      color: #e0e0e0;
+
+      &:hover:not(:disabled) {
+        border-color: #64b5f6;
+        color: #64b5f6;
+      }
+    }
+
+    select {
+      background: var(--wb-dark-bg);
+      border-color: rgba(255, 255, 255, 0.15);
+      color: #e0e0e0;
+    }
+  }
+
+  .detail-panel {
+    .detail-header {
+      border-bottom-color: rgba(255, 255, 255, 0.09);
+
+      h3 {
+        color: #e0e0e0;
+      }
+
+      .status-badge {
+        background: rgba(100, 181, 246, 0.15);
+        color: #64b5f6;
+      }
+    }
+
+    .detail-content {
+      .detail-item {
+        label {
+          color: #888;
+        }
+
+        span {
+          color: #e0e0e0;
+
+          &.amount {
+            color: #64b5f6;
+          }
+        }
+      }
+    }
+
+    .flow-section {
+      border-top-color: rgba(255, 255, 255, 0.09);
+
+      h4 {
+        color: #e0e0e0;
+      }
+    }
+  }
+
+  .empty-detail {
+    color: #888;
+  }
+
+  // Child component dark mode overrides
+  :deep(.modal-container) {
+    background: var(--wb-dark-bg);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+
+    .modal-header {
+      border-bottom-color: rgba(255, 255, 255, 0.09);
+
+      h3 {
+        color: #e0e0e0;
+      }
+
+      .close-btn {
+        color: #888;
+
+        &:hover {
+          color: #e0e0e0;
+        }
+      }
+    }
+
+    .modal-body {
+      .form-item {
+        label {
+          color: #b0b0b0;
+
+          .required {
+            color: #ff7875;
+          }
+        }
+
+        input,
+        select,
+        textarea {
+          background: var(--wb-dark-bg);
+          border-color: rgba(255, 255, 255, 0.15);
+          color: #e0e0e0;
+
+          &::placeholder {
+            color: #888;
+          }
+
+          &:focus {
+            border-color: #64b5f6;
+          }
+
+          &:disabled {
+            background: rgba(255, 255, 255, 0.05);
+          }
+        }
+      }
+
+      .contract-info {
+        background: rgba(255, 255, 255, 0.05);
+
+        .info-row {
+          label {
+            color: #888;
+          }
+
+          span {
+            color: #e0e0e0;
+
+            &.amount {
+              color: #64b5f6;
+            }
+          }
+        }
+      }
+
+      .action-radio {
+        .radio-item {
+          color: #e0e0e0;
+        }
+      }
+    }
+
+    .modal-footer {
+      border-top-color: rgba(255, 255, 255, 0.09);
+    }
+
+    .btn-default {
+      background: var(--wb-dark-bg);
+      color: #e0e0e0;
+      border-color: rgba(255, 255, 255, 0.15);
+
+      &:hover {
+        border-color: #64b5f6;
+        color: #64b5f6;
+      }
+    }
+  }
+
+  :deep(.flow-timeline) {
+    .loading,
+    .empty {
+      color: #888;
+    }
+
+    .timeline-dot::before {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .timeline-content {
+      .timeline-header {
+        .operator {
+          color: #e0e0e0;
+        }
+
+        .action {
+          background: rgba(100, 181, 246, 0.15);
+          color: #64b5f6;
+        }
+      }
+
+      .timeline-time {
+        color: #888;
+      }
+
+      .timeline-remark {
+        color: #b0b0b0;
+        background: rgba(255, 255, 255, 0.05);
+      }
+    }
   }
 }
 </style>

@@ -236,7 +236,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="workflow-manage-page">
+  <div class="workflow-manage-page" :class="{ 'system-dark': isDarkMode }">
     <div class="page-header">
       <h2>工作流管理</h2>
     </div>
@@ -359,6 +359,154 @@ onMounted(() => {
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     padding: 16px;
+  }
+
+  // Dark mode overrides
+  &.system-dark {
+    --wb-dark-bg: rgb(var(--container-bg-color));
+
+    .content {
+      background: var(--wb-dark-bg);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    }
+
+    .search-bar {
+      .form-item {
+        label {
+          color: #b0b0b0;
+        }
+
+        input,
+        select {
+          background: var(--wb-dark-bg);
+          border-color: rgba(255, 255, 255, 0.15);
+          color: #e0e0e0;
+
+          &::placeholder {
+            color: #888;
+          }
+
+          &:focus {
+            border-color: #64b5f6;
+          }
+        }
+      }
+    }
+
+    .btn-default {
+      background: var(--wb-dark-bg);
+      color: #e0e0e0;
+      border-color: rgba(255, 255, 255, 0.15);
+
+      &:hover {
+        border-color: #64b5f6;
+        color: #64b5f6;
+      }
+    }
+
+    .toolbar {
+      border-bottom-color: rgba(255, 255, 255, 0.09);
+    }
+
+    .pagination {
+      border-top-color: rgba(255, 255, 255, 0.09);
+      color: #b0b0b0;
+
+      button {
+        background: var(--wb-dark-bg);
+        border-color: rgba(255, 255, 255, 0.15);
+        color: #e0e0e0;
+
+        &:hover:not(:disabled) {
+          border-color: #64b5f6;
+          color: #64b5f6;
+        }
+      }
+
+      select {
+        background: var(--wb-dark-bg);
+        border-color: rgba(255, 255, 255, 0.15);
+        color: #e0e0e0;
+      }
+    }
+
+    // Child component dark mode overrides
+    :deep(.modal-container) {
+      background: var(--wb-dark-bg);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+
+      .modal-header {
+        border-bottom-color: rgba(255, 255, 255, 0.09);
+
+        h3 {
+          color: #e0e0e0;
+        }
+
+        .close-btn {
+          color: #888;
+
+          &:hover {
+            color: #e0e0e0;
+          }
+        }
+      }
+
+      .modal-body {
+        .form-item {
+          label {
+            color: #b0b0b0;
+
+            .required {
+              color: #ff7875;
+            }
+          }
+
+          input,
+          select,
+          textarea {
+            background: var(--wb-dark-bg);
+            border-color: rgba(255, 255, 255, 0.15);
+            color: #e0e0e0;
+
+            &::placeholder {
+              color: #888;
+            }
+
+            &:focus {
+              border-color: #64b5f6;
+            }
+
+            &:disabled {
+              background: rgba(255, 255, 255, 0.05);
+            }
+          }
+        }
+
+        .notice {
+          background: rgba(250, 173, 20, 0.1);
+          border-color: rgba(250, 173, 20, 0.25);
+
+          p {
+            color: #ffc53d;
+          }
+        }
+      }
+
+      .modal-footer {
+        border-top-color: rgba(255, 255, 255, 0.09);
+      }
+
+      .btn-default {
+        background: var(--wb-dark-bg);
+        color: #e0e0e0;
+        border-color: rgba(255, 255, 255, 0.15);
+
+        &:hover {
+          border-color: #64b5f6;
+          color: #64b5f6;
+        }
+      }
+    }
   }
 
   .search-bar {
