@@ -280,4 +280,97 @@ class ContractV2Api extends BaseApiController
             return $this->serverError($e->getMessage());
         }
     }
+
+    public function uploadDocument()
+    {
+        try {
+            $contractNo = $this->request->getPost('contractNo') ?? '';
+            $docType = $this->request->getPost('docType') ?? 'MAIN';
+            $docName = $this->request->getPost('docName') ?? '';
+
+            if (empty($contractNo)) {
+                return $this->paramError('合同编号不能为空');
+            }
+
+            $file = $this->request->getFile('file');
+            if (!$file || !$file->isValid()) {
+                return $this->paramError('请上传有效的文件');
+            }
+
+            $allowedTypes = ['MAIN', 'APPROVAL_FORM', 'ATTACHMENT', 'SUPPLEMENT'];
+            if (!in_array($docType, $allowedTypes, true)) {
+                return $this->paramError('文档类型无效');
+            }
+
+            $creator = $this->getUserWorkId();
+            $creatorName = $this->getUserName();
+
+            $result = $this->contractService->uploadDocument($contractNo, $file, $docType, $docName, $creator, $creatorName);
+
+            return $this->success($result, '上传成功');
+        } catch (\Throwable $e) {
+            log_message('error', '[ContractV2Api::uploadDocument] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    public function deleteDocument()
+    {
+        try {
+            $data = $this->getJsonInput();
+            $docId = (int) ($data['docId'] ?? 0);
+
+            if ($docId <= 0) {
+                return $this->paramError('文档ID不能为空');
+            }
+
+            $operator = $this->getUserWorkId();
+            $result = $this->contractService->deleteDocument($docId, $operator);
+
+            return $this->success(['deleted' => $result], '删除成功');
+        } catch (\Throwable $e) {
+            log_message('error', '[ContractV2Api::deleteDocument] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    public function downloadDocument($docId = null)
+    {
+        try {
+            $docId = (int) ($docId ?? $this->request->getGet('docId') ?? 0);
+
+            if ($docId <= 0) {
+                return $this->paramError('文档ID不能为空');
+            }
+
+            $sql = sprintf(
+                'select * from `def_contract_document` where `GUID`=%d and `删除标识`=%s limit 1',
+                $docId,
+                $this->model->quote('0')
+            );
+            $result = $this->model->select($sql);
+            $doc = $result ? ($result->getRowArray() ?: []) : [];
+
+            if (empty($doc) || empty($doc['文件路径'])) {
+                return $this->notFound('文档不存在');
+            }
+
+            $filePath = WRITEPATH . $doc['文件路径'];
+            if (!file_exists($filePath)) {
+                return $this->notFound('文件不存在');
+            }
+
+            $fileName = $doc['文档名称'] . '.' . ($doc['文档格式'] ?? '');
+            $fileSize = filesize($filePath);
+
+            return $this->response
+                ->setHeader('Content-Type', 'application/octet-stream')
+                ->setHeader('Content-Disposition', 'attachment; filename="' . rawurlencode($fileName) . '"')
+                ->setHeader('Content-Length', (string) $fileSize)
+                ->setBody(file_get_contents($filePath));
+        } catch (\Throwable $e) {
+            log_message('error', '[ContractV2Api::downloadDocument] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
 }

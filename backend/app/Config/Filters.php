@@ -122,7 +122,6 @@ class Filters extends BaseFilters
                 'contract/*',
                 'contractV2/*',
                 'workflow/*',
-                'onlyoffice/*',
                 'cache/*',
             ],
         ],

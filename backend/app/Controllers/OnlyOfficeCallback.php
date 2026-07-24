@@ -62,10 +62,23 @@ class OnlyOfficeCallback extends BaseApiController
                 return $this->paramError('documentId 不能为空');
             }
 
-            $userId = $this->getUserWorkId();
-            $userName = $this->getUserName();
+            try {
+                $userId = $this->getUserWorkId();
+                $userName = $this->getUserName();
+            } catch (\Throwable $e) {
+                log_message('debug', '[OnlyOfficeCallback::config] 使用默认用户，原因: ' . $e->getMessage());
+                $userId = 'system';
+                $userName = '系统用户';
+            }
 
-            $callbackUrl = site_url('onlyoffice/callback');
+            $backendUrl = env('onlyoffice.backendUrl', '');
+            if (!empty($backendUrl)) {
+                $callbackUrl = rtrim($backendUrl, '/') . '/onlyoffice/callback';
+            } else {
+                $protocol = $this->request->getServer('HTTPS') === 'on' ? 'https' : 'http';
+                $host = $this->request->getServer('HTTP_HOST');
+                $callbackUrl = $protocol . '://' . $host . '/onlyoffice/callback';
+            }
 
             $config = $this->onlyOfficeService->getEditorConfig($documentId, $userId, $userName, $callbackUrl);
 
@@ -79,10 +92,13 @@ class OnlyOfficeCallback extends BaseApiController
     public function download()
     {
         try {
-            $documentId = (int) ($this->request->getGet('documentId') ?? 0);
+            $documentId = (int) ($this->request->getGet('id') ?? $this->request->getGet('documentId') ?? 0);
             $token = $this->request->getGet('token') ?? '';
 
+            log_message('debug', '[OnlyOfficeCallback::download] 请求到达 - documentId=' . $documentId . ', token=' . (empty($token) ? 'empty' : 'present') . ', IP=' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+
             if ($documentId <= 0) {
+                log_message('debug', '[OnlyOfficeCallback::download] 参数错误 - documentId=' . $documentId);
                 return $this->paramError('documentId 不能为空');
             }
 
@@ -104,11 +120,15 @@ class OnlyOfficeCallback extends BaseApiController
 
             $document = $this->getDocumentById($documentId);
             if (!$document) {
+                log_message('debug', '[OnlyOfficeCallback::download] 文档不存在 - documentId=' . $documentId);
                 return $this->notFound('文档不存在');
             }
 
             $filePath = WRITEPATH . ($document['文件路径'] ?? '');
+            log_message('debug', '[OnlyOfficeCallback::download] 文件路径=' . $filePath . ', 文件存在=' . (file_exists($filePath) ? 'true' : 'false'));
+            
             if (!file_exists($filePath) || !is_file($filePath)) {
+                log_message('debug', '[OnlyOfficeCallback::download] 文件不存在 - filePath=' . $filePath);
                 return $this->notFound('文档文件不存在');
             }
 
@@ -120,6 +140,8 @@ class OnlyOfficeCallback extends BaseApiController
 
             $mimeType = $this->getMimeType($fileExt);
             $fileSize = filesize($filePath);
+
+            log_message('debug', '[OnlyOfficeCallback::download] 准备返回文件 - fileName=' . $fileName . ', fileExt=' . $fileExt . ', mimeType=' . $mimeType . ', fileSize=' . $fileSize);
 
             return $this->response
                 ->setHeader('Content-Type', $mimeType)

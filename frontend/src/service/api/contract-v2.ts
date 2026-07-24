@@ -84,3 +84,37 @@ export function fetchContractV2MyContracts(params?: { page?: number; pageSize?: 
 export function fetchContractV2FlowDetail(instanceId: number) {
   return request({ url: '/contractV2/flowDetail', params: { instanceId } });
 }
+
+export function fetchContractV2UploadDocument(data: {
+  contractNo: string;
+  docType: 'MAIN' | 'APPROVAL_FORM' | 'ATTACHMENT' | 'SUPPLEMENT';
+  docName?: string;
+  file: File;
+}) {
+  const formData = new FormData();
+  formData.append('contractNo', data.contractNo);
+  formData.append('docType', data.docType);
+  if (data.docName) formData.append('docName', data.docName);
+  formData.append('file', data.file);
+
+  return request<Api.ContractV2.ContractDocument>({
+    url: '/contractV2/uploadDocument',
+    method: 'post',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  });
+}
+
+export function fetchContractV2DeleteDocument(docId: number) {
+  return request({
+    url: '/contractV2/deleteDocument',
+    method: 'post',
+    data: { docId }
+  });
+}
+
+export function getContractV2DownloadUrl(docId: number) {
+  return `/api/contractV2/downloadDocument/${docId}`;
+}

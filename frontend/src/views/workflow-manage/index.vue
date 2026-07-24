@@ -297,7 +297,7 @@ onMounted(() => {
           :rowData="definitionList"
           :localeText="AG_GRID_LOCALE_CN"
           :pagination="false"
-          :rowSelection="{ type: 'single' } as any"
+          :rowSelection="{ mode: 'singleRow' }"
           @grid-ready="onGridReady"
         />
       </div>

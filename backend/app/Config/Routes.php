@@ -162,6 +162,10 @@ $routes->group('contractV2', static function ($routes) {
 	$routes->post('myContracts', 'ContractV2Api::myContracts');
 	$routes->get('flowDetail', 'ContractV2Api::flowDetail');
 	$routes->post('flowDetail', 'ContractV2Api::flowDetail');
+	$routes->post('uploadDocument', 'ContractV2Api::uploadDocument');
+	$routes->post('deleteDocument', 'ContractV2Api::deleteDocument');
+	$routes->get('downloadDocument/(:num)', 'ContractV2Api::downloadDocument/$1');
+	$routes->get('downloadDocument', 'ContractV2Api::downloadDocument');
 });
 
 $routes->group('workflow', static function ($routes) {

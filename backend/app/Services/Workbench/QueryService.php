@@ -200,11 +200,25 @@ class QueryService
         $selectParts = [];
         $hintErrorParts = [];
 
+        // 列名映射：配置中的列名 → 实际数据库列名
+        $columnAliasMap = [
+            '操作人' => '操作人员',
+        ];
+
         foreach ($columns as $column) {
             $alias = (string) ($column['列名'] ?? '');
             $queryName = (string) ($column['查询名'] ?? '');
             if ($alias === '' || $queryName === '') {
                 continue;
+            }
+
+            if ($alias === '序号') {
+                continue;
+            }
+
+            // 自动映射列名：如果查询名与映射表中的别名匹配，替换为实际列名
+            if (isset($columnAliasMap[$queryName])) {
+                $queryName = $columnAliasMap[$queryName];
             }
 
             if ((string) ($column['字符转换'] ?? '0') === '1') {

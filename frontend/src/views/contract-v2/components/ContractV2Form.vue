@@ -2,6 +2,11 @@
 import { ref, watch, computed } from 'vue';
 import { useMessage } from 'naive-ui';
 import { useContractV2Store } from '@/store/modules/contract-v2';
+import {
+  fetchContractV2UploadDocument,
+  fetchContractV2DeleteDocument,
+  getContractV2DownloadUrl
+} from '@/service/api/contract-v2';
 
 const props = defineProps<{
   visible: boolean;
@@ -12,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:visible': [value: boolean];
   success: [];
+  openEditor: [docId: number, docName: string];
 }>();
 
 const message = useMessage();
@@ -37,6 +43,18 @@ const formData = ref({
   汇率: 1,
   备注: ''
 });
+
+const contractFiles = ref<Api.ContractV2.ContractDocument[]>([]);
+const approvalFiles = ref<Api.ContractV2.ContractDocument[]>([]);
+const uploading = ref(false);
+
+// 可在线编辑的文件格式
+const editableExts = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+
+function isEditableDoc(doc: Api.ContractV2.ContractDocument): boolean {
+  const ext = (doc.文档格式 || '').toLowerCase();
+  return editableExts.includes(ext);
+}
 
 const rules = {
   合同名称: { required: true, message: '请输入合同名称' },
@@ -67,6 +85,9 @@ watch(
           汇率: props.contract.汇率 || 1,
           备注: props.contract.备注 || ''
         };
+        const docs = props.contract.documents || [];
+        contractFiles.value = docs.filter(d => d.文档类型 === 'MAIN');
+        approvalFiles.value = docs.filter(d => d.文档类型 === 'APPROVAL_FORM');
       } else {
         formData.value = {
           合同名称: '',
@@ -86,6 +107,8 @@ watch(
           汇率: 1,
           备注: ''
         };
+        contractFiles.value = [];
+        approvalFiles.value = [];
       }
     }
   }
@@ -129,6 +152,82 @@ async function handleSubmit() {
 }
 
 const options = computed(() => contractV2Store.options);
+
+const currentContractNo = computed(() => {
+  if (props.mode === 'edit' && props.contract) {
+    return props.contract.合同编号;
+  }
+  return contractV2Store.currentContract?.合同编号 || '';
+});
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+async function handleFileUpload(event: Event, docType: 'MAIN' | 'APPROVAL_FORM') {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  if (!file) return;
+
+  if (!currentContractNo.value) {
+    message.warning('请先保存合同基础信息后再上传文件');
+    target.value = '';
+    return;
+  }
+
+  if (file.size > 50 * 1024 * 1024) {
+    message.error('文件大小不能超过50MB');
+    target.value = '';
+    return;
+  }
+
+  uploading.value = true;
+  try {
+    const result = await fetchContractV2UploadDocument({
+      contractNo: currentContractNo.value,
+      docType,
+      file
+    });
+    if (docType === 'MAIN') {
+      contractFiles.value.push(result as any);
+    } else {
+      approvalFiles.value.push(result as any);
+    }
+    message.success('上传成功');
+    contractV2Store.loadContractDetail(currentContractNo.value);
+  } catch (e: any) {
+    message.error(e?.message || '上传失败');
+  } finally {
+    uploading.value = false;
+    target.value = '';
+  }
+}
+
+async function handleDeleteFile(doc: Api.ContractV2.ContractDocument, docType: 'MAIN' | 'APPROVAL_FORM') {
+  try {
+    await fetchContractV2DeleteDocument(doc.GUID);
+    if (docType === 'MAIN') {
+      contractFiles.value = contractFiles.value.filter(d => d.GUID !== doc.GUID);
+    } else {
+      approvalFiles.value = approvalFiles.value.filter(d => d.GUID !== doc.GUID);
+    }
+    message.success('删除成功');
+    contractV2Store.loadContractDetail(currentContractNo.value);
+  } catch (e: any) {
+    message.error(e?.message || '删除失败');
+  }
+}
+
+function handleDownload(doc: Api.ContractV2.ContractDocument) {
+  if (isEditableDoc(doc)) {
+    emit('openEditor', doc.GUID, doc.文档名称);
+  } else {
+    const url = getContractV2DownloadUrl(doc.GUID);
+    window.open(url, '_blank');
+  }
+}
 </script>
 
 <template>
@@ -218,6 +317,72 @@ const options = computed(() => contractV2Store.options);
           <div class="form-item full">
             <label>备注</label>
             <textarea v-model="formData.备注" rows="3" placeholder="请输入备注"></textarea>
+          </div>
+
+          <div class="form-item full">
+            <label>合同文件</label>
+            <div class="file-upload-section">
+              <div v-if="mode === 'create'" class="upload-tip">
+                请先保存合同基础信息后再上传文件
+              </div>
+              <div v-else class="upload-area">
+                <label class="upload-btn">
+                  <input
+                    type="file"
+                    :disabled="uploading"
+                    @change="e => handleFileUpload(e, 'MAIN')"
+                  />
+                  <span>{{ uploading ? '上传中...' : '+ 上传合同文件' }}</span>
+                </label>
+                <div class="file-list">
+                  <div
+                    v-for="file in contractFiles"
+                    :key="file.GUID"
+                    class="file-item"
+                  >
+                    <span class="file-name" :class="{ editable: isEditableDoc(file) }" @click="handleDownload(file)">
+                      {{ file.文档名称 }}
+                      <span v-if="isEditableDoc(file)" class="edit-hint">编辑</span>
+                    </span>
+                    <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
+                    <button class="file-delete" @click="handleDeleteFile(file, 'MAIN')">删除</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-item full">
+            <label>合同审批表</label>
+            <div class="file-upload-section">
+              <div v-if="mode === 'create'" class="upload-tip">
+                请先保存合同基础信息后再上传文件
+              </div>
+              <div v-else class="upload-area">
+                <label class="upload-btn">
+                  <input
+                    type="file"
+                    :disabled="uploading"
+                    @change="e => handleFileUpload(e, 'APPROVAL_FORM')"
+                  />
+                  <span>{{ uploading ? '上传中...' : '+ 上传审批表' }}</span>
+                </label>
+                <div class="file-list">
+                  <div
+                    v-for="file in approvalFiles"
+                    :key="file.GUID"
+                    class="file-item"
+                  >
+                    <span class="file-name" :class="{ editable: isEditableDoc(file) }" @click="handleDownload(file)">
+                      {{ file.文档名称 }}
+                      <span v-if="isEditableDoc(file)" class="edit-hint">编辑</span>
+                    </span>
+                    <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
+                    <button class="file-delete" @click="handleDeleteFile(file, 'APPROVAL_FORM')">删除</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -329,6 +494,107 @@ const options = computed(() => contractV2Store.options);
     textarea {
       resize: vertical;
       font-family: inherit;
+    }
+  }
+}
+
+.file-upload-section {
+  .upload-tip {
+    padding: 20px;
+    text-align: center;
+    color: #999;
+    font-size: 13px;
+    background: #fafafa;
+    border: 1px dashed #d9d9d9;
+    border-radius: 4px;
+  }
+
+  .upload-area {
+    .upload-btn {
+      display: inline-block;
+      padding: 8px 16px;
+      border: 1px dashed #1890ff;
+      border-radius: 4px;
+      color: #1890ff;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 12px;
+
+      &:hover {
+        border-color: #40a9ff;
+        color: #40a9ff;
+        background: #e6f7ff;
+      }
+
+      input {
+        display: none;
+      }
+    }
+
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      .file-item {
+        display: flex;
+        align-items: center;
+        padding: 8px 12px;
+        background: #fafafa;
+        border-radius: 4px;
+        gap: 12px;
+
+        .file-name {
+          flex: 1;
+          color: #1890ff;
+          font-size: 14px;
+          cursor: pointer;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+
+          &:hover {
+            text-decoration: underline;
+          }
+
+          &.editable {
+            color: #52c41a;
+          }
+
+          .edit-hint {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 0 6px;
+            font-size: 11px;
+            color: #52c41a;
+            background: #f6ffed;
+            border: 1px solid #b7eb8f;
+            border-radius: 2px;
+            vertical-align: middle;
+          }
+        }
+
+        .file-size {
+          color: #999;
+          font-size: 12px;
+          flex-shrink: 0;
+        }
+
+        .file-delete {
+          background: none;
+          border: none;
+          color: #ff4d4f;
+          font-size: 13px;
+          cursor: pointer;
+          padding: 2px 8px;
+          flex-shrink: 0;
+
+          &:hover {
+            text-decoration: underline;
+          }
+        }
+      }
     }
   }
 }

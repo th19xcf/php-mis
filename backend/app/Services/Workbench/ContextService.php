@@ -417,7 +417,9 @@ class ContextService
                 'hidden' => false,
                 'editable' => false,
                 'required' => false,
-                'sortable' => true
+                'sortable' => true,
+                '列名' => '序号',
+                '查询名' => '@row := @row + 1'
             ];
         }
 

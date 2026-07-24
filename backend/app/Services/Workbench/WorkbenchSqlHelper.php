@@ -86,10 +86,22 @@ class WorkbenchSqlHelper
      */
     public static function buildColumnMap(array $columns): array
     {
+        // 字段名映射：配置中的字段名 → 实际数据库列名
+        $fieldAliasMap = [
+            '操作人' => '操作人员',
+        ];
+
         $columnMap = [];
         foreach ($columns as $column) {
             $columnName = (string) ($column['列名'] ?? '');
             $fieldName = (string) ($column['字段名'] ?? '');
+
+            // 自动映射字段名
+            if (isset($fieldAliasMap[$fieldName])) {
+                $column['字段名'] = $fieldAliasMap[$fieldName];
+                $fieldName = $fieldAliasMap[$fieldName];
+            }
+
             if ($columnName !== '') {
                 $columnMap[$columnName] = $column;
             }

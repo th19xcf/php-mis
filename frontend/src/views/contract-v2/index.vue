@@ -9,6 +9,7 @@ import { useContractV2Store } from '@/store/modules/contract-v2';
 import ContractV2Form from './components/ContractV2Form.vue';
 import ContractV2Approval from './components/ContractV2Approval.vue';
 import ContractV2FlowTimeline from './components/ContractV2FlowTimeline.vue';
+import OnlyOfficeEditor from './components/OnlyOfficeEditor.vue';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -41,6 +42,11 @@ const activeTab = ref<'list' | 'pending' | 'done' | 'my'>('list');
 const showFormModal = ref(false);
 const showApprovalModal = ref(false);
 const formMode = ref<'create' | 'edit'>('create');
+
+// OnlyOffice 编辑器
+const showEditorModal = ref(false);
+const editorDocId = ref(0);
+const editorDocName = ref('');
 
 const searchForm = ref({
   contractNo: '',
@@ -233,6 +239,18 @@ function handleFormSuccess() {
   contractV2Store.loadContractList();
 }
 
+function handleOpenEditor(docId: number, docName: string) {
+  editorDocId.value = docId;
+  editorDocName.value = docName;
+  showEditorModal.value = true;
+}
+
+function handleCloseEditor() {
+  showEditorModal.value = false;
+  editorDocId.value = 0;
+  editorDocName.value = '';
+}
+
 function handleApprovalSuccess() {
   showApprovalModal.value = false;
   if (activeTab.value === 'pending') {
@@ -361,7 +379,7 @@ onMounted(() => {
             :rowData="contractList"
             :localeText="AG_GRID_LOCALE_CN"
             :pagination="false"
-            :rowSelection="{ type: 'single' } as any"
+            :rowSelection="{ mode: 'singleRow' }"
             @grid-ready="onGridReady"
             @row-clicked="onRowClicked"
           />
@@ -535,6 +553,7 @@ onMounted(() => {
       :mode="formMode"
       :contract="currentContract"
       @success="handleFormSuccess"
+      @open-editor="handleOpenEditor"
     />
 
     <ContractV2Approval
@@ -542,6 +561,19 @@ onMounted(() => {
       :contract="currentContract"
       @success="handleApprovalSuccess"
     />
+
+    <!-- OnlyOffice 文档编辑器弹窗 -->
+    <div v-if="showEditorModal" class="editor-modal-overlay" @click.self="handleCloseEditor">
+      <div class="editor-modal-container">
+        <div class="editor-modal-header">
+          <h3>{{ editorDocName }}</h3>
+          <button class="close-btn" @click="handleCloseEditor">&times;</button>
+        </div>
+        <div class="editor-modal-body">
+          <OnlyOfficeEditor :documentId="editorDocId" height="100%" />
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1296,5 +1328,62 @@ onMounted(() => {
       }
     }
   }
+}
+
+.editor-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.editor-modal-container {
+  width: 90vw;
+  height: 85vh;
+  background: #fff;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.editor-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid #f0f0f0;
+  flex-shrink: 0;
+
+  h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #999;
+    line-height: 1;
+
+    &:hover {
+      color: #333;
+    }
+  }
+}
+
+.editor-modal-body {
+  flex: 1;
+  overflow: hidden;
 }
 </style>

@@ -131,7 +131,7 @@ class ContractService
         if ($useNewTable) {
             $partySql = sprintf(
                 'select * from `def_contract_party` 
-                where `合同编号`=%s order by `序号`',
+                where `合同编号`=%s order by `GUID`',
                 $this->model->quote($contractNo)
             );
             $partyResult = $this->model->select($partySql);
@@ -684,15 +684,201 @@ class ContractService
         $now = date('Y-m-d H:i:s');
         $sql = sprintf(
             'insert into `def_contract_version` 
-            (`合同编号`, `版本号`, `操作人`, `操作人姓名`, `变更说明`, `创建时间`)
-            values (%s, %d, %s, %s, %s, %s)',
+            (`合同编号`, `版本号`, `操作来源`, `操作人员`, `变更说明`, `创建人`, `创建时间`)
+            values (%s, %d, %s, %s, %s, %s, %s)',
             $this->model->quote($contractNo),
             $version,
+            $this->model->quote('SYSTEM'),
             $this->model->quote($operator),
-            $this->model->quote($operatorName),
             $this->model->quote($changeDesc),
+            $this->model->quote($operator),
             $this->model->quote($now)
         );
         $this->model->exec($sql);
+    }
+
+    /**
+     * 上传合同文档
+     *
+     * @param string $contractNo 合同编号
+     * @param \CodeIgniter\HTTP\Files\UploadedFile $file 上传的文件
+     * @param string $docType 文档类型(MAIN/APPROVAL_FORM/ATTACHMENT/SUPPLEMENT)
+     * @param string $docName 文档名称
+     * @param string $creator 创建人工号
+     * @param string $creatorName 创建人姓名
+     * @return array 文档信息
+     * @throws \RuntimeException
+     */
+    public function uploadDocument(string $contractNo, $file, string $docType, string $docName, string $creator, string $creatorName): array
+    {
+        if (!$this->contractExists($contractNo)) {
+            throw new \RuntimeException('合同不存在');
+        }
+
+        if (!$file || !$file->isValid()) {
+            throw new \RuntimeException('上传文件无效');
+        }
+
+        $allowedExts = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pdf', 'txt', 'jpg', 'jpeg', 'png', 'gif', 'zip', 'rar'];
+        $fileExt = strtolower($file->getExtension());
+        if (!in_array($fileExt, $allowedExts, true)) {
+            throw new \RuntimeException('不支持的文件格式');
+        }
+
+        $maxSize = 50 * 1024 * 1024;
+        if ($file->getSize() > $maxSize) {
+            throw new \RuntimeException('文件大小不能超过50MB');
+        }
+
+        $storageDir = WRITEPATH . 'contract_docs';
+        if (!is_dir($storageDir)) {
+            mkdir($storageDir, 0755, true);
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $fileSize = $file->getSize();
+        $originalName = $docName ?: $file->getName();
+        $fileMd5 = md5_file($file->getTempName());
+
+        $docNo = 'CDOC' . date('YmdHis') . rand(1000, 9999);
+
+        // 可在线编辑的文件格式
+        $editableExts = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+        $canEditOnline = in_array($fileExt, $editableExts, true) ? '1' : '0';
+
+        $fields = [
+            '`文档编号`', '`合同编号`', '`文档名称`', '`文档类型`', '`文档格式`',
+            '`文件大小`', '`文件MD5`', '`版本号`', '`最新版本`',
+            '`是否在线编辑`', '`编辑状态`',
+            '`创建人`', '`创建时间`', '`更新人`', '`更新时间`',
+            '`删除标识`', '`有效标识`'
+        ];
+
+        $values = [
+            $this->model->quote($docNo),
+            $this->model->quote($contractNo),
+            $this->model->quote($originalName),
+            $this->model->quote($docType),
+            $this->model->quote($fileExt),
+            (int) $fileSize,
+            $this->model->quote($fileMd5),
+            1,
+            $this->model->quote('1'),
+            $this->model->quote($canEditOnline),
+            $this->model->quote('IDLE'),
+            $this->model->quote($creator),
+            $this->model->quote($now),
+            $this->model->quote($creator),
+            $this->model->quote($now),
+            $this->model->quote('0'),
+            $this->model->quote('1'),
+        ];
+
+        $sql = sprintf(
+            'insert into `def_contract_document` (%s) values (%s)',
+            implode(', ', $fields),
+            implode(', ', $values)
+        );
+        $this->model->exec($sql);
+
+        $db = db_connect('btdc');
+        $docId = (int) $db->insertID();
+
+        $newFileName = $docId . '_v1.' . $fileExt;
+        $destPath = $storageDir . DIRECTORY_SEPARATOR . $newFileName;
+        $file->move($storageDir, $newFileName);
+
+        $relativePath = 'contract_docs/' . $newFileName;
+
+        $updateSql = sprintf(
+            'update `def_contract_document` set `文件路径`=%s where `GUID`=%d',
+            $this->model->quote($relativePath),
+            $docId
+        );
+        $this->model->exec($updateSql);
+
+        return [
+            'GUID' => $docId,
+            '文档编号' => $docNo,
+            '文档名称' => $originalName,
+            '文档类型' => $docType,
+            '文档格式' => $fileExt,
+            '文件大小' => $fileSize,
+            '文件路径' => $relativePath,
+            '版本号' => 1,
+            '创建时间' => $now,
+        ];
+    }
+
+    /**
+     * 删除合同文档
+     *
+     * @param int $docId 文档ID
+     * @param string $operator 操作人工号
+     * @return bool
+     * @throws \RuntimeException
+     */
+    public function deleteDocument(int $docId, string $operator): bool
+    {
+        $sql = sprintf(
+            'select * from `def_contract_document` where `GUID`=%d and `删除标识`=%s limit 1',
+            $docId,
+            $this->model->quote('0')
+        );
+        $result = $this->model->select($sql);
+        $doc = $result ? ($result->getRowArray() ?: []) : [];
+
+        if (empty($doc)) {
+            throw new \RuntimeException('文档不存在');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $updateSql = sprintf(
+            'update `def_contract_document` 
+            set `删除标识`=%s, `更新人`=%s, `更新时间`=%s 
+            where `GUID`=%d',
+            $this->model->quote('1'),
+            $this->model->quote($operator),
+            $this->model->quote($now),
+            $docId
+        );
+        $affected = $this->model->exec($updateSql);
+
+        return $affected > 0;
+    }
+
+    /**
+     * 获取文档下载地址
+     *
+     * @param int $docId 文档ID
+     * @return array|null
+     */
+    public function getDocumentDownloadUrl(int $docId): ?array
+    {
+        $sql = sprintf(
+            'select * from `def_contract_document` where `GUID`=%d and `删除标识`=%s limit 1',
+            $docId,
+            $this->model->quote('0')
+        );
+        $result = $this->model->select($sql);
+        $doc = $result ? ($result->getRowArray() ?: []) : [];
+
+        if (empty($doc) || empty($doc['文件路径'])) {
+            return null;
+        }
+
+        $fileName = $doc['文档名称'] . '.' . ($doc['文档格式'] ?? '');
+        $filePath = WRITEPATH . $doc['文件路径'];
+
+        if (!file_exists($filePath)) {
+            return null;
+        }
+
+        return [
+            'docId' => $docId,
+            'fileName' => $fileName,
+            'fileSize' => (int) ($doc['文件大小'] ?? 0),
+            'downloadUrl' => site_url('api/contractV2/downloadDocument/' . $docId),
+        ];
     }
 }

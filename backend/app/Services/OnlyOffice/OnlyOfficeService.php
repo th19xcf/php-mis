@@ -9,12 +9,14 @@ class OnlyOfficeService
     private Mcommon $model;
     private string $serverUrl;
     private string $jwtSecret;
+    private string $backendUrl;
 
     public function __construct()
     {
         $this->model = new Mcommon();
         $this->serverUrl = rtrim(env('onlyoffice.serverUrl', ''), '/');
         $this->jwtSecret = env('onlyoffice.jwtSecret', '');
+        $this->backendUrl = rtrim(env('onlyoffice.backendUrl', ''), '/');
     }
 
     /**
@@ -50,10 +52,18 @@ class OnlyOfficeService
 
         $documentKey = $document['文档密钥'] ?: $this->generateDocumentKey($documentId, (int) ($document['版本号'] ?? 1));
 
-        $downloadUrl = $this->getDownloadUrl($documentId);
+        $downloadUrl = $this->getDownloadUrl($documentId, $callbackUrl);
 
         $canEdit = ($document['是否在线编辑'] ?? '0') === '1';
         $mode = $canEdit ? 'edit' : 'view';
+
+        $documentTypeMap = [
+            'doc' => 'word', 'docx' => 'word',
+            'xls' => 'cell', 'xlsx' => 'cell',
+            'ppt' => 'slide', 'pptx' => 'slide',
+            'pdf' => 'word', 'txt' => 'word',
+        ];
+        $documentType = $documentTypeMap[$fileType] ?? 'word';
 
         $config = [
             'document' => [
@@ -72,6 +82,8 @@ class OnlyOfficeService
                     'modifyContentControl' => $canEdit,
                 ],
             ],
+            'documentType' => $documentType,
+            'editorUrl' => $this->serverUrl,
             'editorConfig' => [
                 'mode' => $mode,
                 'lang' => 'zh-CN',
@@ -408,7 +420,7 @@ class OnlyOfficeService
      * @return string 下载URL
      * @throws \RuntimeException
      */
-    public function getDownloadUrl(int $documentId): string
+    public function getDownloadUrl(int $documentId, string $callbackUrl = ''): string
     {
         $sql = sprintf(
             'select * from `def_contract_document` where `GUID`=%d and `删除标识`=%s limit 1',
@@ -432,7 +444,25 @@ class OnlyOfficeService
             throw new \RuntimeException('文档文件不存在');
         }
 
-        return site_url('api/onlyoffice/download/' . $documentId . '?token=' . $this->generateDownloadToken($documentId));
+        // 路由定义：$routes->group('onlyoffice', ...)，实际路径为 /onlyoffice/download，无 /api 前缀
+        $url = '';
+        if (!empty($this->backendUrl)) {
+            $url = $this->backendUrl . '/onlyoffice/download?id=' . $documentId . '&token=' . $this->generateDownloadToken($documentId);
+        } elseif (!empty($callbackUrl)) {
+            $parse = parse_url($callbackUrl);
+            $protocol = $parse['scheme'] ?? 'http';
+            $host = $parse['host'] ?? '';
+            $port = !empty($parse['port']) ? ':' . $parse['port'] : '';
+            $baseUrl = $protocol . '://' . $host . $port;
+            $url = $baseUrl . '/onlyoffice/download?id=' . $documentId . '&token=' . $this->generateDownloadToken($documentId);
+        } else {
+            $url = base_url('onlyoffice/download?id=' . $documentId . '&token=' . $this->generateDownloadToken($documentId));
+        }
+
+        // 临时调试日志：记录实际生成的下载 URL，便于排查 OnlyOffice 服务器访问的 URL
+        log_message('debug', '[OnlyOfficeService::getDownloadUrl] documentId=' . $documentId . ', backendUrl=' . $this->backendUrl . ', callbackUrl=' . $callbackUrl . ', generatedUrl=' . $url);
+
+        return $url;
     }
 
     /**
