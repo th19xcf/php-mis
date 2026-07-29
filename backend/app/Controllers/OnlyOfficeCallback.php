@@ -185,7 +185,7 @@ class OnlyOfficeCallback extends BaseApiController
 
             return $this->response
                 ->setHeader('Content-Type', $mimeType)
-                ->setHeader('Content-Disposition', 'attachment; filename="' . rawurlencode($fileName) . '"')
+                ->setHeader('Content-Disposition', 'inline; filename="' . rawurlencode($fileName) . '"')
                 ->setHeader('Content-Length', (string) $fileSize)
                 ->setHeader('Accept-Ranges', 'bytes')
                 ->setBody($fileContent);

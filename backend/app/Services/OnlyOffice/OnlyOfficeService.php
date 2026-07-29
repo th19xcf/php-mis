@@ -55,7 +55,9 @@ class OnlyOfficeService
             $fileType = strtolower($ext);
         }
 
-        $documentKey = $document['文档密钥'] ?: $this->generateDocumentKey($documentId, (int) ($document['版本号'] ?? 1));
+        // 始终生成新的 documentKey，避免 OnlyOffice 缓存之前失败的下载
+        // OnlyOffice 使用 key 作为文档缓存标识，若之前下载失败会缓存失败状态
+        $documentKey = $this->generateDocumentKey($documentId, (int) ($document['版本号'] ?? 1));
         $steps['生成documentKey'] = hrtime(true);
 
         $downloadUrl = $this->getDownloadUrl($documentId, $callbackUrl);
@@ -108,17 +110,19 @@ class OnlyOfficeService
         $steps['构建config'] = hrtime(true);
 
         // JWT token 生成（OnlyOffice 服务器启用 JWT 验证时必须）
-        // 注意：token payload 必须与前端传给 DocEditor 的配置完全一致（不含 events 回调）
+        // 注意：payload 只能包含 OnlyOffice 协议字段（document/documentType/editorConfig）
+        // 不能包含 height/width/type/events 等前端控制字段，否则会报 -20 token 格式错误
         if (!empty($this->jwtSecret)) {
             $tokenPayload = [
                 'document' => $config['document'],
                 'documentType' => $config['documentType'],
                 'editorConfig' => $config['editorConfig'],
-                'height' => $config['height'],
-                'width' => $config['width'],
-                'type' => $config['type'],
             ];
             $config['token'] = $this->generateJwt($tokenPayload);
+
+            // OnlyOffice 7.0+ 要求各部分也单独签名
+            $config['document']['token'] = $this->generateJwt($config['document']);
+            $config['editorConfig']['token'] = $this->generateJwt($config['editorConfig']);
         }
         $steps['生成JWT'] = hrtime(true);
 
