@@ -31,6 +31,10 @@ class OnlyOfficeService
      */
     public function getEditorConfig(int $documentId, string $userId, string $userName, string $callbackUrl): array
     {
+        $t0 = hrtime(true);
+        $steps = [];
+
+        $t = hrtime(true);
         $sql = sprintf(
             'select * from `def_contract_document` where `GUID`=%d and `删除标识`=%s limit 1',
             $documentId,
@@ -38,6 +42,7 @@ class OnlyOfficeService
         );
         $result = $this->model->select($sql);
         $document = $result ? ($result->getRowArray() ?: []) : [];
+        $steps['查询文档'] = hrtime(true);
 
         if (empty($document)) {
             throw new \RuntimeException('文档不存在');
@@ -51,8 +56,10 @@ class OnlyOfficeService
         }
 
         $documentKey = $document['文档密钥'] ?: $this->generateDocumentKey($documentId, (int) ($document['版本号'] ?? 1));
+        $steps['生成documentKey'] = hrtime(true);
 
         $downloadUrl = $this->getDownloadUrl($documentId, $callbackUrl);
+        $steps['生成downloadUrl'] = hrtime(true);
 
         $canEdit = ($document['是否在线编辑'] ?? '0') === '1';
         $mode = $canEdit ? 'edit' : 'view';
@@ -75,11 +82,12 @@ class OnlyOfficeService
                     'edit' => $canEdit,
                     'download' => true,
                     'print' => true,
-                    'review' => $canEdit,
-                    'comment' => $canEdit,
-                    'fillForms' => $canEdit,
-                    'modifyFilter' => $canEdit,
-                    'modifyContentControl' => $canEdit,
+                    'review' => true,
+                    'comment' => true,
+                    'fillForms' => true,
+                    'modifyFilter' => true,
+                    'modifyContentControl' => true,
+                    'copy' => true,
                 ],
             ],
             'documentType' => $documentType,
@@ -92,39 +100,115 @@ class OnlyOfficeService
                     'name' => $userName,
                 ],
                 'callbackUrl' => $callbackUrl,
-                'customization' => [
-                    'autosave' => true,
-                    'forcesave' => false,
-                    'commentAuthorOnly' => false,
-                    'comments' => true,
-                    'compactHeader' => false,
-                    'compactToolbar' => false,
-                    'help' => true,
-                    'hideRightMenu' => false,
-                    'toolbarNoTabs' => false,
-                    'zoom' => 100,
-                ],
             ],
             'height' => '100%',
             'width' => '100%',
             'type' => 'desktop',
         ];
+        $steps['构建config'] = hrtime(true);
 
+        // JWT token 生成（OnlyOffice 服务器启用 JWT 验证时必须）
+        // 注意：token payload 必须与前端传给 DocEditor 的配置完全一致（不含 events 回调）
         if (!empty($this->jwtSecret)) {
-            $config['token'] = $this->generateJwt($config);
+            $tokenPayload = [
+                'document' => $config['document'],
+                'documentType' => $config['documentType'],
+                'editorConfig' => $config['editorConfig'],
+                'height' => $config['height'],
+                'width' => $config['width'],
+                'type' => $config['type'],
+            ];
+            $config['token'] = $this->generateJwt($tokenPayload);
         }
+        $steps['生成JWT'] = hrtime(true);
 
         $now = date('Y-m-d H:i:s');
         $updateSql = sprintf(
-            'update `def_contract_document` set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s where `GUID`=%d',
+            'update `def_contract_document` set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s, `文档密钥`=%s where `GUID`=%d',
             $this->model->quote('EDITING'),
             $this->model->quote($userId),
             $this->model->quote($now),
+            $this->model->quote($documentKey),
             $documentId
         );
         $this->model->exec($updateSql);
+        $steps['更新编辑状态'] = hrtime(true);
+
+        $this->logPerformanceTable('[OnlyOfficeService::getEditorConfig]', '成功', 'docId=' . $documentId, $steps, $t0);
 
         return $config;
+    }
+
+    /**
+     * 输出性能追踪表格日志（Service 层简化版）
+     *
+     * @param string $tag 标签
+     * @param string $status 状态
+     * @param string $info 附加信息
+     * @param array $steps 步骤数组：['步骤名' => hrtime(true)]
+     * @param int $t0 起始 hrtime(true)
+     */
+    private function logPerformanceTable(string $tag, string $status, string $info, array $steps, int $t0): void
+    {
+        $total = (end($steps) - $t0) / 1e6;
+        if ($total < 0.001) $total = 0.001;
+
+        $rows = [];
+        $prevTime = $t0;
+        $index = 0;
+
+        foreach ($steps as $stepName => $currTime) {
+            $duration = ($currTime - $prevTime) / 1e6;
+            $timestamp = sprintf('%.1f', ($currTime - $t0) / 1e6);
+            $pct = $total > 0 ? ($duration / $total) * 100 : 0;
+
+            $rows[] = [
+                'index' => $index,
+                'step' => $stepName,
+                'timestamp' => $timestamp,
+                'duration' => sprintf('%.2fms', $duration),
+                'pct' => sprintf('%.1f%%', $pct),
+                'raw_duration' => $duration
+            ];
+            $prevTime = $currTime;
+            $index++;
+        }
+
+        $logLines = [];
+        $logLines[] = sprintf('%s %s %s 总耗时: %.2fms', $tag, $info, $status, $total);
+        $logLines[] = sprintf('%-8s | %-20s | %-10s | %-12s | %-6s', '(索引)', 'step', 'timestamp', 'duration', 'pct');
+        $logLines[] = str_repeat('-', 64);
+
+        foreach ($rows as $row) {
+            $logLines[] = sprintf('%-8s | %-20s | %-10s | %-12s | %-6s',
+                $row['index'],
+                $row['step'],
+                $row['timestamp'],
+                $row['duration'],
+                $row['pct']
+            );
+        }
+
+        usort($rows, function ($a, $b) {
+            return $b['raw_duration'] <=> $a['raw_duration'];
+        });
+
+        $maxDuration = $rows[0]['raw_duration'] ?? 0;
+
+        $logLines[] = '';
+        $logLines[] = '耗时排行（从慢到快）';
+        $maxBar = 50;
+        $rank = 1;
+        foreach ($rows as $row) {
+            if ($row['raw_duration'] < 0.001) continue;
+            $barLen = $maxDuration > 0 ? (int) ($row['raw_duration'] / $maxDuration * $maxBar) : 0;
+            $barLen = max($barLen, 1);
+            $bar = str_repeat('█', $barLen);
+            $logLines[] = sprintf(' %d. %-20s %9.2fms %s', $rank, $row['step'], $row['raw_duration'], $bar);
+            $rank++;
+        }
+
+        log_message('debug', implode("\n", $logLines));
     }
 
     /**
@@ -147,6 +231,23 @@ class OnlyOfficeService
         $signatureEncoded = $this->base64urlEncode($signature);
 
         return $headerEncoded . '.' . $payloadEncoded . '.' . $signatureEncoded;
+    }
+
+    /**
+     * 生成文档 URL 的 JWT token（OnlyOffice 需要）
+     *
+     * @param string $url 文档下载 URL
+     * @return string JWT token
+     */
+    public function generateDocumentToken(string $url): string
+    {
+        $payload = [
+            'url' => $url,
+            'exp' => time() + 3600,
+            'iat' => time(),
+        ];
+
+        return $this->generateJwt($payload);
     }
 
     /**
@@ -422,6 +523,9 @@ class OnlyOfficeService
      */
     public function getDownloadUrl(int $documentId, string $callbackUrl = ''): string
     {
+        $t0 = hrtime(true);
+        $steps = [];
+
         $sql = sprintf(
             'select * from `def_contract_document` where `GUID`=%d and `删除标识`=%s limit 1',
             $documentId,
@@ -429,6 +533,7 @@ class OnlyOfficeService
         );
         $result = $this->model->select($sql);
         $document = $result ? ($result->getRowArray() ?: []) : [];
+        $steps['查询文档'] = hrtime(true);
 
         if (empty($document)) {
             throw new \RuntimeException('文档不存在');
@@ -443,6 +548,7 @@ class OnlyOfficeService
         if (!file_exists($fullPath)) {
             throw new \RuntimeException('文档文件不存在');
         }
+        $steps['检查文件'] = hrtime(true);
 
         // 路由定义：$routes->group('onlyoffice', ...)，实际路径为 /onlyoffice/download，无 /api 前缀
         $url = '';
@@ -458,9 +564,9 @@ class OnlyOfficeService
         } else {
             $url = base_url('onlyoffice/download?id=' . $documentId . '&token=' . $this->generateDownloadToken($documentId));
         }
+        $steps['生成URL'] = hrtime(true);
 
-        // 临时调试日志：记录实际生成的下载 URL，便于排查 OnlyOffice 服务器访问的 URL
-        log_message('debug', '[OnlyOfficeService::getDownloadUrl] documentId=' . $documentId . ', backendUrl=' . $this->backendUrl . ', callbackUrl=' . $callbackUrl . ', generatedUrl=' . $url);
+        $this->logPerformanceTable('[OnlyOfficeService::getDownloadUrl]', '成功', 'docId=' . $documentId . ' url=' . $url, $steps, $t0);
 
         return $url;
     }
@@ -509,7 +615,10 @@ class OnlyOfficeService
         $fileContent = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $error = curl_error($ch);
-        curl_close($ch);
+        // PHP 8.0+ 中 curl_close() 已无效（CurlHandle 为对象，自动释放），
+        // PHP 8.5+ 中标记为 deprecated，会触发 E_DEPRECATED 警告，
+        // 被 CodeIgniter 错误处理器转为 ErrorException，导致 handleCallback 返回 {"error":1}，
+        // OnlyOffice 弹出"无法保存"警告，故此处不再调用 curl_close。
 
         if ($fileContent === false || $httpCode !== 200) {
             throw new \RuntimeException('文件下载失败: ' . ($error ?: 'HTTP ' . $httpCode));
@@ -767,12 +876,13 @@ class OnlyOfficeService
 
             $fileExt = $document['文档格式'] ?? 'docx';
             $version = (int) ($document['版本号'] ?? 1);
+            $newVersion = $version + 1;
             $storageDir = WRITEPATH . 'contract_docs';
             if (!is_dir($storageDir)) {
                 mkdir($storageDir, 0755, true);
             }
 
-            $newFileName = $documentId . '_v' . $version . '_' . time() . '.' . $fileExt;
+            $newFileName = $documentId . '_v' . $newVersion . '_' . time() . '.' . $fileExt;
             $destPath = $storageDir . DIRECTORY_SEPARATOR . $newFileName;
 
             if (!rename($tempFile, $destPath)) {
@@ -786,7 +896,9 @@ class OnlyOfficeService
             $fileMd5 = md5_file($destPath);
             $relativePath = 'contract_docs/' . $newFileName;
             $now = date('Y-m-d H:i:s');
-            $documentKey = $this->generateDocumentKey($documentId, $version);
+            // 保存后递增版本号并生成新的 documentKey，
+            // 否则 OnlyOffice 服务器会基于相同的 key 返回缓存的旧版本
+            $documentKey = $this->generateDocumentKey($documentId, $newVersion);
 
             $oldPath = $document['文件路径'] ?? '';
             if (!empty($oldPath) && $oldPath !== $relativePath) {
@@ -797,14 +909,15 @@ class OnlyOfficeService
             }
 
             $updateSql = sprintf(
-                'update `def_contract_document` 
-                set `文件路径`=%s, `文件大小`=%d, `文件MD5`=%s, `文档密钥`=%s, 
-                    `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s, `更新时间`=%s 
+                'update `def_contract_document`
+                set `文件路径`=%s, `文件大小`=%d, `文件MD5`=%s, `文档密钥`=%s,
+                    `版本号`=%d, `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s, `更新时间`=%s
                 where `GUID`=%d',
                 $this->model->quote($relativePath),
                 $fileSize,
                 $this->model->quote($fileMd5),
                 $this->model->quote($documentKey),
+                $newVersion,
                 $this->model->quote('IDLE'),
                 $this->model->quote($userId),
                 $this->model->quote($now),

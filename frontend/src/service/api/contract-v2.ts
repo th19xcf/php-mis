@@ -100,10 +100,7 @@ export function fetchContractV2UploadDocument(data: {
   return request<Api.ContractV2.ContractDocument>({
     url: '/contractV2/uploadDocument',
     method: 'post',
-    data: formData,
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+    data: formData
   });
 }
 

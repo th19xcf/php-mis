@@ -194,9 +194,11 @@ $routes->group('workflow', static function ($routes) {
 $routes->group('onlyoffice', static function ($routes) {
 	$routes->post('callback', 'OnlyOfficeCallback::index');
 	$routes->get('callback', 'OnlyOfficeCallback::index');
+	$routes->head('callback', 'OnlyOfficeCallback::index');
 	$routes->get('config', 'OnlyOfficeCallback::config');
 	$routes->post('config', 'OnlyOfficeCallback::config');
 	$routes->get('download', 'OnlyOfficeCallback::download');
+	$routes->head('download', 'OnlyOfficeCallback::download');
 });
 
 $routes->group('cache', static function ($routes) {

@@ -37,6 +37,12 @@ export const request = createFlatRequest(
       // 将 traceId 暂存到 config 上，供后续错误处理使用
       (config as any).__traceId = traceId;
 
+      // FormData 请求需删除默认的 application/json Content-Type，
+      // 让浏览器自动设置带 boundary 的 multipart/form-data
+      if (config.data instanceof FormData) {
+        config.headers.delete('Content-Type');
+      }
+
       // 性能追踪：标记 API 请求发起
       const url = config.url || '';
       markTrace(`API请求发起: ${url}`);
@@ -177,8 +183,15 @@ export const request = createFlatRequest(
 
       // 开发环境打印 traceId，便于前后端日志串联定位
       if (import.meta.env.DEV) {
+        const reqUrl = (error.config as any)?.url || '';
+        const reqMethod = (error.config as any)?.method || '';
         // eslint-disable-next-line no-console
-        console.error(`[TraceId: ${traceId}] 请求错误: ${message}`);
+        console.error(`[TraceId: ${traceId}] 请求错误: ${message}`, {
+          url: reqUrl,
+          method: reqMethod,
+          backendCode: backendErrorCode,
+          backendMsg: message
+        });
       }
 
       // 所有用户都能在 toast 中看到 traceId，便于上报给后端定位问题

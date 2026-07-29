@@ -30,20 +30,81 @@ let docEditor: any = null;
 const isLoading = ref(true);
 const loadError = ref('');
 
+// 性能追踪：步骤时间戳记录
+interface PerfStep {
+  name: string;
+  timestamp: number; // performance.now() 毫秒
+}
+let perfSteps: PerfStep[] = [];
+let perfT0 = 0;
+
+function perfStart(): void {
+  perfSteps = [];
+  perfT0 = performance.now();
+  perfSteps.push({ name: '开始', timestamp: perfT0 });
+}
+
+function perfMark(name: string): void {
+  perfSteps.push({ name, timestamp: performance.now() });
+}
+
+function perfEnd(status: '成功' | '失败' = '成功'): void {
+  perfSteps.push({ name: '结束', timestamp: performance.now() });
+  const total = perfSteps[perfSteps.length - 1].timestamp - perfT0;
+
+  const rows: Array<{ index: number; step: string; duration: number; pct: number }> = [];
+  for (let i = 1; i < perfSteps.length; i++) {
+    const duration = perfSteps[i].timestamp - perfSteps[i - 1].timestamp;
+    const pct = total > 0 ? (duration / total) * 100 : 0;
+    rows.push({
+      index: i - 1,
+      step: perfSteps[i - 1].name + ' → ' + perfSteps[i].name,
+      duration,
+      pct
+    });
+  }
+
+  console.groupCollapsed(`[OnlyOfficeEditor] 性能追踪 状态=${status} 总耗时=${total.toFixed(2)}ms`);
+  console.log('%c步骤耗时明细', 'font-weight:bold');
+  console.table(rows.map(r => ({
+    索引: r.index,
+    步骤: r.step,
+    耗时ms: r.duration.toFixed(2),
+    占比: r.pct.toFixed(1) + '%'
+  })));
+
+  // 排行
+  const sorted = [...rows].sort((a, b) => b.duration - a.duration);
+  const maxDuration = sorted[0]?.duration ?? 0;
+  console.log('%c耗时排行（从慢到快）', 'font-weight:bold');
+  sorted.forEach((r, idx) => {
+    if (r.duration < 0.01) return;
+    const barLen = maxDuration > 0 ? Math.max(1, Math.round(r.duration / maxDuration * 50)) : 0;
+    const bar = '█'.repeat(barLen);
+    console.log(` ${idx + 1}. ${r.step.padEnd(30)} ${r.duration.toFixed(2).padStart(10)}ms ${bar}`);
+  });
+
+  console.groupEnd();
+}
+
 async function loadEditor() {
+  perfStart();
+  perfMark('初始化检查');
   console.log('[OnlyOfficeEditor] loadEditor started, documentId:', props.documentId);
-  
+
   if (!editorContainerRef.value) {
     console.error('[OnlyOfficeEditor] editorContainerRef is null');
     loadError.value = '编辑器容器不存在';
     isLoading.value = false;
+    perfEnd('失败');
     return;
   }
-  
+
   if (!props.documentId) {
     console.error('[OnlyOfficeEditor] documentId is empty');
     loadError.value = '文档ID为空';
     isLoading.value = false;
+    perfEnd('失败');
     return;
   }
 
@@ -56,9 +117,11 @@ async function loadEditor() {
   try {
     console.log('[OnlyOfficeEditor] Step 1: Fetching OnlyOffice config from backend...');
     const { fetchOnlyOfficeConfig } = await import('@/service/api/onlyoffice');
+    perfMark('动态导入API模块');
     const result = await fetchOnlyOfficeConfig(props.documentId);
+    perfMark('请求/onlyoffice/config');
     console.log('[OnlyOfficeEditor] Step 1 completed: Config response:', result);
-    
+
     const config = (result as any)?.data || result;
     console.log('[OnlyOfficeEditor] Parsed config:', config);
 
@@ -66,6 +129,7 @@ async function loadEditor() {
       console.error('[OnlyOfficeEditor] Step 1 failed: config is null/undefined');
       loadError.value = '无法加载文档编辑器配置：配置为空';
       isLoading.value = false;
+      perfEnd('失败');
       return;
     }
 
@@ -73,6 +137,7 @@ async function loadEditor() {
       console.error('[OnlyOfficeEditor] Step 1 failed: config.document is missing');
       loadError.value = '无法加载文档编辑器配置：缺少文档信息';
       isLoading.value = false;
+      perfEnd('失败');
       return;
     }
 
@@ -80,23 +145,27 @@ async function loadEditor() {
       console.error('[OnlyOfficeEditor] Step 1 failed: config.editorUrl is missing');
       loadError.value = '无法加载文档编辑器配置：缺少编辑器地址';
       isLoading.value = false;
+      perfEnd('失败');
       return;
     }
 
     console.log('[OnlyOfficeEditor] Step 2: Loading OnlyOffice API script from:', config.editorUrl);
-    
+
     if (!(window as any).DocsAPI && !document.getElementById('onlyoffice-api-script')) {
       console.log('[OnlyOfficeEditor] Step 2: Script not loaded yet, loading...');
       await loadScript(config.editorUrl + '/web-apps/apps/api/documents/api.js');
+      perfMark('加载api.js脚本');
       console.log('[OnlyOfficeEditor] Step 2 completed: API script loaded');
     } else {
       console.log('[OnlyOfficeEditor] Step 2: API script already loaded');
+      perfMark('api.js已缓存跳过');
     }
 
     if (!(window as any).DocsAPI) {
       console.error('[OnlyOfficeEditor] Step 2 failed: window.DocsAPI is still undefined');
       loadError.value = 'OnlyOffice API 脚本加载失败';
       isLoading.value = false;
+      perfEnd('失败');
       return;
     }
 
@@ -109,8 +178,9 @@ async function loadEditor() {
       }
       docEditor = null;
     }
+    perfMark('销毁旧编辑器');
 
-    const editorConfig = {
+    const editorConfig: Record<string, any> = {
       document: config.document,
       documentType: config.documentType || 'word',
       editorConfig: config.editorConfig || {},
@@ -119,21 +189,38 @@ async function loadEditor() {
       events: {
         onReady: () => {
           console.log('[OnlyOfficeEditor] Event: onReady fired');
+          perfMark('onReady事件');
+          perfEnd('成功');
           emit('ready');
           isLoading.value = false;
         },
         onDocumentReady: () => {
           console.log('[OnlyOfficeEditor] Event: onDocumentReady fired');
+          perfMark('onDocumentReady事件');
+          perfEnd('成功');
           emit('documentReady');
+          isLoading.value = false;
+          loadError.value = '';
         },
         onDocumentStateChange: (event: any) => {
           console.log('[OnlyOfficeEditor] Event: onDocumentStateChange', event);
           emit('documentStateChange', event);
         },
         onError: (event: any) => {
-          console.error('[OnlyOfficeEditor] Event: onError', event);
+          console.error('[OnlyOfficeEditor] Event: onError');
+          console.error('[OnlyOfficeEditor] Error event full:', JSON.stringify(event, null, 2));
+          console.error('[OnlyOfficeEditor] Error data:', event?.data);
+          console.error('[OnlyOfficeEditor] Error data type:', typeof event?.data);
+          if (event?.data) {
+            console.error('[OnlyOfficeEditor] Error data keys:', Object.keys(event.data));
+            console.error('[OnlyOfficeEditor] Error message:', event.data.message);
+            console.error('[OnlyOfficeEditor] Error code:', event.data.errorCode || event.data.code);
+            console.error('[OnlyOfficeEditor] Error description:', event.data.errorDescription || event.data.description);
+          }
+          perfMark('onError事件');
+          perfEnd('失败');
           emit('error', event);
-          loadError.value = event?.data?.message || '文档编辑器加载出错';
+          loadError.value = event?.data?.message || event?.data?.errorDescription || '文档编辑器加载出错';
           isLoading.value = false;
         },
         onOutdatedVersion: () => {
@@ -146,6 +233,11 @@ async function loadEditor() {
       ...(props.editorConfig || {})
     };
 
+    // 传递 JWT token（OnlyOffice 服务器启用 JWT 验证时必须）
+    if (config.token) {
+      editorConfig.token = config.token;
+    }
+
     console.log('[OnlyOfficeEditor] Step 4: Creating DocEditor with config:', {
       documentTitle: editorConfig.document.title,
       documentUrl: editorConfig.document.url,
@@ -154,35 +246,37 @@ async function loadEditor() {
       height: editorConfig.height,
       containerHeight: editorContainerRef.value.clientHeight
     });
+    perfMark('构建editorConfig');
 
     docEditor = new (window as any).DocsAPI.DocEditor(
-      editorContainerRef.value,
+      'onlyoffice-editor-container',
       editorConfig
     );
+    perfMark('创建DocEditor实例');
 
     console.log('[OnlyOfficeEditor] Step 4 completed: DocEditor instance created:', !!docEditor);
-    
-    setTimeout(() => {
-      if (isLoading.value && docEditor) {
-        console.warn('[OnlyOfficeEditor] Warning: Editor still loading after 5 seconds');
-        console.log('[OnlyOfficeEditor] Current docEditor:', docEditor);
-        console.log('[OnlyOfficeEditor] isLoading:', isLoading.value);
-      }
-    }, 5000);
 
     setTimeout(() => {
       if (isLoading.value && docEditor) {
-        console.error('[OnlyOfficeEditor] Error: Editor still loading after 15 seconds');
-        console.log('[OnlyOfficeEditor] Check if OnlyOffice server is reachable:', config.editorUrl);
-        console.log('[OnlyOfficeEditor] Check if download URL is accessible:', editorConfig.document.url);
-        loadError.value = '文档编辑器加载超时，请检查网络连接或 OnlyOffice 服务状态';
-        isLoading.value = false;
+        console.warn('[OnlyOfficeEditor] Warning: Editor still loading after 15 seconds (normal for .doc first load)');
       }
     }, 15000);
+
+    setTimeout(() => {
+      if (isLoading.value && docEditor) {
+        console.error('[OnlyOfficeEditor] Error: Editor still loading after 60 seconds');
+        loadError.value = '文档编辑器加载超时，请检查网络连接或 OnlyOffice 服务状态';
+        isLoading.value = false;
+        perfMark('超时(60s)');
+        perfEnd('失败');
+      }
+    }, 60000);
 
   } catch (e: any) {
     console.error('[OnlyOfficeEditor] Exception caught:', e);
     console.error('[OnlyOfficeEditor] Error stack:', e?.stack);
+    perfMark('异常');
+    perfEnd('失败');
     loadError.value = e?.message || '文档编辑器加载失败';
     isLoading.value = false;
     emit('error', e);
@@ -260,7 +354,7 @@ defineExpose({
       <p class="error-text">{{ loadError }}</p>
       <button class="retry-btn" @click="loadEditor">重新加载</button>
     </div>
-    <div ref="editorContainerRef" class="editor-container" :style="{ height: height || '600px' }"></div>
+    <div id="onlyoffice-editor-container" ref="editorContainerRef" class="editor-container" :style="{ height: height || '600px' }"></div>
   </div>
 </template>
 
