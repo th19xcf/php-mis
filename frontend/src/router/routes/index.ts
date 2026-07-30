@@ -116,6 +116,35 @@ export function createStaticRoutes() {
       });
     }
 
+    // 前端静态一级菜单补充 order，避免排在首页（order=1）之前
+    if (route.name === 'contract-v2') {
+      route.meta = {
+        ...route.meta,
+        title: route.meta?.title || 'contract-v2',
+        i18nKey: 'route.contract-v2',
+        icon: 'mdi:file-sign',
+        order: 90
+      };
+    }
+    if (route.name === 'match-data') {
+      route.meta = {
+        ...route.meta,
+        title: route.meta?.title || 'match-data',
+        i18nKey: 'route.match-data',
+        icon: 'mdi:merge',
+        order: 91
+      };
+    }
+    if (route.name === 'workflow-manage') {
+      route.meta = {
+        ...route.meta,
+        title: route.meta?.title || 'workflow-manage',
+        i18nKey: 'route.workflow-manage',
+        icon: 'mdi:workflow-outline',
+        order: 92
+      };
+    }
+
     if (route.meta?.constant) {
       constantRoutes.push(route);
     } else {

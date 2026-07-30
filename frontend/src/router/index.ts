@@ -1,168 +1,30 @@
-import type { CustomRoute, ElegantConstRoute, ElegantRoute } from '@elegant-router/types';
-import { generatedRoutes } from '../elegant/routes';
-import { layouts, views } from '../elegant/imports';
-import { transformElegantRoutesToVueRoutes } from '../elegant/transform';
+import type { App } from 'vue';
+import {
+  type RouterHistory,
+  createMemoryHistory,
+  createRouter,
+  createWebHashHistory,
+  createWebHistory
+} from 'vue-router';
+import { createBuiltinVueRoutes } from './routes/builtin';
+import { createRouterGuard } from './guard';
 
-/**
- * custom routes
- *
- * @link https://github.com/soybeanjs/elegant-router?tab=readme-ov-file#custom-route
- */
-const customRoutes: CustomRoute[] = [];
+const { VITE_ROUTER_HISTORY_MODE = 'history', VITE_BASE_URL } = import.meta.env;
 
-/** create routes when the auth route mode is static */
-export function createStaticRoutes() {
-  const constantRoutes: ElegantRoute[] = [];
+const historyCreatorMap: Record<Env.RouterHistoryMode, (base?: string) => RouterHistory> = {
+  hash: createWebHashHistory,
+  history: createWebHistory,
+  memory: createMemoryHistory
+};
 
-  const authRoutes: ElegantRoute[] = [];
+export const router = createRouter({
+  history: historyCreatorMap[VITE_ROUTER_HISTORY_MODE](VITE_BASE_URL),
+  routes: createBuiltinVueRoutes()
+});
 
-  [...customRoutes, ...generatedRoutes].forEach(item => {
-    const route: ElegantRoute = {
-      ...item,
-      meta: {
-        ...item.meta,
-        title: item.meta?.title || String(item.name)
-      }
-    };
-
-    // 一级菜单图标补充
-    const menuIconMap: Record<string, string> = {
-      system: 'mdi:cog-outline',
-      info: 'mdi:database',
-      personnel: 'mdi:account-heart',
-      income: 'mdi:cash',
-      analysis: 'mdi:chart-line',
-      'permission-demo': 'mdi:shield-account'
-    };
-    // 兼容中文 title
-    const zhTitleIconMap: Record<string, string> = {
-      数据匹配: 'mdi:merge',
-      首页: 'mdi:monitor-dashboard',
-      系统管理: 'mdi:cog-outline',
-      管理信息: 'mdi:database',
-      人员管理: 'mdi:account-heart',
-      收入成本: 'mdi:cash',
-      经营分析: 'mdi:chart-line',
-      合同管理: 'mdi:file-sign',
-      房产租赁: 'mdi:home-variant-outline',
-      财务管理: 'mdi:wallet'
-    };
-    if (route.name && menuIconMap[route.name]) {
-      if (!route.meta) {
-        route.meta = {
-          title: String(route.name)
-        };
-      }
-      route.meta.icon = menuIconMap[route.name];
-    } else if (route.meta?.title && zhTitleIconMap[route.meta.title]) {
-      route.meta.icon = zhTitleIconMap[route.meta.title];
-    }
-
-    // 隐藏通用页面、动态菜单、权限演示菜单
-    if (route.name === 'common' || route.name === 'menu-bridge' || route.name === 'permission-demo') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || String(route.name),
-        hideInMenu: true
-      };
-    }
-
-    // 隐藏与后端动态菜单重复的静态路由（合同管理、人员管理）
-    if (route.name === 'contract' || route.name === 'personnel') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || String(route.name),
-        hideInMenu: true
-      };
-    }
-
-    if (route.name === 'system') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || 'system',
-        i18nKey: 'route.system',
-        icon: 'mdi:cog-outline',
-        order: 3,
-        roles: ['R_ADMIN']
-      };
-
-      route.children?.forEach(child => {
-        child.meta = {
-          ...child.meta,
-          title: child.meta?.title || String(child.name)
-        };
-
-        if (child.name === 'system_user') {
-          child.meta = {
-            ...child.meta,
-            title: child.meta.title || 'system_user',
-            i18nKey: 'route.system_user',
-            icon: 'mdi:account-multiple-outline',
-            order: 1,
-            roles: ['R_ADMIN']
-          };
-        }
-
-        if (child.name === 'system_role') {
-          child.meta = {
-            ...child.meta,
-            title: child.meta.title || 'system_role',
-            i18nKey: 'route.system_role',
-            icon: 'mdi:badge-account-outline',
-            order: 2,
-            roles: ['R_SUPER', 'R_ADMIN']
-          };
-        }
-      });
-    }
-
-    // 前端静态一级菜单补充 order，避免排在首页（order=1）之前
-    if (route.name === 'contract-v2') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || 'contract-v2',
-        i18nKey: 'route.contract-v2',
-        icon: 'mdi:file-sign',
-        order: 90
-      };
-    }
-    if (route.name === 'match-data') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || 'match-data',
-        i18nKey: 'route.match-data',
-        icon: 'mdi:merge',
-        order: 91
-      };
-    }
-    if (route.name === 'workflow-manage') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || 'workflow-manage',
-        i18nKey: 'route.workflow-manage',
-        icon: 'mdi:workflow-outline',
-        order: 92
-      };
-    }
-
-    if (route.meta?.constant) {
-      constantRoutes.push(route);
-    } else {
-      authRoutes.push(route);
-    }
-  });
-
-  return {
-    constantRoutes,
-    authRoutes
-  };
-}
-
-/**
- * Get auth vue routes
- *
- * @param routes Elegant routes
- */
-export function getAuthVueRoutes(routes: ElegantConstRoute[]) {
-  return transformElegantRoutesToVueRoutes(routes, layouts, views);
+/** Setup Vue Router */
+export async function setupRouter(app: App) {
+  app.use(router);
+  createRouterGuard(router);
+  await router.isReady();
 }
