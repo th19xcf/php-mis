@@ -480,13 +480,13 @@ onMounted(async () => {
     <div class="contract-panel contract-panel-right">
       <div class="panel-header">
         <span class="text-lg font-600">合同详情</span>
-        <NSpace v-if="selectedContract">
+        <div class="header-actions" v-if="selectedContract">
           <template v-for="btn in getActionButtons()" :key="btn.key">
             <NButton :type="btn.type as any" size="small" @click="handleAction(btn.key)">
               {{ btn.label }}
             </NButton>
           </template>
-        </NSpace>
+        </div>
       </div>
 
       <div class="panel-content">
