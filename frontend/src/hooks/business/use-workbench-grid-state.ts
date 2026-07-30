@@ -403,6 +403,13 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
         return;
       }
       if (capturedFunctionCode && options.gridApi.value) {
+        // 排序变化时跳回第一页（原 bindSortResetToFirstPage 逻辑，合并至此避免重复监听）
+        const currentPage = options.gridApi.value.paginationGetCurrentPage();
+        if (currentPage !== 0) {
+          options.gridApi.value.paginationGoToFirstPage();
+          options.page.value = 1;
+        }
+        // 持久化列状态
         const columnState = options.gridApi.value.getColumnState();
         if (columnState && Array.isArray(columnState) && columnState.length > 0) {
           workbenchStore.setColumnState(capturedFunctionCode, capturedParams, columnState);

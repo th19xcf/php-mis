@@ -88,17 +88,6 @@ export function useWorkbenchGridReady(options: UseWorkbenchGridReadyOptions) {
     }, 100);
   }
 
-  function bindSortResetToFirstPage(api: GridApi<Api.Workbench.QueryRecord>) {
-    api.addEventListener('sortChanged', () => {
-      if (options.isRestoringColumnState.value) return;
-      const currentPage = api.paginationGetCurrentPage();
-      if (currentPage !== 0) {
-        api.paginationGoToFirstPage();
-        options.page.value = 1;
-      }
-    });
-  }
-
   function handleGridReady(event: GridReadyEvent<Api.Workbench.QueryRecord>) {
     const api = event.api;
     options.gridApi.value = api;
@@ -110,7 +99,6 @@ export function useWorkbenchGridReady(options: UseWorkbenchGridReadyOptions) {
     applyCachedFilter(api);
     setTimeout(() => applyCachedColumnState(api), 150);
 
-    bindSortResetToFirstPage(api);
     options.registerGridPersistenceListeners();
   }
 

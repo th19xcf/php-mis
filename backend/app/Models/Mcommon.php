@@ -42,12 +42,13 @@ class Mcommon extends Model
     private function getDb(): object
     {
         if ($this->dbInstance === null) {
-            // pConnect=true 时复用 PHP-FPM worker 内的 TCP+MySQL 持久连接
+            // 当前配置：btdc.pConnect=false（非持久连接），每请求结束自动关闭连接
+            // CI4 BaseConnection 在同请求内缓存实例，多次 db_connect('btdc') 返回同一对象
             // CodeIgniter 默认延迟连接,首次业务 SQL 会自动触发建连,无需手动 SELECT 1 预热
             $this->dbInstance = db_connect('btdc');
 
             // 设置查询超时（30秒），防止远端 MySQL 慢查询卡死 PHP-FPM 同步服务器
-            // 若 MySQL 服务端有 SUPER 权限,可通过 SET GLOBAL max_execution_time=30000 下沉到服务端
+            // 注意：会话级变量，pConnect=false 下每请求重新设置；若改 pConnect=true 需评估污染风险
             try {
                 $this->dbInstance->query('SET SESSION max_execution_time = 30000');
             } catch (\Throwable $e) {
