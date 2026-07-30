@@ -16,6 +16,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 
+// 与 contract V1 / generic-query-workbench 一致的主题配置
 const lightGridTheme = themeAlpine.withParams({
   browserColorScheme: 'light',
   rowBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
@@ -38,6 +39,40 @@ const dialog = useDialog();
 const message = useMessage();
 const contractV2Store = useContractV2Store();
 
+// 左右分栏（同 V1）
+const leftWidth = ref(800);
+const minLeftWidth = 500;
+const maxLeftWidth = 1000;
+const isResizing = ref(false);
+
+function startResize(e: MouseEvent) {
+  isResizing.value = true;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+
+  const startX = e.clientX;
+  const startWidth = leftWidth.value;
+
+  function onMouseMove(moveEvent: MouseEvent) {
+    if (!isResizing.value) return;
+    const delta = moveEvent.clientX - startX;
+    const newWidth = Math.max(minLeftWidth, Math.min(maxLeftWidth, startWidth + delta));
+    leftWidth.value = newWidth;
+  }
+
+  function onMouseUp() {
+    isResizing.value = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    localStorage.setItem('contract-v2-splitter-width', String(leftWidth.value));
+  }
+
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+}
+
 const activeTab = ref<'list' | 'pending' | 'done' | 'my'>('list');
 const showFormModal = ref(false);
 const showApprovalModal = ref(false);
@@ -48,14 +83,7 @@ const showEditorModal = ref(false);
 const editorDocId = ref(0);
 const editorDocName = ref('');
 
-const searchForm = ref({
-  contractNo: '',
-  contractName: '',
-  contractType: '',
-  contractStatus: '',
-  partyA: '',
-  partyB: ''
-});
+const searchKeyword = ref('');
 
 const gridApi = ref<GridApi | null>(null);
 const selectedContract = ref<Api.ContractV2.ContractListItem | null>(null);
@@ -70,6 +98,7 @@ const columnDefs: any[] = [
     resizable: false,
     sortable: false,
     filter: false,
+    suppressQuickFilter: true,
     cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
     valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
   },
@@ -137,22 +166,17 @@ function onRowClicked(event: { data: Api.ContractV2.ContractListItem }) {
   }
 }
 
-function handleSearch() {
-  contractV2Store.setSearchParams(searchForm.value);
-  contractV2Store.setPage(1);
-  contractV2Store.loadContractList();
-}
-
-function handleReset() {
-  searchForm.value = {
-    contractNo: '',
-    contractName: '',
-    contractType: '',
-    contractStatus: '',
-    partyA: '',
-    partyB: ''
-  };
-  handleSearch();
+async function handleRefresh() {
+  if (gridApi.value) {
+    gridApi.value.deselectAll();
+  }
+  selectedContract.value = null;
+  contractV2Store.resetCurrentContract();
+  await contractV2Store.loadContractList();
+  if (gridApi.value) {
+    gridApi.value.refreshCells({ force: true });
+  }
+  message.success('已刷新');
 }
 
 function handleCreate() {
@@ -204,14 +228,14 @@ function handleSubmit() {
   });
 }
 
-function handlePageChange(page: number) {
+async function handlePageChange(page: number) {
   contractV2Store.setPage(page);
-  contractV2Store.loadContractList();
+  await contractV2Store.loadContractList();
 }
 
-function handlePageSizeChange(pageSize: number) {
+async function handlePageSizeChange(pageSize: number) {
   contractV2Store.setPageSize(pageSize);
-  contractV2Store.loadContractList();
+  await contractV2Store.loadContractList();
 }
 
 function handleTabChange(tab: string) {
@@ -258,296 +282,250 @@ function handleApprovalSuccess() {
   }
 }
 
-onMounted(() => {
+function getActionButtons() {
+  if (!selectedContract.value) return [];
+  const status = selectedContract.value.合同状态;
+  const buttons: Array<{ label: string; key: string; type: string }> = [];
+  if (status === 'DRAFT' || status === 'REJECTED') {
+    buttons.push({ label: '编辑', key: 'edit', type: 'primary' });
+    buttons.push({ label: '删除', key: 'delete', type: 'error' });
+    buttons.push({ label: '提交审批', key: 'submit', type: 'warning' });
+  }
+  if (status === 'PENDING' || status === 'APPROVING') {
+    buttons.push({ label: '审核', key: 'approve', type: 'warning' });
+  }
+  return buttons;
+}
+
+async function handleAction(key: string) {
+  switch (key) {
+    case 'edit':
+      handleEdit();
+      break;
+    case 'delete':
+      handleDelete();
+      break;
+    case 'submit':
+      handleSubmit();
+      break;
+    case 'approve':
+      showApprovalModal.value = true;
+      break;
+  }
+}
+
+function getStatusType(status: string): 'default' | 'success' | 'warning' | 'error' | 'info' {
+  const map: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
+    DRAFT: 'default',
+    REJECTED: 'error',
+    PENDING: 'warning',
+    APPROVING: 'warning',
+    APPROVED: 'info',
+    SIGNING: 'info',
+    SIGNED: 'success',
+    ARCHIVED: 'success'
+  };
+  return map[status] || 'default';
+}
+
+onMounted(async () => {
+  const savedWidth = localStorage.getItem('contract-v2-splitter-width');
+  if (savedWidth) {
+    const width = Number(savedWidth);
+    if (!Number.isNaN(width) && width >= minLeftWidth && width <= maxLeftWidth) {
+      leftWidth.value = width;
+    }
+  }
   contractV2Store.loadOptions();
   contractV2Store.loadStats();
-  contractV2Store.loadContractList();
+  await contractV2Store.loadContractList();
 });
 </script>
 
 <template>
-  <div class="contract-v2-page" :class="{ 'system-dark': isDarkMode }">
-    <div class="page-header">
-      <h2>合同管理 V2</h2>
-      <div class="stats-cards">
-        <div class="stat-card">
-          <span class="stat-label">总数</span>
-          <span class="stat-value">{{ stats.总数 }}</span>
+  <div class="contract-container" :class="{ 'system-dark': isDarkMode }">
+    <div class="contract-panel contract-panel-left" :style="{ width: leftWidth + 'px' }">
+      <div class="panel-header">
+        <span class="text-lg font-600">合同列表</span>
+        <div class="stats-cards-inline">
+          <div class="stat-item">
+            <span class="stat-label">合同总数</span>
+            <span class="stat-value">{{ stats.总数 }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">审批中</span>
+            <span class="stat-value text-warning">{{ stats.审批中 }}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">即将到期</span>
+            <span class="stat-value text-error">{{ stats.即将到期 }}</span>
+          </div>
         </div>
-        <div class="stat-card">
-          <span class="stat-label">审批中</span>
-          <span class="stat-value">{{ stats.审批中 }}</span>
+        <div class="header-actions">
+          <NButton size="small" @click="handleRefresh">
+            <template #icon>
+              <icon-mdi-refresh />
+            </template>
+            刷新
+          </NButton>
+          <NButton type="primary" size="small" @click="handleCreate">
+            <template #icon>
+              <icon-mdi-plus />
+            </template>
+            新建合同
+          </NButton>
         </div>
-        <div class="stat-card">
-          <span class="stat-label">即将到期</span>
-          <span class="stat-value">{{ stats.即将到期 }}</span>
+      </div>
+
+      <!-- Tab 切换 -->
+      <div class="tab-bar">
+        <NTabs v-model:value="activeTab" type="line" animated @update:value="handleTabChange">
+          <NTabPane name="list" tab="全部合同" />
+          <NTabPane name="pending" tab="待我审批" />
+          <NTabPane name="done" tab="我已审批" />
+          <NTabPane name="my" tab="我发起的" />
+        </NTabs>
+        <NInput
+          v-model:value="searchKeyword"
+          placeholder="搜索合同编号、合同名称、甲方、乙方..."
+          clearable
+          class="search-input"
+        >
+          <template #prefix>
+            <icon-mdi-magnify />
+          </template>
+        </NInput>
+      </div>
+
+      <!-- 列表/任务区 -->
+      <div class="grid-container">
+        <AgGridVue
+          v-if="activeTab === 'list'"
+          :theme="gridTheme"
+          class="contract-grid"
+          :row-data="contractList"
+          :column-defs="columnDefs"
+          :default-col-def="defaultColDef"
+          :column-types="columnTypes"
+          :locale-text="AG_GRID_LOCALE_CN"
+          :row-height="38"
+          :header-height="40"
+          :animate-rows="true"
+          :pagination="true"
+          :pagination-page-size="pagination.pageSize"
+          :pagination-page-size-selector="[500, 1000, 2000]"
+          :row-selection="{ mode: 'singleRow' }"
+          :quick-filter-text="searchKeyword"
+          @grid-ready="onGridReady"
+          @row-clicked="onRowClicked"
+        />
+        <div v-else-if="activeTab === 'pending'" class="task-list">
+          <div
+            v-for="task in contractV2Store.pendingTasks"
+            :key="task.任务ID"
+            class="task-item"
+            @click="handleApproval(task)"
+          >
+            <div class="task-header">
+              <span class="task-title">{{ task.业务标题 }}</span>
+              <NTag size="small" type="warning">{{ task.节点名称 }}</NTag>
+            </div>
+            <div class="task-info">
+              <span>发起人：{{ task.发起人姓名 }}</span>
+              <span>发起时间：{{ task.创建时间 }}</span>
+            </div>
+          </div>
+          <NEmpty v-if="contractV2Store.pendingTasks.length === 0" description="暂无待办任务" class="py-20" />
+        </div>
+        <div v-else-if="activeTab === 'done'" class="task-list">
+          <div v-for="task in contractV2Store.doneTasks" :key="task.任务ID" class="task-item done">
+            <div class="task-header">
+              <span class="task-title">{{ task.业务标题 }}</span>
+              <NTag size="small" :type="task.处理结果 === 'APPROVE' ? 'success' : 'error'">
+                {{ task.处理结果 === 'APPROVE' ? '同意' : '拒绝' }}
+              </NTag>
+            </div>
+            <div class="task-info">
+              <span>发起人：{{ task.发起人姓名 }}</span>
+              <span>处理时间：{{ task.处理时间 }}</span>
+            </div>
+          </div>
+          <NEmpty v-if="contractV2Store.doneTasks.length === 0" description="暂无已办任务" class="py-20" />
+        </div>
+        <div v-else-if="activeTab === 'my'" class="task-list">
+          <div v-for="inst in contractV2Store.myContracts" :key="inst.GUID" class="task-item">
+            <div class="task-header">
+              <span class="task-title">{{ inst.业务标题 }}</span>
+              <NTag
+                size="small"
+                :type="inst.实例状态 === 'COMPLETED' ? 'success' : inst.实例状态 === 'TERMINATED' ? 'error' : 'info'"
+              >
+                {{ inst.实例状态 === 'RUNNING' ? '运行中' : inst.实例状态 === 'COMPLETED' ? '已完成' : '已终止' }}
+              </NTag>
+            </div>
+            <div class="task-info">
+              <span>当前节点：{{ inst.当前节点编码 }}</span>
+              <span>发起时间：{{ inst.发起时间 }}</span>
+            </div>
+          </div>
+          <NEmpty v-if="contractV2Store.myContracts.length === 0" description="暂无发起的流程" class="py-20" />
         </div>
       </div>
     </div>
 
-    <div class="content-wrapper">
-      <div class="left-panel">
-        <div class="search-bar">
-          <div class="search-form">
-            <div class="form-item">
-              <label>合同编号</label>
-              <input v-model="searchForm.contractNo" placeholder="请输入合同编号" />
-            </div>
-            <div class="form-item">
-              <label>合同名称</label>
-              <input v-model="searchForm.contractName" placeholder="请输入合同名称" />
-            </div>
-            <div class="form-item">
-              <label>合同状态</label>
-              <select v-model="searchForm.contractStatus">
-                <option value="">全部</option>
-                <option v-for="opt in options.合同状态" :key="opt.value" :value="opt.value">
-                  {{ opt.label }}
-                </option>
-              </select>
-            </div>
-            <div class="form-item">
-              <label>甲方</label>
-              <input v-model="searchForm.partyA" placeholder="请输入甲方名称" />
-            </div>
-            <div class="form-item">
-              <label>乙方</label>
-              <input v-model="searchForm.partyB" placeholder="请输入乙方名称" />
-            </div>
-          </div>
-          <div class="search-actions">
-            <button class="btn btn-primary" @click="handleSearch">查询</button>
-            <button class="btn btn-default" @click="handleReset">重置</button>
-          </div>
-        </div>
+    <div class="resize-splitter" :class="{ 'is-resizing': isResizing }" @mousedown="startResize">
+      <div class="resize-line" />
+    </div>
 
-        <div class="toolbar">
-          <div class="tabs">
-            <div
-              class="tab-item"
-              :class="{ active: activeTab === 'list' }"
-              @click="handleTabChange('list')"
-            >
-              全部合同
-            </div>
-            <div
-              class="tab-item"
-              :class="{ active: activeTab === 'pending' }"
-              @click="handleTabChange('pending')"
-            >
-              待我审批
-            </div>
-            <div
-              class="tab-item"
-              :class="{ active: activeTab === 'done' }"
-              @click="handleTabChange('done')"
-            >
-              我已审批
-            </div>
-            <div
-              class="tab-item"
-              :class="{ active: activeTab === 'my' }"
-              @click="handleTabChange('my')"
-            >
-              我发起的
-            </div>
-          </div>
-          <div class="actions">
-            <button v-if="activeTab === 'list'" class="btn btn-primary" @click="handleCreate">
-              新建合同
-            </button>
-            <button v-if="activeTab === 'list'" class="btn btn-default" @click="handleEdit">
-              编辑
-            </button>
-            <button v-if="activeTab === 'list'" class="btn btn-default" @click="handleSubmit">
-              提交审批
-            </button>
-            <button v-if="activeTab === 'list'" class="btn btn-danger" @click="handleDelete">
-              删除
-            </button>
-          </div>
-        </div>
-
-        <div class="grid-container">
-          <AgGridVue
-            v-if="activeTab === 'list'"
-            class="ag-grid-custom"
-            :class="gridTheme"
-            :columnDefs="columnDefs"
-            :defaultColDef="defaultColDef"
-            :columnTypes="columnTypes"
-            :rowData="contractList"
-            :localeText="AG_GRID_LOCALE_CN"
-            :pagination="false"
-            :rowSelection="{ mode: 'singleRow' }"
-            @grid-ready="onGridReady"
-            @row-clicked="onRowClicked"
-          />
-          <div v-else-if="activeTab === 'pending'" class="task-list">
-            <div
-              v-for="task in contractV2Store.pendingTasks"
-              :key="task.任务ID"
-              class="task-item"
-              @click="handleApproval(task)"
-            >
-              <div class="task-header">
-                <span class="task-title">{{ task.业务标题 }}</span>
-                <span class="task-node">{{ task.节点名称 }}</span>
-              </div>
-              <div class="task-info">
-                <span>发起人：{{ task.发起人姓名 }}</span>
-                <span>发起时间：{{ task.创建时间 }}</span>
-              </div>
-            </div>
-            <div v-if="contractV2Store.pendingTasks.length === 0" class="empty-tip">
-              暂无待办任务
-            </div>
-          </div>
-          <div v-else-if="activeTab === 'done'" class="task-list">
-            <div
-              v-for="task in contractV2Store.doneTasks"
-              :key="task.任务ID"
-              class="task-item done"
-            >
-              <div class="task-header">
-                <span class="task-title">{{ task.业务标题 }}</span>
-                <span class="task-node">{{ task.节点名称 }}</span>
-              </div>
-              <div class="task-info">
-                <span>发起人：{{ task.发起人姓名 }}</span>
-                <span>处理时间：{{ task.处理时间 }}</span>
-                <span class="task-result" :class="task.处理结果">
-                  {{ task.处理结果 === 'APPROVE' ? '同意' : '拒绝' }}
-                </span>
-              </div>
-            </div>
-            <div v-if="contractV2Store.doneTasks.length === 0" class="empty-tip">
-              暂无已办任务
-            </div>
-          </div>
-          <div v-else-if="activeTab === 'my'" class="task-list">
-            <div
-              v-for="inst in contractV2Store.myContracts"
-              :key="inst.GUID"
-              class="task-item"
-            >
-              <div class="task-header">
-                <span class="task-title">{{ inst.业务标题 }}</span>
-                <span class="task-status" :class="inst.实例状态">
-                  {{ inst.实例状态 === 'RUNNING' ? '运行中' : inst.实例状态 === 'COMPLETED' ? '已完成' : '已终止' }}
-                </span>
-              </div>
-              <div class="task-info">
-                <span>当前节点：{{ inst.当前节点编码 }}</span>
-                <span>发起时间：{{ inst.发起时间 }}</span>
-              </div>
-            </div>
-            <div v-if="contractV2Store.myContracts.length === 0" class="empty-tip">
-              暂无发起的流程
-            </div>
-          </div>
-        </div>
-
-        <div v-if="activeTab === 'list'" class="pagination">
-          <span>共 {{ pagination.total }} 条</span>
-          <select :value="pagination.pageSize" @change="handlePageSizeChange(Number(($event.target as HTMLSelectElement).value))">
-            <option :value="10">10条/页</option>
-            <option :value="20">20条/页</option>
-            <option :value="50">50条/页</option>
-          </select>
-          <div class="page-buttons">
-            <button :disabled="pagination.page <= 1" @click="handlePageChange(pagination.page - 1)">
-              上一页
-            </button>
-            <span class="current-page">{{ pagination.page }}</span>
-            <button
-              :disabled="pagination.page * pagination.pageSize >= pagination.total"
-              @click="handlePageChange(pagination.page + 1)"
-            >
-              下一页
-            </button>
-          </div>
-        </div>
+    <div class="contract-panel contract-panel-right">
+      <div class="panel-header">
+        <span class="text-lg font-600">合同详情</span>
+        <NSpace v-if="selectedContract">
+          <template v-for="btn in getActionButtons()" :key="btn.key">
+            <NButton :type="btn.type as any" size="small" @click="handleAction(btn.key)">
+              {{ btn.label }}
+            </NButton>
+          </template>
+        </NSpace>
       </div>
 
-      <div class="right-panel">
-        <div v-if="currentContract" class="detail-panel">
-          <div class="detail-header">
-            <h3>{{ currentContract.合同名称 }}</h3>
-            <span class="status-badge" :class="currentContract.合同状态">
-              {{ currentContract.合同状态 }}
-            </span>
-          </div>
-          <div class="detail-content">
-            <div class="detail-row">
-              <div class="detail-item">
-                <label>合同编号</label>
-                <span>{{ currentContract.合同编号 }}</span>
-              </div>
-              <div class="detail-item">
-                <label>合同类型</label>
-                <span>{{ currentContract.合同类型 }}</span>
-              </div>
-            </div>
-            <div class="detail-row">
-              <div class="detail-item">
-                <label>甲方</label>
-                <span>{{ currentContract.甲方名称 }}</span>
-              </div>
-              <div class="detail-item">
-                <label>乙方</label>
-                <span>{{ currentContract.乙方名称 }}</span>
-              </div>
-            </div>
-            <div class="detail-row">
-              <div class="detail-item">
-                <label>合同金额</label>
-                <span class="amount">{{ Number(currentContract.合同金额).toLocaleString('zh-CN') }}</span>
-              </div>
-              <div class="detail-item">
-                <label>付款方式</label>
-                <span>{{ currentContract.付款方式 }}</span>
-              </div>
-            </div>
-            <div class="detail-row">
-              <div class="detail-item">
-                <label>签订日期</label>
-                <span>{{ currentContract.签订日期 }}</span>
-              </div>
-              <div class="detail-item">
-                <label>到期日期</label>
-                <span>{{ currentContract.结束日期 }}</span>
-              </div>
-            </div>
-            <div class="detail-row">
-              <div class="detail-item">
-                <label>所属部门</label>
-                <span>{{ currentContract.所属部门名称 }}</span>
-              </div>
-              <div class="detail-item">
-                <label>创建人</label>
-                <span>{{ currentContract.创建人姓名 }}</span>
-              </div>
-            </div>
-            <div class="detail-row full">
-              <div class="detail-item">
-                <label>备注</label>
-                <span class="remark">{{ currentContract.备注 }}</span>
-              </div>
-            </div>
-          </div>
+      <div class="panel-content">
+        <template v-if="currentContract">
+          <NDivider>基本信息</NDivider>
 
-          <div class="flow-section">
-            <h4>审批流程</h4>
-            <ContractV2FlowTimeline v-if="currentContract.合同编号" :contract-no="currentContract.合同编号" />
-          </div>
-        </div>
-        <div v-else class="empty-detail">
-          <p>请选择一条合同记录查看详情</p>
-        </div>
+          <NDescriptions bordered :column="2" size="small">
+            <NDescriptionsItem label="合同编号">{{ currentContract.合同编号 }}</NDescriptionsItem>
+            <NDescriptionsItem label="合同状态">
+              <NTag :type="getStatusType(currentContract.合同状态)" size="small">
+                {{ currentContract.合同状态 }}
+              </NTag>
+            </NDescriptionsItem>
+            <NDescriptionsItem label="合同名称" :span="2">{{ currentContract.合同名称 }}</NDescriptionsItem>
+            <NDescriptionsItem label="甲方名称">{{ currentContract.甲方名称 }}</NDescriptionsItem>
+            <NDescriptionsItem label="甲方联系人">{{ currentContract.甲方联系人 || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="乙方名称">{{ currentContract.乙方名称 }}</NDescriptionsItem>
+            <NDescriptionsItem label="乙方联系人">{{ currentContract.乙方联系人 || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="合同金额">
+              {{ currentContract.合同金额 ? `¥${Number(currentContract.合同金额).toLocaleString('zh-CN')}` : '-' }}
+            </NDescriptionsItem>
+            <NDescriptionsItem label="付款方式">{{ currentContract.付款方式 || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="签订日期">{{ currentContract.签订日期 || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="到期日期">{{ currentContract.结束日期 || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="所属部门">{{ currentContract.所属部门名称 || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="创建人">{{ currentContract.创建人姓名 || '-' }}</NDescriptionsItem>
+            <NDescriptionsItem label="备注" :span="2">{{ currentContract.备注 || '-' }}</NDescriptionsItem>
+          </NDescriptions>
+
+          <NDivider>审批流程</NDivider>
+
+          <ContractV2FlowTimeline v-if="currentContract.合同编号" :contract-no="currentContract.合同编号" />
+        </template>
+
+        <NEmpty v-else description="请选择左侧合同查看详情" class="py-20" />
       </div>
     </div>
 
+    <!-- 合同表单（含上传附件、审批表、OnlyOffice 编辑入口） -->
     <ContractV2Form
       v-model:visible="showFormModal"
       :mode="formMode"
@@ -556,6 +534,7 @@ onMounted(() => {
       @open-editor="handleOpenEditor"
     />
 
+    <!-- 审批弹窗 -->
     <ContractV2Approval
       v-model:visible="showApprovalModal"
       :contract="currentContract"
@@ -563,827 +542,330 @@ onMounted(() => {
     />
 
     <!-- OnlyOffice 文档编辑器弹窗 -->
-    <div v-if="showEditorModal" class="editor-modal-overlay" @click.self="handleCloseEditor">
-      <div class="editor-modal-container">
-        <div class="editor-modal-header">
-          <h3>{{ editorDocName }}</h3>
-          <button class="close-btn" @click="handleCloseEditor">&times;</button>
-        </div>
-        <div class="editor-modal-body">
-          <OnlyOfficeEditor :documentId="editorDocId" height="100%" />
-        </div>
+    <NModal
+      v-model:show="showEditorModal"
+      preset="card"
+      :title="editorDocName || '文档编辑'"
+      :style="{ width: '90%', maxWidth: '1200px', height: '85vh' }"
+      :mask-closable="false"
+      @after-leave="handleCloseEditor"
+    >
+      <div class="editor-modal-body">
+        <OnlyOfficeEditor v-if="showEditorModal && editorDocId" :document-id="editorDocId" height="100%" />
       </div>
-    </div>
+    </NModal>
   </div>
 </template>
 
-<style scoped lang="scss">
-.contract-v2-page {
-  padding: 20px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-
-  .page-header {
-    margin-bottom: 20px;
-
-    h2 {
-      margin: 0 0 16px 0;
-      font-size: 20px;
-      font-weight: 600;
-    }
-
-    .stats-cards {
-      display: flex;
-      gap: 16px;
-
-      .stat-card {
-        flex: 1;
-        max-width: 200px;
-        padding: 16px;
-        background: #fff;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-
-        .stat-label {
-          font-size: 14px;
-          color: #666;
-        }
-
-        .stat-value {
-          font-size: 24px;
-          font-weight: 600;
-          color: #1890ff;
-        }
-      }
-    }
-  }
-
-  .content-wrapper {
-    flex: 1;
-    display: flex;
-    gap: 20px;
-    min-height: 0;
-  }
-
-  .left-panel {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    padding: 16px;
-  }
-
-  .right-panel {
-    width: 400px;
-    flex-shrink: 0;
-    background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow-y: auto;
-  }
-
-  .search-bar {
-    margin-bottom: 16px;
-
-    .search-form {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-bottom: 12px;
-
-      .form-item {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        min-width: 160px;
-
-        label {
-          font-size: 12px;
-          color: #666;
-        }
-
-        input,
-        select {
-          padding: 6px 10px;
-          border: 1px solid #d9d9d9;
-          border-radius: 4px;
-          font-size: 14px;
-          outline: none;
-
-          &:focus {
-            border-color: #1890ff;
-          }
-        }
-      }
-    }
-
-    .search-actions {
-      display: flex;
-      gap: 8px;
-    }
-  }
-
-  .btn {
-    padding: 6px 16px;
-    border-radius: 4px;
-    font-size: 14px;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s;
-
-    &.btn-primary {
-      background: #1890ff;
-      color: #fff;
-
-      &:hover {
-        background: #40a9ff;
-      }
-    }
-
-    &.btn-default {
-      background: #fff;
-      color: #333;
-      border: 1px solid #d9d9d9;
-
-      &:hover {
-        border-color: #1890ff;
-        color: #1890ff;
-      }
-    }
-
-    &.btn-danger {
-      background: #ff4d4f;
-      color: #fff;
-
-      &:hover {
-        background: #ff7875;
-      }
-    }
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  }
-
-  .toolbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #f0f0f0;
-
-    .tabs {
-      display: flex;
-      gap: 4px;
-
-      .tab-item {
-        padding: 8px 16px;
-        cursor: pointer;
-        border-radius: 4px;
-        font-size: 14px;
-        transition: all 0.2s;
-
-        &.active {
-          background: #e6f7ff;
-          color: #1890ff;
-          font-weight: 500;
-        }
-
-        &:hover:not(.active) {
-          background: #f5f5f5;
-        }
-      }
-    }
-
-    .actions {
-      display: flex;
-      gap: 8px;
-    }
-  }
-
-  .grid-container {
-    flex: 1;
-    min-height: 0;
-  }
-
-  .ag-grid-custom {
-    width: 100%;
-    height: 100%;
-  }
-
-  .task-list {
-    height: 100%;
-    overflow-y: auto;
-
-    .task-item {
-      padding: 16px;
-      border-bottom: 1px solid #f0f0f0;
-      cursor: pointer;
-      transition: background 0.2s;
-
-      &:hover {
-        background: #fafafa;
-      }
-
-      &.done {
-        cursor: default;
-      }
-
-      .task-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-
-        .task-title {
-          font-size: 15px;
-          font-weight: 500;
-        }
-
-        .task-node {
-          font-size: 12px;
-          padding: 2px 8px;
-          background: #e6f7ff;
-          color: #1890ff;
-          border-radius: 4px;
-        }
-
-        .task-status {
-          font-size: 12px;
-          padding: 2px 8px;
-          border-radius: 4px;
-
-          &.RUNNING {
-            background: #e6f7ff;
-            color: #1890ff;
-          }
-
-          &.COMPLETED {
-            background: #f6ffed;
-            color: #52c41a;
-          }
-
-          &.TERMINATED {
-            background: #fff2f0;
-            color: #ff4d4f;
-          }
-        }
-
-        .task-result {
-          font-size: 12px;
-          padding: 2px 8px;
-          border-radius: 4px;
-
-          &.APPROVE {
-            background: #f6ffed;
-            color: #52c41a;
-          }
-
-          &.REJECT {
-            background: #fff2f0;
-            color: #ff4d4f;
-          }
-        }
-      }
-
-      .task-info {
-        display: flex;
-        gap: 16px;
-        font-size: 13px;
-        color: #666;
-      }
-    }
-
-    .empty-tip {
-      text-align: center;
-      padding: 40px;
-      color: #999;
-    }
-  }
-
-  .pagination {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-    padding-top: 12px;
-    border-top: 1px solid #f0f0f0;
-    font-size: 14px;
-
-    .page-buttons {
-      display: flex;
-      gap: 4px;
-      align-items: center;
-
-      .current-page {
-        padding: 0 12px;
-        font-weight: 500;
-      }
-    }
-
-    button {
-      padding: 4px 12px;
-      border: 1px solid #d9d9d9;
-      background: #fff;
-      border-radius: 4px;
-      cursor: pointer;
-
-      &:hover:not(:disabled) {
-        border-color: #1890ff;
-        color: #1890ff;
-      }
-
-      &:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-    }
-
-    select {
-      padding: 4px 8px;
-      border: 1px solid #d9d9d9;
-      border-radius: 4px;
-    }
-  }
-
-  .detail-panel {
-    padding: 20px;
-
-    .detail-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 20px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid #f0f0f0;
-
-      h3 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 600;
-        flex: 1;
-      }
-
-      .status-badge {
-        padding: 4px 12px;
-        border-radius: 4px;
-        font-size: 12px;
-        background: #e6f7ff;
-        color: #1890ff;
-        flex-shrink: 0;
-      }
-    }
-
-    .detail-content {
-      .detail-row {
-        display: flex;
-        gap: 16px;
-        margin-bottom: 16px;
-
-        &.full {
-          .detail-item {
-            flex: 1;
-          }
-        }
-      }
-
-      .detail-item {
-        flex: 1;
-        min-width: 0;
-
-        label {
-          display: block;
-          font-size: 12px;
-          color: #999;
-          margin-bottom: 4px;
-        }
-
-        span {
-          font-size: 14px;
-          color: #333;
-          word-break: break-all;
-
-          &.amount {
-            color: #1890ff;
-            font-weight: 600;
-          }
-
-          &.remark {
-            display: block;
-            white-space: pre-wrap;
-            line-height: 1.6;
-          }
-        }
-      }
-    }
-
-    .flow-section {
-      margin-top: 24px;
-      padding-top: 20px;
-      border-top: 1px solid #f0f0f0;
-
-      h4 {
-        margin: 0 0 16px 0;
-        font-size: 15px;
-        font-weight: 600;
-      }
-    }
-  }
-
-  .empty-detail {
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #999;
-  }
-}
-
-// Dark mode overrides
-.contract-v2-page.system-dark {
-  --wb-dark-bg: rgb(var(--container-bg-color));
-
-  .stat-card {
-    background: var(--wb-dark-bg);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-
-    .stat-label {
-      color: #b0b0b0;
-    }
-
-    .stat-value {
-      color: #64b5f6;
-    }
-  }
-
-  .left-panel,
-  .right-panel {
-    background: var(--wb-dark-bg);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  }
-
-  .search-bar {
-    .form-item {
-      label {
-        color: #b0b0b0;
-      }
-
-      input,
-      select {
-        background: var(--wb-dark-bg);
-        border-color: rgba(255, 255, 255, 0.15);
-        color: #e0e0e0;
-
-        &::placeholder {
-          color: #888;
-        }
-
-        &:focus {
-          border-color: #64b5f6;
-        }
-      }
-    }
-  }
-
-  .btn-default {
-    background: var(--wb-dark-bg);
-    color: #e0e0e0;
-    border-color: rgba(255, 255, 255, 0.15);
-
-    &:hover {
-      border-color: #64b5f6;
-      color: #64b5f6;
-    }
-  }
-
-  .toolbar {
-    border-bottom-color: rgba(255, 255, 255, 0.09);
-
-    .tab-item {
-      color: #b0b0b0;
-
-      &.active {
-        background: rgba(100, 181, 246, 0.15);
-        color: #64b5f6;
-      }
-
-      &:hover:not(.active) {
-        background: rgba(255, 255, 255, 0.05);
-      }
-    }
-  }
-
-  .task-list {
-    .task-item {
-      border-bottom-color: rgba(255, 255, 255, 0.09);
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.03);
-      }
-
-      .task-title {
-        color: #e0e0e0;
-      }
-
-      .task-node {
-        background: rgba(100, 181, 246, 0.15);
-        color: #64b5f6;
-      }
-
-      .task-info {
-        color: #b0b0b0;
-      }
-
-      .task-status {
-        &.RUNNING {
-          background: rgba(100, 181, 246, 0.15);
-          color: #64b5f6;
-        }
-
-        &.COMPLETED {
-          background: rgba(82, 196, 26, 0.15);
-          color: #73d13d;
-        }
-
-        &.TERMINATED {
-          background: rgba(255, 77, 79, 0.15);
-          color: #ff7875;
-        }
-      }
-
-      .task-result {
-        &.APPROVE {
-          background: rgba(82, 196, 26, 0.15);
-          color: #73d13d;
-        }
-
-        &.REJECT {
-          background: rgba(255, 77, 79, 0.15);
-          color: #ff7875;
-        }
-      }
-    }
-
-    .empty-tip {
-      color: #888;
-    }
-  }
-
-  .pagination {
-    border-top-color: rgba(255, 255, 255, 0.09);
-    color: #b0b0b0;
-
-    button {
-      background: var(--wb-dark-bg);
-      border-color: rgba(255, 255, 255, 0.15);
-      color: #e0e0e0;
-
-      &:hover:not(:disabled) {
-        border-color: #64b5f6;
-        color: #64b5f6;
-      }
-    }
-
-    select {
-      background: var(--wb-dark-bg);
-      border-color: rgba(255, 255, 255, 0.15);
-      color: #e0e0e0;
-    }
-  }
-
-  .detail-panel {
-    .detail-header {
-      border-bottom-color: rgba(255, 255, 255, 0.09);
-
-      h3 {
-        color: #e0e0e0;
-      }
-
-      .status-badge {
-        background: rgba(100, 181, 246, 0.15);
-        color: #64b5f6;
-      }
-    }
-
-    .detail-content {
-      .detail-item {
-        label {
-          color: #888;
-        }
-
-        span {
-          color: #e0e0e0;
-
-          &.amount {
-            color: #64b5f6;
-          }
-        }
-      }
-    }
-
-    .flow-section {
-      border-top-color: rgba(255, 255, 255, 0.09);
-
-      h4 {
-        color: #e0e0e0;
-      }
-    }
-  }
-
-  .empty-detail {
-    color: #888;
-  }
-
-  // Child component dark mode overrides
-  :deep(.modal-container) {
-    background: var(--wb-dark-bg);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-
-    .modal-header {
-      border-bottom-color: rgba(255, 255, 255, 0.09);
-
-      h3 {
-        color: #e0e0e0;
-      }
-
-      .close-btn {
-        color: #888;
-
-        &:hover {
-          color: #e0e0e0;
-        }
-      }
-    }
-
-    .modal-body {
-      .form-item {
-        label {
-          color: #b0b0b0;
-
-          .required {
-            color: #ff7875;
-          }
-        }
-
-        input,
-        select,
-        textarea {
-          background: var(--wb-dark-bg);
-          border-color: rgba(255, 255, 255, 0.15);
-          color: #e0e0e0;
-
-          &::placeholder {
-            color: #888;
-          }
-
-          &:focus {
-            border-color: #64b5f6;
-          }
-
-          &:disabled {
-            background: rgba(255, 255, 255, 0.05);
-          }
-        }
-      }
-
-      .contract-info {
-        background: rgba(255, 255, 255, 0.05);
-
-        .info-row {
-          label {
-            color: #888;
-          }
-
-          span {
-            color: #e0e0e0;
-
-            &.amount {
-              color: #64b5f6;
-            }
-          }
-        }
-      }
-
-      .action-radio {
-        .radio-item {
-          color: #e0e0e0;
-        }
-      }
-    }
-
-    .modal-footer {
-      border-top-color: rgba(255, 255, 255, 0.09);
-    }
-
-    .btn-default {
-      background: var(--wb-dark-bg);
-      color: #e0e0e0;
-      border-color: rgba(255, 255, 255, 0.15);
-
-      &:hover {
-        border-color: #64b5f6;
-        color: #64b5f6;
-      }
-    }
-  }
-
-  :deep(.flow-timeline) {
-    .loading,
-    .empty {
-      color: #888;
-    }
-
-    .timeline-dot::before {
-      background: rgba(255, 255, 255, 0.12);
-    }
-
-    .timeline-content {
-      .timeline-header {
-        .operator {
-          color: #e0e0e0;
-        }
-
-        .action {
-          background: rgba(100, 181, 246, 0.15);
-          color: #64b5f6;
-        }
-      }
-
-      .timeline-time {
-        color: #888;
-      }
-
-      .timeline-remark {
-        color: #b0b0b0;
-        background: rgba(255, 255, 255, 0.05);
-      }
-    }
-  }
-}
-
-.editor-modal-overlay {
-  position: fixed;
+<style lang="scss" scoped>
+@use '@/styles/scss/ag-grid-shared' as *;
+
+.contract-container {
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
   display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.editor-modal-container {
-  width: 90vw;
-  height: 85vh;
-  background: #fff;
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
   overflow: hidden;
 }
 
-.editor-modal-header {
+.contract-panel {
+  position: relative;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid #f0f0f0;
-  flex-shrink: 0;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border-radius: 8px;
+  border: 1px solid #e8e8e8;
+  overflow: hidden;
+}
 
-  h3 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 600;
+.contract-panel-left {
+  flex-shrink: 0;
+}
+
+.contract-panel-right {
+  flex: 1;
+}
+
+.system-dark .contract-panel {
+  background: rgb(24, 24, 28);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.system-dark .panel-content {
+  background: rgb(24, 24, 28);
+}
+
+.system-dark .panel-header {
+  background: rgb(36, 36, 40);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.system-dark .panel-header .stats-cards-inline {
+  border-left-color: rgba(255, 255, 255, 0.15);
+}
+
+.system-dark .panel-header .stats-cards-inline .stat-item .stat-label {
+  color: #b0b0b0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
+  background: #fafafa;
+  box-sizing: border-box;
+
+  .stats-cards-inline {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-left: 8px;
+    padding-left: 16px;
+    border-left: 1px solid #e0e0e0;
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.2;
+
+      .stat-label {
+        font-size: 12px;
+        color: #999;
+      }
+
+      .stat-value {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1890ff;
+      }
+    }
   }
 
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 24px;
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+  }
+}
+
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  min-height: 0;
+}
+
+.tab-bar {
+  padding: 0 16px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  :deep(.n-tabs) {
+    flex: 1;
+  }
+
+  :deep(.n-tabs-tab) {
+    padding: 8px 0;
+  }
+
+  .search-input {
+    width: 240px;
+    flex-shrink: 0;
+  }
+}
+
+.grid-container {
+  flex: 1;
+  min-height: 400px;
+  height: 100%;
+  overflow: auto;
+}
+
+.contract-grid {
+  --wb-grid-surface: transparent;
+  --wb-grid-text: #1f2937;
+  width: 100%;
+  height: 100%;
+
+  .system-dark & {
+    --wb-grid-surface: rgb(var(--container-bg-color));
+    --wb-grid-text: rgb(var(--base-text-color));
+  }
+}
+
+.task-list {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px 16px;
+
+  .task-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid #f0f0f0;
     cursor: pointer;
-    color: #999;
-    line-height: 1;
+    transition: background 0.2s;
+    border-radius: 6px;
+    margin-bottom: 4px;
 
     &:hover {
-      color: #333;
+      background: #fafafa;
+    }
+
+    &.done {
+      cursor: default;
+    }
+
+    .task-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+
+      .task-title {
+        font-size: 15px;
+        font-weight: 500;
+      }
+    }
+
+    .task-info {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: #666;
     }
   }
 }
 
+.resize-splitter {
+  width: 8px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+  flex-shrink: 0;
+}
+
+.resize-splitter:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.resize-splitter.is-resizing {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.resize-line {
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background-color: #d9d9d9;
+}
+
 .editor-modal-body {
-  flex: 1;
-  overflow: hidden;
+  height: calc(85vh - 110px);
+  min-height: 400px;
+}
+
+/* ============ ag-grid 共享样式 ============ */
+@include ag-grid-base-layout('contract-grid');
+@include ag-grid-cell-borders('contract-grid', #e8eef4, rgba(255, 255, 255, 0.06));
+@include ag-grid-selection-column('contract-grid');
+@include ag-grid-checkbox-theme('contract-grid');
+@include ag-grid-cell-focus('contract-grid');
+@include ag-grid-checkbox-dark('contract-grid');
+@include ag-grid-base-dark('contract-grid');
+@include ag-grid-controls-dark('contract-grid');
+
+/* Light mode subtle zebra stripe */
+:deep(.contract-grid .ag-row-even) {
+  background-color: rgba(24, 144, 255, 0.02) !important;
+}
+
+/* Light mode row-selected highlight */
+:deep(.contract-grid .ag-row-selected) {
+  background-color: rgba(24, 144, 255, 0.08) !important;
+}
+
+:deep(.contract-grid .ag-row-selected .ag-cell) {
+  background-color: rgba(24, 144, 255, 0.08) !important;
+}
+
+:deep(.contract-grid .ag-row-hover.ag-row-selected .ag-cell) {
+  background-color: rgba(24, 144, 255, 0.12) !important;
+}
+
+/* Light mode header background */
+:deep(.contract-grid .ag-header-row) {
+  background-color: rgba(248, 250, 252, 0.95) !important;
+}
+
+:deep(.contract-grid .ag-header-cell) {
+  background-color: rgba(248, 250, 252, 0.95) !important;
+}
+
+:deep(.contract-grid .ag-empty-cell) {
+  height: 100% !important;
+}
+
+/* Dark mode enhanced colors */
+.system-dark {
+  :deep(.contract-grid .ag-header-row) {
+    background-color: rgba(36, 44, 56, 0.95) !important;
+  }
+
+  :deep(.contract-grid .ag-header-cell) {
+    background-color: rgba(36, 44, 56, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.06) !important;
+  }
+
+  :deep(.contract-grid .ag-row-even) {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+  }
+
+  :deep(.contract-grid .ag-row-selected) {
+    background-color: rgba(100, 181, 246, 0.1) !important;
+  }
+
+  :deep(.contract-grid .ag-row-selected .ag-cell) {
+    background-color: rgba(100, 181, 246, 0.1) !important;
+  }
+
+  :deep(.contract-grid .ag-row-hover.ag-row-selected .ag-cell) {
+    background-color: rgba(100, 181, 246, 0.15) !important;
+  }
+
+  :deep(.contract-grid .ag-header) {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+
+  :deep(.contract-grid .ag-row) {
+    border-color: rgba(255, 255, 255, 0.06);
+  }
+}
+
+// 暗黑模式 - 补充样式
+.system-dark {
+  .tab-bar {
+    border-color: rgba(255, 255, 255, 0.09);
+  }
+
+  .task-list .task-item {
+    border-color: rgba(255, 255, 255, 0.09);
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+  }
 }
 </style>
