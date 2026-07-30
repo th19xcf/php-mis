@@ -22,7 +22,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   const loading = ref(false);
   const pagination = ref({
     page: 1,
-    pageSize: 20,
+    pageSize: 500,
     total: 0
   });
   const searchParams = ref({

@@ -6,7 +6,7 @@ import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'a
 import { useDialog, useMessage } from 'naive-ui';
 import { useThemeStore } from '@/store/modules/theme';
 import { useContractV2Store } from '@/store/modules/contract-v2';
-import { getContractV2DownloadUrl } from '@/service/api/contract-v2';
+import { fetchContractV2DownloadDocument } from '@/service/api/contract-v2';
 import ContractV2Form from './components/ContractV2Form.vue';
 import ContractV2Approval from './components/ContractV2Approval.vue';
 import ContractV2FlowTimeline from './components/ContractV2FlowTimeline.vue';
@@ -183,7 +183,6 @@ const columnDefs: any[] = [
     resizable: false,
     sortable: false,
     filter: false,
-    suppressQuickFilter: true,
     cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
     valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
   },
@@ -429,15 +428,21 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
-function handleExportFile(doc: Api.ContractV2.ContractDocument) {
-  const url = getContractV2DownloadUrl(doc.GUID);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = doc.文档名称 + (doc.文档格式 ? '.' + doc.文档格式 : '');
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+async function handleExportFile(doc: Api.ContractV2.ContractDocument) {
+  try {
+    const { blob, filename } = await fetchContractV2DownloadDocument(doc.GUID);
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  } catch (e: any) {
+    message.error(e?.message || '下载失败');
+  }
 }
 
 const contractFiles = computed(() => {

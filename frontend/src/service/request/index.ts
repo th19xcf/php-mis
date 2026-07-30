@@ -25,6 +25,12 @@ export const request = createFlatRequest(
       refreshTokenPromise: null
     } as RequestInstanceState,
     transform(response: AxiosResponse<App.Service.Response<any>>) {
+      // blob/arraybuffer 响应（如文件下载）直接返回原始二进制数据，
+      // 不提取 .data 字段（Blob 没有 .data 属性）
+      const responseType = response.config?.responseType;
+      if (responseType === 'blob' || responseType === 'arraybuffer') {
+        return response.data;
+      }
       return response.data.data;
     },
     async onRequest(config) {
@@ -50,6 +56,13 @@ export const request = createFlatRequest(
       return config;
     },
     isBackendSuccess(response) {
+      // blob/arraybuffer 响应（如文件下载）：HTTP 2xx 即视为成功，
+      // 不检查业务 code（Blob 没有 code 字段）
+      const responseType = response.config?.responseType;
+      if (responseType === 'blob' || responseType === 'arraybuffer') {
+        return response.status >= 200 && response.status < 300;
+      }
+
       // when the backend response code is "0000"(default), it means the request is success
       // to change this logic by yourself, you can modify the `VITE_SERVICE_SUCCESS_CODE` in `.env` file
       const responseData = response.data as App.Service.Response<any>;

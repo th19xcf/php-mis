@@ -113,5 +113,44 @@ export function fetchContractV2DeleteDocument(docId: number) {
 }
 
 export function getContractV2DownloadUrl(docId: number) {
-  return `/api/contractV2/downloadDocument/${docId}`;
+  return `/contractV2/downloadDocument/${docId}`;
+}
+
+/**
+ * 下载合同文档（使用项目统一的 request 实例，自动携带 Authorization 和 Vite 代理前缀）
+ * 后端返回二进制文件流，需用 responseType: 'blob' 接收
+ */
+export async function fetchContractV2DownloadDocument(
+  docId: number
+): Promise<{ blob: Blob; filename: string }> {
+  const { data, error, response } = await request<any, 'blob'>({
+    url: `/contractV2/downloadDocument/${docId}`,
+    method: 'get',
+    responseType: 'blob'
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  // 后端返回 JSON 错误时，@sa/axios 的 transformBlobToJson 会自动将 Blob 转为对象
+  if (data && !(data instanceof Blob)) {
+    const errorData = data as any;
+    throw new Error(errorData?.msg || '下载失败');
+  }
+
+  const blob = data as Blob;
+  const contentDisposition: string = response?.headers?.['content-disposition'] || '';
+  let filename = `document_${docId}`;
+
+  const utf8Match = contentDisposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  const asciiMatch = contentDisposition.match(/filename\s*=\s*"([^"]+)"/i);
+
+  if (utf8Match) {
+    filename = decodeURIComponent(utf8Match[1]);
+  } else if (asciiMatch) {
+    filename = asciiMatch[1];
+  }
+
+  return { blob, filename };
 }

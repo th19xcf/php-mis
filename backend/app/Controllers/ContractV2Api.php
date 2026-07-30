@@ -360,14 +360,11 @@ class ContractV2Api extends BaseApiController
                 return $this->notFound('文件不存在');
             }
 
-            $fileName = $doc['文档名称'] . '.' . ($doc['文档格式'] ?? '');
-            $fileSize = filesize($filePath);
+            $safeFileName = $doc['文档名称'] . '.' . ($doc['文档格式'] ?? '');
 
             return $this->response
-                ->setHeader('Content-Type', 'application/octet-stream')
-                ->setHeader('Content-Disposition', 'attachment; filename="' . rawurlencode($fileName) . '"')
-                ->setHeader('Content-Length', (string) $fileSize)
-                ->setBody(file_get_contents($filePath));
+                ->download($filePath, null)
+                ->setFileName($safeFileName);
         } catch (\Throwable $e) {
             log_message('error', '[ContractV2Api::downloadDocument] ' . $e->getMessage());
             return $this->serverError($e->getMessage());

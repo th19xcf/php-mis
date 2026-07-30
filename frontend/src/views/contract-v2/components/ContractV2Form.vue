@@ -5,7 +5,7 @@ import { useContractV2Store } from '@/store/modules/contract-v2';
 import {
   fetchContractV2UploadDocument,
   fetchContractV2DeleteDocument,
-  getContractV2DownloadUrl
+  fetchContractV2DownloadDocument
 } from '@/service/api/contract-v2';
 
 const props = defineProps<{
@@ -233,8 +233,7 @@ function handleDownload(doc: Api.ContractV2.ContractDocument) {
   if (isEditableDoc(doc)) {
     emit('openEditor', doc.GUID, doc.文档名称);
   } else {
-    const url = getContractV2DownloadUrl(doc.GUID);
-    window.open(url, '_blank');
+    doDownload(doc);
   }
 }
 
@@ -243,16 +242,27 @@ function handleEditFile(doc: Api.ContractV2.ContractDocument) {
   emit('openEditor', doc.GUID, doc.文档名称);
 }
 
-// 导出文件：使用浏览器原生下载（后端返回 Content-Disposition: attachment）
+// 通用下载：带 Authorization 头的 fetch 请求，避免 JWT 过滤器返回 JSON 错误
+async function doDownload(doc: Api.ContractV2.ContractDocument) {
+  try {
+    const { blob, filename } = await fetchContractV2DownloadDocument(doc.GUID);
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  } catch (e: any) {
+    message.error(e?.message || '下载失败');
+  }
+}
+
+// 导出文件：带认证头的下载
 function handleExportFile(doc: Api.ContractV2.ContractDocument) {
-  const url = getContractV2DownloadUrl(doc.GUID);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = doc.文档名称 + (doc.文档格式 ? '.' + doc.文档格式 : '');
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  doDownload(doc);
 }
 
 // 日期字符串与 timestamp 互转（NDatePicker 需要 timestamp）
