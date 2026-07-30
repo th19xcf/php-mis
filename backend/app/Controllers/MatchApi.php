@@ -866,6 +866,50 @@ class MatchApi extends BaseApiController
         return $row['数据来源表'] ?? '';
     }
 
+    /**
+     * 解析匹配上下文：读取 key/target/table/writes 配置，供 buildRelation 和 revokeRelation 共用。
+     *
+     * @return array{aCols: array, bCols: array, writes: array, aTable: string, bTable: string, error: ?string}
+     */
+    private function resolveMatchContext(string $functionCode, string $aModule, string $bModule): array
+    {
+        $aCols = ['key' => '', 'target' => ''];
+        $bCols = ['key' => '', 'target' => ''];
+
+        // 优先从 def_match_config 读取 key/table
+        $matchKeyFields = $this->getMatchKeyFields($functionCode, $aModule, $bModule);
+        $aCols['key'] = $matchKeyFields['aKey'];
+        $bCols['key'] = $matchKeyFields['bKey'];
+
+        // target 从写入指令的 targetField 推导，回退到 view_function.可匹配=4
+        $writes = ['aToB' => [], 'bToA' => []];
+        if (!empty($functionCode)) {
+            $writes = $this->getMatchWrites($functionCode);
+        }
+        $aViewMatchCols = $this->getMatchColumns($aModule);
+        $bViewMatchCols = $this->getMatchColumns($bModule);
+        $aCols['target'] = !empty($writes['bToA']) ? $writes['bToA'][0]['targetField'] : $aViewMatchCols['target'];
+        $bCols['target'] = !empty($writes['aToB']) ? $writes['aToB'][0]['targetField'] : $bViewMatchCols['target'];
+
+        if (empty($aCols['key'])) {
+            return ['error' => "功能 {$functionCode} 未配置 A 表主键（def_match_config.A表主键）"];
+        }
+        if (empty($bCols['key'])) {
+            return ['error' => "功能 {$functionCode} 未配置 B 表主键（def_match_config.B表主键）"];
+        }
+
+        $tables = $this->getMatchTables($functionCode, $aModule, $bModule);
+
+        return [
+            'aCols' => $aCols,
+            'bCols' => $bCols,
+            'writes' => $writes,
+            'aTable' => $tables['aTable'],
+            'bTable' => $tables['bTable'],
+            'error' => null
+        ];
+    }
+
     public function buildRelation()
     {
         try {
@@ -883,33 +927,15 @@ class MatchApi extends BaseApiController
                 return $this->businessError('请选择要匹配的记录');
             }
 
-            $aCols = ['key' => '', 'target' => ''];
-            $bCols = ['key' => '', 'target' => ''];
-
-            // 优先从 def_match_config 读取 key/table
-            $matchKeyFields = $this->getMatchKeyFields($functionCode, $aModule, $bModule);
-            $aCols['key'] = $matchKeyFields['aKey'];
-            $bCols['key'] = $matchKeyFields['bKey'];
-
-            // target 从写入指令的 targetField 推导，回退到 view_function.可匹配=4
-            $writes = ['aToB' => [], 'bToA' => []];
-            if (!empty($functionCode)) {
-                $writes = $this->getMatchWrites($functionCode);
+            $ctx = $this->resolveMatchContext($functionCode, $aModule, $bModule);
+            if ($ctx['error'] !== null) {
+                return $this->businessError($ctx['error']);
             }
-            $aViewMatchCols = $this->getMatchColumns($aModule);
-            $bViewMatchCols = $this->getMatchColumns($bModule);
-            $aCols['target'] = !empty($writes['bToA']) ? $writes['bToA'][0]['targetField'] : $aViewMatchCols['target'];
-            $bCols['target'] = !empty($writes['aToB']) ? $writes['aToB'][0]['targetField'] : $bViewMatchCols['target'];
-
-            if (empty($aCols['key'])) {
-                return $this->businessError("功能 {$functionCode} 未配置 A 表主键（def_match_config.A表主键）");
-            }
-            if (empty($bCols['key'])) {
-                return $this->businessError("功能 {$functionCode} 未配置 B 表主键（def_match_config.B表主键）");
-            }
-
-            $aTable = $this->getMatchTables($functionCode, $aModule, $bModule)['aTable'];
-            $bTable = $this->getMatchTables($functionCode, $aModule, $bModule)['bTable'];
+            $aCols = $ctx['aCols'];
+            $bCols = $ctx['bCols'];
+            $writes = $ctx['writes'];
+            $aTable = $ctx['aTable'];
+            $bTable = $ctx['bTable'];
 
             // 检查 target 字段是否已被写入指令覆盖
             $aTargetCovered = false;
@@ -1115,33 +1141,15 @@ class MatchApi extends BaseApiController
                 return $this->businessError('请选择要撤销的记录');
             }
 
-            $aCols = ['key' => '', 'target' => ''];
-            $bCols = ['key' => '', 'target' => ''];
-
-            // 优先从 def_match_config 读取 key
-            $matchKeyFields = $this->getMatchKeyFields($functionCode, $aModule, $bModule);
-            $aCols['key'] = $matchKeyFields['aKey'];
-            $bCols['key'] = $matchKeyFields['bKey'];
-
-            // target 从写入指令的 targetField 推导，回退到 view_function.可匹配=4
-            $writes = ['aToB' => [], 'bToA' => []];
-            if (!empty($functionCode)) {
-                $writes = $this->getMatchWrites($functionCode);
+            $ctx = $this->resolveMatchContext($functionCode, $aModule, $bModule);
+            if ($ctx['error'] !== null) {
+                return $this->businessError($ctx['error']);
             }
-            $aViewMatchCols = $this->getMatchColumns($aModule);
-            $bViewMatchCols = $this->getMatchColumns($bModule);
-            $aCols['target'] = !empty($writes['bToA']) ? $writes['bToA'][0]['targetField'] : $aViewMatchCols['target'];
-            $bCols['target'] = !empty($writes['aToB']) ? $writes['aToB'][0]['targetField'] : $bViewMatchCols['target'];
-
-            if (empty($aCols['key'])) {
-                return $this->businessError("功能 {$functionCode} 未配置 A 表主键（def_match_config.A表主键）");
-            }
-            if (empty($bCols['key'])) {
-                return $this->businessError("功能 {$functionCode} 未配置 B 表主键（def_match_config.B表主键）");
-            }
-
-            $aTable = $this->getMatchTables($functionCode, $aModule, $bModule)['aTable'];
-            $bTable = $this->getMatchTables($functionCode, $aModule, $bModule)['bTable'];
+            $aCols = $ctx['aCols'];
+            $bCols = $ctx['bCols'];
+            $writes = $ctx['writes'];
+            $aTable = $ctx['aTable'];
+            $bTable = $ctx['bTable'];
 
             // 收集需要清空的 B 表字段（aToB 的 targetField）
             $bClearFields = [];
