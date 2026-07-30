@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, reactive } from 'vue';
 import { useMessage } from 'naive-ui';
 import { useContractV2Store } from '@/store/modules/contract-v2';
 import {
@@ -12,6 +12,7 @@ const props = defineProps<{
   visible: boolean;
   mode: 'create' | 'edit';
   contract: Api.ContractV2.ContractDetail | null;
+  inline?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -47,6 +48,13 @@ const formData = ref({
 const contractFiles = ref<Api.ContractV2.ContractDocument[]>([]);
 const approvalFiles = ref<Api.ContractV2.ContractDocument[]>([]);
 const uploading = ref(false);
+const mainFileInput = ref<HTMLInputElement | null>(null);
+const approvalFileInput = ref<HTMLInputElement | null>(null);
+
+function triggerUpload(docType: 'MAIN' | 'APPROVAL_FORM') {
+  const input = docType === 'MAIN' ? mainFileInput.value : approvalFileInput.value;
+  input?.click();
+}
 
 // 可在线编辑的文件格式
 const editableExts = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
@@ -111,7 +119,8 @@ watch(
         approvalFiles.value = [];
       }
     }
-  }
+  },
+  { immediate: true }
 );
 
 function handleClose() {
@@ -228,10 +237,188 @@ function handleDownload(doc: Api.ContractV2.ContractDocument) {
     window.open(url, '_blank');
   }
 }
+
+// 编辑文件：打开 OnlyOffice 编辑器
+function handleEditFile(doc: Api.ContractV2.ContractDocument) {
+  emit('openEditor', doc.GUID, doc.文档名称);
+}
+
+// 导出文件：使用浏览器原生下载（后端返回 Content-Disposition: attachment）
+function handleExportFile(doc: Api.ContractV2.ContractDocument) {
+  const url = getContractV2DownloadUrl(doc.GUID);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = doc.文档名称 + (doc.文档格式 ? '.' + doc.文档格式 : '');
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// 日期字符串与 timestamp 互转（NDatePicker 需要 timestamp）
+function dateToTs(s: string): number | null {
+  if (!s) return null;
+  const t = new Date(s).getTime();
+  return isNaN(t) ? null : t;
+}
+function tsToDate(ts: number | null): string {
+  if (ts === null || ts === undefined) return '';
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const 签订日期Ts = computed({ get: () => dateToTs(formData.value.签订日期), set: (v: number | null) => { formData.value.签订日期 = tsToDate(v); } });
+const 开始日期Ts = computed({ get: () => dateToTs(formData.value.开始日期), set: (v: number | null) => { formData.value.开始日期 = tsToDate(v); } });
+const 结束日期Ts = computed({ get: () => dateToTs(formData.value.结束日期), set: (v: number | null) => { formData.value.结束日期 = tsToDate(v); } });
+
+// NSelect options（确保是 {label, value} 格式）
+const 合同类型Options = computed(() => (options.value.合同类型 || []).map((o: any) => ({ label: o.label, value: o.value })));
+const 付款方式Options = computed(() => (options.value.付款方式 || []).map((o: any) => ({ label: o.label, value: o.value })));
+const 币别Options = computed(() => (options.value.币别 || []).map((o: any) => ({ label: o.label, value: o.value })));
+
+// 暴露 submit 方法供父组件内联调用
+defineExpose({
+  submit: handleSubmit
+});
 </script>
 
 <template>
-  <div v-if="visible" class="modal-overlay" @click.self="handleClose">
+  <!-- 内联模式（右侧面板直接编辑，参照面试人员维护的表格化布局） -->
+  <div v-if="inline && visible" class="inline-form">
+    <div class="edit-table">
+      <div class="edit-row edit-head">
+        <div class="edit-cell edit-cell-name">列名</div>
+        <div class="edit-cell edit-cell-value">列值</div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">合同名称<span class="required-mark">*</span></div>
+        <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.合同名称" placeholder="请输入合同名称" size="small" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">合同类型</div>
+        <div class="edit-cell edit-cell-value"><NSelect v-model:value="formData.合同类型" :options="合同类型Options" placeholder="请选择" size="small" clearable /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">甲方名称<span class="required-mark">*</span></div>
+        <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.甲方名称" placeholder="请输入甲方名称" size="small" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">甲方联系人</div>
+        <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.甲方联系人" placeholder="请输入甲方联系人" size="small" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">甲方电话</div>
+        <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.甲方电话" placeholder="请输入甲方电话" size="small" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">乙方名称<span class="required-mark">*</span></div>
+        <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.乙方名称" placeholder="请输入乙方名称" size="small" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">乙方联系人</div>
+        <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.乙方联系人" placeholder="请输入乙方联系人" size="small" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">乙方电话</div>
+        <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.乙方电话" placeholder="请输入乙方电话" size="small" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">合同金额</div>
+        <div class="edit-cell edit-cell-value"><NInputNumber v-model:value="formData.合同金额" placeholder="请输入金额" size="small" :precision="2" class="w-full" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">付款方式</div>
+        <div class="edit-cell edit-cell-value"><NSelect v-model:value="formData.付款方式" :options="付款方式Options" placeholder="请选择" size="small" clearable /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">币别</div>
+        <div class="edit-cell edit-cell-value"><NSelect v-model:value="formData.币别" :options="币别Options" placeholder="请选择" size="small" clearable /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">汇率</div>
+        <div class="edit-cell edit-cell-value"><NInputNumber v-model:value="formData.汇率" placeholder="请输入汇率" size="small" :precision="4" :step="0.0001" class="w-full" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">签订日期</div>
+        <div class="edit-cell edit-cell-value"><NDatePicker v-model:value="签订日期Ts" type="date" size="small" clearable class="w-full" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">开始日期</div>
+        <div class="edit-cell edit-cell-value"><NDatePicker v-model:value="开始日期Ts" type="date" size="small" clearable class="w-full" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">结束日期</div>
+        <div class="edit-cell edit-cell-value"><NDatePicker v-model:value="结束日期Ts" type="date" size="small" clearable class="w-full" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">备注</div>
+        <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.备注" type="textarea" :rows="2" placeholder="请输入备注" size="small" /></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">合同文件</div>
+        <div class="edit-cell edit-cell-value">
+          <div v-if="mode === 'create'" class="upload-tip">请先保存合同基础信息后再上传文件</div>
+          <div v-else class="upload-area">
+            <NButton size="small" :loading="uploading" @click="triggerUpload('MAIN')">
+              <template #icon><icon-mdi-upload /></template>
+              上传合同文件
+            </NButton>
+            <input
+              ref="mainFileInput"
+              type="file"
+              class="hidden-file-input"
+              :disabled="uploading"
+              @change="e => handleFileUpload(e, 'MAIN')"
+            />
+            <div class="file-list">
+                <div v-for="file in contractFiles" :key="file.GUID" class="file-item">
+                  <span class="file-name">{{ file.文档名称 }}</span>
+                  <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
+                  <div class="file-actions">
+                    <NButton v-if="isEditableDoc(file)" size="tiny" quaternary type="info" @click="handleEditFile(file)">编辑</NButton>
+                    <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
+                    <NButton size="tiny" quaternary type="error" @click="handleDeleteFile(file, 'MAIN')">删除</NButton>
+                  </div>
+                </div>
+              </div>
+          </div>
+        </div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">合同审批表</div>
+        <div class="edit-cell edit-cell-value">
+          <div v-if="mode === 'create'" class="upload-tip">请先保存合同基础信息后再上传文件</div>
+          <div v-else class="upload-area">
+            <NButton size="small" :loading="uploading" @click="triggerUpload('APPROVAL_FORM')">
+              <template #icon><icon-mdi-upload /></template>
+              上传审批表
+            </NButton>
+            <input
+              ref="approvalFileInput"
+              type="file"
+              class="hidden-file-input"
+              :disabled="uploading"
+              @change="e => handleFileUpload(e, 'APPROVAL_FORM')"
+            />
+            <div class="file-list">
+                <div v-for="file in approvalFiles" :key="file.GUID" class="file-item">
+                  <span class="file-name">{{ file.文档名称 }}</span>
+                  <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
+                  <div class="file-actions">
+                    <NButton v-if="isEditableDoc(file)" size="tiny" quaternary type="info" @click="handleEditFile(file)">编辑</NButton>
+                    <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
+                    <NButton size="tiny" quaternary type="error" @click="handleDeleteFile(file, 'APPROVAL_FORM')">删除</NButton>
+                  </div>
+                </div>
+              </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗模式（新建合同等） -->
+  <div v-else-if="!inline && visible" class="modal-overlay" @click.self="handleClose">
     <div class="modal-container">
       <div class="modal-header">
         <h3>{{ mode === 'create' ? '新建合同' : '编辑合同' }}</h3>
@@ -340,12 +527,13 @@ function handleDownload(doc: Api.ContractV2.ContractDocument) {
                     :key="file.GUID"
                     class="file-item"
                   >
-                    <span class="file-name" :class="{ editable: isEditableDoc(file) }" @click="handleDownload(file)">
-                      {{ file.文档名称 }}
-                      <span v-if="isEditableDoc(file)" class="edit-hint">编辑</span>
-                    </span>
+                    <span class="file-name">{{ file.文档名称 }}</span>
                     <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
-                    <button class="file-delete" @click="handleDeleteFile(file, 'MAIN')">删除</button>
+                    <div class="file-actions">
+                      <NButton v-if="isEditableDoc(file)" size="tiny" quaternary type="info" @click="handleEditFile(file)">编辑</NButton>
+                      <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
+                      <NButton size="tiny" quaternary type="error" @click="handleDeleteFile(file, 'MAIN')">删除</NButton>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -373,12 +561,13 @@ function handleDownload(doc: Api.ContractV2.ContractDocument) {
                     :key="file.GUID"
                     class="file-item"
                   >
-                    <span class="file-name" :class="{ editable: isEditableDoc(file) }" @click="handleDownload(file)">
-                      {{ file.文档名称 }}
-                      <span v-if="isEditableDoc(file)" class="edit-hint">编辑</span>
-                    </span>
+                    <span class="file-name">{{ file.文档名称 }}</span>
                     <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
-                    <button class="file-delete" @click="handleDeleteFile(file, 'APPROVAL_FORM')">删除</button>
+                    <div class="file-actions">
+                      <NButton v-if="isEditableDoc(file)" size="tiny" quaternary type="info" @click="handleEditFile(file)">编辑</NButton>
+                      <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
+                      <NButton size="tiny" quaternary type="error" @click="handleDeleteFile(file, 'APPROVAL_FORM')">删除</NButton>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -397,6 +586,185 @@ function handleDownload(doc: Api.ContractV2.ContractDocument) {
 </template>
 
 <style scoped lang="scss">
+.inline-form {
+  padding: 0;
+}
+
+// 表格化布局（参照面试人员维护页面的 NTable 视觉）
+.edit-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  overflow: hidden;
+  font-size: 13px;
+
+  .edit-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid #e8e8e8;
+    color: #333;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &.edit-head {
+      font-weight: 500;
+      color: #333;
+    }
+  }
+
+  .edit-cell {
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+    line-height: 1.4;
+    color: inherit;
+  }
+
+  .edit-cell-name {
+    width: 110px;
+    flex-shrink: 0;
+    border-right: 1px solid #e8e8e8;
+    color: #333;
+  }
+
+  .edit-cell-value {
+    flex: 1;
+    background: transparent;
+    color: inherit;
+
+    // 让 Naive UI 输入控件撑满单元格
+    :deep(.n-input),
+    :deep(.n-select),
+    :deep(.n-date-picker),
+    :deep(.n-input-number) {
+      width: 100%;
+    }
+  }
+
+  .required-mark {
+    color: #ff4d4f;
+    margin-left: 2px;
+  }
+}
+
+// 暗黑模式适配
+.system-dark .edit-table {
+  border-color: rgba(255, 255, 255, 0.09);
+
+  .edit-row {
+    border-color: rgba(255, 255, 255, 0.09);
+    color: #e0e0e0;
+
+    &.edit-head {
+      color: #e0e0e0;
+    }
+  }
+
+  .edit-cell-name {
+    border-color: rgba(255, 255, 255, 0.09);
+    color: #e0e0e0;
+  }
+
+  // 附件列表项暗黑适配
+  .file-item {
+    background: rgba(255, 255, 255, 0.05);
+
+    .file-name {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .file-size {
+      color: #888;
+    }
+  }
+
+  .upload-tip {
+    color: #888;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+}
+
+.upload-tip {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+  background: #fafafa;
+  border: 1px dashed #d9d9d9;
+  border-radius: 4px;
+}
+
+.upload-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .hidden-file-input {
+    display: none;
+  }
+
+  // 上传按钮统一样式，确保"上传合同文件"和"上传审批表"宽度一致
+  :deep(.n-button) {
+    align-self: flex-start;
+    min-width: 130px;
+  }
+
+  .file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      padding: 6px 10px;
+      background: #fafafa;
+      border-radius: 4px;
+      gap: 10px;
+
+      .file-name {
+        flex: 1;
+        color: #333;
+        font-size: 13px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .file-size {
+        color: #999;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+
+      // 按钮组：紧贴文件大小右侧，不被推到最右
+      .file-actions {
+        display: inline-flex;
+        align-items: center;
+        flex-shrink: 0;
+        margin-left: auto;
+
+        :deep(.n-button) {
+          padding: 0 4px !important;
+          margin: 0 !important;
+          min-width: 0 !important;
+          height: 20px;
+          font-size: 12px;
+        }
+
+        :deep(.n-button + .n-button) {
+          margin-left: 2px !important;
+        }
+      }
+    }
+  }
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -494,107 +862,6 @@ function handleDownload(doc: Api.ContractV2.ContractDocument) {
     textarea {
       resize: vertical;
       font-family: inherit;
-    }
-  }
-}
-
-.file-upload-section {
-  .upload-tip {
-    padding: 20px;
-    text-align: center;
-    color: #999;
-    font-size: 13px;
-    background: #fafafa;
-    border: 1px dashed #d9d9d9;
-    border-radius: 4px;
-  }
-
-  .upload-area {
-    .upload-btn {
-      display: inline-block;
-      padding: 8px 16px;
-      border: 1px dashed #1890ff;
-      border-radius: 4px;
-      color: #1890ff;
-      font-size: 14px;
-      cursor: pointer;
-      transition: all 0.2s;
-      margin-bottom: 12px;
-
-      &:hover {
-        border-color: #40a9ff;
-        color: #40a9ff;
-        background: #e6f7ff;
-      }
-
-      input {
-        display: none;
-      }
-    }
-
-    .file-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-
-      .file-item {
-        display: flex;
-        align-items: center;
-        padding: 8px 12px;
-        background: #fafafa;
-        border-radius: 4px;
-        gap: 12px;
-
-        .file-name {
-          flex: 1;
-          color: #1890ff;
-          font-size: 14px;
-          cursor: pointer;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-
-          &:hover {
-            text-decoration: underline;
-          }
-
-          &.editable {
-            color: #52c41a;
-          }
-
-          .edit-hint {
-            display: inline-block;
-            margin-left: 6px;
-            padding: 0 6px;
-            font-size: 11px;
-            color: #52c41a;
-            background: #f6ffed;
-            border: 1px solid #b7eb8f;
-            border-radius: 2px;
-            vertical-align: middle;
-          }
-        }
-
-        .file-size {
-          color: #999;
-          font-size: 12px;
-          flex-shrink: 0;
-        }
-
-        .file-delete {
-          background: none;
-          border: none;
-          color: #ff4d4f;
-          font-size: 13px;
-          cursor: pointer;
-          padding: 2px 8px;
-          flex-shrink: 0;
-
-          &:hover {
-            text-decoration: underline;
-          }
-        }
-      }
     }
   }
 }

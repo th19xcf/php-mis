@@ -786,7 +786,20 @@ class ContractService
 
         $newFileName = $docId . '_v1.' . $fileExt;
         $destPath = $storageDir . DIRECTORY_SEPARATOR . $newFileName;
-        $file->move($storageDir, $newFileName);
+        $moved = $file->move($storageDir, $newFileName);
+
+        // 检查 move 是否成功（move 返回 false 或文件不存在都视为失败）
+        if ($moved === false || !file_exists($destPath)) {
+            // 回滚已插入的数据库记录
+            $rollbackSql = sprintf(
+                'delete from `def_contract_document` where `GUID`=%d',
+                $docId
+            );
+            $this->model->exec($rollbackSql);
+            $errorMsg = '文件保存失败：' . ($file->getError() ?: '未知错误') . '，目标路径: ' . $destPath;
+            log_message('error', '[ContractService::uploadDocument] ' . $errorMsg);
+            throw new \RuntimeException($errorMsg);
+        }
 
         $relativePath = 'contract_docs/' . $newFileName;
 

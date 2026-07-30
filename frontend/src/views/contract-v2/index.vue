@@ -6,6 +6,7 @@ import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'a
 import { useDialog, useMessage } from 'naive-ui';
 import { useThemeStore } from '@/store/modules/theme';
 import { useContractV2Store } from '@/store/modules/contract-v2';
+import { getContractV2DownloadUrl } from '@/service/api/contract-v2';
 import ContractV2Form from './components/ContractV2Form.vue';
 import ContractV2Approval from './components/ContractV2Approval.vue';
 import ContractV2FlowTimeline from './components/ContractV2FlowTimeline.vue';
@@ -77,15 +78,99 @@ const activeTab = ref<'list' | 'pending' | 'done' | 'my'>('list');
 const showFormModal = ref(false);
 const showApprovalModal = ref(false);
 const formMode = ref<'create' | 'edit'>('create');
+const isEditMode = ref(false);
 
 // OnlyOffice 编辑器
 const showEditorModal = ref(false);
 const editorDocId = ref(0);
 const editorDocName = ref('');
 
+// 弹窗拖拽与最大化
+const isEditorMaximized = ref(false);
+const editorModalPos = ref({ left: 0, top: 0 });
+const isDragging = ref(false);
+const dragStart = ref({ x: 0, y: 0, left: 0, top: 0 });
+const editorModalRef = ref<HTMLDivElement | null>(null);
+
+function handleOpenEditor(docId: number, docName: string) {
+  editorDocId.value = docId;
+  editorDocName.value = docName;
+  showEditorModal.value = true;
+  isEditorMaximized.value = false;
+  // 下一帧计算居中位置
+  requestAnimationFrame(() => {
+    if (editorModalRef.value) {
+      const rect = editorModalRef.value.getBoundingClientRect();
+      editorModalPos.value = {
+        left: (window.innerWidth - rect.width) / 2,
+        top: (window.innerHeight - rect.height) / 2
+      };
+    }
+  });
+}
+
+function handleCloseEditor() {
+  showEditorModal.value = false;
+  editorDocId.value = 0;
+  editorDocName.value = '';
+  isEditorMaximized.value = false;
+  isDragging.value = false;
+}
+
+function toggleMaximize() {
+  isEditorMaximized.value = !isEditorMaximized.value;
+  if (!isEditorMaximized.value) {
+    // 还原时重新居中
+    requestAnimationFrame(() => {
+      if (editorModalRef.value) {
+        const rect = editorModalRef.value.getBoundingClientRect();
+        editorModalPos.value = {
+          left: Math.max(0, (window.innerWidth - rect.width) / 2),
+          top: Math.max(0, (window.innerHeight - rect.height) / 2)
+        };
+      }
+    });
+  }
+}
+
+function onEditorHeaderMouseDown(e: MouseEvent) {
+  if (isEditorMaximized.value) return;
+  // 只响应左键，且排除按钮点击
+  const target = e.target as HTMLElement;
+  if (target.closest('.editor-modal-btn')) return;
+
+  isDragging.value = true;
+  dragStart.value = {
+    x: e.clientX,
+    y: e.clientY,
+    left: editorModalPos.value.left,
+    top: editorModalPos.value.top
+  };
+
+  document.addEventListener('mousemove', onEditorMouseMove);
+  document.addEventListener('mouseup', onEditorMouseUp);
+}
+
+function onEditorMouseMove(e: MouseEvent) {
+  if (!isDragging.value) return;
+  const dx = e.clientX - dragStart.value.x;
+  const dy = e.clientY - dragStart.value.y;
+  editorModalPos.value = {
+    left: Math.max(0, dragStart.value.left + dx),
+    top: Math.max(0, dragStart.value.top + dy)
+  };
+}
+
+function onEditorMouseUp() {
+  isDragging.value = false;
+  document.removeEventListener('mousemove', onEditorMouseMove);
+  document.removeEventListener('mouseup', onEditorMouseUp);
+}
+
 const searchKeyword = ref('');
 
 const gridApi = ref<GridApi | null>(null);
+const inlineFormRef = ref<{ submit: () => void } | null>(null);
 const selectedContract = ref<Api.ContractV2.ContractListItem | null>(null);
 
 const columnDefs: any[] = [
@@ -181,6 +266,7 @@ async function handleRefresh() {
 
 function handleCreate() {
   formMode.value = 'create';
+  isEditMode.value = false;
   showFormModal.value = true;
 }
 
@@ -190,6 +276,7 @@ function handleEdit() {
     return;
   }
   formMode.value = 'edit';
+  isEditMode.value = true;
   showFormModal.value = true;
 }
 
@@ -260,20 +347,20 @@ function handleApproval(task: Api.Workflow.WorkflowTask) {
 
 function handleFormSuccess() {
   showFormModal.value = false;
+  isEditMode.value = false;
   contractV2Store.loadContractList();
 }
 
-function handleOpenEditor(docId: number, docName: string) {
-  editorDocId.value = docId;
-  editorDocName.value = docName;
-  showEditorModal.value = true;
+function handleCancelEdit() {
+  isEditMode.value = false;
+  showFormModal.value = false;
 }
 
-function handleCloseEditor() {
-  showEditorModal.value = false;
-  editorDocId.value = 0;
-  editorDocName.value = '';
+function handleSubmitInline() {
+  inlineFormRef.value?.submit();
 }
+
+
 
 function handleApprovalSuccess() {
   showApprovalModal.value = false;
@@ -327,6 +414,39 @@ function getStatusType(status: string): 'default' | 'success' | 'warning' | 'err
   };
   return map[status] || 'default';
 }
+
+// ── 附件相关辅助方法 ──
+const editableExts = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
+
+function isEditableDoc(doc: Api.ContractV2.ContractDocument): boolean {
+  const ext = (doc.文档格式 || '').toLowerCase();
+  return editableExts.includes(ext);
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+}
+
+function handleExportFile(doc: Api.ContractV2.ContractDocument) {
+  const url = getContractV2DownloadUrl(doc.GUID);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = doc.文档名称 + (doc.文档格式 ? '.' + doc.文档格式 : '');
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+const contractFiles = computed(() => {
+  return (currentContract.value?.documents || []).filter(d => d.文档类型 === 'MAIN');
+});
+
+const approvalFiles = computed(() => {
+  return (currentContract.value?.documents || []).filter(d => d.文档类型 === 'APPROVAL_FORM');
+});
 
 onMounted(async () => {
   const savedWidth = localStorage.getItem('contract-v2-splitter-width');
@@ -479,8 +599,12 @@ onMounted(async () => {
 
     <div class="contract-panel contract-panel-right">
       <div class="panel-header">
-        <span class="text-lg font-600">合同详情</span>
-        <div class="header-actions" v-if="selectedContract">
+        <span class="text-lg font-600">{{ isEditMode ? '编辑合同' : '合同详情' }}</span>
+        <div class="header-actions" v-if="isEditMode">
+          <NButton size="small" @click="handleCancelEdit">取消</NButton>
+          <NButton type="primary" size="small" @click="handleSubmitInline">保存</NButton>
+        </div>
+        <div class="header-actions" v-else-if="selectedContract">
           <template v-for="btn in getActionButtons()" :key="btn.key">
             <NButton :type="btn.type as any" size="small" @click="handleAction(btn.key)">
               {{ btn.label }}
@@ -490,7 +614,21 @@ onMounted(async () => {
       </div>
 
       <div class="panel-content">
-        <template v-if="currentContract">
+        <!-- 编辑模式：内联表单 -->
+        <template v-if="isEditMode && currentContract">
+          <ContractV2Form
+            ref="inlineFormRef"
+            :visible="isEditMode"
+            inline
+            mode="edit"
+            :contract="currentContract"
+            @success="handleFormSuccess"
+            @open-editor="handleOpenEditor"
+          />
+        </template>
+
+        <!-- 查看模式：只读详情 -->
+        <template v-else-if="currentContract">
           <NDivider>基本信息</NDivider>
 
           <NDescriptions bordered :column="2" size="small">
@@ -516,6 +654,32 @@ onMounted(async () => {
             <NDescriptionsItem label="备注" :span="2">{{ currentContract.备注 || '-' }}</NDescriptionsItem>
           </NDescriptions>
 
+          <!-- 合同文件 -->
+          <NDivider>合同文件</NDivider>
+          <div v-if="contractFiles.length" class="detail-file-list">
+            <div v-for="file in contractFiles" :key="file.GUID" class="detail-file-item">
+              <span class="detail-file-name">{{ file.文档名称 }}</span>
+              <span class="detail-file-size">{{ formatFileSize(file.文件大小) }}</span>
+              <div class="detail-file-actions">
+                <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
+              </div>
+            </div>
+          </div>
+          <NEmpty v-else description="暂无合同文件" size="small" class="py-4" />
+
+          <!-- 合同审批表 -->
+          <NDivider>合同审批表</NDivider>
+          <div v-if="approvalFiles.length" class="detail-file-list">
+            <div v-for="file in approvalFiles" :key="file.GUID" class="detail-file-item">
+              <span class="detail-file-name">{{ file.文档名称 }}</span>
+              <span class="detail-file-size">{{ formatFileSize(file.文件大小) }}</span>
+              <div class="detail-file-actions">
+                <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
+              </div>
+            </div>
+          </div>
+          <NEmpty v-else description="暂无审批表" size="small" class="py-4" />
+
           <NDivider>审批流程</NDivider>
 
           <ContractV2FlowTimeline v-if="currentContract.合同编号" :contract-no="currentContract.合同编号" />
@@ -525,8 +689,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 合同表单（含上传附件、审批表、OnlyOffice 编辑入口） -->
+    <!-- 合同表单弹窗（仅新建模式使用弹窗） -->
     <ContractV2Form
+      v-if="!isEditMode"
       v-model:visible="showFormModal"
       :mode="formMode"
       :contract="currentContract"
@@ -541,19 +706,37 @@ onMounted(async () => {
       @success="handleApprovalSuccess"
     />
 
-    <!-- OnlyOffice 文档编辑器弹窗 -->
-    <NModal
-      v-model:show="showEditorModal"
-      preset="card"
-      :title="editorDocName || '文档编辑'"
-      :style="{ width: '90%', maxWidth: '1200px', height: '85vh' }"
-      :mask-closable="false"
-      @after-leave="handleCloseEditor"
-    >
-      <div class="editor-modal-body">
-        <OnlyOfficeEditor v-if="showEditorModal && editorDocId" :document-id="editorDocId" height="100%" />
+    <!-- OnlyOffice 文档编辑器弹窗（可拖拽、可最大化） -->
+    <Teleport to="body">
+      <div
+        v-if="showEditorModal"
+        class="editor-modal-mask"
+        @click.self="handleCloseEditor"
+      >
+        <div
+          ref="editorModalRef"
+          class="editor-modal"
+          :class="{ maximized: isEditorMaximized, dragging: isDragging }"
+          :style="isEditorMaximized ? {} : { left: editorModalPos.left + 'px', top: editorModalPos.top + 'px' }"
+        >
+          <div class="editor-modal-header" @mousedown="onEditorHeaderMouseDown">
+            <span class="editor-modal-title">{{ editorDocName || '文档编辑' }}</span>
+            <div class="editor-modal-actions">
+              <button class="editor-modal-btn" :title="isEditorMaximized ? '还原' : '最大化'" @click="toggleMaximize">
+                <icon-mdi-window-maximize v-if="!isEditorMaximized" />
+                <icon-mdi-window-restore v-else />
+              </button>
+              <button class="editor-modal-btn close" title="关闭" @click="handleCloseEditor">
+                <icon-mdi-close />
+              </button>
+            </div>
+          </div>
+          <div class="editor-modal-body">
+            <OnlyOfficeEditor v-if="showEditorModal && editorDocId" :document-id="editorDocId" height="100%" />
+          </div>
+        </div>
       </div>
-    </NModal>
+    </Teleport>
   </div>
 </template>
 
@@ -747,6 +930,56 @@ onMounted(async () => {
   }
 }
 
+// 查看模式附件列表
+.detail-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+
+  .detail-file-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    background: #fafafa;
+    border-radius: 4px;
+    gap: 10px;
+
+    .detail-file-name {
+      flex: 1;
+      color: #333;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .detail-file-size {
+      color: #999;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .detail-file-actions {
+      display: inline-flex;
+      align-items: center;
+      flex-shrink: 0;
+      margin-left: auto;
+
+      :deep(.n-button) {
+        padding: 0 4px !important;
+        margin: 0 !important;
+        min-width: 0 !important;
+        height: 20px;
+        font-size: 12px;
+      }
+
+      :deep(.n-button + .n-button) {
+        margin-left: 2px !important;
+      }
+    }
+  }
+}
+
 .resize-splitter {
   width: 8px;
   cursor: col-resize;
@@ -773,8 +1006,145 @@ onMounted(async () => {
 }
 
 .editor-modal-body {
-  height: calc(85vh - 110px);
-  min-height: 400px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ============ OnlyOffice 编辑器弹窗（可拖拽、可最大化） ============ */
+.editor-modal-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor-modal {
+  position: fixed;
+  width: 90%;
+  max-width: 1200px;
+  height: 85vh;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 2001;
+
+  &.maximized {
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    border-radius: 0;
+  }
+
+  &.dragging {
+    user-select: none;
+    cursor: move;
+    opacity: 0.95;
+  }
+}
+
+.editor-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #fafafa;
+  border-bottom: 1px solid #e8e8e8;
+  flex-shrink: 0;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  .editor-modal-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: #333;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 16px;
+    flex: 1;
+  }
+
+  .editor-modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .editor-modal-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #666;
+    font-size: 16px;
+    transition: all 0.2s;
+
+    &:hover {
+      background: #e8e8e8;
+      color: #333;
+    }
+
+    &.close:hover {
+      background: #ff4d4f;
+      color: #fff;
+    }
+  }
+}
+
+/* 暗黑模式 */
+.system-dark {
+  .editor-modal-mask {
+    background: rgba(0, 0, 0, 0.65);
+  }
+
+  .editor-modal {
+    background: rgb(36, 36, 40);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  .editor-modal-header {
+    background: rgb(44, 44, 50);
+    border-color: rgba(255, 255, 255, 0.09);
+
+    .editor-modal-title {
+      color: #e0e0e0;
+    }
+
+    .editor-modal-btn {
+      color: #999;
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: #e0e0e0;
+      }
+
+      &.close:hover {
+        background: #ff4d4f;
+        color: #fff;
+      }
+    }
+  }
 }
 
 /* ============ ag-grid 共享样式 ============ */
@@ -866,6 +1236,38 @@ onMounted(async () => {
     &:hover {
       background: rgba(255, 255, 255, 0.03);
     }
+  }
+
+  // 查看模式附件列表 - 暗黑适配
+  .detail-file-item {
+    background: rgba(255, 255, 255, 0.05);
+
+    .detail-file-name {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .detail-file-size {
+      color: #888;
+    }
+  }
+
+  // 编辑模式（ContractV2Form 内联）附件列表 - 暗黑适配（穿透子组件 scoped）
+  :deep(.inline-form .file-item) {
+    background: rgba(255, 255, 255, 0.05);
+
+    .file-name {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .file-size {
+      color: #888;
+    }
+  }
+
+  :deep(.inline-form .upload-tip) {
+    color: #888;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
   }
 }
 </style>
