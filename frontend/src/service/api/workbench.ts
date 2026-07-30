@@ -97,6 +97,8 @@ export function importData(functionCode: string, data: any[], menu1: string = ''
       menu2,
       config: {}
     },
+    // 导入大批量数据可能耗时 2-3 分钟（1万行 × 30字段），覆盖全局 30s 超时
+    timeout: 180000,
     // 导入接口的业务校验错误（如 "Data too long for column..."）不应
     // 被后端复用的 logout 业务码误判为会话失效。拦截器读此标记后
     // 跳过强制登出，错误交由 useWorkbenchImport 在弹窗内提示用户。

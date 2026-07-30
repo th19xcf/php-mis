@@ -126,7 +126,9 @@ export async function fetchContractV2DownloadDocument(
   const { data, error, response } = await request<any, 'blob'>({
     url: `/contractV2/downloadDocument/${docId}`,
     method: 'get',
-    responseType: 'blob'
+    responseType: 'blob',
+    // OnlyOffice 文档下载首次加载较慢（.doc 转换 + cpolar 内网穿透），覆盖全局 30s 超时
+    timeout: 120000
   });
 
   if (error) {

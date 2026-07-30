@@ -17,7 +17,10 @@ export const request = createFlatRequest(
   {
     baseURL,
     headers: defaultHeaders,
-    timeout: 60000 // 60秒超时（MySQL冷连接时首次请求可能较慢）
+    // 全局默认 30s：覆盖 95% 查询场景，网络异常时快速失败
+    // 后端 SET SESSION max_execution_time=30000 已限制单条 SQL 30s，前端与之对齐
+    // 长耗时接口（导入/导出/下载）通过 per-request timeout 覆盖
+    timeout: 30000
   },
   {
     defaultState: {
