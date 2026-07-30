@@ -2,15 +2,13 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
-import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'ag-grid-community';
+import { themeAlpine, type GridApi } from 'ag-grid-community';
 import { useDialog, useMessage, useNotification } from 'naive-ui';
 import { useThemeStore } from '@/store/modules/theme';
 import { useContractStore } from '@/store/modules/contract';
 import ContractForm from './components/ContractForm.vue';
 import ContractApproval from './components/ContractApproval.vue';
 import ContractSigning from './components/ContractSigning.vue';
-
-ModuleRegistry.registerModules([AllCommunityModule]);
 
 const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);

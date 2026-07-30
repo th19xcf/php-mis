@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import type { GridApi, GridReadyEvent, ColDef, RowClassParams } from 'ag-grid-community';
-import { AllCommunityModule, ModuleRegistry, themeAlpine } from 'ag-grid-community';
+import { themeAlpine } from 'ag-grid-community';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
 import { AgGridVue } from 'ag-grid-vue3';
 
@@ -10,8 +10,6 @@ import { useThemeStore } from '@/store/modules/theme';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
 import WorkbenchSelectAllHeader from '@/views/menu-bridge/modules/components/WorkbenchSelectAllHeader.vue';
 import type { MatchModuleData } from '@/hooks/business/use-match-store';
-
-ModuleRegistry.registerModules([AllCommunityModule]);
 
 const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);

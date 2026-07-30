@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
-import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'ag-grid-community';
+import { themeAlpine, type GridApi } from 'ag-grid-community';
 import { useDialog, useMessage } from 'naive-ui';
 import { useThemeStore } from '@/store/modules/theme';
 import {
@@ -12,8 +12,6 @@ import {
   fetchWorkflowDefinitionDeactivate
 } from '@/service/api/workflow';
 import WorkflowDefForm from './components/WorkflowDefForm.vue';
-
-ModuleRegistry.registerModules([AllCommunityModule]);
 
 const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);

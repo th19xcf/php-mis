@@ -8,7 +8,7 @@ import { computed, onActivated, onMounted, ref, shallowRef, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
-import { AllCommunityModule, ModuleRegistry, themeAlpine, type GridApi } from 'ag-grid-community';
+import { themeAlpine, type GridApi } from 'ag-grid-community';
 import { NSpin, NAlert } from 'naive-ui';
 import { AgGridVue } from 'ag-grid-vue3';
 
@@ -56,8 +56,6 @@ import {
 } from './components';
 
 const route = useRoute();
-
-ModuleRegistry.registerModules([AllCommunityModule]);
 
 type _QueryFilter = NonNullable<Api.Workbench.QueryPayload['filters']>[number];
 

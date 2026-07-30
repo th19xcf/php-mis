@@ -5,7 +5,12 @@ import { setupAppVersionNotification, setupDayjs, setupIconifyOffline, setupLoad
 import { setupStore } from './store';
 import { setupRouter } from './router';
 import { getLocale, setupI18n } from './locales';
+import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import App from './App.vue';
+
+// AG Grid 模块集中注册（全局一次，避免各组件重复注册）
+// 使用 AllCommunityModule（Community 版精简集合，已包含所有免费功能）
+ModuleRegistry.registerModules([AllCommunityModule]);
 
 async function setupApp() {
   setupLoading();
