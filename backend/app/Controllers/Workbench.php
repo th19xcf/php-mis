@@ -8,7 +8,6 @@ use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
 use App\Services\Workbench\ChartService;
 use App\Services\Workbench\DrillService;
-use App\Services\Workbench\EditService;
 use App\Services\Workbench\ExportService;
 use App\Services\Workbench\QueryService;
 use App\Services\Workbench\ContextService;
@@ -26,22 +25,38 @@ use App\Services\Workbench\ContextService;
  */
 class Workbench extends BaseApiController
 {
-    private ChartService $chartService;
-    private DrillService $drillService;
-    private EditService $editService;
-    private ExportService $exportService;
-    private QueryService $queryService;
-    private ContextService $contextService;
+    // 服务懒加载：仅在首次调用时实例化，避免未使用的接口（如 export/drill）白白初始化 Service
+    private ?ChartService $chartService = null;
+    private ?DrillService $drillService = null;
+    private ?ExportService $exportService = null;
+    private ?QueryService $queryService = null;
+    private ?ContextService $contextService = null;
 
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
-        $this->chartService = new ChartService();
-        $this->drillService = new DrillService();
-        $this->editService = new EditService();
-        $this->exportService = new ExportService();
-        $this->queryService = new QueryService();
+        // contextService 被所有接口使用，直接初始化；其余 Service 按需懒加载
         $this->contextService = new ContextService();
+    }
+
+    private function getChartService(): ChartService
+    {
+        return $this->chartService ??= new ChartService();
+    }
+
+    private function getDrillService(): DrillService
+    {
+        return $this->drillService ??= new DrillService();
+    }
+
+    private function getExportService(): ExportService
+    {
+        return $this->exportService ??= new ExportService();
+    }
+
+    private function getQueryService(): QueryService
+    {
+        return $this->queryService ??= new QueryService();
     }
 
     public function page(string $functionCode = '')
@@ -106,13 +121,13 @@ class Workbench extends BaseApiController
             $tCountDone = $tContextDone;
             if ($fetchTotal) {
                 $tCount = hrtime(true);
-                $total = $this->queryService->queryTotalCount($context, $payload);
+                $total = $this->getQueryService()->queryTotalCount($context, $payload);
                 $tCountDone = hrtime(true);
                 $trace['queryTotal'] = round(($tCountDone - $tCount) / 1e6, 2);
             }
 
             $tQuery = hrtime(true);
-            $records = $this->queryService->queryRecordsPaged($context, $payload, $current, $size, $offset);
+            $records = $this->getQueryService()->queryRecordsPaged($context, $payload, $current, $size, $offset);
             $tQueryDone = hrtime(true);
             $trace['queryRecords'] = round(($tQueryDone - $tQuery) / 1e6, 2);
 
@@ -163,7 +178,7 @@ class Workbench extends BaseApiController
             $payload = $this->request->getJSON(true) ?? [];
 
             [$context] = $this->contextService->buildWorkbenchContext($functionCode);
-            $records = $this->queryService->queryRecords($context, $payload);
+            $records = $this->getQueryService()->queryRecords($context, $payload);
 
             return $this->success($records);
         } catch (AuthException $e) {
@@ -198,13 +213,13 @@ class Workbench extends BaseApiController
             $tCountDone = $tContextDone;
             if ($fetchTotal) {
                 $tCount = hrtime(true);
-                $total = $this->queryService->queryTotalCount($context, $payload);
+                $total = $this->getQueryService()->queryTotalCount($context, $payload);
                 $tCountDone = hrtime(true);
                 $trace['queryTotal'] = round(($tCountDone - $tCount) / 1e6, 2);
             }
 
             $tQuery = hrtime(true);
-            $records = $this->queryService->queryRecordsPaged($context, $payload, $current, $size, $offset);
+            $records = $this->getQueryService()->queryRecordsPaged($context, $payload, $current, $size, $offset);
             $tQueryDone = hrtime(true);
             $trace['queryRecords'] = round(($tQueryDone - $tQuery) / 1e6, 2);
 
@@ -268,14 +283,14 @@ class Workbench extends BaseApiController
                 $current = 1;
             }
 
-            $debug = $this->queryService->buildDebugQuery(
+            $debug = $this->getQueryService()->buildDebugQuery(
                 $context, $payload, $columns, $fetchAll, $current, $size
             );
 
             $chartSql = [];
             $chartModule = $definition['chartModule'] ?? '';
             if (!empty($chartModule)) {
-                $chartSql = $this->chartService->buildChartQueriesForDebug($chartModule);
+                $chartSql = $this->getChartService()->buildChartQueriesForDebug($chartModule);
             }
 
             // 获取每个角色编码对应的部门全称赋权（用于调试输出）
@@ -364,7 +379,7 @@ class Workbench extends BaseApiController
                 $debugInfo['drillModuleFallback'] = 'used queryModule as drillModule';
             }
 
-            $drillOptions = $this->drillService->getDrillOptions($context, $payload, $drillModule);
+            $drillOptions = $this->getDrillService()->getDrillOptions($context, $payload, $drillModule);
 
             return $this->success([
                 'options' => $drillOptions,
@@ -520,7 +535,7 @@ class Workbench extends BaseApiController
             // 分批流式导出：先查询总数，再分批拉取数据写入文件，
             // 避免一次性加载全部记录到内存导致 OOM。
             // 之前 size=50000 + all=true 一次性取全部行，5万行即可能占用 GB 级内存。
-            $total = $this->queryService->queryTotalCount($context, $payload);
+            $total = $this->getQueryService()->queryTotalCount($context, $payload);
 
             if ($total === 0) {
                 throw new BusinessException('没有数据可导出');
@@ -530,13 +545,13 @@ class Workbench extends BaseApiController
 
             // 分批拉取数据的回调，每批 1000 行
             $fetchRecords = function (int $offset, int $size) use ($context, $payload) {
-                return $this->queryService->queryRecordsPaged($context, $payload, 1, $size, $offset);
+                return $this->getQueryService()->queryRecordsPaged($context, $payload, 1, $size, $offset);
             };
 
             if ($format === 'csv') {
-                $filePath = $this->exportService->exportToCsvBatched($columns, $fetchRecords, 1000);
+                $filePath = $this->getExportService()->exportToCsvBatched($columns, $fetchRecords, 1000);
             } else {
-                $filePath = $this->exportService->exportToExcelBatched($columns, $fetchRecords, $functionCode, 1000, $mergeColumns);
+                $filePath = $this->getExportService()->exportToExcelBatched($columns, $fetchRecords, $functionCode, 1000, $mergeColumns);
             }
 
             $filename = basename($filePath);
