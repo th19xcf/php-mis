@@ -16,7 +16,24 @@ export function createStaticRoutes() {
 
   const authRoutes: ElegantRoute[] = [];
 
+  // 业务页面已纳入 def_function 动态菜单体系，通过 menu-bridge 按 frontendRoute 加载组件，
+  // 不再注册为常驻路由，避免绕过权限直接通过 URL 访问
+  const configDrivenRouteNames = new Set([
+    'contract',
+    'contract-v2',
+    'match-data',
+    'workflow-manage',
+    'personnel',
+    'permission-demo',
+    'room-status'
+  ]);
+
   [...customRoutes, ...generatedRoutes].forEach(item => {
+    // 排除配置驱动的业务路由，不注册到 vue-router
+    if (configDrivenRouteNames.has(item.name as string)) {
+      return;
+    }
+
     const route: ElegantRoute = {
       ...item,
       meta: {
@@ -58,17 +75,8 @@ export function createStaticRoutes() {
       route.meta.icon = zhTitleIconMap[route.meta.title];
     }
 
-    // 隐藏通用页面、动态菜单、权限演示菜单
-    if (route.name === 'common' || route.name === 'menu-bridge' || route.name === 'permission-demo') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || String(route.name),
-        hideInMenu: true
-      };
-    }
-
-    // 隐藏与后端动态菜单重复的静态路由（合同管理、人员管理）
-    if (route.name === 'contract' || route.name === 'personnel') {
+    // 隐藏通用页面、动态菜单宿主
+    if (route.name === 'common' || route.name === 'menu-bridge') {
       route.meta = {
         ...route.meta,
         title: route.meta?.title || String(route.name),
@@ -114,35 +122,6 @@ export function createStaticRoutes() {
           };
         }
       });
-    }
-
-    // 前端静态一级菜单补充 order，避免排在首页（order=1）之前
-    if (route.name === 'contract-v2') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || 'contract-v2',
-        i18nKey: 'route.contract-v2',
-        icon: 'mdi:file-sign',
-        order: 90
-      };
-    }
-    if (route.name === 'match-data') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || 'match-data',
-        i18nKey: 'route.match-data',
-        icon: 'mdi:merge',
-        order: 91
-      };
-    }
-    if (route.name === 'workflow-manage') {
-      route.meta = {
-        ...route.meta,
-        title: route.meta?.title || 'workflow-manage',
-        i18nKey: 'route.workflow-manage',
-        icon: 'mdi:workflow-outline',
-        order: 92
-      };
     }
 
     if (route.meta?.constant) {

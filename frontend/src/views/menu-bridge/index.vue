@@ -56,7 +56,8 @@ const nativeComponentMap: Record<string, any> = {
   employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
   contract: defineAsyncComponent(() => import('@/views/contract/index.vue')),
   'contract-v2': defineAsyncComponent(() => import('@/views/contract-v2/index.vue')),
-  'match-data': defineAsyncComponent(() => import('@/views/match-data/index.vue'))
+  'match-data': defineAsyncComponent(() => import('@/views/match-data/index.vue')),
+  'workflow-manage': defineAsyncComponent(() => import('@/views/workflow-manage/index.vue'))
 };
 
 // 静态 HTML 页面映射：frontendRoute -> public 下的相对路径
@@ -65,12 +66,12 @@ const staticHtmlMap: Record<string, string> = {
 };
 
 const isNativeFunction = computed(() => {
-  const routeName = String(meta.value.frontendRoute || '').trim();
+  const routeName = String(meta.value.frontendRoute || '').trim().replace(/^\/+/, '');
   return routeName && nativeComponentMap[routeName];
 });
 
 const currentNativeComponent = computed(() => {
-  const routeName = String(meta.value.frontendRoute || '').trim();
+  const routeName = String(meta.value.frontendRoute || '').trim().replace(/^\/+/, '');
   return nativeComponentMap[routeName] || null;
 });
 
