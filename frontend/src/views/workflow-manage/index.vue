@@ -14,9 +14,16 @@ import {
   fetchWorkflowPendingTasks,
   fetchWorkflowDoneTasks,
   fetchWorkflowMyInstances,
-  fetchWorkflowWithdraw
+  fetchWorkflowWithdraw,
+  fetchWorkflowNodeList,
+  fetchWorkflowNodeDelete,
+  fetchWorkflowNodeSort,
+  fetchWorkflowEdgeList,
+  fetchWorkflowEdgeDelete
 } from '@/service/api/workflow';
 import WorkflowDefForm from './components/WorkflowDefForm.vue';
+import WorkflowNodeForm from './components/WorkflowNodeForm.vue';
+import WorkflowEdgeForm from './components/WorkflowEdgeForm.vue';
 import WorkflowFlowTimeline from './components/WorkflowFlowTimeline.vue';
 
 const themeStore = useThemeStore();
@@ -89,6 +96,15 @@ const inlineFormRef = ref<{ submit: () => void } | null>(null);
 const selectedDefinition = ref<any>(null);
 const currentDefinition = ref<any>(null);
 const currentInstanceId = ref(0);
+
+// 节点/连线管理状态
+const showNodeForm = ref(false);
+const nodeFormMode = ref<'create' | 'edit'>('create');
+const editingNode = ref<any>(null);
+const showEdgeForm = ref(false);
+const edgeFormMode = ref<'create' | 'edit'>('create');
+const editingEdge = ref<any>(null);
+const nodesForEdge = ref<any[]>([]); // 连线表单的节点下拉数据
 
 // 列表数据
 const definitionList = ref<any[]>([]);
@@ -437,6 +453,191 @@ async function loadDefinitionDetail(defId: number) {
   }
 }
 
+// ============ 节点管理 ============
+
+function handleAddNode() {
+  if (!currentDefinition.value) return;
+  nodeFormMode.value = 'create';
+  editingNode.value = null;
+  showNodeForm.value = true;
+}
+
+function handleEditNode(node: any) {
+  nodeFormMode.value = 'edit';
+  editingNode.value = node;
+  showNodeForm.value = true;
+}
+
+function handleNodeFormSuccess() {
+  showNodeForm.value = false;
+  if (currentDefinition.value) {
+    refreshNodesAndEdges(currentDefinition.value.GUID);
+  }
+}
+
+async function refreshNodesAndEdges(defId: number) {
+  try {
+    const [nodeRes, edgeRes] = await Promise.all([
+      fetchWorkflowNodeList(defId),
+      fetchWorkflowEdgeList(defId)
+    ]);
+    const nodeList = (nodeRes as any)?.data?.list || (nodeRes as any)?.list || [];
+    const edgeList = (edgeRes as any)?.data?.list || (edgeRes as any)?.list || [];
+    if (currentDefinition.value) {
+      currentDefinition.value = {
+        ...currentDefinition.value,
+        nodes: nodeList,
+        edges: edgeList
+      };
+    }
+  } catch (e: any) {
+    message.error(e?.message || '刷新节点/连线失败');
+  }
+}
+
+function handleDeleteNode(node: any) {
+  dialog.warning({
+    title: '确认删除',
+    content: `确定要删除节点「${node.节点名称}」吗?关联的连线也会一并删除。`,
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await fetchWorkflowNodeDelete(node.GUID);
+        message.success('删除成功');
+        if (currentDefinition.value) {
+          refreshNodesAndEdges(currentDefinition.value.GUID);
+        }
+      } catch (e: any) {
+        message.error(e?.message || '删除失败');
+      }
+    }
+  });
+}
+
+async function handleMoveNode(node: any, direction: 'up' | 'down') {
+  if (!currentDefinition.value?.nodes) return;
+  const nodes = [...currentDefinition.value.nodes].sort(
+    (a: any, b: any) => (Number(a.排序) || 0) - (Number(b.排序) || 0)
+  );
+  const idx = nodes.findIndex((n: any) => n.GUID === node.GUID);
+  if (idx < 0) return;
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (swapIdx < 0 || swapIdx >= nodes.length) return;
+
+  // 交换两节点位置
+  [nodes[idx], nodes[swapIdx]] = [nodes[swapIdx], nodes[idx]];
+
+  try {
+    await fetchWorkflowNodeSort(nodes.map((n: any) => n.GUID));
+    if (currentDefinition.value) {
+      await refreshNodesAndEdges(currentDefinition.value.GUID);
+    }
+    message.success('排序已更新');
+  } catch (e: any) {
+    message.error(e?.message || '排序失败');
+  }
+}
+
+// ============ 连线管理 ============
+
+function handleAddEdge() {
+  if (!currentDefinition.value) return;
+  if (!currentDefinition.value.nodes || currentDefinition.value.nodes.length < 2) {
+    message.warning('请先创建至少 2 个节点');
+    return;
+  }
+  edgeFormMode.value = 'create';
+  editingEdge.value = null;
+  nodesForEdge.value = currentDefinition.value.nodes;
+  showEdgeForm.value = true;
+}
+
+function handleEditEdge(edge: any) {
+  edgeFormMode.value = 'edit';
+  editingEdge.value = edge;
+  nodesForEdge.value = currentDefinition.value?.nodes || [];
+  showEdgeForm.value = true;
+}
+
+function handleEdgeFormSuccess() {
+  showEdgeForm.value = false;
+  if (currentDefinition.value) {
+    refreshNodesAndEdges(currentDefinition.value.GUID);
+  }
+}
+
+function handleDeleteEdge(edge: any) {
+  dialog.warning({
+    title: '确认删除',
+    content: `确定要删除连线「${edge.源节点编码} → ${edge.目标节点编码}」吗?`,
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await fetchWorkflowEdgeDelete(edge.GUID);
+        message.success('删除成功');
+        if (currentDefinition.value) {
+          refreshNodesAndEdges(currentDefinition.value.GUID);
+        }
+      } catch (e: any) {
+        message.error(e?.message || '删除失败');
+      }
+    }
+  });
+}
+
+// 节点类型展示辅助
+const nodeTypeTextMap: Record<string, string> = {
+  START: '开始',
+  APPROVAL: '审批',
+  CC: '抄送',
+  END: '结束'
+};
+
+const approverTypeTextMap: Record<string, string> = {
+  ROLE: '角色',
+  DEPT: '部门',
+  SUPERIOR: '上级',
+  ASSIGN: '指定人',
+  SPONSOR: '发起人'
+};
+
+const signModeTextMap: Record<string, string> = {
+  OR: '或签',
+  AND: '会签'
+};
+
+function getNodeTypeText(type: string): string {
+  return nodeTypeTextMap[type] || type || '-';
+}
+
+function getApproverTypeText(type?: string): string {
+  if (!type) return '-';
+  return approverTypeTextMap[type] || type;
+}
+
+function getSignModeText(mode?: string): string {
+  if (!mode) return '-';
+  return signModeTextMap[mode] || mode;
+}
+
+function getApproverConfigPreview(node: any): string {
+  if (!node.审批人类型) return '-';
+  if (!node.审批人配置) return '(空)';
+  const cfg = node.审批人配置;
+  // 字符串形式
+  if (typeof cfg === 'string') {
+    return cfg.length > 40 ? cfg.slice(0, 40) + '...' : cfg;
+  }
+  try {
+    const s = JSON.stringify(cfg);
+    return s.length > 40 ? s.slice(0, 40) + '...' : s;
+  } catch {
+    return String(cfg);
+  }
+}
+
 async function handleViewInstance(instanceId: number) {
   currentInstanceId.value = instanceId;
 }
@@ -758,41 +959,87 @@ onMounted(async () => {
           </NDescriptions>
 
           <!-- 流程节点配置 -->
-          <NDivider>流程节点</NDivider>
+          <NDivider>
+            <div class="section-header">
+              <span>流程节点</span>
+              <NButton size="tiny" type="primary" @click="handleAddNode">
+                <template #icon><icon-mdi-plus /></template>
+                新增节点
+              </NButton>
+            </div>
+          </NDivider>
+
           <div v-if="currentDefinition.nodes && currentDefinition.nodes.length" class="node-list">
             <div
-              v-for="node in currentDefinition.nodes"
+              v-for="(node, idx) in currentDefinition.nodes"
               :key="node.GUID"
               class="node-item"
             >
               <div class="node-header">
-                <span class="node-name">{{ node.节点名称 }}</span>
-                <NTag size="small" :type="node.节点类型 === 'START' ? 'success' : node.节点类型 === 'END' ? 'error' : 'info'">
-                  {{ node.节点类型 }}
-                </NTag>
+                <div class="node-title">
+                  <NTag size="small" :type="node.节点类型 === 'START' ? 'success' : node.节点类型 === 'END' ? 'error' : node.节点类型 === 'CC' ? 'warning' : 'info'">
+                    {{ getNodeTypeText(node.节点类型) }}
+                  </NTag>
+                  <span class="node-name">{{ node.节点名称 }}</span>
+                  <span class="node-code">({{ node.节点编码 }})</span>
+                </div>
+                <div class="node-actions">
+                  <NButton size="tiny" quaternary @click="handleMoveNode(node, 'up')" :disabled="idx === 0">
+                    <icon-mdi-arrow-up />
+                  </NButton>
+                  <NButton size="tiny" quaternary @click="handleMoveNode(node, 'down')" :disabled="idx === currentDefinition.nodes.length - 1">
+                    <icon-mdi-arrow-down />
+                  </NButton>
+                  <NButton size="tiny" quaternary type="primary" @click="handleEditNode(node)">编辑</NButton>
+                  <NButton size="tiny" quaternary type="error" @click="handleDeleteNode(node)">删除</NButton>
+                </div>
               </div>
               <div class="node-info">
-                <span>节点编码:{{ node.节点编码 }}</span>
-                <span>排序:{{ node.排序 }}</span>
+                <span>审批人类型:<b>{{ getApproverTypeText(node.审批人类型) }}</b></span>
+                <span>审批模式:<b>{{ getSignModeText(node.会签或签) }}</b></span>
+                <span>超时:{{ node.超时天数 || 0 }}天 ({{ node.超时处理 }})</span>
+              </div>
+              <div class="node-config" v-if="node.审批人类型">
+                <span class="config-label">审批人配置:</span>
+                <code class="config-value">{{ getApproverConfigPreview(node) }}</code>
               </div>
             </div>
           </div>
-          <NEmpty v-else description="暂无节点配置" size="small" class="py-4" />
+          <NEmpty v-else description="暂无节点,请点击「新增节点」配置审批流程" size="small" class="py-4" />
 
           <!-- 流程连线配置 -->
-          <NDivider v-if="currentDefinition.edges && currentDefinition.edges.length">流程连线</NDivider>
+          <NDivider>
+            <div class="section-header">
+              <span>流程连线</span>
+              <NButton size="tiny" type="primary" @click="handleAddEdge">
+                <template #icon><icon-mdi-plus /></template>
+                新增连线
+              </NButton>
+            </div>
+          </NDivider>
+
           <div v-if="currentDefinition.edges && currentDefinition.edges.length" class="edge-list">
             <div
               v-for="edge in currentDefinition.edges"
               :key="edge.GUID"
               class="edge-item"
             >
-              <span class="edge-node">{{ edge.源节点编码 }}</span>
-              <span class="edge-arrow">→</span>
-              <span class="edge-node">{{ edge.目标节点编码 }}</span>
-              <span v-if="edge.条件表达式" class="edge-condition">{{ edge.条件表达式 }}</span>
+              <div class="edge-flow">
+                <span class="edge-node">{{ edge.源节点编码 }}</span>
+                <span class="edge-arrow">→</span>
+                <span class="edge-node">{{ edge.目标节点编码 }}</span>
+              </div>
+              <div class="edge-condition-wrap" v-if="edge.条件表达式 || edge.条件描述">
+                <NTag v-if="edge.条件表达式" size="small" type="info">条件:{{ edge.条件表达式 }}</NTag>
+                <span v-if="edge.条件描述" class="edge-desc">{{ edge.条件描述 }}</span>
+              </div>
+              <div class="edge-actions">
+                <NButton size="tiny" quaternary type="primary" @click="handleEditEdge(edge)">编辑</NButton>
+                <NButton size="tiny" quaternary type="error" @click="handleDeleteEdge(edge)">删除</NButton>
+              </div>
             </div>
           </div>
+          <NEmpty v-else description="暂无连线,请点击「新增连线」连接节点" size="small" class="py-4" />
 
           <!-- 流程实例时间线(切换到待办/我发起的 Tab 时显示) -->
           <NDivider v-if="currentInstanceId">流程实例时间线</NDivider>
@@ -809,6 +1056,26 @@ onMounted(async () => {
       :mode="formMode"
       :definition="currentDefinition"
       @success="handleFormSuccess"
+    />
+
+    <!-- 节点表单弹窗 -->
+    <WorkflowNodeForm
+      v-model:visible="showNodeForm"
+      :mode="nodeFormMode"
+      :def-id="currentDefinition?.GUID || 0"
+      :business-type="currentDefinition?.业务类型 || ''"
+      :node="editingNode"
+      @success="handleNodeFormSuccess"
+    />
+
+    <!-- 连线表单弹窗 -->
+    <WorkflowEdgeForm
+      v-model:visible="showEdgeForm"
+      :mode="edgeFormMode"
+      :def-id="currentDefinition?.GUID || 0"
+      :edge="editingEdge"
+      :nodes="nodesForEdge"
+      @success="handleEdgeFormSuccess"
     />
   </div>
 </template>
@@ -1017,6 +1284,18 @@ onMounted(async () => {
   }
 }
 
+// 区块标题(节点/连线区块)
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  span {
+    font-size: 14px;
+    font-weight: 500;
+  }
+}
+
 // 节点列表
 .node-list {
   display: flex;
@@ -1033,20 +1312,65 @@ onMounted(async () => {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
+
+      .node-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
 
       .node-name {
-        font-size: 13px;
-        font-weight: 500;
+        font-size: 14px;
+        font-weight: 600;
         color: #333;
+      }
+
+      .node-code {
+        font-size: 12px;
+        color: #999;
+        font-family: 'Consolas', 'Monaco', monospace;
+      }
+
+      .node-actions {
+        display: flex;
+        gap: 2px;
       }
     }
 
     .node-info {
       display: flex;
       gap: 16px;
+      flex-wrap: wrap;
       font-size: 12px;
       color: #666;
+
+      b {
+        color: #1890ff;
+        font-weight: 500;
+        margin-left: 2px;
+      }
+    }
+
+    .node-config {
+      margin-top: 6px;
+      padding: 6px 8px;
+      background: #fff;
+      border-radius: 3px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+
+      .config-label {
+        color: #999;
+      }
+
+      .config-value {
+        color: #d48806;
+        font-family: 'Consolas', 'Monaco', monospace;
+        word-break: break-all;
+      }
     }
   }
 }
@@ -1059,6 +1383,7 @@ onMounted(async () => {
 
   .edge-item {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     padding: 8px 12px;
     background: #fafafa;
@@ -1066,9 +1391,16 @@ onMounted(async () => {
     gap: 10px;
     font-size: 13px;
 
+    .edge-flow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
     .edge-node {
       color: #333;
       font-weight: 500;
+      font-family: 'Consolas', 'Monaco', monospace;
     }
 
     .edge-arrow {
@@ -1076,17 +1408,21 @@ onMounted(async () => {
       font-weight: bold;
     }
 
-    .edge-condition {
+    .edge-condition-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .edge-desc {
+        font-size: 12px;
+        color: #666;
+      }
+    }
+
+    .edge-actions {
       margin-left: auto;
-      padding: 2px 8px;
-      background: #fff;
-      border-radius: 3px;
-      font-size: 12px;
-      color: #666;
-      max-width: 300px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      display: flex;
+      gap: 2px;
     }
   }
 }
@@ -1211,12 +1547,30 @@ onMounted(async () => {
   .node-item {
     background: rgba(255, 255, 255, 0.05);
 
-    .node-header .node-name {
-      color: #e0e0e0;
+    .node-header {
+      .node-name {
+        color: #e0e0e0;
+      }
+
+      .node-code {
+        color: #888;
+      }
     }
 
     .node-info {
       color: #b0b0b0;
+    }
+
+    .node-config {
+      background: rgba(0, 0, 0, 0.2);
+
+      .config-label {
+        color: #888;
+      }
+
+      .config-value {
+        color: #faad14;
+      }
     }
   }
 
@@ -1228,8 +1582,7 @@ onMounted(async () => {
       color: #e0e0e0;
     }
 
-    .edge-condition {
-      background: rgba(0, 0, 0, 0.2);
+    .edge-condition-wrap .edge-desc {
       color: #b0b0b0;
     }
   }

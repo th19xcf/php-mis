@@ -189,6 +189,28 @@ $routes->group('workflow', static function ($routes) {
 	$routes->get('myInstances', 'WorkflowApi::myInstances');
 	$routes->post('myInstances', 'WorkflowApi::myInstances');
 	$routes->post('withdraw', 'WorkflowApi::withdraw');
+
+	// 节点(Node)CRUD
+	$routes->get('node/list', 'WorkflowApi::nodeList');
+	$routes->post('node/list', 'WorkflowApi::nodeList');
+	$routes->post('node/create', 'WorkflowApi::nodeCreate');
+	$routes->post('node/update', 'WorkflowApi::nodeUpdate');
+	$routes->post('node/delete', 'WorkflowApi::nodeDelete');
+	$routes->post('node/sort', 'WorkflowApi::nodeSort');
+
+	// 连线(Edge)CRUD
+	$routes->get('edge/list', 'WorkflowApi::edgeList');
+	$routes->post('edge/list', 'WorkflowApi::edgeList');
+	$routes->post('edge/create', 'WorkflowApi::edgeCreate');
+	$routes->post('edge/update', 'WorkflowApi::edgeUpdate');
+	$routes->post('edge/delete', 'WorkflowApi::edgeDelete');
+
+	// 节点模板(NodeTemplate)CRUD
+	$routes->get('template/list', 'WorkflowApi::templateList');
+	$routes->post('template/list', 'WorkflowApi::templateList');
+	$routes->post('template/create', 'WorkflowApi::templateCreate');
+	$routes->post('template/update', 'WorkflowApi::templateUpdate');
+	$routes->post('template/delete', 'WorkflowApi::templateDelete');
 });
 
 $routes->group('onlyoffice', static function ($routes) {
