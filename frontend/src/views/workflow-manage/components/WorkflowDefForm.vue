@@ -10,6 +10,7 @@ const props = defineProps<{
   visible: boolean;
   mode: 'create' | 'edit';
   definition: Record<string, any> | null;
+  inline?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -25,21 +26,31 @@ const formData = ref({
   业务类型: 'CONTRACT',
   流程状态: 'DRAFT',
   流程描述: '',
-  审批人配置: {} as Record<string, any>,
-  超时规则: {} as Record<string, any>
+  审批人配置: '' as string,
+  超时规则: '' as string
 });
 
 const businessTypeOptions = [
-  { value: 'CONTRACT', label: '合同' },
-  { value: 'EMPLOYEE', label: '员工' },
-  { value: 'LEAVE', label: '请假' }
+  { label: '合同', value: 'CONTRACT' },
+  { label: '员工', value: 'EMPLOYEE' },
+  { label: '请假', value: 'LEAVE' }
 ];
 
 const statusOptions = [
-  { value: 'DRAFT', label: '草稿' },
-  { value: 'ACTIVE', label: '启用' },
-  { value: 'INACTIVE', label: '停用' }
+  { label: '草稿', value: 'DRAFT' },
+  { label: '启用', value: 'ACTIVE' },
+  { label: '停用', value: 'INACTIVE' }
 ];
+
+function parseJsonObject(value: any): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return '';
+  }
+}
 
 watch(
   () => props.visible,
@@ -52,8 +63,8 @@ watch(
           业务类型: props.definition.业务类型 || 'CONTRACT',
           流程状态: props.definition.流程状态 || 'DRAFT',
           流程描述: props.definition.流程描述 || '',
-          审批人配置: props.definition.审批人配置 || {},
-          超时规则: props.definition.超时规则 || {}
+          审批人配置: parseJsonObject(props.definition.审批人配置),
+          超时规则: parseJsonObject(props.definition.超时规则)
         };
       } else {
         formData.value = {
@@ -62,16 +73,51 @@ watch(
           业务类型: 'CONTRACT',
           流程状态: 'DRAFT',
           流程描述: '',
-          审批人配置: {},
-          超时规则: {}
+          审批人配置: '',
+          超时规则: ''
         };
       }
     }
-  }
+  },
+  { immediate: true }
 );
 
 function handleClose() {
   emit('update:visible', false);
+}
+
+function buildPayload() {
+  const payload: Record<string, any> = {
+    流程编码: formData.value.流程编码,
+    流程名称: formData.value.流程名称,
+    业务类型: formData.value.业务类型,
+    流程描述: formData.value.流程描述
+  };
+
+  // 流程状态仅在新建时传递,编辑时由启用/停用接口控制
+  if (props.mode === 'create') {
+    payload.流程状态 = formData.value.流程状态;
+  }
+
+  // 审批人配置: 非空时解析为对象
+  if (formData.value.审批人配置.trim()) {
+    try {
+      payload.审批人配置 = JSON.parse(formData.value.审批人配置);
+    } catch {
+      throw new Error('审批人配置 JSON 格式错误');
+    }
+  }
+
+  // 超时规则: 非空时解析为对象
+  if (formData.value.超时规则.trim()) {
+    try {
+      payload.超时规则 = JSON.parse(formData.value.超时规则);
+    } catch {
+      throw new Error('超时规则 JSON 格式错误');
+    }
+  }
+
+  return payload;
 }
 
 async function handleSubmit() {
@@ -85,14 +131,15 @@ async function handleSubmit() {
   }
 
   try {
+    const payload = buildPayload();
     if (props.mode === 'create') {
-      await fetchWorkflowDefinitionCreate(formData.value);
+      await fetchWorkflowDefinitionCreate(payload);
       message.success('创建成功');
     } else {
       if (!props.definition) return;
       await fetchWorkflowDefinitionUpdate({
         defId: props.definition.GUID,
-        ...formData.value
+        ...payload
       });
       message.success('更新成功');
     }
@@ -102,10 +149,82 @@ async function handleSubmit() {
     message.error(e?.message || '操作失败');
   }
 }
+
+// 暴露 submit 方法供父组件内联调用
+defineExpose({
+  submit: handleSubmit
+});
 </script>
 
 <template>
-  <div v-if="visible" class="modal-overlay" @click.self="handleClose">
+  <!-- 内联模式(右侧面板直接编辑,表格化布局) -->
+  <div v-if="inline && visible" class="inline-form">
+    <div class="edit-table">
+      <div class="edit-row edit-head">
+        <div class="edit-cell edit-cell-name">列名</div>
+        <div class="edit-cell edit-cell-value">列值</div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">流程编码<span class="required-mark">*</span></div>
+        <div class="edit-cell edit-cell-value">
+          <NInput v-model:value="formData.流程编码" placeholder="请输入流程编码" size="small" :disabled="mode === 'edit'" />
+        </div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">流程名称<span class="required-mark">*</span></div>
+        <div class="edit-cell edit-cell-value">
+          <NInput v-model:value="formData.流程名称" placeholder="请输入流程名称" size="small" />
+        </div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">业务类型</div>
+        <div class="edit-cell edit-cell-value">
+          <NSelect v-model:value="formData.业务类型" :options="businessTypeOptions" size="small" />
+        </div>
+      </div>
+      <div class="edit-row" v-if="mode === 'create'">
+        <div class="edit-cell edit-cell-name">流程状态</div>
+        <div class="edit-cell edit-cell-value">
+          <NSelect v-model:value="formData.流程状态" :options="statusOptions" size="small" />
+        </div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">流程描述</div>
+        <div class="edit-cell edit-cell-value">
+          <NInput v-model:value="formData.流程描述" type="textarea" :rows="2" placeholder="请输入流程描述" size="small" />
+        </div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">审批人配置</div>
+        <div class="edit-cell edit-cell-value">
+          <NInput
+            v-model:value="formData.审批人配置"
+            type="textarea"
+            :rows="6"
+            placeholder='JSON 格式,例如:{"nodes":[{"code":"start","name":"开始"}]}'
+            size="small"
+            class="json-input"
+          />
+        </div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">超时规则</div>
+        <div class="edit-cell edit-cell-value">
+          <NInput
+            v-model:value="formData.超时规则"
+            type="textarea"
+            :rows="4"
+            placeholder='JSON 格式,例如:{"timeoutMinutes":1440,"action":"NOTIFY"}'
+            size="small"
+            class="json-input"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 弹窗模式(新建流程) -->
+  <div v-else-if="!inline && visible" class="modal-overlay" @click.self="handleClose">
     <div class="modal-container">
       <div class="modal-header">
         <h3>{{ mode === 'create' ? '新建流程' : '编辑流程' }}</h3>
@@ -129,7 +248,7 @@ async function handleSubmit() {
               </option>
             </select>
           </div>
-          <div class="form-item">
+          <div class="form-item" v-if="mode === 'create'">
             <label>流程状态</label>
             <select v-model="formData.流程状态">
               <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
@@ -141,22 +260,126 @@ async function handleSubmit() {
             <label>流程描述</label>
             <textarea v-model="formData.流程描述" rows="3" placeholder="请输入流程描述"></textarea>
           </div>
+          <div class="form-item full">
+            <label>审批人配置 (JSON)</label>
+            <textarea
+              v-model="formData.审批人配置"
+              rows="6"
+              placeholder='例如:{"nodes":[{"code":"start","name":"开始"}]}'
+              class="json-textarea"
+            ></textarea>
+          </div>
+          <div class="form-item full">
+            <label>超时规则 (JSON)</label>
+            <textarea
+              v-model="formData.超时规则"
+              rows="4"
+              placeholder='例如:{"timeoutMinutes":1440,"action":"NOTIFY"}'
+              class="json-textarea"
+            ></textarea>
+          </div>
         </div>
         <div class="notice">
-          <p>提示：流程节点和连线配置请在流程设计器中完成。</p>
+          <p>提示:流程节点和连线配置请在流程设计器中完成。</p>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-default" @click="handleClose">取消</button>
-        <button class="btn btn-primary" @click="handleSubmit">
-          确定
-        </button>
+        <button class="btn btn-primary" @click="handleSubmit">确定</button>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped lang="scss">
+.inline-form {
+  padding: 0;
+}
+
+// 表格化布局(参照 ContractV2Form 的 edit-table)
+.edit-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  overflow: hidden;
+  font-size: 13px;
+
+  .edit-row {
+    display: flex;
+    align-items: stretch;
+    border-bottom: 1px solid #e8e8e8;
+    color: #333;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &.edit-head {
+      font-weight: 500;
+      color: #333;
+    }
+  }
+
+  .edit-cell {
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+    line-height: 1.4;
+    color: inherit;
+  }
+
+  .edit-cell-name {
+    width: 120px;
+    flex-shrink: 0;
+    border-right: 1px solid #e8e8e8;
+    color: #333;
+  }
+
+  .edit-cell-value {
+    flex: 1;
+    background: transparent;
+    color: inherit;
+
+    :deep(.n-input),
+    :deep(.n-select),
+    :deep(.n-date-picker),
+    :deep(.n-input-number) {
+      width: 100%;
+    }
+
+    .json-input :deep(textarea) {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+    }
+  }
+
+  .required-mark {
+    color: #ff4d4f;
+    margin-left: 2px;
+  }
+}
+
+// 暗黑模式适配
+.system-dark .edit-table {
+  border-color: rgba(255, 255, 255, 0.09);
+
+  .edit-row {
+    border-color: rgba(255, 255, 255, 0.09);
+    color: #e0e0e0;
+
+    &.edit-head {
+      color: #e0e0e0;
+    }
+  }
+
+  .edit-cell-name {
+    border-color: rgba(255, 255, 255, 0.09);
+    color: #e0e0e0;
+  }
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -171,8 +394,8 @@ async function handleSubmit() {
 }
 
 .modal-container {
-  width: 560px;
-  max-height: 80vh;
+  width: 600px;
+  max-height: 85vh;
   background: #fff;
   border-radius: 8px;
   display: flex;
@@ -259,6 +482,11 @@ async function handleSubmit() {
     textarea {
       resize: vertical;
       font-family: inherit;
+
+      &.json-textarea {
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 12px;
+      }
     }
   }
 }
