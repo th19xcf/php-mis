@@ -10,27 +10,34 @@ import { transformElegantRoutesToVueRoutes } from '../elegant/transform';
  */
 const customRoutes: CustomRoute[] = [];
 
+/**
+ * 后端驱动的业务路由清单
+ *
+ * 这些路由对应的页面组件存在于 src/views/ 下，但菜单显示和路由注册
+ * 完全由后端 def_function 表的「前端路由」字段驱动：
+ * - 后端配置了「前端路由」字段时，createBackendMenuRoutes 会生成对应路由
+ *   并加载 view.{前端路由} 组件
+ * - 后端未配置时，该路由不存在、菜单不显示、URL 不可访问
+ *
+ * 组件映射在 src/router/elegant/imports.ts 中自动注册，无需手动维护。
+ */
+const backendDrivenRouteNames = new Set<string>([
+  'contract',
+  'contract-v2',
+  'match-data',
+  'workflow-manage',
+  'personnel'
+]);
+
 /** create routes when the auth route mode is static */
 export function createStaticRoutes() {
   const constantRoutes: ElegantRoute[] = [];
 
   const authRoutes: ElegantRoute[] = [];
 
-  // 业务页面已纳入 def_function 动态菜单体系，通过 menu-bridge 按 frontendRoute 加载组件，
-  // 不再注册为常驻路由，避免绕过权限直接通过 URL 访问
-  const configDrivenRouteNames = new Set([
-    'contract',
-    'contract-v2',
-    'match-data',
-    'workflow-manage',
-    'personnel',
-    'permission-demo',
-    'room-status'
-  ]);
-
   [...customRoutes, ...generatedRoutes].forEach(item => {
-    // 排除配置驱动的业务路由，不注册到 vue-router
-    if (configDrivenRouteNames.has(item.name as string)) {
+    // 后端驱动的业务路由：跳过，不注册到 vue-router，由 createBackendMenuRoutes 驱动
+    if (backendDrivenRouteNames.has(item.name)) {
       return;
     }
 
@@ -46,7 +53,6 @@ export function createStaticRoutes() {
     const menuIconMap: Record<string, string> = {
       system: 'mdi:cog-outline',
       info: 'mdi:database',
-      personnel: 'mdi:account-heart',
       income: 'mdi:cash',
       analysis: 'mdi:chart-line',
       'permission-demo': 'mdi:shield-account'
@@ -75,8 +81,8 @@ export function createStaticRoutes() {
       route.meta.icon = zhTitleIconMap[route.meta.title];
     }
 
-    // 隐藏通用页面、动态菜单宿主
-    if (route.name === 'common' || route.name === 'menu-bridge') {
+    // 隐藏通用页面、动态菜单宿主、权限演示菜单（辅助路由，非业务菜单）
+    if (route.name === 'common' || route.name === 'menu-bridge' || route.name === 'permission-demo') {
       route.meta = {
         ...route.meta,
         title: route.meta?.title || String(route.name),

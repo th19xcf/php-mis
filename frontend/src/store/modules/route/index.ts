@@ -258,12 +258,22 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
       const children: ElegantConstRoute[] = childrenRaw.map((menu2: any, menu2Index: number) => {
         const funcCode = String(menu2?.functionCode || `func_${menu1Index + 1}_${menu2Index + 1}`);
         const childName = buildUniqueRouteName(`dyn_${normalizeRouteName(funcCode)}`, usedNames);
-        const childPath = `/dynamic-menu/${encodeURIComponent(funcCode)}`;
+        const frontendRoute = String(menu2?.frontendRoute || '').trim();
+
+        // 后端 def_function 表的「前端路由」字段驱动组件选择：
+        // - 有值时加载独立前端组件 view.{frontendRoute}，path 使用 /{frontendRoute}
+        //   （与原静态路由路径一致，保证 URL 兼容）
+        // - 无值时走通用 menu-bridge 组件，path 使用 /dynamic-menu/{funcCode}
+        const hasFrontendRoute = frontendRoute !== '' && frontendRoute !== 'menu-bridge';
+        const childPath = hasFrontendRoute
+          ? `/${frontendRoute}`
+          : `/dynamic-menu/${encodeURIComponent(funcCode)}`;
+        const childComponent = hasFrontendRoute ? `view.${frontendRoute}` : 'view.menu-bridge';
 
         return {
           name: childName,
           path: childPath,
-          component: 'view.menu-bridge',
+          component: childComponent,
           props: true,
           meta: {
             title: String(menu2?.name || `菜单${menu2Index + 1}`),
@@ -279,14 +289,14 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
               { key: 'menu2', value: String(menu2?.name || '') },
               { key: 'module', value: String(menu2?.module || '') },
               { key: 'params', value: String(menu2?.params || '') },
-              { key: 'frontendRoute', value: String(menu2?.frontendRoute || '') }
+              { key: 'frontendRoute', value: frontendRoute }
             ],
             functionCode: funcCode,
             menu1: String(menu1?.name || ''),
             menu2: String(menu2?.name || ''),
             module: String(menu2?.module || ''),
             params: String(menu2?.params || ''),
-            frontendRoute: String(menu2?.frontendRoute || '')
+            frontendRoute
           } as any
         } as ElegantConstRoute;
       });
