@@ -26,6 +26,21 @@ function handleFieldChange(fieldName: string, value: any) {
 }
 
 /**
+ * NDatePicker 的 formatted-value 守卫：
+ * 后端 MySQL NOT NULL 日期字段未设置时返回 "0000-00-00" / "0000-00-00 00:00:00"，
+ * naive-ui 内部 new Date(...) 得到 Invalid Date，format.js 调用 .format() 抛
+ * "RangeError: Invalid time value"。这里把无效值统一转成 null。
+ */
+function safeDateFormatted(value: any): string | null {
+  if (value == null || value === '') return null;
+  const str = String(value).trim();
+  if (!str || /^0000-00-00(\s+00:00:00)?$/.test(str)) return null;
+  const ts = new Date(str).getTime();
+  if (isNaN(ts)) return null;
+  return str;
+}
+
+/**
  * 多选字段：formData 里存的是以 "," 分隔的字符串，
  * 渲染 NSelect multiple 时需要解析为数组；变更时再 join 回去。
  */
@@ -126,7 +141,7 @@ const dark = computed(() => !!props.isDarkMode);
                   />
                   <NDatePicker
                     v-else-if="field.fieldType === '日期'"
-                    :formatted-value="formData[field.fieldName]"
+                    :formatted-value="safeDateFormatted(formData[field.fieldName])"
                     value-format="yyyy-MM-dd"
                     type="date"
                     :placeholder="`请选择${field.columnName}`"
