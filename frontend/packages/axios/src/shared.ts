@@ -34,7 +34,10 @@ export async function transformResponse(response: AxiosResponse) {
 
   if (!isHttpSuccess(response.status)) return;
 
-  const isJson = response.headers['content-type']?.includes('application/json');
+  // axios 1.19+ 的 AxiosHeaderValue 类型为 string | number | boolean | string[] | AxiosHeaders | null
+  // 仅 string / string[] 支持 includes，先做类型收敛建立窄化分支
+  const contentType = response.headers['content-type'];
+  const isJson = typeof contentType === 'string' && contentType.includes('application/json');
   if (!isJson) return;
 
   if (responseType === 'blob') {
