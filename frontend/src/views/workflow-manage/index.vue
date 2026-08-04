@@ -132,13 +132,13 @@ const searchForm = ref({
 
 const pagination = ref({
   page: 1,
-  pageSize: 20,
+  pageSize: 200,
   total: 0
 });
 
-const pendingPagination = ref({ page: 1, pageSize: 20, total: 0 });
-const donePagination = ref({ page: 1, pageSize: 20, total: 0 });
-const myPagination = ref({ page: 1, pageSize: 20, total: 0 });
+const pendingPagination = ref({ page: 1, pageSize: 200, total: 0 });
+const donePagination = ref({ page: 1, pageSize: 200, total: 0 });
+const myPagination = ref({ page: 1, pageSize: 200, total: 0 });
 
 const gridApi = ref<GridApi | null>(null);
 
@@ -837,7 +837,7 @@ onMounted(async () => {
           :animate-rows="true"
           :pagination="true"
           :pagination-page-size="pagination.pageSize"
-          :pagination-page-size-selector="[500, 1000, 2000]"
+          :pagination-page-size-selector="[200, 500, 1000]"
           :row-selection="{ mode: 'singleRow' }"
           :quick-filter-text="searchKeyword"
           @grid-ready="onGridReady"

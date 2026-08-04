@@ -3,6 +3,9 @@ import type { Ref } from 'vue';
 import type { GridApi } from 'ag-grid-community';
 import { useWorkbenchStore } from '@/store/modules/workbench';
 import type { WorkbenchCacheItem } from '@/store/modules/workbench';
+import { WORKBENCH_CONFIG } from '@/config/workbench';
+
+const PAGE_SIZE_OPTIONS = WORKBENCH_CONFIG.PAGINATION.PAGE_SIZE_OPTIONS;
 
 type ConditionOperator = 'contains' | 'equals' | 'startsWith';
 
@@ -243,7 +246,8 @@ export function useWorkbenchGridState(options: WorkbenchGridStateOptions) {
     if (hasPageChange) {
       options.isRestoringPage.value = true;
       options.page.value = cachedPage;
-      options.pageSize.value = cachedPageSize;
+      // 校验缓存的 pageSize 是否在当前可选项中，避免配置变更后旧缓存值触发 ag-grid 警告
+      options.pageSize.value = PAGE_SIZE_OPTIONS.includes(cachedPageSize) ? cachedPageSize : PAGE_SIZE_OPTIONS[0];
     }
 
     let pendingOperations = 0;

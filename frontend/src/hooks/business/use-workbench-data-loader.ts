@@ -385,11 +385,13 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
 
       const cachedPage = workbenchStore.getPage(functionCode, params);
       const cachedPageSize = workbenchStore.getPageSize(functionCode, params);
-      if (cachedPage > 1 || cachedPageSize !== PAGE_SIZE_OPTIONS[0]) {
-        log('info', `恢复分页状态: page=${cachedPage}, pageSize=${cachedPageSize}`);
+      // 校验缓存的 pageSize 是否在当前可选项中，避免配置变更后旧缓存值触发 ag-grid 警告
+      const safePageSize = PAGE_SIZE_OPTIONS.includes(cachedPageSize) ? cachedPageSize : PAGE_SIZE_OPTIONS[0];
+      if (cachedPage > 1 || safePageSize !== PAGE_SIZE_OPTIONS[0]) {
+        log('info', `恢复分页状态: page=${cachedPage}, pageSize=${safePageSize}`);
         isRestoringPage.value = true;
         page.value = cachedPage;
-        pageSize.value = cachedPageSize;
+        pageSize.value = safePageSize;
       }
       step2Timer.end();
 

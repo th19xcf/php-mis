@@ -445,7 +445,7 @@ watch(
           :animate-rows="true"
           :pagination="true"
           :pagination-page-size="pagination.pageSize"
-          :pagination-page-size-selector="[500, 1000, 2000]"
+          :pagination-page-size-selector="[200, 500, 1000]"
           :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: true }"
           :selection-column-def="{
             width: 37,
