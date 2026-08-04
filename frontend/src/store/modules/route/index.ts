@@ -258,7 +258,13 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
       const children: ElegantConstRoute[] = childrenRaw.map((menu2: any, menu2Index: number) => {
         const funcCode = String(menu2?.functionCode || `func_${menu1Index + 1}_${menu2Index + 1}`);
         const childName = buildUniqueRouteName(`dyn_${normalizeRouteName(funcCode)}`, usedNames);
-        const frontendRoute = String(menu2?.frontendRoute || '').trim();
+        // 后端 def_function 表的「前端路由」字段可能带前导斜杠（如 '/workflow-manage'），
+        // 这里统一去掉前导/尾部斜杠，避免拼出 '//workflow-manage' 路径和 'view./workflow-manage' 组件名
+        const frontendRoute = String(menu2?.frontendRoute || '')
+          .trim()
+          .replace(/^\/+/, '')
+          .replace(/\/+$/, '')
+          .trim();
 
         // 后端 def_function 表的「前端路由」字段驱动组件选择：
         // - 有值时加载独立前端组件 view.{frontendRoute}，path 使用 /{frontendRoute}
