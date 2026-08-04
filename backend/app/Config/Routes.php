@@ -154,6 +154,10 @@ $routes->group('contractV2', static function ($routes) {
 	$routes->get('stats', 'ContractV2Api::stats');
 	$routes->post('stats', 'ContractV2Api::stats');
 	$routes->get('options', 'ContractV2Api::options');
+	$routes->get('columns', 'ContractV2Api::columns');
+	$routes->post('columns', 'ContractV2Api::columns');
+	$routes->get('conditions', 'ContractV2Api::conditions');
+	$routes->post('conditions', 'ContractV2Api::conditions');
 	$routes->get('pendingTasks', 'ContractV2Api::pendingTasks');
 	$routes->post('pendingTasks', 'ContractV2Api::pendingTasks');
 	$routes->get('doneTasks', 'ContractV2Api::doneTasks');

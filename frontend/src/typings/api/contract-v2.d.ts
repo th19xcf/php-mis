@@ -1,5 +1,56 @@
 declare namespace Api {
   namespace ContractV2 {
+    /**
+     * 列定义元数据（与通用工作台 Api.Workbench.ColumnMeta 结构完全一致）
+     * 由后端通过 def_function/def_query_config/def_query_column 元数据生成
+     */
+    interface ColumnMeta {
+      field: string;
+      title: string;
+      type: string;
+      width: number;
+      hidden: boolean;
+      editable: boolean;
+      required: boolean;
+      sortable: boolean;
+      hintCondition?: string;
+      hintStyle?: string;
+      errorCondition?: string;
+      errorStyle?: string;
+      canMerge?: boolean;
+    }
+
+    interface ColumnsResult {
+      functionCode: string;
+      columns: ColumnMeta[];
+    }
+
+    /**
+     * 查询条件元数据（与通用工作台 Api.Workbench.ConditionMeta 结构一致）
+     * 由后端通过 def_query_column.可筛选 字段生成
+     */
+    interface ConditionMeta {
+      label: string;
+      fieldKey: string;
+      fieldName: string;
+      queryName: string;
+      type: string;
+      required: boolean;
+      filterable: boolean;
+    }
+
+    interface ConditionsResult {
+      functionCode: string;
+      conditions: ConditionMeta[];
+    }
+
+    /** 筛选条件（与通用工作台 filters 协议一致） */
+    interface FilterItem {
+      fieldKey: string;
+      operator: 'contains' | 'equals' | 'startsWith' | 'endsWith' | 'notEqual' | 'greaterThan' | 'greaterThanOrEqual' | 'lessThan' | 'lessThanOrEqual' | 'isNull' | 'isNotNull';
+      value: string;
+    }
+
     interface ContractListItem {
       GUID: number;
       合同编号: string;
@@ -103,7 +154,7 @@ declare namespace Api {
     }
 
     interface ContractOptions {
-      合同类型: { value: string; label: string }[];
+      合同类型: { value: string; label: string; workflowCode?: string }[];
       合同状态: { value: string; label: string }[];
       付款方式: { value: string; label: string }[];
       币别: { value: string; label: string }[];

@@ -286,6 +286,14 @@ const 合同类型Options = computed(() => (options.value.合同类型 || []).ma
 const 付款方式Options = computed(() => (options.value.付款方式 || []).map((o: any) => ({ label: o.label, value: o.value })));
 const 币别Options = computed(() => (options.value.币别 || []).map((o: any) => ({ label: o.label, value: o.value })));
 
+// 当前合同类型对应的流程编码（只读提示）
+const currentWorkflowCode = computed(() => {
+  const type = formData.value.合同类型;
+  if (!type) return '';
+  const matched = (options.value.合同类型 || []).find((o: any) => o.value === type);
+  return matched?.workflowCode || 'contract_approval（默认）';
+});
+
 // 暴露 submit 方法供父组件内联调用
 defineExpose({
   submit: handleSubmit
@@ -307,6 +315,10 @@ defineExpose({
       <div class="edit-row">
         <div class="edit-cell edit-cell-name">合同类型</div>
         <div class="edit-cell edit-cell-value"><NSelect v-model:value="formData.合同类型" :options="合同类型Options" placeholder="请选择" size="small" clearable /></div>
+      </div>
+      <div class="edit-row" v-if="formData.合同类型">
+        <div class="edit-cell edit-cell-name">审批流程</div>
+        <div class="edit-cell edit-cell-value"><span class="workflow-code-hint">{{ currentWorkflowCode }}</span></div>
       </div>
       <div class="edit-row">
         <div class="edit-cell edit-cell-name">甲方名称<span class="required-mark">*</span></div>
@@ -448,6 +460,10 @@ defineExpose({
                 {{ opt.label }}
               </option>
             </select>
+          </div>
+          <div class="form-item" v-if="formData.合同类型">
+            <label>审批流程</label>
+            <input :value="currentWorkflowCode" readonly class="readonly-hint" />
           </div>
           <div class="form-item">
             <label>甲方名称 <span class="required">*</span></label>
@@ -659,6 +675,19 @@ defineExpose({
     color: #ff4d4f;
     margin-left: 2px;
   }
+
+  .workflow-code-hint {
+    color: #1890ff;
+    font-size: 12px;
+    font-family: 'Consolas', 'Monaco', monospace;
+  }
+}
+
+.readonly-hint {
+  background: #f5f5f5 !important;
+  color: #1890ff !important;
+  font-family: 'Consolas', 'Monaco', monospace !important;
+  font-size: 12px !important;
 }
 
 // 暗黑模式适配

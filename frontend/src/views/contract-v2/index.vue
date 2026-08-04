@@ -167,11 +167,47 @@ function onEditorMouseUp() {
 
 const searchKeyword = ref('');
 
+// 元数据驱动的条件面板（与通用工作台 WorkbenchConditionDrawer 完全对齐）
+// 后端 def_query_column.可筛选=1 的列会出现在条件面板字段下拉中
+type ConditionOperator = 'contains' | 'equals' | 'startsWith';
+const conditionVisible = ref(false);
+const selectedField = ref('');
+const selectedOperator = ref<ConditionOperator>('contains');
+const selectedValue = ref('');
+
+// 条件面板字段下拉项（label 显示列名，value 用 fieldKey）
+const conditionFieldOptions = computed(() => {
+  return (contractV2Store.conditions || [])
+    .filter(item => item.filterable)
+    .map(item => ({ label: item.label || item.fieldKey, value: item.fieldKey }));
+});
+
+// 条件面板操作符下拉项（与通用工作台 WorkbenchConditionDrawer 保持一致）
+const conditionOperatorOptions: Array<{ label: string; value: ConditionOperator }> = [
+  { label: '包含', value: 'contains' },
+  { label: '等于', value: 'equals' },
+  { label: '前缀匹配', value: 'startsWith' }
+];
+
+// 是否有生效的筛选条件（用于在工具栏显示徽标）
+const hasActiveFilter = computed(() => contractV2Store.activeFilters.length > 0);
+const activeFilterSummary = computed(() => {
+  const filters = contractV2Store.activeFilters;
+  if (filters.length === 0) return '';
+  return filters.map(f => `${f.fieldKey} ${f.operator} "${f.value}"`).join(' / ');
+});
+
 const gridApi = ref<GridApi | null>(null);
 const inlineFormRef = ref<{ submit: () => void } | null>(null);
 const selectedContract = ref<Api.ContractV2.ContractListItem | null>(null);
 
-const columnDefs: any[] = [
+// 合同 V2 在 def_function 中对应的功能编码
+// 当 def_function/def_query_column 中已配置该编码的列定义时，前端使用元数据驱动；
+// 否则回退到下方 fallbackColumnDefs 硬编码列定义（保证渐进迁移期间功能不中断）
+const CONTRACT_V2_FUNCTION_CODE = 'contract_v2_list';
+
+// 兜底列定义：当后端 def_function/def_query_column 未配置合同 V2 列定义时使用
+const fallbackColumnDefs: any[] = [
   {
     field: 'rowIndex',
     headerName: '序号',
@@ -208,6 +244,137 @@ const columnDefs: any[] = [
   { field: '签订日期', headerName: '签订日期', width: 120, minWidth: 100, filter: 'agDateColumnFilter' },
   { field: '结束日期', headerName: '到期日期', width: 120, minWidth: 100, filter: 'agDateColumnFilter' }
 ];
+
+/**
+ * 解析样式字符串为 CSS 对象
+ * 格式: "color:red,background-color:#f7acbc,font-weight:bold"
+ * 与通用工作台 use-workbench-table-edit.ts 中 parseStyleString 保持一致
+ */
+function parseStyleString(styleStr: string): Record<string, string> {
+  if (!styleStr) return {};
+  const styleObj: Record<string, string> = {};
+  const items = styleStr.split(',');
+  for (const item of items) {
+    const [key, value] = item.split(':');
+    if (key && value) {
+      const camelKey = key.trim().replace(/-([a-z])/g, g => g[1].toUpperCase());
+      styleObj[camelKey] = value.trim();
+    }
+  }
+  return styleObj;
+}
+
+/**
+ * 将后端 ColumnMeta 转换为 ag-grid ColDef
+ * 参照通用工作台 use-workbench-table-edit.ts 第 103-242 行的转换逻辑：
+ * - 数值列右对齐 + cellClass + agNumberColumnFilter + comparator（空值沉底）
+ * - 提示/异常样式（行内字段 "提示^<field>" / "异常^<field>" 为 '1' 时应用）
+ * - GUID 列隐藏
+ * - 可合并列启用 spanRows
+ */
+function convertServerColumnToColDef(column: Api.ContractV2.ColumnMeta): any {
+  const isGuidColumn =
+    String(column.field || '').trim().toUpperCase() === 'GUID' ||
+    String(column.title || '').trim().toUpperCase() === 'GUID';
+
+  // column.type 可能含前后空格，trim 后再比较
+  const isNumericColumn = (column.type || '').trim() === '数值';
+  const numericBaseStyle: Record<string, string> | null = isNumericColumn
+    ? { textAlign: 'right', justifyContent: 'flex-end' }
+    : null;
+
+  const definition: any = {
+    field: column.field,
+    headerName: column.title,
+    hide: column.hidden || isGuidColumn,
+    sortable: column.sortable,
+    filter: true,
+    resizable: true,
+    width: column.width > 0 ? column.width : 120,
+    minWidth: Math.min(column.width > 0 ? column.width : 120, 100)
+  };
+
+  if (isNumericColumn) {
+    definition.type = 'numericColumn';
+    definition.cellClass = 'wb-numeric-cell';
+    definition.filter = 'agNumberColumnFilter';
+    definition.comparator = (valueA: any, valueB: any) => {
+      const numA = valueA === null || valueA === undefined || valueA === '' ? null : Number(valueA);
+      const numB = valueB === null || valueB === undefined || valueB === '' ? null : Number(valueB);
+      if (numA === null && numB === null) return 0;
+      if (numA === null) return 1;
+      if (numB === null) return -1;
+      return numA - numB;
+    };
+    // 金额类列保留千分位 + 2 位小数格式化（与原硬编码行为一致）
+    if (column.field.includes('金额')) {
+      definition.valueFormatter = (params: any) => {
+        const val = Number(params.value);
+        if (isNaN(val)) return params.value;
+        return val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      };
+    }
+  }
+
+  if (column.canMerge) {
+    definition.editable = false;
+    definition.spanRows = (params: any) => {
+      const { nodeA, nodeB } = params;
+      if (!nodeA || !nodeB || !nodeA.data || !nodeB.data) return false;
+      const normalize = (v: unknown) => (v === null || v === undefined || v === '' ? '' : v);
+      return normalize(nodeA.data[column.field]) === normalize(nodeB.data[column.field]);
+    };
+  }
+
+  // 提示/异常样式：行数据中 "提示^<field>" / "异常^<field>" 为 '1' 时触发
+  definition.cellStyle = (params: any) => {
+    const data = params.data || {};
+    if (column.errorCondition) {
+      const errorKey = `异常^${column.field}`;
+      if (data[errorKey] === '1' || data[errorKey] === 1) {
+        return { ...numericBaseStyle, ...parseStyleString(column.errorStyle || '') };
+      }
+    }
+    if (column.hintCondition) {
+      const hintKey = `提示^${column.field}`;
+      if (data[hintKey] === '1' || data[hintKey] === 1) {
+        return { ...numericBaseStyle, ...parseStyleString(column.hintStyle || '') };
+      }
+    }
+    return numericBaseStyle;
+  };
+
+  return definition;
+}
+
+// 从 store 读取元数据驱动的列定义
+const serverColumnDefs = computed(() => contractV2Store.columnDefs);
+
+// 实际生效的列定义：优先使用元数据驱动，为空时回退到硬编码
+const columnDefs = computed<any[]>(() => {
+  const serverCols = serverColumnDefs.value;
+  if (!serverCols || serverCols.length === 0) {
+    return fallbackColumnDefs;
+  }
+  // 后端列定义不含序号列时，前端自动补一个序号列（与硬编码行为一致）
+  const hasSequence = serverCols.some(c => c.field === '序号' || c.field === 'rowIndex');
+  const converted = serverCols.map(convertServerColumnToColDef);
+  if (!hasSequence) {
+    converted.unshift({
+      field: 'rowIndex',
+      headerName: '序号',
+      width: 60,
+      minWidth: 60,
+      maxWidth: 60,
+      resizable: false,
+      sortable: false,
+      filter: false,
+      cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
+    });
+  }
+  return converted;
+});
 
 const defaultColDef = {
   sortable: true,
@@ -259,6 +426,48 @@ async function handleRefresh() {
     gridApi.value.refreshCells({ force: true });
   }
   message.success('已刷新');
+}
+
+/** 打开条件面板（与通用工作台 WorkbenchToolbar 的"条件面板"按钮对齐） */
+function openCondition() {
+  // 打开时回显当前已生效的筛选条件（取第一个，因为面板只支持单条件）
+  const active = contractV2Store.activeFilters[0];
+  if (active) {
+    selectedField.value = active.fieldKey;
+    selectedOperator.value = (active.operator as ConditionOperator) || 'contains';
+    selectedValue.value = active.value;
+  }
+  conditionVisible.value = true;
+}
+
+/** 应用条件面板筛选（与通用工作台 handleApplyCondition 对齐） */
+async function handleApplyCondition() {
+  const field = selectedField.value;
+  const operator = selectedOperator.value;
+  const value = selectedValue.value.trim();
+
+  if (field && value) {
+    contractV2Store.setActiveFilters([{ fieldKey: field, operator, value }]);
+  } else {
+    // 字段或值空时清除筛选
+    contractV2Store.setActiveFilters([]);
+  }
+  conditionVisible.value = false;
+  contractV2Store.setPage(1);
+  await contractV2Store.loadContractList();
+  message.success(field && value ? '已应用筛选条件' : '已清除筛选条件');
+}
+
+/** 清除条件面板筛选 */
+async function handleClearCondition() {
+  selectedField.value = '';
+  selectedOperator.value = 'contains';
+  selectedValue.value = '';
+  contractV2Store.clearActiveFilters();
+  conditionVisible.value = false;
+  contractV2Store.setPage(1);
+  await contractV2Store.loadContractList();
+  message.success('已清除筛选条件');
 }
 
 function handleCreate() {
@@ -459,6 +668,10 @@ onMounted(async () => {
       leftWidth.value = width;
     }
   }
+  // 加载元数据驱动的列定义与查询条件（def_function/def_query_config/def_query_column）
+  // 失败或返回空时由前端 fallbackColumnDefs 兜底，不阻塞主流程
+  contractV2Store.loadColumnDefs(CONTRACT_V2_FUNCTION_CODE);
+  contractV2Store.loadConditions(CONTRACT_V2_FUNCTION_CODE);
   contractV2Store.loadOptions();
   contractV2Store.loadStats();
   await contractV2Store.loadContractList();
@@ -485,6 +698,12 @@ onMounted(async () => {
           </div>
         </div>
         <div class="header-actions">
+          <NButton size="small" :type="hasActiveFilter ? 'warning' : 'default'" @click="openCondition">
+            <template #icon>
+              <icon-mdi-filter-variant />
+            </template>
+            条件面板
+          </NButton>
           <NButton size="small" @click="handleRefresh">
             <template #icon>
               <icon-mdi-refresh />
@@ -498,6 +717,13 @@ onMounted(async () => {
             新建合同
           </NButton>
         </div>
+      </div>
+
+      <!-- 生效筛选条件提示条（与通用工作台筛选状态可见化对齐） -->
+      <div v-if="hasActiveFilter" class="active-filter-bar">
+        <icon-mdi-filter-check class="active-filter-icon" />
+        <span class="active-filter-text">当前筛选：{{ activeFilterSummary }}</span>
+        <NButton size="tiny" quaternary type="error" @click="handleClearCondition">清除</NButton>
       </div>
 
       <!-- Tab 切换 -->
@@ -740,6 +966,47 @@ onMounted(async () => {
         </div>
       </div>
     </Teleport>
+
+    <!-- 条件面板 Drawer（与通用工作台 WorkbenchConditionDrawer 完全对齐） -->
+    <NDrawer v-model:show="conditionVisible" :width="420" placement="right">
+      <NDrawerContent title="条件面板" closable>
+        <NSpace vertical :size="16">
+          <NForm label-placement="top">
+            <NFormItem label="字段">
+              <NSelect
+                v-model:value="selectedField"
+                :options="conditionFieldOptions"
+                placeholder="请选择筛选字段"
+                clearable
+              />
+            </NFormItem>
+            <NFormItem label="操作符">
+              <NSelect
+                v-model:value="selectedOperator"
+                :options="conditionOperatorOptions"
+              />
+            </NFormItem>
+            <NFormItem label="取值">
+              <NInput
+                v-model:value="selectedValue"
+                placeholder="输入筛选值"
+                clearable
+              />
+            </NFormItem>
+          </NForm>
+
+          <NAlert v-if="conditionFieldOptions.length === 0" type="info">
+            未配置可筛选字段。请在 def_query_column 中将需要筛选的列「可筛选」设为 1。
+          </NAlert>
+
+          <NSpace justify="end">
+            <NButton @click="handleClearCondition">清除</NButton>
+            <NButton @click="conditionVisible = false">取消</NButton>
+            <NButton type="primary" @click="handleApplyCondition">应用</NButton>
+          </NSpace>
+        </NSpace>
+      </NDrawerContent>
+    </NDrawer>
   </div>
 </template>
 
@@ -840,6 +1107,38 @@ onMounted(async () => {
     gap: 12px;
     margin-left: auto;
   }
+}
+
+/* 生效筛选条件提示条（与通用工作台筛选状态可见化对齐） */
+.active-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background: #fffbe6;
+  border-bottom: 1px solid #ffe58f;
+  font-size: 12px;
+  color: #614700;
+  flex-shrink: 0;
+
+  .active-filter-icon {
+    font-size: 16px;
+    color: #faad14;
+    flex-shrink: 0;
+  }
+
+  .active-filter-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.system-dark .active-filter-bar {
+  background: rgba(255, 197, 23, 0.12);
+  border-bottom-color: rgba(255, 197, 23, 0.25);
+  color: #ffd666;
 }
 
 .panel-content {

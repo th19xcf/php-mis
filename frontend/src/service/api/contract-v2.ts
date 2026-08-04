@@ -13,7 +13,16 @@ export function fetchContractV2List(params: {
   signDateEnd?: string;
   creator?: string;
   deptCode?: string;
+  /**
+   * 元数据驱动的筛选条件数组（与通用工作台 filters 协议一致）
+   * 后端通过 def_query_column.可筛选 字段映射，由 WorkbenchSqlHelper 转 SQL
+   */
+  filters?: Api.ContractV2.FilterItem[];
 }) {
+  // filters 为非空数组时使用 POST，避免 GET URL 过长；其余场景保持 GET 兼容
+  if (params.filters && params.filters.length > 0) {
+    return request({ url: '/contractV2/list', method: 'post', data: params });
+  }
   return request({ url: '/contractV2/list', params });
 }
 
@@ -45,11 +54,11 @@ export function fetchContractV2Delete(contractNo: string) {
   });
 }
 
-export function fetchContractV2Submit(contractNo: string, workflowCode = 'contract_approval') {
+export function fetchContractV2Submit(contractNo: string) {
   return request({
     url: '/contractV2/submit',
     method: 'post',
-    data: { contractNo, workflowCode }
+    data: { contractNo }
   });
 }
 
@@ -67,6 +76,36 @@ export function fetchContractV2Stats(params?: Record<string, any>) {
 
 export function fetchContractV2Options() {
   return request({ url: '/contractV2/options' });
+}
+
+/**
+ * 获取合同 V2 列定义（基于 def_function/def_query_config/def_query_column 元数据）
+ *
+ * 与通用工作台 PageMeta.columns 结构一致，前端收到非空 columns 时使用配置驱动表格，
+ * 否则回退到 contract-v2/index.vue 中硬编码的列定义。
+ *
+ * @param functionCode 功能编码（如 'contract_v2_list'）
+ */
+export function fetchContractV2Columns(functionCode: string) {
+  return request<Api.ContractV2.ColumnsResult>({
+    url: '/contractV2/columns',
+    params: { functionCode }
+  });
+}
+
+/**
+ * 获取合同 V2 查询条件元数据（基于 def_query_column.可筛选 字段生成）
+ *
+ * 与通用工作台 PageMeta.conditions 结构一致，前端收到非空 conditions 时
+ * 渲染动态条件面板（Drawer），用户可选择字段/操作符/取值后应用筛选。
+ *
+ * @param functionCode 功能编码（如 'contract_v2_list'）
+ */
+export function fetchContractV2Conditions(functionCode: string) {
+  return request<Api.ContractV2.ConditionsResult>({
+    url: '/contractV2/conditions',
+    params: { functionCode }
+  });
 }
 
 export function fetchContractV2PendingTasks(params?: { page?: number; pageSize?: number }) {

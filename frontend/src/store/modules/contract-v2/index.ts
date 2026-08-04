@@ -10,6 +10,8 @@ import {
   fetchContractV2Approve,
   fetchContractV2Stats,
   fetchContractV2Options,
+  fetchContractV2Columns,
+  fetchContractV2Conditions,
   fetchContractV2PendingTasks,
   fetchContractV2DoneTasks,
   fetchContractV2MyContracts,
@@ -39,6 +41,14 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     付款方式: [],
     币别: []
   });
+  // 后端元数据驱动的列定义；为空时由前端组件回退到硬编码列
+  const columnDefs = ref<Api.ContractV2.ColumnMeta[]>([]);
+  const columnDefsFunctionCode = ref('');
+  // 后端元数据驱动的查询条件（与通用工作台 PageMeta.conditions 对齐）
+  const conditions = ref<Api.ContractV2.ConditionMeta[]>([]);
+  const conditionsFunctionCode = ref('');
+  // 当前生效的元数据驱动筛选条件（条件面板应用后写入；与通用工作台 filters 协议一致）
+  const activeFilters = ref<Api.ContractV2.FilterItem[]>([]);
   const stats = ref<Api.ContractV2.ContractStats>({
     总数: 0,
     草稿: 0,
@@ -61,14 +71,25 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
 
   const currentFlowDetail = ref<Api.Workflow.WorkflowInstance | null>(null);
 
-  async function loadContractList(params?: typeof searchParams.value) {
+  /**
+   * 加载合同列表
+   *
+   * @param params 旧的硬编码筛选字段（向后兼容，可省略）
+   * @param filtersOverride 元数据驱动筛选条件覆盖；不传则使用 store 中的 activeFilters
+   */
+  async function loadContractList(
+    params?: typeof searchParams.value,
+    filtersOverride?: Api.ContractV2.FilterItem[]
+  ) {
     loading.value = true;
     try {
       const queryParams = params || searchParams.value;
+      const filters = filtersOverride !== undefined ? filtersOverride : activeFilters.value;
       const response = await fetchContractV2List({
         ...queryParams,
         page: pagination.value.page,
-        pageSize: pagination.value.pageSize
+        pageSize: pagination.value.pageSize,
+        filters: filters.length > 0 ? filters : undefined
       });
       const data = (response as any)?.data || response;
       if (data && Array.isArray(data.list)) {
@@ -136,10 +157,10 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     }
   }
 
-  async function submitApproval(contractNo: string, workflowCode = 'contract_approval') {
+  async function submitApproval(contractNo: string) {
     loading.value = true;
     try {
-      const res = await fetchContractV2Submit(contractNo, workflowCode);
+      const res = await fetchContractV2Submit(contractNo);
       if (res) {
         await loadContractList();
         if (currentContract.value && currentContract.value.合同编号 === contractNo) {
@@ -187,6 +208,71 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     } catch {
       // Error loading options
     }
+  }
+
+  /**
+   * 加载元数据驱动的列定义
+   *
+   * @param functionCode 功能编码（如 'contract_v2_list'）
+   * @returns 是否成功获取到非空列定义
+   */
+  async function loadColumnDefs(functionCode: string): Promise<boolean> {
+    if (!functionCode) {
+      columnDefs.value = [];
+      columnDefsFunctionCode.value = '';
+      return false;
+    }
+    try {
+      const result = await fetchContractV2Columns(functionCode);
+      const data = (result as any)?.data || (result as any);
+      const cols = (data?.columns || []) as Api.ContractV2.ColumnMeta[];
+      columnDefs.value = cols;
+      columnDefsFunctionCode.value = data?.functionCode || functionCode;
+      return cols.length > 0;
+    } catch {
+      columnDefs.value = [];
+      columnDefsFunctionCode.value = '';
+      return false;
+    }
+  }
+
+  /**
+   * 加载元数据驱动的查询条件
+   *
+   * @param functionCode 功能编码（如 'contract_v2_list'）
+   * @returns 是否成功获取到非空条件列表
+   */
+  async function loadConditions(functionCode: string): Promise<boolean> {
+    if (!functionCode) {
+      conditions.value = [];
+      conditionsFunctionCode.value = '';
+      return false;
+    }
+    try {
+      const result = await fetchContractV2Conditions(functionCode);
+      const data = (result as any)?.data || (result as any);
+      const conds = (data?.conditions || []) as Api.ContractV2.ConditionMeta[];
+      conditions.value = conds;
+      conditionsFunctionCode.value = data?.functionCode || functionCode;
+      return conds.length > 0;
+    } catch {
+      conditions.value = [];
+      conditionsFunctionCode.value = '';
+      return false;
+    }
+  }
+
+  /**
+   * 设置当前生效的筛选条件（条件面板应用时调用）
+   * 传入空数组等价于清除筛选。
+   */
+  function setActiveFilters(filters: Api.ContractV2.FilterItem[]) {
+    activeFilters.value = filters.slice();
+  }
+
+  /** 清除全部生效的筛选条件 */
+  function clearActiveFilters() {
+    activeFilters.value = [];
   }
 
   async function loadPendingTasks(page = 1, pageSize = 20) {
@@ -282,6 +368,11 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     searchParams,
     options,
     stats,
+    columnDefs,
+    columnDefsFunctionCode,
+    conditions,
+    conditionsFunctionCode,
+    activeFilters,
     pendingTasks,
     pendingTasksPagination,
     doneTasks,
@@ -298,6 +389,10 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     handleApproval,
     loadStats,
     loadOptions,
+    loadColumnDefs,
+    loadConditions,
+    setActiveFilters,
+    clearActiveFilters,
     loadPendingTasks,
     loadDoneTasks,
     loadMyContracts,
