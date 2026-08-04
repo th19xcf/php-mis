@@ -254,27 +254,28 @@ export const useRouteStore = defineStore(SetupStoreId.Route, () => {
         usedNames
       );
       const childrenRaw = Array.isArray(menu1?.children) ? menu1.children : [];
+      console.log(`[RouteDebug] 一级菜单 "${menu1?.name}" children 类型: ${Array.isArray(menu1?.children) ? 'array' : 'object'}, 长度: ${childrenRaw.length}`);
+      if (childrenRaw.length > 0) {
+        console.log(`[RouteDebug] 第一个子项:`, JSON.stringify(childrenRaw[0], null, 2));
+      }
 
       const children: ElegantConstRoute[] = childrenRaw.map((menu2: any, menu2Index: number) => {
         const funcCode = String(menu2?.functionCode || `func_${menu1Index + 1}_${menu2Index + 1}`);
         const childName = buildUniqueRouteName(`dyn_${normalizeRouteName(funcCode)}`, usedNames);
-        // 后端 def_function 表的「前端路由」字段可能带前导斜杠（如 '/workflow-manage'），
-        // 这里统一去掉前导/尾部斜杠，避免拼出 '//workflow-manage' 路径和 'view./workflow-manage' 组件名
+        // 后端 def_function 表的「前端路由」字段可能带前导/尾部斜杠，统一去除
         const frontendRoute = String(menu2?.frontendRoute || '')
           .trim()
           .replace(/^\/+/, '')
           .replace(/\/+$/, '')
           .trim();
+        console.log(`[RouteDebug] 子菜单 "${menu2?.name}": functionCode=${funcCode}, frontendRoute=${frontendRoute}, module=${menu2?.module}`);
 
-        // 后端 def_function 表的「前端路由」字段驱动组件选择：
-        // - 有值时加载独立前端组件 view.{frontendRoute}，path 使用 /{frontendRoute}
-        //   （与原静态路由路径一致，保证 URL 兼容）
-        // - 无值时走通用 menu-bridge 组件，path 使用 /dynamic-menu/{funcCode}
-        const hasFrontendRoute = frontendRoute !== '' && frontendRoute !== 'menu-bridge';
-        const childPath = hasFrontendRoute
-          ? `/${frontendRoute}`
-          : `/dynamic-menu/${encodeURIComponent(funcCode)}`;
-        const childComponent = hasFrontendRoute ? `view.${frontendRoute}` : 'view.menu-bridge';
+        // 所有动态菜单统一走 menu-bridge 组件，由其内部的 nativeComponentMap
+        // 根据 frontendRoute 字段加载对应的独立 Vue 组件。
+        // menu-bridge 提供 .bridge-content-region { position: relative; height: 100% }
+        // 作为页面 position:absolute 的定位上下文。
+        const childPath = `/dynamic-menu/${encodeURIComponent(funcCode)}`;
+        const childComponent = 'view.menu-bridge';
 
         return {
           name: childName,

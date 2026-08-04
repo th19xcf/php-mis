@@ -212,8 +212,10 @@ class RouteService
             }
 
             $routeName = $row->功能编码;
+            $frontendRoute = trim((string)($row->前端路由 ?? ''));
 
-            if ($row->功能模块 === '' || $row->功能模块 === null) {
+            if ($frontendRoute !== '') {
+                // 有前端路由：走 menu-bridge，由其内部 nativeComponentMap 分发到对应 Vue 组件
                 $menuItem = [
                     'name' => $routeName,
                     'path' => '/menu-bridge',
@@ -222,10 +224,11 @@ class RouteService
                         'title' => $row->二级菜单,
                         'icon' => 'mdi:menu',
                         'functionCode' => $row->功能编码,
-                        'frontendRoute' => $row->前端路由
+                        'frontendRoute' => $frontendRoute
                     ]
                 ];
             } else {
+                // 无前端路由：走 view.common（iframe 旧版页面）
                 $routePath = $row->功能编码;
                 $menuItem = [
                     'name' => $routeName,

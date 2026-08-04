@@ -13,13 +13,10 @@ const customRoutes: CustomRoute[] = [];
 /**
  * 后端驱动的业务路由清单
  *
- * 这些路由对应的页面组件存在于 src/views/ 下，但菜单显示和路由注册
- * 完全由后端 def_function 表的「前端路由」字段驱动：
- * - 后端配置了「前端路由」字段时，createBackendMenuRoutes 会生成对应路由
- *   并加载 view.{前端路由} 组件
- * - 后端未配置时，该路由不存在、菜单不显示、URL 不可访问
- *
- * 组件映射在 src/router/elegant/imports.ts 中自动注册，无需手动维护。
+ * 这些路由对应的页面组件存在于 src/views/ 下，但不再注册为独立路由，
+ * 而是统一通过 menu-bridge 组件加载（由后端 def_function 表的
+ * 「前端路由」字段驱动 menu-bridge 内部的 nativeComponentMap 分发）。
+ * menu-bridge 提供 .bridge-content-region 作为 position:relative 定位上下文。
  */
 const backendDrivenRouteNames = new Set<string>([
   'contract',

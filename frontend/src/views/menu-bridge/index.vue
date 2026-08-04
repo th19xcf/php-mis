@@ -33,6 +33,18 @@ const meta = computed(() => {
   const menu2 = String(route.query.menu2 || routeMeta.menu2 || '');
   const frontendRoute = String(route.query.frontendRoute || routeMeta.frontendRoute || '');
 
+  console.log('[MenuBridge Debug]', {
+    routeName: route.name,
+    routePath: route.path,
+    query: Object.fromEntries(Object.entries(route.query).map(([k, v]) => [k, String(v)])),
+    metaKeys: Object.keys(routeMeta),
+    metaFunctionCode: routeMeta.functionCode,
+    metaFrontendRoute: routeMeta.frontendRoute,
+    resolvedFunctionCode: functionCode,
+    resolvedFrontendRoute: frontendRoute,
+    isNative: !!(frontendRoute && nativeComponentMap[frontendRoute])
+  });
+
   return {
     ...routeMeta,
     functionCode,
@@ -50,10 +62,10 @@ const activeView = ref<'workbench' | 'legacy' | 'native'>('workbench');
 
 const nativeComponentMap: Record<string, any> = {
   dept: defineAsyncComponent(() => import('@/views/system/dept/index.vue')),
-  store: defineAsyncComponent(() => import('@/views/personnel/invitation/index.vue')),
-  interview: defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
-  train: defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
-  employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
+  personnel_invitation: defineAsyncComponent(() => import('@/views/personnel/invitation/index.vue')),
+  personnel_interview: defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
+  personnel_train: defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
+  personnel_employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
   contract: defineAsyncComponent(() => import('@/views/contract/index.vue')),
   'contract-v2': defineAsyncComponent(() => import('@/views/contract-v2/index.vue')),
   'match-data': defineAsyncComponent(() => import('@/views/match-data/index.vue')),
