@@ -1104,15 +1104,28 @@ class WorkflowApi extends BaseApiController
             $keyword = $data['keyword'] ?? $this->request->getGet('keyword') ?? '';
 
             $where = ['`删除标识`=' . $this->model->quote('0')];
-            $params = [];
 
             if (!empty($businessType)) {
-                // 适用业务类型为逗号分隔字段,使用 FIND_IN_SET 或 LIKE
-                $where[] = sprintf(
-                    '(`适用业务类型` IS NULL OR `适用业务类型`=%s OR FIND_IN_SET(%s, `适用业务类型`) > 0)',
-                    $this->model->quote(''),
-                    $this->model->quote($businessType)
-                );
+                // 适用业务类型为逗号分隔字段,使用 FIND_IN_SET 匹配
+                // 同时匹配英文编码与中文标签(用户可能填中文或英文)
+                // 业务类型中英文映射
+                $typeMap = [
+                    'CONTRACT' => '合同',
+                    'EMPLOYEE' => '员工',
+                    'LEAVE' => '请假'
+                ];
+                $cnLabel = $typeMap[$businessType] ?? '';
+
+                // 构造 OR 条件:NULL/空(通用模板) 或 匹配英文编码 或 匹配中文标签
+                $orParts = [
+                    '`适用业务类型` IS NULL',
+                    "`适用业务类型`=" . $this->model->quote(''),
+                    'FIND_IN_SET(' . $this->model->quote($businessType) . ', `适用业务类型`) > 0'
+                ];
+                if (!empty($cnLabel)) {
+                    $orParts[] = 'FIND_IN_SET(' . $this->model->quote($cnLabel) . ', `适用业务类型`) > 0';
+                }
+                $where[] = '(' . implode(' OR ', $orParts) . ')';
             }
 
             if (!empty($keyword)) {
