@@ -54,11 +54,11 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
   :deep(#{$g} .ag-header-cell),
   :deep(#{$g} .ag-cell),
-  :deep(#{$g} .ag-header-cell-text),
-  :deep(#{$g} .ag-cell-value) {
+  :deep(#{$g} .ag-header-cell-text) {
     color: var(--wb-grid-text);
   }
 
+  // .ag-cell-value 不单独设置 color，继承 .ag-cell 的 color（含 cellStyle 的 inline color）
   :deep(#{$g} .ag-cell-wrapper),
   :deep(#{$g} .ag-header-cell-comp-wrapper) {
     height: 100%;
@@ -424,10 +424,11 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 
     :deep(#{$g} .ag-header-cell),
     :deep(#{$g} .ag-cell),
-    :deep(#{$g} .ag-header-cell-text),
-    :deep(#{$g} .ag-cell-value) {
+    :deep(#{$g} .ag-header-cell-text) {
       color: var(--wb-grid-text);
     }
+
+    // .ag-cell-value 不单独设置 color，继承 .ag-cell 的 color（含 cellStyle 的 inline color）
 
     :deep(#{$g} .ag-header-cell .ag-icon),
     :deep(#{$g} .ag-header-cell .ag-header-icon),
