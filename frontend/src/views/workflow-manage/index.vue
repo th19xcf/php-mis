@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
-import { themeAlpine, type GridApi } from 'ag-grid-community';
 import { useDialog, useMessage } from 'naive-ui';
-import { useThemeStore } from '@/store/modules/theme';
 import {
   fetchWorkflowDefinitionList,
   fetchWorkflowDefinitionDelete,
@@ -21,71 +19,22 @@ import {
   fetchWorkflowEdgeList,
   fetchWorkflowEdgeDelete
 } from '@/service/api/workflow';
+import { useConfigDrivenGrid, useSplitter } from '@/hooks/business';
 import WorkflowDefForm from './components/WorkflowDefForm.vue';
 import WorkflowNodeForm from './components/WorkflowNodeForm.vue';
 import WorkflowEdgeForm from './components/WorkflowEdgeForm.vue';
 import WorkflowFlowTimeline from './components/WorkflowFlowTimeline.vue';
 
-const themeStore = useThemeStore();
-const isDarkMode = computed(() => themeStore.darkMode);
-
-const lightGridTheme = themeAlpine.withParams({
-  browserColorScheme: 'light',
-  rowBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  columnBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  rangeSelectionBorderColor: '#2196F3',
-  rangeSelectionBorderStyle: 'solid'
-});
-
-const darkGridTheme = themeAlpine.withParams({
-  browserColorScheme: 'dark',
-  rowBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  columnBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  rangeSelectionBorderColor: '#64B5F6',
-  rangeSelectionBorderStyle: 'solid'
-});
-
-const gridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
-
 const dialog = useDialog();
 const message = useMessage();
 
-// 左右分栏(同 contract-v2)
-const leftWidth = ref(800);
-const minLeftWidth = 500;
-const maxLeftWidth = 1000;
-const isResizing = ref(false);
-
-function startResize(e: MouseEvent) {
-  isResizing.value = true;
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
-
-  const startX = e.clientX;
-  const startWidth = leftWidth.value;
-
-  function onMouseMove(moveEvent: MouseEvent) {
-    if (!isResizing.value) return;
-    const delta = moveEvent.clientX - startX;
-    const newWidth = Math.max(minLeftWidth, Math.min(maxLeftWidth, startWidth + delta));
-    leftWidth.value = newWidth;
-  }
-
-  function onMouseUp() {
-    isResizing.value = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-    localStorage.setItem('workflow-manage-splitter-width', String(leftWidth.value));
-  }
-
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-}
-
-// Tab 切换(同 contract-v2 的 4 个 Tab)
-const activeTab = ref<'list' | 'pending' | 'done' | 'my'>('list');
+// 左右分栏（抽取为 useSplitter）
+const { leftWidth, isResizing, startResize } = useSplitter({
+  defaultWidth: 800,
+  minWidth: 500,
+  maxWidth: 1000,
+  storageKey: 'workflow-manage-splitter-width'
+});
 
 const showFormModal = ref(false);
 const formMode = ref<'create' | 'edit'>('create');
@@ -106,14 +55,7 @@ const edgeFormMode = ref<'create' | 'edit'>('create');
 const editingEdge = ref<any>(null);
 const nodesForEdge = ref<any[]>([]); // 连线表单的节点下拉数据
 
-// 列表数据
-const definitionList = ref<any[]>([]);
-const pendingTasks = ref<any[]>([]);
-const doneTasks = ref<any[]>([]);
-const myInstances = ref<any[]>([]);
-const loading = ref(false);
-
-// 统计卡片(同 contract-v2 的 stats-cards-inline)
+// 统计卡片（基于当前列表数据计算）
 const stats = ref({
   总数: 0,
   启用: 0,
@@ -121,70 +63,131 @@ const stats = ref({
   草稿: 0
 });
 
-// 筛选
-const searchKeyword = ref('');
-const searchForm = ref({
-  workflowCode: '',
-  workflowName: '',
-  businessType: '',
-  status: ''
-});
-
-const pagination = ref({
-  page: 1,
-  pageSize: 200,
-  total: 0
-});
-
-const pendingPagination = ref({ page: 1, pageSize: 200, total: 0 });
-const donePagination = ref({ page: 1, pageSize: 200, total: 0 });
-const myPagination = ref({ page: 1, pageSize: 200, total: 0 });
-
-const gridApi = ref<GridApi | null>(null);
-
-const columnDefs: any[] = [
-  {
-    field: 'rowIndex',
-    headerName: '序号',
-    width: 60,
-    minWidth: 60,
-    maxWidth: 60,
-    resizable: false,
-    sortable: false,
-    filter: false,
-    cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-    valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
+// 列表 composable：抽取自原重复的 4-Tab 数据加载/分页/gridApi/主题等公共逻辑
+// 当前 workflow-manage 暂未接入 def_query_column 元数据驱动，仍使用 fallbackColumnDefs 兜底
+const {
+  // 主题
+  isDarkMode,
+  gridTheme,
+  // 配置
+  defaultColDef,
+  columnTypes,
+  // 列定义（由 serverColumnDefs + fallbackColumnDefs 合并；当前 serverColumnDefs 为空 → 直接用 fallback）
+  columnDefs,
+  // 状态
+  activeTab,
+  searchKeyword,
+  searchForm,
+  loading,
+  // 数据
+  listData: definitionList,
+  pendingData: pendingTasks,
+  doneData: doneTasks,
+  myData: myInstances,
+  // 分页
+  listPagination: pagination,
+  pendingPagination,
+  donePagination,
+  myPagination,
+  // gridApi
+  gridApi,
+  onGridReady,
+  // 加载方法
+  loadList,
+  loadPending: loadPendingTasks,
+  loadDone: loadDoneTasks,
+  loadMy: loadMyInstances,
+  // 事件
+  handleTabChange,
+  handleRefresh: _handleRefresh
+} = useConfigDrivenGrid<any>({
+  fetchList: fetchWorkflowDefinitionList as any,
+  fetchPending: fetchWorkflowPendingTasks as any,
+  fetchDone: fetchWorkflowDoneTasks as any,
+  fetchMy: fetchWorkflowMyInstances as any,
+  fallbackColumnDefs: [
+    {
+      field: 'rowIndex',
+      headerName: '序号',
+      width: 60,
+      minWidth: 60,
+      maxWidth: 60,
+      resizable: false,
+      sortable: false,
+      filter: false,
+      cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+      valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
+    },
+    { field: '流程编码', headerName: '流程编码', width: 150, minWidth: 120, filter: 'agTextColumnFilter' },
+    { field: '流程名称', headerName: '流程名称', width: 200, minWidth: 150, filter: 'agTextColumnFilter' },
+    { field: '业务类型', headerName: '业务类型', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
+    { field: '版本号', headerName: '版本', width: 80, minWidth: 60, type: '数值', cellStyle: { textAlign: 'right' } },
+    { field: '流程状态', headerName: '状态', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
+    { field: '流程描述', headerName: '描述', width: 220, minWidth: 150, filter: 'agTextColumnFilter' },
+    { field: '创建人', headerName: '创建人', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
+    { field: '创建时间', headerName: '创建时间', width: 160, minWidth: 140, filter: 'agDateColumnFilter' }
+  ],
+  initialSearchForm: {
+    workflowCode: '',
+    workflowName: '',
+    businessType: '',
+    status: ''
   },
-  { field: '流程编码', headerName: '流程编码', width: 150, minWidth: 120, filter: 'agTextColumnFilter' },
-  { field: '流程名称', headerName: '流程名称', width: 200, minWidth: 150, filter: 'agTextColumnFilter' },
-  { field: '业务类型', headerName: '业务类型', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
-  { field: '版本号', headerName: '版本', width: 80, minWidth: 60, type: '数值', cellStyle: { textAlign: 'right' } },
-  { field: '流程状态', headerName: '状态', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
-  { field: '流程描述', headerName: '描述', width: 220, minWidth: 150, filter: 'agTextColumnFilter' },
-  { field: '创建人', headerName: '创建人', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
-  { field: '创建时间', headerName: '创建时间', width: 160, minWidth: 140, filter: 'agDateColumnFilter' }
-];
+  defaultPageSize: 200,
+  // workflow-manage 的 fallbackColumnDefs 已自带序号列，无需再自动补
+  prependSequenceColumn: false
+});
 
-const defaultColDef = {
-  sortable: true,
-  resizable: true,
-  filter: true
-};
+// workflow-manage 特有：列表数据变化时同步更新统计卡片
+// 用 watch 监听 definitionList，避免在 loadList / handleRefresh / Tab 切换等多处显式调用
+watch(definitionList, (list) => updateStats(list));
 
-const columnTypes = {
-  数值: {
-    cellStyle: { textAlign: 'right' },
-    filter: 'agNumberColumnFilter',
-    comparator: (valueA: any, valueB: any) => {
-      const numA = valueA === null || valueA === undefined || valueA === '' ? null : Number(valueA);
-      const numB = valueB === null || valueB === undefined || valueB === '' ? null : Number(valueB);
-      if (numA === null && numB === null) return 0;
-      if (numA === null) return 1;
-      if (numB === null) return -1;
-      return numA - numB;
-    }
-  }
-};
+function updateStats(list: any[]) {
+  stats.value = {
+    总数: pagination.value.total || list.length,
+    启用: list.filter((item: any) => item.流程状态 === 'ACTIVE').length,
+    停用: list.filter((item: any) => item.流程状态 === 'INACTIVE').length,
+    草稿: list.filter((item: any) => item.流程状态 === 'DRAFT').length
+  };
+}
+
+// 本地 handleRefresh：在 composable 通用刷新基础上清空选中项，并提示用户
+async function handleRefresh() {
+  await _handleRefresh(() => {
+    selectedDefinition.value = null;
+    currentDefinition.value = null;
+    currentInstanceId.value = 0;
+  });
+  message.success('已刷新');
+}
+
+// 本地 handleSearch / handleReset：保留原命名（composable 提供 handleSearch / handleResetSearch，
+// 这里改写为对 pagination.page=1 后调用 loadList，行为与原版一致）
+function handleSearch() {
+  pagination.value.page = 1;
+  loadList();
+}
+
+function handleReset() {
+  searchForm.value = {
+    workflowCode: '',
+    workflowName: '',
+    businessType: '',
+    status: ''
+  };
+  handleSearch();
+}
+
+function handlePageChange(page: number) {
+  pagination.value.page = page;
+  loadList();
+}
+
+function handlePageSizeChange(pageSize: number) {
+  pagination.value.pageSize = pageSize;
+  pagination.value.page = 1;
+  loadList();
+}
 
 const businessTypeOptions = [
   { label: '合同', value: 'CONTRACT' },
@@ -225,130 +228,6 @@ const taskStatusTextMap: Record<string, string> = {
   REJECTED: '已拒绝',
   SKIPPED: '已跳过'
 };
-
-function onGridReady(params: { api: GridApi }) {
-  gridApi.value = params.api;
-}
-
-async function loadList() {
-  loading.value = true;
-  try {
-    const result = await fetchWorkflowDefinitionList({
-      ...searchForm.value,
-      page: pagination.value.page,
-      pageSize: pagination.value.pageSize
-    });
-    const data = (result as any)?.data || result;
-    if (data && Array.isArray(data.list)) {
-      definitionList.value = data.list;
-      pagination.value.total = data.total || 0;
-      updateStats(data.list);
-    }
-  } finally {
-    loading.value = false;
-  }
-}
-
-// 基于当前列表数据更新统计(简化处理,如需精确可单独请求统计接口)
-function updateStats(list: any[]) {
-  stats.value = {
-    总数: pagination.value.total || list.length,
-    启用: list.filter((item: any) => item.流程状态 === 'ACTIVE').length,
-    停用: list.filter((item: any) => item.流程状态 === 'INACTIVE').length,
-    草稿: list.filter((item: any) => item.流程状态 === 'DRAFT').length
-  };
-}
-
-function handleSearch() {
-  pagination.value.page = 1;
-  loadList();
-}
-
-function handleReset() {
-  searchForm.value = {
-    workflowCode: '',
-    workflowName: '',
-    businessType: '',
-    status: ''
-  };
-  handleSearch();
-}
-
-async function loadPendingTasks() {
-  loading.value = true;
-  try {
-    const result = await fetchWorkflowPendingTasks({
-      page: pendingPagination.value.page,
-      pageSize: pendingPagination.value.pageSize
-    });
-    const data = (result as any)?.data || result;
-    if (data && Array.isArray(data.list)) {
-      pendingTasks.value = data.list;
-      pendingPagination.value.total = data.total || 0;
-    }
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function loadDoneTasks() {
-  loading.value = true;
-  try {
-    const result = await fetchWorkflowDoneTasks({
-      page: donePagination.value.page,
-      pageSize: donePagination.value.pageSize
-    });
-    const data = (result as any)?.data || result;
-    if (data && Array.isArray(data.list)) {
-      doneTasks.value = data.list;
-      donePagination.value.total = data.total || 0;
-    }
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function loadMyInstances() {
-  loading.value = true;
-  try {
-    const result = await fetchWorkflowMyInstances({
-      page: myPagination.value.page,
-      pageSize: myPagination.value.pageSize
-    });
-    const data = (result as any)?.data || result;
-    if (data && Array.isArray(data.list)) {
-      myInstances.value = data.list;
-      myPagination.value.total = data.total || 0;
-    }
-  } finally {
-    loading.value = false;
-  }
-}
-
-function handleTabChange(tab: string) {
-  activeTab.value = tab as any;
-  if (tab === 'pending') {
-    loadPendingTasks();
-  } else if (tab === 'done') {
-    loadDoneTasks();
-  } else if (tab === 'my') {
-    loadMyInstances();
-  }
-}
-
-async function handleRefresh() {
-  if (gridApi.value) {
-    gridApi.value.deselectAll();
-  }
-  selectedDefinition.value = null;
-  currentDefinition.value = null;
-  currentInstanceId.value = 0;
-  await loadList();
-  if (gridApi.value) {
-    gridApi.value.refreshCells({ force: true });
-  }
-  message.success('已刷新');
-}
 
 function handleCreate() {
   formMode.value = 'create';
@@ -667,17 +546,6 @@ function handlePendingTaskClick(task: any) {
   }
 }
 
-function handlePageChange(page: number) {
-  pagination.value.page = page;
-  loadList();
-}
-
-function handlePageSizeChange(pageSize: number) {
-  pagination.value.pageSize = pageSize;
-  pagination.value.page = 1;
-  loadList();
-}
-
 function getActionButtons() {
   if (!selectedDefinition.value) return [];
   const status = selectedDefinition.value.流程状态;
@@ -753,13 +621,7 @@ function getTaskResultText(result?: string): string {
 }
 
 onMounted(async () => {
-  const savedWidth = localStorage.getItem('workflow-manage-splitter-width');
-  if (savedWidth) {
-    const width = Number(savedWidth);
-    if (!Number.isNaN(width) && width >= minLeftWidth && width <= maxLeftWidth) {
-      leftWidth.value = width;
-    }
-  }
+  // splitter 宽度恢复已由 useSplitter 内部 onMounted 处理
   await loadList();
 });
 </script>

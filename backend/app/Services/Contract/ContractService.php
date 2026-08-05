@@ -2,69 +2,32 @@
 
 namespace App\Services\Contract;
 
-use App\Libraries\MetadataCache;
 use App\Models\Mcommon;
+use App\Services\Workflow\WorkflowRoutingService;
 use App\Services\Workflow\WorkflowService;
-use App\Services\Workbench\WorkbenchSqlHelper;
 
 class ContractService
 {
     private Mcommon $model;
     private WorkflowService $workflowService;
-    private MetadataCache $metadataCache;
+    private WorkflowRoutingService $routingService;
 
     public function __construct()
     {
         $this->model = new Mcommon();
         $this->workflowService = new WorkflowService();
-        $this->metadataCache = new MetadataCache();
-    }
-
-    /**
-     * 根据合同类型解析审批流程编码（方案 C）
-     *
-     * 三层回退策略：
-     * 1. 合同类型映射的流程编码非空 → 使用映射值
-     * 2. 映射为空或合同类型不存在 → 回退到默认 'contract_approval'
-     * 3. 由调用方（WorkflowService::startProcess）负责校验流程定义是否存在
-     *
-     * @param string $contractType 合同类型编码（def_contract_type.类型编码）
-     * @return string 流程编码
-     */
-    private function resolveWorkflowCode(string $contractType): string
-    {
-        $defaultCode = 'contract_approval';
-
-        if ($contractType === '') {
-            return $defaultCode;
-        }
-
-        $sql = sprintf(
-            'select `流程编码` from `def_contract_type`
-            where `类型编码`=%s and `有效标识`=%s
-            limit 1',
-            $this->model->quote($contractType),
-            $this->model->quote('1')
-        );
-        $result = $this->model->select($sql);
-        $row = $result ? ($result->getRowArray() ?: []) : [];
-
-        $mappedCode = trim((string) ($row['流程编码'] ?? ''));
-        return $mappedCode !== '' ? $mappedCode : $defaultCode;
+        $this->routingService = new WorkflowRoutingService();
     }
 
     /**
      * 合同列表查询
      *
-     * @param array $params 筛选条件（兼容旧版硬编码字段：contractNo/contractName/...）
+     * @param array $params 筛选条件
      * @param int $page 页码
      * @param int $pageSize 每页条数
-     * @param array $filters 元数据驱动的筛选条件数组，与通用工作台 filters 协议一致：
-     *                       [{fieldKey, operator, value}, ...]
-     *                       operator ∈ contains/equals/startsWith/endsWith/greaterThan/.../isNull/isNotNull
      * @return array ['list' => array, 'total' => int, 'page' => int, 'pageSize' => int]
      */
-    public function getList(array $params, int $page = 1, int $pageSize = 20, array $filters = []): array
+    public function getList(array $params, int $page = 1, int $pageSize = 20): array
     {
         $offset = ($page - 1) * $pageSize;
 
@@ -73,7 +36,6 @@ class ContractService
 
         $where = ['`删除标识`=' . $this->model->quote('0'), '`有效标识`=' . $this->model->quote('1')];
 
-        // 兼容旧版硬编码字段筛选（向后兼容，逐步迁移到 filters 数组）
         if (!empty($params['contractNo'])) {
             $where[] = '`合同编号`=' . $this->model->quote($params['contractNo']);
         }
@@ -103,38 +65,6 @@ class ContractService
         }
         if (!empty($params['deptCode'])) {
             $where[] = '`所属部门`=' . $this->model->quote($params['deptCode']);
-        }
-
-        // 元数据驱动的 filters 数组（与通用工作台 QueryService::buildWhereConditions 对齐）
-        // 仅支持单条件 {fieldKey, operator, value} 形态；fieldOrFilter / globalSearch 不在此处理
-        if (!empty($filters)) {
-            // 加载列映射（用于把 fieldKey 解析为 SQL 字段名）
-            $columnMap = $this->buildContractColumnMap();
-
-            foreach ($filters as $filter) {
-                $fieldKey = (string) ($filter['fieldKey'] ?? '');
-                $operator = (string) ($filter['operator'] ?? '');
-                $value = (string) ($filter['value'] ?? '');
-
-                if ($fieldKey === '' || !isset($columnMap[$fieldKey])) {
-                    continue;
-                }
-                // isNull / isNotNull 不需要 value
-                $isNullOp = in_array($operator, ['isNull', 'isNotNull'], true);
-                if (!$isNullOp && $value === '') {
-                    continue;
-                }
-
-                $fieldName = (string) ($columnMap[$fieldKey]['字段名'] ?? '');
-                if ($fieldName === '') {
-                    $fieldName = '`' . $fieldKey . '`';
-                } else {
-                    // 字段名已包含反引号则原样使用，否则补反引号
-                    $fieldName = (strpos($fieldName, '`') === 0) ? $fieldName : '`' . $fieldName . '`';
-                }
-
-                $where[] = WorkbenchSqlHelper::buildSingleCondition($this->model, $fieldName, $operator, $value);
-            }
         }
 
         $whereSql = implode(' and ', $where);
@@ -406,17 +336,19 @@ class ContractService
     /**
      * 提交审批
      *
-     * 流程编码通过合同类型映射查询（方案 C）：
-     * 1. 根据合同.合同类型 查 def_contract_type.流程编码
-     * 2. 流程编码非空则使用，否则回退到默认 'contract_approval'
+     * 流程编码解析顺序：
+     *  1. 调用方显式传入 $workflowCode（非空）则优先使用；
+     *  2. 否则调用 WorkflowRoutingService 按 def_workflow_routing 配置匹配；
+     *  3. 路由未命中时使用默认值 `contract_approval`。
      *
      * @param string $contractNo 合同编号
      * @param string $sponsor 发起人工号
      * @param string $sponsorName 发起人姓名
-     * @return array ['instanceId' => int, 'tasks' => array]
+     * @param string $workflowCode 流程编码（留空则走路由匹配）
+     * @return array ['instanceId' => int, 'tasks' => array, 'workflowCode' => string, 'routing' => ?array]
      * @throws \RuntimeException
      */
-    public function submitApproval(string $contractNo, string $sponsor, string $sponsorName): array
+    public function submitApproval(string $contractNo, string $sponsor, string $sponsorName, string $workflowCode = ''): array
     {
         $contract = $this->getDetail($contractNo);
         if (!$contract) {
@@ -430,9 +362,28 @@ class ContractService
 
         $businessTitle = $contract['合同名称'] ?? '';
 
-        // 根据合同类型查询映射的流程编码
-        $contractType = (string) ($contract['合同类型'] ?? '');
-        $workflowCode = $this->resolveWorkflowCode($contractType);
+        // 流程路由解析
+        $routing = null;
+        if ($workflowCode === '') {
+            $defaultCode = 'contract_approval';
+            $routing = $this->routingService->resolveRouting('CONTRACT', $contract);
+            $workflowCode = $routing !== null
+                ? ($routing['目标流程编码'] ?? $defaultCode)
+                : $defaultCode;
+        }
+
+        // 合同字段作为流程变量传入，供流程内条件分支（def_workflow_edge 条件）使用
+        $variables = [
+            '合同编号' => $contract['合同编号'] ?? '',
+            '合同类型' => $contract['合同类型'] ?? '',
+            '合同分类' => $contract['合同分类'] ?? '',
+            '合同金额' => $contract['合同金额'] ?? 0,
+            '币种' => $contract['币种'] ?? '',
+            '所属部门' => $contract['所属部门'] ?? '',
+            '签订日期' => $contract['签订日期'] ?? '',
+            '甲方名称' => $contract['甲方名称'] ?? '',
+            '乙方名称' => $contract['乙方名称'] ?? '',
+        ];
 
         $result = $this->workflowService->startProcess(
             $workflowCode,
@@ -440,7 +391,8 @@ class ContractService
             $contractNo,
             $businessTitle,
             $sponsor,
-            $sponsorName
+            $sponsorName,
+            $variables
         );
 
         $instanceId = $result['instanceId'] ?? 0;
@@ -448,8 +400,8 @@ class ContractService
 
         $now = date('Y-m-d H:i:s');
         $sql = sprintf(
-            'update `def_contract_master_new` 
-            set `合同状态`=%s, `流程实例ID`=%s, `更新时间`=%s 
+            'update `def_contract_master_new`
+            set `合同状态`=%s, `流程实例ID`=%s, `更新时间`=%s
             where `合同编号`=%s',
             $this->model->quote('PENDING'),
             $this->model->quote((string) $instanceId),
@@ -461,6 +413,8 @@ class ContractService
         return [
             'instanceId' => $instanceId,
             'tasks' => $tasks,
+            'workflowCode' => $workflowCode,
+            'routing' => $routing,
         ];
     }
 
@@ -699,7 +653,7 @@ class ContractService
     public function getOptions(string $companyId = 'ALL'): array
     {
         $typeSql = sprintf(
-            'select `类型编码` as `value`, `类型名称` as `label`, `流程编码` as `workflowCode`
+            'select `类型编码` as `value`, `类型名称` as `label`
             from `def_contract_type`
             where `有效标识`=%s
             order by `排序号`',
@@ -974,142 +928,5 @@ class ContractService
             'fileSize' => (int) ($doc['文件大小'] ?? 0),
             'downloadUrl' => site_url('api/contractV2/downloadDocument/' . $docId),
         ];
-    }
-
-    /**
-     * 获取合同 V2 列定义（基于 def_function/def_query_config/def_query_column 元数据）
-     *
-     * 通过 view_function 视图读取指定功能编码的列定义，并组装为与通用工作台
-     * PageMeta.columns 完全一致的 ColumnMeta[] 结构，前端可直接复用通用工作台的
-     * 列转换逻辑（数值列右对齐、comparator、提示/异常样式等）。
-     *
-     * 若 functionCode 为空或 view_function 中无对应配置，返回空数组，由前端回退到
-     * 硬编码列定义（保证渐进迁移期间功能不中断）。
-     *
-     * @param string $functionCode 功能编码（如 'contract_v2_list'）
-     * @return array {functionCode: string, columns: ColumnMeta[]}
-     */
-    public function getColumnDefinitions(string $functionCode): array
-    {
-        $functionCode = trim($functionCode);
-        if ($functionCode === '') {
-            return ['functionCode' => '', 'columns' => []];
-        }
-
-        $columns = $this->metadataCache->getViewFunctionColumns($functionCode);
-        $items = [];
-
-        foreach ($columns as $column) {
-            $title = (string) ($column['列名'] ?? '');
-            $items[] = [
-                'field' => $title,
-                'title' => $title,
-                'type' => (string) ($column['列类型'] ?? '字符'),
-                'width' => (int) (($column['列宽度'] ?? 0) > 0 ? $column['列宽度'] : max(strlen($title) * 16, 120)),
-                'hidden' => false,
-                'editable' => in_array((string) ($column['可修改'] ?? '0'), ['1', '2'], true),
-                'required' => (string) ($column['不可为空'] ?? '0') === '1',
-                'sortable' => true,
-                'hintCondition' => (string) ($column['提示条件'] ?? ''),
-                'hintStyle' => (string) ($column['提示样式设置'] ?? ''),
-                'errorCondition' => (string) ($column['异常条件'] ?? ''),
-                'errorStyle' => (string) ($column['异常样式设置'] ?? ''),
-                'canMerge' => (string) ($column['可行合并'] ?? '0') === '1'
-            ];
-        }
-
-        return [
-            'functionCode' => $functionCode,
-            'columns' => $items
-        ];
-    }
-
-    /**
-     * 获取合同 V2 查询条件元数据（基于 def_query_column.可筛选 字段）
-     *
-     * 与通用工作台 PageMeta.conditions 结构一致，前端收到非空 conditions 时使用配置驱动
-     * 渲染条件面板；否则回退到前端硬编码筛选字段。
-     *
-     * 注意：通用工作台 ContextService::buildConditionDefinitions 对所有列硬编码 filterable=true，
-     * 本方法则尊重 def_query_column.可筛选 字段——仅 可筛选=1 的列出现在条件面板中。
-     *
-     * @param string $functionCode 功能编码（如 'contract_v2_list'）
-     * @return array {functionCode: string, conditions: ConditionMeta[]}
-     */
-    public function getQueryConditions(string $functionCode): array
-    {
-        $functionCode = trim($functionCode);
-        if ($functionCode === '') {
-            return ['functionCode' => '', 'conditions' => []];
-        }
-
-        $columns = $this->metadataCache->getViewFunctionColumns($functionCode);
-        $conditions = [];
-
-        foreach ($columns as $column) {
-            // 仅 可筛选=1 的列才作为查询条件
-            if ((string) ($column['可筛选'] ?? '0') !== '1') {
-                continue;
-            }
-
-            $conditions[] = [
-                'label' => (string) ($column['列名'] ?? ''),
-                'fieldKey' => (string) ($column['列名'] ?? ''),
-                'fieldName' => (string) ($column['字段名'] ?? ''),
-                'queryName' => (string) ($column['查询名'] ?? ''),
-                'type' => (string) ($column['列类型'] ?? '字符'),
-                'required' => (string) ($column['不可为空'] ?? '0') === '1',
-                'filterable' => true
-            ];
-        }
-
-        return [
-            'functionCode' => $functionCode,
-            'conditions' => $conditions
-        ];
-    }
-
-    /**
-     * 构建合同 V2 列映射（列名/字段名 → 列配置）
-     *
-     * 复用通用工作台 WorkbenchSqlHelper::buildColumnMap 的双键索引逻辑，
-     * 用于把 filters 中的 fieldKey（列名）解析为 SQL 字段名（字段名）。
-     *
-     * 优先从 def_function/def_query_column 元数据加载；若未配置则使用合同表的
-     * 内置字段映射兜底（保证 filters 在无元数据配置时仍可工作）。
-     *
-     * @return array 列名/字段名 → 列配置（含 '字段名' 键）
-     */
-    private function buildContractColumnMap(): array
-    {
-        // 优先从元数据加载（与 columns/conditions 接口同源）
-        $functionCode = 'contract_v2_list';
-        $columns = $this->metadataCache->getViewFunctionColumns($functionCode);
-
-        if (!empty($columns)) {
-            return WorkbenchSqlHelper::buildColumnMap($columns);
-        }
-
-        // 兜底：合同表的内置字段映射（列名 → 字段名，二者同名则只列一次）
-        // 字段名与 def_contract_master_new 表的列名一致
-        $fallbackColumns = [
-            ['列名' => '合同编号', '字段名' => '合同编号'],
-            ['列名' => '合同名称', '字段名' => '合同名称'],
-            ['列名' => '合同类型', '字段名' => '合同类型'],
-            ['列名' => '合同状态', '字段名' => '合同状态'],
-            ['列名' => '甲方名称', '字段名' => '甲方名称'],
-            ['列名' => '乙方名称', '字段名' => '乙方名称'],
-            ['列名' => '合同金额', '字段名' => '合同金额'],
-            ['列名' => '签订日期', '字段名' => '签订日期'],
-            ['列名' => '开始日期', '字段名' => '开始日期'],
-            ['列名' => '结束日期', '字段名' => '结束日期'],
-            ['列名' => '所属部门', '字段名' => '所属部门'],
-            ['列名' => '所属部门名称', '字段名' => '所属部门名称'],
-            ['列名' => '创建人', '字段名' => '创建人'],
-            ['列名' => '创建人姓名', '字段名' => '创建人姓名'],
-            ['列名' => '创建时间', '字段名' => '创建时间'],
-        ];
-
-        return WorkbenchSqlHelper::buildColumnMap($fallbackColumns);
     }
 }

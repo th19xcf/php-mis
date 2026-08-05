@@ -22,6 +22,7 @@ declare module "@elegant-router/types" {
     "500": "/500";
     "common": "/common";
     "contract": "/contract";
+    "contract-v2": "/contract-v2";
     "home": "/home";
     "iframe-page": "/iframe-page/:url";
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
@@ -38,6 +39,7 @@ declare module "@elegant-router/types" {
     "system_dept": "/system/dept";
     "system_role": "/system/role";
     "system_user": "/system/user";
+    "workflow-manage": "/workflow-manage";
   };
 
   /**
@@ -74,6 +76,7 @@ declare module "@elegant-router/types" {
     | "500"
     | "common"
     | "contract"
+    | "contract-v2"
     | "home"
     | "iframe-page"
     | "login"
@@ -83,6 +86,7 @@ declare module "@elegant-router/types" {
     | "personnel"
     | "room-status"
     | "system"
+    | "workflow-manage"
   >;
 
   /**
@@ -105,6 +109,7 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "login"
     | "common"
+    | "contract-v2"
     | "contract"
     | "home"
     | "match-data"
@@ -118,6 +123,7 @@ declare module "@elegant-router/types" {
     | "system_dept"
     | "system_role"
     | "system_user"
+    | "workflow-manage"
   >;
 
   /**

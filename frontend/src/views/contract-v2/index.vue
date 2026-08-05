@@ -1,78 +1,35 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onActivated, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
-import { themeAlpine, type GridApi } from 'ag-grid-community';
 import { useDialog, useMessage } from 'naive-ui';
-import { useThemeStore } from '@/store/modules/theme';
 import { useContractV2Store } from '@/store/modules/contract-v2';
-import { fetchContractV2DownloadDocument } from '@/service/api/contract-v2';
+import {
+  fetchContractV2List,
+  fetchContractV2PendingTasks,
+  fetchContractV2DoneTasks,
+  fetchContractV2MyContracts,
+  fetchContractV2DownloadDocument
+} from '@/service/api/contract-v2';
+import { useConfigDrivenGrid, useSplitter, useConditionPanel } from '@/hooks/business';
+import { fetchWorkbenchPage } from '@/service/api/workbench';
 import ContractV2Form from './components/ContractV2Form.vue';
 import ContractV2Approval from './components/ContractV2Approval.vue';
 import ContractV2FlowTimeline from './components/ContractV2FlowTimeline.vue';
 import OnlyOfficeEditor from './components/OnlyOfficeEditor.vue';
 
-const themeStore = useThemeStore();
-const isDarkMode = computed(() => themeStore.darkMode);
-
-// 与 contract V1 / generic-query-workbench 一致的主题配置
-const lightGridTheme = themeAlpine.withParams({
-  browserColorScheme: 'light',
-  rowBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  columnBorder: { style: 'dotted', width: 1, color: '#c1ccc7' },
-  rangeSelectionBorderColor: '#2196F3',
-  rangeSelectionBorderStyle: 'solid'
-});
-
-const darkGridTheme = themeAlpine.withParams({
-  browserColorScheme: 'dark',
-  rowBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  columnBorder: { style: 'dotted', width: 1, color: '#4b5965' },
-  rangeSelectionBorderColor: '#64B5F6',
-  rangeSelectionBorderStyle: 'solid'
-});
-
-const gridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
-
 const dialog = useDialog();
 const message = useMessage();
 const contractV2Store = useContractV2Store();
 
-// 左右分栏（同 V1）
-const leftWidth = ref(800);
-const minLeftWidth = 500;
-const maxLeftWidth = 1000;
-const isResizing = ref(false);
+// 左右分栏（抽取为 useSplitter）
+const { leftWidth, isResizing, startResize } = useSplitter({
+  defaultWidth: 800,
+  minWidth: 500,
+  maxWidth: 1000,
+  storageKey: 'contract-v2-splitter-width'
+});
 
-function startResize(e: MouseEvent) {
-  isResizing.value = true;
-  document.body.style.cursor = 'col-resize';
-  document.body.style.userSelect = 'none';
-
-  const startX = e.clientX;
-  const startWidth = leftWidth.value;
-
-  function onMouseMove(moveEvent: MouseEvent) {
-    if (!isResizing.value) return;
-    const delta = moveEvent.clientX - startX;
-    const newWidth = Math.max(minLeftWidth, Math.min(maxLeftWidth, startWidth + delta));
-    leftWidth.value = newWidth;
-  }
-
-  function onMouseUp() {
-    isResizing.value = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-    localStorage.setItem('contract-v2-splitter-width', String(leftWidth.value));
-  }
-
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-}
-
-const activeTab = ref<'list' | 'pending' | 'done' | 'my'>('list');
 const showFormModal = ref(false);
 const showApprovalModal = ref(false);
 const formMode = ref<'create' | 'edit'>('create');
@@ -165,46 +122,13 @@ function onEditorMouseUp() {
   document.removeEventListener('mouseup', onEditorMouseUp);
 }
 
-const searchKeyword = ref('');
-
-// 元数据驱动的条件面板（与通用工作台 WorkbenchConditionDrawer 完全对齐）
-// 后端 def_query_column.可筛选=1 的列会出现在条件面板字段下拉中
-type ConditionOperator = 'contains' | 'equals' | 'startsWith';
-const conditionVisible = ref(false);
-const selectedField = ref('');
-const selectedOperator = ref<ConditionOperator>('contains');
-const selectedValue = ref('');
-
-// 条件面板字段下拉项（label 显示列名，value 用 fieldKey）
-const conditionFieldOptions = computed(() => {
-  return (contractV2Store.conditions || [])
-    .filter(item => item.filterable)
-    .map(item => ({ label: item.label || item.fieldKey, value: item.fieldKey }));
-});
-
-// 条件面板操作符下拉项（与通用工作台 WorkbenchConditionDrawer 保持一致）
-const conditionOperatorOptions: Array<{ label: string; value: ConditionOperator }> = [
-  { label: '包含', value: 'contains' },
-  { label: '等于', value: 'equals' },
-  { label: '前缀匹配', value: 'startsWith' }
-];
-
-// 是否有生效的筛选条件（用于在工具栏显示徽标）
-const hasActiveFilter = computed(() => contractV2Store.activeFilters.length > 0);
-const activeFilterSummary = computed(() => {
-  const filters = contractV2Store.activeFilters;
-  if (filters.length === 0) return '';
-  return filters.map(f => `${f.fieldKey} ${f.operator} "${f.value}"`).join(' / ');
-});
-
-const gridApi = ref<GridApi | null>(null);
 const inlineFormRef = ref<{ submit: () => void } | null>(null);
 const selectedContract = ref<Api.ContractV2.ContractListItem | null>(null);
 
 // 合同 V2 在 def_function 中对应的功能编码
-// 当 def_function/def_query_column 中已配置该编码的列定义时，前端使用元数据驱动；
-// 否则回退到下方 fallbackColumnDefs 硬编码列定义（保证渐进迁移期间功能不中断）
-const CONTRACT_V2_FUNCTION_CODE = 'contract_v2_list';
+// 必须与后端 def_function.功能编码 完全一致（值为 'contract_v2'），
+// 否则 fetchWorkbenchPage 拉不到 def_query_column 配置
+const CONTRACT_V2_FUNCTION_CODE = 'contract_v2';
 
 // 兜底列定义：当后端 def_function/def_query_column 未配置合同 V2 列定义时使用
 const fallbackColumnDefs: any[] = [
@@ -245,167 +169,124 @@ const fallbackColumnDefs: any[] = [
   { field: '结束日期', headerName: '到期日期', width: 120, minWidth: 100, filter: 'agDateColumnFilter' }
 ];
 
-/**
- * 解析样式字符串为 CSS 对象
- * 格式: "color:red,background-color:#f7acbc,font-weight:bold"
- * 与通用工作台 use-workbench-table-edit.ts 中 parseStyleString 保持一致
- */
-function parseStyleString(styleStr: string): Record<string, string> {
-  if (!styleStr) return {};
-  const styleObj: Record<string, string> = {};
-  const items = styleStr.split(',');
-  for (const item of items) {
-    const [key, value] = item.split(':');
-    if (key && value) {
-      const camelKey = key.trim().replace(/-([a-z])/g, g => g[1].toUpperCase());
-      styleObj[camelKey] = value.trim();
-    }
-  }
-  return styleObj;
-}
-
-/**
- * 将后端 ColumnMeta 转换为 ag-grid ColDef
- * 参照通用工作台 use-workbench-table-edit.ts 第 103-242 行的转换逻辑：
- * - 数值列右对齐 + cellClass + agNumberColumnFilter + comparator（空值沉底）
- * - 提示/异常样式（行内字段 "提示^<field>" / "异常^<field>" 为 '1' 时应用）
- * - GUID 列隐藏
- * - 可合并列启用 spanRows
- */
-function convertServerColumnToColDef(column: Api.ContractV2.ColumnMeta): any {
-  const isGuidColumn =
-    String(column.field || '').trim().toUpperCase() === 'GUID' ||
-    String(column.title || '').trim().toUpperCase() === 'GUID';
-
-  // column.type 可能含前后空格，trim 后再比较
-  const isNumericColumn = (column.type || '').trim() === '数值';
-  const numericBaseStyle: Record<string, string> | null = isNumericColumn
-    ? { textAlign: 'right', justifyContent: 'flex-end' }
-    : null;
-
-  const definition: any = {
-    field: column.field,
-    headerName: column.title,
-    hide: column.hidden || isGuidColumn,
-    sortable: column.sortable,
-    filter: true,
-    resizable: true,
-    width: column.width > 0 ? column.width : 120,
-    minWidth: Math.min(column.width > 0 ? column.width : 120, 100)
-  };
-
-  if (isNumericColumn) {
-    definition.type = 'numericColumn';
-    definition.cellClass = 'wb-numeric-cell';
-    definition.filter = 'agNumberColumnFilter';
-    definition.comparator = (valueA: any, valueB: any) => {
-      const numA = valueA === null || valueA === undefined || valueA === '' ? null : Number(valueA);
-      const numB = valueB === null || valueB === undefined || valueB === '' ? null : Number(valueB);
-      if (numA === null && numB === null) return 0;
-      if (numA === null) return 1;
-      if (numB === null) return -1;
-      return numA - numB;
-    };
-    // 金额类列保留千分位 + 2 位小数格式化（与原硬编码行为一致）
-    if (column.field.includes('金额')) {
-      definition.valueFormatter = (params: any) => {
-        const val = Number(params.value);
-        if (isNaN(val)) return params.value;
-        return val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      };
-    }
-  }
-
-  if (column.canMerge) {
-    definition.editable = false;
-    definition.spanRows = (params: any) => {
-      const { nodeA, nodeB } = params;
-      if (!nodeA || !nodeB || !nodeA.data || !nodeB.data) return false;
-      const normalize = (v: unknown) => (v === null || v === undefined || v === '' ? '' : v);
-      return normalize(nodeA.data[column.field]) === normalize(nodeB.data[column.field]);
-    };
-  }
-
-  // 提示/异常样式：行数据中 "提示^<field>" / "异常^<field>" 为 '1' 时触发
-  definition.cellStyle = (params: any) => {
-    const data = params.data || {};
-    if (column.errorCondition) {
-      const errorKey = `异常^${column.field}`;
-      if (data[errorKey] === '1' || data[errorKey] === 1) {
-        return { ...numericBaseStyle, ...parseStyleString(column.errorStyle || '') };
-      }
-    }
-    if (column.hintCondition) {
-      const hintKey = `提示^${column.field}`;
-      if (data[hintKey] === '1' || data[hintKey] === 1) {
-        return { ...numericBaseStyle, ...parseStyleString(column.hintStyle || '') };
-      }
-    }
-    return numericBaseStyle;
-  };
-
-  return definition;
-}
-
-// 从 store 读取元数据驱动的列定义
-const serverColumnDefs = computed(() => contractV2Store.columnDefs);
-
-// 实际生效的列定义：优先使用元数据驱动，为空时回退到硬编码
-const columnDefs = computed<any[]>(() => {
-  const serverCols = serverColumnDefs.value;
-  if (!serverCols || serverCols.length === 0) {
-    return fallbackColumnDefs;
-  }
-  // 后端列定义不含序号列时，前端自动补一个序号列（与硬编码行为一致）
-  const hasSequence = serverCols.some(c => c.field === '序号' || c.field === 'rowIndex');
-  const converted = serverCols.map(convertServerColumnToColDef);
-  if (!hasSequence) {
-    converted.unshift({
-      field: 'rowIndex',
-      headerName: '序号',
-      width: 60,
-      minWidth: 60,
-      maxWidth: 60,
-      resizable: false,
-      sortable: false,
-      filter: false,
-      cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-      valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
-    });
-  }
-  return converted;
+// 列表 composable：抽取自原重复的 4-Tab 数据加载/分页/gridApi/主题等公共逻辑
+// 列定义支持服务端元数据驱动（def_query_column）+ 兜底硬编码
+// 数据层走 fetchContractV2* 直连 API（不走 store），store 仅负责详情/CRUD/审批/stats/options
+const {
+  // 主题
+  isDarkMode,
+  gridTheme,
+  // 配置
+  defaultColDef,
+  columnTypes,
+  // 列定义（由 serverColumnDefs + fallbackColumnDefs 合并）
+  columnDefs,
+  serverColumnDefs,
+  setServerColumnDefs,
+  // 状态
+  activeTab,
+  searchKeyword,
+  searchForm,
+  loading,
+  // 数据
+  listData: contractList,
+  pendingData: pendingTasks,
+  doneData: doneTasks,
+  myData: myContracts,
+  // 分页（仅主列表分页需在模板/脚本中直接使用；pending/done/my 的分页由 composable 内部管理）
+  listPagination: pagination,
+  // gridApi
+  gridApi,
+  onGridReady,
+  // 加载方法（loadPending 供 handleApprovalSuccess 调用；loadDone/loadMy 由 composable 内部的 handleTabChange 调用）
+  loadList,
+  loadPending,
+  // 事件
+  handleTabChange,
+  handleRefresh: _handleRefresh
+} = useConfigDrivenGrid<any>({
+  fetchList: fetchContractV2List as any,
+  fetchPending: fetchContractV2PendingTasks as any,
+  fetchDone: fetchContractV2DoneTasks as any,
+  fetchMy: fetchContractV2MyContracts as any,
+  fallbackColumnDefs,
+  initialSearchForm: {
+    contractNo: '',
+    contractName: '',
+    contractType: '',
+    contractStatus: '',
+    partyA: '',
+    partyB: ''
+  },
+  defaultPageSize: 500,
+  // fallbackColumnDefs 已自带序号列，无需再自动补
+  prependSequenceColumn: false
 });
 
-const defaultColDef = {
-  sortable: true,
-  resizable: true,
-  filter: true
-};
-
-const columnTypes = {
-  数值: {
-    cellStyle: { textAlign: 'right' },
-    filter: 'agNumberColumnFilter',
-    comparator: (valueA: any, valueB: any) => {
-      const numA = valueA === null || valueA === undefined || valueA === '' ? null : Number(valueA);
-      const numB = valueB === null || valueB === undefined || valueB === '' ? null : Number(valueB);
-      if (numA === null && numB === null) return 0;
-      if (numA === null) return 1;
-      if (numB === null) return -1;
-      return numA - numB;
-    }
-  }
-};
-
-const contractList = computed(() => contractV2Store.contractList);
-const pagination = computed(() => contractV2Store.pagination);
-const loading = computed(() => contractV2Store.loading);
+// 仍由 store 管理的状态（详情/统计/选项等，与列表无关）
 const currentContract = computed(() => contractV2Store.currentContract);
 const stats = computed(() => contractV2Store.stats);
 const options = computed(() => contractV2Store.options);
 
-function onGridReady(params: { api: GridApi }) {
-  gridApi.value = params.api;
+// 条件面板字段下拉项：优先用服务端元数据中的可筛选列，否则用 fallbackColumnDefs
+const conditionFieldOptions = computed(() => {
+  const serverCols = serverColumnDefs.value as any[];
+  if (serverCols && serverCols.length > 0) {
+    return serverCols
+      .filter((item: any) => item.filterable !== false && item.field !== 'rowIndex' && item.field !== 'GUID')
+      .map((item: any) => ({ label: item.title || item.field, value: item.field }));
+  }
+  // 兜底：从 fallbackColumnDefs 中提取可筛选列
+  return fallbackColumnDefs
+    .filter(c => c.filter !== false && c.field !== 'rowIndex')
+    .map(c => ({ label: c.headerName || c.field, value: c.field }));
+});
+
+// 本地生效的筛选条件（store 中相应方法尚未实现，由 composable 本地管理）
+const activeFilters = ref<Array<{ fieldKey: string; operator: 'contains' | 'equals' | 'startsWith'; value: string }>>([]);
+const activeFiltersComputed = computed(() => activeFilters.value);
+
+const {
+  conditionVisible,
+  selectedField,
+  selectedOperator,
+  selectedValue,
+  conditionOperatorOptions,
+  hasActiveFilter,
+  activeFilterSummary,
+  openCondition,
+  handleApplyCondition: _handleApplyCondition,
+  handleClearCondition: _handleClearCondition
+} = useConditionPanel({
+  fieldOptions: conditionFieldOptions,
+  activeFilters: activeFiltersComputed,
+  async onApply(filter) {
+    if (filter) {
+      activeFilters.value = [filter];
+      // 将条件写入 searchForm 以便 fetchList 携带
+      searchForm.value = { ...searchForm.value, [filter.fieldKey]: filter.value };
+    } else {
+      // 清除时移除所有条件字段
+      const cleared = { ...searchForm.value };
+      for (const f of activeFilters.value) {
+        delete cleared[f.fieldKey];
+      }
+      activeFilters.value = [];
+      searchForm.value = cleared;
+    }
+    pagination.value.page = 1;
+    await loadList();
+  }
+});
+
+async function handleApplyCondition() {
+  await _handleApplyCondition();
+  message.success(selectedField.value && selectedValue.value.trim() ? '已应用筛选条件' : '已清除筛选条件');
+}
+
+async function handleClearCondition() {
+  await _handleClearCondition();
+  message.success('已清除筛选条件');
 }
 
 function onRowClicked(event: { data: Api.ContractV2.ContractListItem }) {
@@ -415,59 +296,13 @@ function onRowClicked(event: { data: Api.ContractV2.ContractListItem }) {
   }
 }
 
+// 本地 handleRefresh：在 composable 通用刷新基础上清空选中项并重置 store 详情
 async function handleRefresh() {
-  if (gridApi.value) {
-    gridApi.value.deselectAll();
-  }
-  selectedContract.value = null;
-  contractV2Store.resetCurrentContract();
-  await contractV2Store.loadContractList();
-  if (gridApi.value) {
-    gridApi.value.refreshCells({ force: true });
-  }
+  await _handleRefresh(() => {
+    selectedContract.value = null;
+    contractV2Store.resetCurrentContract();
+  });
   message.success('已刷新');
-}
-
-/** 打开条件面板（与通用工作台 WorkbenchToolbar 的"条件面板"按钮对齐） */
-function openCondition() {
-  // 打开时回显当前已生效的筛选条件（取第一个，因为面板只支持单条件）
-  const active = contractV2Store.activeFilters[0];
-  if (active) {
-    selectedField.value = active.fieldKey;
-    selectedOperator.value = (active.operator as ConditionOperator) || 'contains';
-    selectedValue.value = active.value;
-  }
-  conditionVisible.value = true;
-}
-
-/** 应用条件面板筛选（与通用工作台 handleApplyCondition 对齐） */
-async function handleApplyCondition() {
-  const field = selectedField.value;
-  const operator = selectedOperator.value;
-  const value = selectedValue.value.trim();
-
-  if (field && value) {
-    contractV2Store.setActiveFilters([{ fieldKey: field, operator, value }]);
-  } else {
-    // 字段或值空时清除筛选
-    contractV2Store.setActiveFilters([]);
-  }
-  conditionVisible.value = false;
-  contractV2Store.setPage(1);
-  await contractV2Store.loadContractList();
-  message.success(field && value ? '已应用筛选条件' : '已清除筛选条件');
-}
-
-/** 清除条件面板筛选 */
-async function handleClearCondition() {
-  selectedField.value = '';
-  selectedOperator.value = 'contains';
-  selectedValue.value = '';
-  contractV2Store.clearActiveFilters();
-  conditionVisible.value = false;
-  contractV2Store.setPage(1);
-  await contractV2Store.loadContractList();
-  message.success('已清除筛选条件');
 }
 
 function handleCreate() {
@@ -522,25 +357,17 @@ function handleSubmit() {
 }
 
 async function handlePageChange(page: number) {
-  contractV2Store.setPage(page);
-  await contractV2Store.loadContractList();
+  pagination.value.page = page;
+  await loadList();
 }
 
 async function handlePageSizeChange(pageSize: number) {
-  contractV2Store.setPageSize(pageSize);
-  await contractV2Store.loadContractList();
+  pagination.value.pageSize = pageSize;
+  pagination.value.page = 1;
+  await loadList();
 }
 
-function handleTabChange(tab: string) {
-  activeTab.value = tab as any;
-  if (tab === 'pending') {
-    contractV2Store.loadPendingTasks();
-  } else if (tab === 'done') {
-    contractV2Store.loadDoneTasks();
-  } else if (tab === 'my') {
-    contractV2Store.loadMyContracts();
-  }
-}
+// handleTabChange 已由 composable 提供（调用 loadPending/loadDone/loadMy）
 
 function handleApproval(task: Api.Workflow.WorkflowTask) {
   selectedContract.value = {
@@ -554,7 +381,7 @@ function handleApproval(task: Api.Workflow.WorkflowTask) {
 function handleFormSuccess() {
   showFormModal.value = false;
   isEditMode.value = false;
-  contractV2Store.loadContractList();
+  loadList();
 }
 
 function handleCancelEdit() {
@@ -566,12 +393,10 @@ function handleSubmitInline() {
   inlineFormRef.value?.submit();
 }
 
-
-
 function handleApprovalSuccess() {
   showApprovalModal.value = false;
   if (activeTab.value === 'pending') {
-    contractV2Store.loadPendingTasks();
+    loadPending();
   }
 }
 
@@ -660,21 +485,67 @@ const approvalFiles = computed(() => {
   return (currentContract.value?.documents || []).filter(d => d.文档类型 === 'APPROVAL_FORM');
 });
 
-onMounted(async () => {
-  const savedWidth = localStorage.getItem('contract-v2-splitter-width');
-  if (savedWidth) {
-    const width = Number(savedWidth);
-    if (!Number.isNaN(width) && width >= minLeftWidth && width <= maxLeftWidth) {
-      leftWidth.value = width;
+// 列定义配置是否已加载（避免 KeepAlive 场景下重复请求）
+const columnConfigLoaded = ref(false);
+const columnConfigLoading = ref(false);
+
+// 拉取 def_query_config + def_query_column 配置，启用元数据驱动列定义；
+// 与 match-data 的 init() 主动调 fetchMatchPage 模式一致。
+// 失败或返回空时由 fallbackColumnDefs 兜底，不阻塞主流程。
+async function loadColumnConfig() {
+  if (columnConfigLoaded.value || columnConfigLoading.value) return;
+  columnConfigLoading.value = true;
+  try {
+    console.log('[ContractV2] 开始加载 def_query_column 配置, functionCode=', CONTRACT_V2_FUNCTION_CODE);
+    const res = await fetchWorkbenchPage(CONTRACT_V2_FUNCTION_CODE);
+    const columns = (res as any)?.data?.meta?.columns || [];
+    console.log('[ContractV2] def_query_column 返回列数:', columns.length, columns);
+    console.log('[ContractV2] 列字段名:', columns.map((c: any) => c.field));
+    if (columns.length > 0) {
+      setServerColumnDefs(columns);
+      columnConfigLoaded.value = true;
+      console.log('[ContractV2] 已调用 setServerColumnDefs, serverColumnDefs 当前值:', columns.length, '列');
+    } else {
+      console.warn('[ContractV2] def_query_column 未配置列定义，使用 fallbackColumnDefs 兜底');
     }
+  } catch (e) {
+    console.warn('[ContractV2] 加载 def_query_column 失败，使用 fallbackColumnDefs 兜底', e);
+  } finally {
+    columnConfigLoading.value = false;
   }
-  // 加载元数据驱动的列定义与查询条件（def_function/def_query_config/def_query_column）
-  // 失败或返回空时由前端 fallbackColumnDefs 兜底，不阻塞主流程
-  contractV2Store.loadColumnDefs(CONTRACT_V2_FUNCTION_CODE);
-  contractV2Store.loadConditions(CONTRACT_V2_FUNCTION_CODE);
+}
+
+onMounted(async () => {
+  // splitter 宽度恢复已由 useSplitter 内部 onMounted 处理
+  await loadColumnConfig();
   contractV2Store.loadOptions();
   contractV2Store.loadStats();
-  await contractV2Store.loadContractList();
+  await loadList();
+  // 诊断：打印数据字段名，与列定义 field 对比
+  if (contractList.value.length > 0) {
+    console.log('[ContractV2] 数据字段名:', Object.keys(contractList.value[0]));
+    console.log('[ContractV2] 第一行数据:', contractList.value[0]);
+  } else {
+    console.warn('[ContractV2] loadList 返回空数据');
+  }
+});
+
+// KeepAlive 场景：切回标签页时如果配置未加载（首次访问被缓存、代码更新后热替换等），
+// onMounted 不会再次触发，用 onActivated 兜底
+onActivated(async () => {
+  await loadColumnConfig();
+});
+
+// AG-Grid 在某些情况下不会自动响应 columnDefs 的变化（尤其是异步加载后），
+// 手动调用 gridApi.setGridOption('columnDefs', newDefs) 确保列定义更新生效
+watch(columnDefs, (newDefs) => {
+  if (gridApi.value && newDefs.length > 0) {
+    console.log('[ContractV2] watch columnDefs 触发, 列数:', newDefs.length, '调用 gridApi.setGridOption');
+    gridApi.value.setGridOption('columnDefs', newDefs);
+    // 确认 AG-Grid 实际生效的列定义
+    const actualCols = gridApi.value.getColumns();
+    console.log('[ContractV2] AG-Grid 实际生效列数:', actualCols?.length, actualCols?.map((c: any) => c.getColDef().field));
+  }
 });
 </script>
 
@@ -770,7 +641,7 @@ onMounted(async () => {
         />
         <div v-else-if="activeTab === 'pending'" class="task-list">
           <div
-            v-for="task in contractV2Store.pendingTasks"
+            v-for="task in pendingTasks"
             :key="task.任务ID"
             class="task-item"
             @click="handleApproval(task)"
@@ -784,10 +655,10 @@ onMounted(async () => {
               <span>发起时间：{{ task.创建时间 }}</span>
             </div>
           </div>
-          <NEmpty v-if="contractV2Store.pendingTasks.length === 0" description="暂无待办任务" class="py-20" />
+          <NEmpty v-if="pendingTasks.length === 0" description="暂无待办任务" class="py-20" />
         </div>
         <div v-else-if="activeTab === 'done'" class="task-list">
-          <div v-for="task in contractV2Store.doneTasks" :key="task.任务ID" class="task-item done">
+          <div v-for="task in doneTasks" :key="task.任务ID" class="task-item done">
             <div class="task-header">
               <span class="task-title">{{ task.业务标题 }}</span>
               <NTag size="small" :type="task.处理结果 === 'APPROVE' ? 'success' : 'error'">
@@ -799,10 +670,10 @@ onMounted(async () => {
               <span>处理时间：{{ task.处理时间 }}</span>
             </div>
           </div>
-          <NEmpty v-if="contractV2Store.doneTasks.length === 0" description="暂无已办任务" class="py-20" />
+          <NEmpty v-if="doneTasks.length === 0" description="暂无已办任务" class="py-20" />
         </div>
         <div v-else-if="activeTab === 'my'" class="task-list">
-          <div v-for="inst in contractV2Store.myContracts" :key="inst.GUID" class="task-item">
+          <div v-for="inst in myContracts" :key="inst.GUID" class="task-item">
             <div class="task-header">
               <span class="task-title">{{ inst.业务标题 }}</span>
               <NTag
@@ -817,7 +688,7 @@ onMounted(async () => {
               <span>发起时间：{{ inst.发起时间 }}</span>
             </div>
           </div>
-          <NEmpty v-if="contractV2Store.myContracts.length === 0" description="暂无发起的流程" class="py-20" />
+          <NEmpty v-if="myContracts.length === 0" description="暂无发起的流程" class="py-20" />
         </div>
       </div>
     </div>

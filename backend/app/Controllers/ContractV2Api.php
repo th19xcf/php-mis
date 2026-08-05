@@ -25,14 +25,9 @@ class ContractV2Api extends BaseApiController
             $page = (int) ($params['page'] ?? 1);
             $pageSize = (int) ($params['pageSize'] ?? 20);
 
-            // 元数据驱动的筛选条件数组（与通用工作台 filters 协议一致）
-            $filters = $params['filters'] ?? [];
-            if (!is_array($filters)) {
-                $filters = [];
-            }
-            unset($params['page'], $params['pageSize'], $params['filters']);
+            unset($params['page'], $params['pageSize']);
 
-            $result = $this->contractService->getList($params, $page, $pageSize, $filters);
+            $result = $this->contractService->getList($params, $page, $pageSize);
 
             return $this->success($result);
         } catch (\Throwable $e) {
@@ -139,11 +134,11 @@ class ContractV2Api extends BaseApiController
             }
 
             $contractNo = $data['contractNo'];
+            $workflowCode = $data['workflowCode'] ?? 'contract_approval';
             $sponsor = $this->getUserWorkId();
             $sponsorName = $this->getUserName();
 
-            // 流程编码由后端根据合同类型映射自动决定（方案 C），无需前端传入
-            $result = $this->contractService->submitApproval($contractNo, $sponsor, $sponsorName);
+            $result = $this->contractService->submitApproval($contractNo, $sponsor, $sponsorName, $workflowCode);
 
             return $this->success($result, '提交审批成功');
         } catch (\Throwable $e) {
@@ -205,62 +200,6 @@ class ContractV2Api extends BaseApiController
             return $this->success($result);
         } catch (\Throwable $e) {
             log_message('error', '[ContractV2Api::options] ' . $e->getMessage());
-            return $this->serverError($e->getMessage());
-        }
-    }
-
-    /**
-     * 获取合同 V2 列定义
-     *
-     * 通过 def_function/def_query_config/def_query_column 元数据驱动前端表格列定义，
-     * 与通用工作台 PageMeta.columns 结构一致。前端收到非空 columns 时使用配置，
-     * 否则回退到前端硬编码列定义。
-     *
-     * GET /contractV2/columns?functionCode=contract_v2_list
-     */
-    public function columns()
-    {
-        try {
-            $params = $this->request->getGet() + ($this->request->getJSON(true) ?? []);
-            $functionCode = (string) ($params['functionCode'] ?? '');
-
-            if ($functionCode === '') {
-                return $this->paramError('functionCode 不能为空');
-            }
-
-            $result = $this->contractService->getColumnDefinitions($functionCode);
-
-            return $this->success($result);
-        } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::columns] ' . $e->getMessage());
-            return $this->serverError($e->getMessage());
-        }
-    }
-
-    /**
-     * 获取合同 V2 查询条件元数据
-     *
-     * 基于 def_query_column.可筛选 字段生成 ConditionMeta[]，与通用工作台
-     * PageMeta.conditions 结构一致。前端收到非空 conditions 时使用配置驱动渲染
-     * 条件面板；否则回退到前端硬编码筛选字段。
-     *
-     * GET /contractV2/conditions?functionCode=contract_v2_list
-     */
-    public function conditions()
-    {
-        try {
-            $params = $this->request->getGet() + ($this->request->getJSON(true) ?? []);
-            $functionCode = (string) ($params['functionCode'] ?? '');
-
-            if ($functionCode === '') {
-                return $this->paramError('functionCode 不能为空');
-            }
-
-            $result = $this->contractService->getQueryConditions($functionCode);
-
-            return $this->success($result);
-        } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::conditions] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
