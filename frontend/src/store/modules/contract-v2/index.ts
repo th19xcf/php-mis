@@ -136,7 +136,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     }
   }
 
-  async function submitApproval(contractNo: string, workflowCode = 'contract_approval') {
+  async function submitApproval(contractNo: string, workflowCode = '') {
     loading.value = true;
     try {
       const res = await fetchContractV2Submit(contractNo, workflowCode);

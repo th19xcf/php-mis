@@ -45,7 +45,7 @@ export function fetchContractV2Delete(contractNo: string) {
   });
 }
 
-export function fetchContractV2Submit(contractNo: string, workflowCode = 'contract_approval') {
+export function fetchContractV2Submit(contractNo: string, workflowCode = '') {
   return request({
     url: '/contractV2/submit',
     method: 'post',
