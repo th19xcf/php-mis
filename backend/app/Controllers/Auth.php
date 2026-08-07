@@ -415,4 +415,77 @@ class Auth extends BaseApiController
         return $roleAuthz;
     }
 
+    /**
+     * 修改当前用户密码
+     *
+     * 请求方式: POST
+     * 请求头: Authorization: Bearer {accessToken}
+     * 请求体: { "oldPassword": "xxx", "newPassword": "yyy" }
+     */
+    public function changePassword()
+    {
+        $t0 = hrtime(true);
+
+        $accessToken = $this->jwtTokenService->extractBearerToken($this->request->getHeaderLine('Authorization'));
+        if (!$accessToken) {
+            return $this->response->setJSON([
+                'code' => ApiCode::AUTH_UNAUTHORIZED,
+                'msg' => '未登录'
+            ]);
+        }
+
+        try {
+            $decoded = $this->jwtTokenService->decode($accessToken);
+        } catch (\Throwable $e) {
+            return $this->response->setJSON([
+                'code' => ApiCode::AUTH_TOKEN_EXPIRED,
+                'msg' => 'token无效或已过期'
+            ]);
+        }
+
+        $userId = (int) ($decoded->userId ?? 0);
+        if ($userId <= 0) {
+            return $this->response->setJSON([
+                'code' => ApiCode::AUTH_UNAUTHORIZED,
+                'msg' => '用户不存在'
+            ]);
+        }
+
+        $payload = $this->request->getJSON(true) ?? [];
+        $oldPassword = (string) ($payload['oldPassword'] ?? '');
+        $newPassword = (string) ($payload['newPassword'] ?? '');
+
+        if ($oldPassword === '' || $newPassword === '') {
+            return $this->response->setJSON([
+                'code' => ApiCode::AUTH_CREDENTIAL_INVALID,
+                'msg' => '旧密码和新密码不能为空'
+            ]);
+        }
+
+        if (strlen($newPassword) < 6) {
+            return $this->response->setJSON([
+                'code' => ApiCode::AUTH_CREDENTIAL_INVALID,
+                'msg' => '新密码长度不能少于6位'
+            ]);
+        }
+
+        $result = $this->authModel->changePassword($userId, $oldPassword, $newPassword);
+
+        if (!$result) {
+            return $this->response->setJSON([
+                'code' => ApiCode::AUTH_CREDENTIAL_INVALID,
+                'msg' => '旧密码错误'
+            ]);
+        }
+
+        $now = date('Y-m-d H:i:s');
+        (new Mcommon())->sql_log('修改密码', '', sprintf('员工编号=%d', $userId));
+
+        return $this->response->setJSON([
+            'code' => ApiCode::SUCCESS,
+            'msg' => '密码修改成功',
+            'data' => ['success' => true]
+        ]);
+    }
+
 }

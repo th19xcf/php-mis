@@ -24,6 +24,7 @@ $routes->group('auth', static function ($routes) {
 	$routes->get('getUserInfo', 'Auth::getUserInfo');
 	$routes->post('refreshToken', 'Auth::refreshToken');
 	$routes->post('logout', 'Auth::logout');
+	$routes->post('changePassword', 'Auth::changePassword');
 });
 
 $routes->group('route', static function ($routes) {

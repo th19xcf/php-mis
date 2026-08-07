@@ -64,3 +64,20 @@ export function fetchLogout(refreshToken?: string) {
 export function fetchCustomBackendError(code: string, msg: string) {
   return request({ url: '/auth/error', params: { code, msg } });
 }
+
+/**
+ * Change user password
+ *
+ * @param oldPassword Old password
+ * @param newPassword New password
+ */
+export function fetchChangePassword(oldPassword: string, newPassword: string) {
+  return request<{ success: boolean }>({
+    url: '/auth/changePassword',
+    method: 'post',
+    data: {
+      oldPassword,
+      newPassword
+    }
+  });
+}

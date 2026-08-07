@@ -361,6 +361,37 @@ class AuthModel
     }
 
     /**
+     * 修改用户密码
+     *
+     * @param int $userId 用户ID
+     * @param string $oldPassword 旧密码
+     * @param string $newPassword 新密码
+     * @return bool 成功返回 true，旧密码错误返回 false
+     */
+    public function changePassword(int $userId, string $oldPassword, string $newPassword): bool
+    {
+        // 1. 验证旧密码是否正确
+        $sql = sprintf(
+            'select 员工编号 from def_user where 有效标识="1" and 员工编号=%d and 密码=%s',
+            $userId,
+            $this->common->quote($oldPassword)
+        );
+        $row = $this->common->select($sql)->getRowArray();
+        if (!$row) {
+            return false; // 旧密码错误
+        }
+
+        // 2. 更新为新密码
+        $updateSql = sprintf(
+            'update def_user set 密码=%s where 员工编号=%d',
+            $this->common->quote($newPassword),
+            $userId
+        );
+        $this->common->exec($updateSql);
+        return true;
+    }
+
+    /**
      * @param string[] $items
      */
     private function buildInQuoted(array $items): string
