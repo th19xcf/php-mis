@@ -32,12 +32,9 @@ class DeptApi extends BaseApiController
             return $this->paramError('部门GUID不能为空');
         }
 
+        // 返回所有字段，配合 def_query_column 配置化渲染
         $sql = sprintf('
-            SELECT GUID, 部门编码, 部门名称, 部门全称, 部门级别, 负责人,
-                上级部门编码, 有无下级部门, 属地,
-                预算表部门全称, 报表部门全称,
-                记录开始日期, 记录结束日期
-            FROM def_dept
+            SELECT * FROM def_dept
             WHERE GUID = "%s" AND 删除标识 = "0" AND 有效标识 = "1"
         ', $guid);
 
@@ -54,15 +51,21 @@ class DeptApi extends BaseApiController
     {
         $data = $this->getJsonInput();
 
-        if ($error = $this->requireParams($data, ['parentCode', 'deptName'])) {
+        // parentCode 为前端专用字段（用于定位父节点），部门名称为必填业务字段
+        if ($error = $this->requireParam($data, 'parentCode')) {
             return $error;
         }
+        if ($error = $this->requireParam($data, '部门名称')) {
+            return $error;
+        }
+
+        $parentCode = $data['parentCode'];
 
         $parentSql = sprintf('
             SELECT 部门编码, 部门名称, 部门级别, 部门全称
             FROM def_dept
             WHERE 部门编码 = "%s" AND 删除标识 = "0" AND 有效标识 = "1"
-        ', $data['parentCode']);
+        ', $parentCode);
         $parent = $this->model->select($parentSql)->getRowArray();
 
         if (!$parent) {
@@ -70,48 +73,43 @@ class DeptApi extends BaseApiController
         }
 
         $childLevel = $parent['部门级别'] + 1;
-        $newCode = $this->generateDeptCode($data['parentCode']);
+        $newCode = $this->generateDeptCode($parentCode);
 
         if (!$newCode) {
             return $this->serverError('生成部门编码失败');
         }
 
-        $fullName = $parent['部门全称'] ? $parent['部门全称'] . '>>' . $data['deptName'] : $data['deptName'];
+        $deptName = $data['部门名称'];
+        $fullName = $parent['部门全称'] ? $parent['部门全称'] . '>>' . $deptName : $deptName;
 
-        $insertSql = sprintf('
-            INSERT INTO def_dept 
-                (部门编码, 部门名称, 部门全称, 部门级别,
-                上级部门编码, 有无下级部门, 负责人, 属地, 预算表部门全称,
-                记录开始日期, 记录结束日期,
-                操作记录, 操作来源, 操作人员,
-                开始操作时间, 结束操作时间,
-                校验标识, 删除标识, 有效标识) 
-            VALUES ("%s", "%s", "%s", %d,
-                "%s", "无", "%s", "%s", "%s",
-                "%s", "",
-                "新增", "页面新增", "%s",
-                "%s", "",
-                "0", "0", "1")
-        ',
-            $newCode,
-            $data['deptName'],
-            $fullName,
-            $childLevel,
-            $data['parentCode'],
-            $data['leader'] ?? '',
-            $data['region'] ?? '',
-            $data['budgetFullName'] ?? '',
-            $data['effectiveDate'] ?? date('Y-m-d'),
-            $this->getUserWorkId(),
-            date('Y-m-d H:i:s')
-        );
+        // 从前端数据中提取业务字段（中文字段名），排除前端专用字段
+        $insertData = [];
+        foreach ($data as $key => $value) {
+            if (in_array($key, ['parentCode', 'guid'], true)) {
+                continue;
+            }
+            $insertData[$key] = $value;
+        }
 
-        $num = $this->model->exec($insertSql);
+        // 注入业务生成字段
+        $insertData['部门编码'] = $newCode;
+        $insertData['部门全称'] = $fullName;
+        $insertData['部门级别'] = $childLevel;
+        $insertData['上级部门编码'] = $parentCode;
+        $insertData['有无下级部门'] = '无';
+        if (empty($insertData['记录开始日期'])) {
+            $insertData['记录开始日期'] = date('Y-m-d');
+        }
+
+        // 注入审计字段（操作记录/操作来源/操作人员/开始操作时间/有效标识/删除标识）
+        $insertData = $this->buildInsertData($insertData);
+
+        $num = $this->insertRecord('def_dept', $insertData);
 
         if ($num > 0) {
             $updateParentSql = sprintf('
                 UPDATE def_dept SET 有无下级部门 = "有" WHERE 部门编码 = "%s"
-            ', $data['parentCode']);
+            ', $parentCode);
             $this->model->exec($updateParentSql);
 
             return $this->success(['deptCode' => $newCode], '新增部门成功');
@@ -139,37 +137,30 @@ class DeptApi extends BaseApiController
             return $this->notFound('部门不存在');
         }
 
-        $updateFields = [];
-        if (isset($data['deptName']) && $data['deptName'] !== $oldRecord['部门名称']) {
-            $updateFields[] = sprintf('部门名称 = "%s"', $data['deptName']);
-            $parentFullName = $this->getParentFullName($oldRecord['上级部门编码']);
-            $newFullName = $parentFullName ? $parentFullName . '>>' . $data['deptName'] : $data['deptName'];
-            $updateFields[] = sprintf('部门全称 = "%s"', $newFullName);
-        }
-        if (isset($data['leader'])) {
-            $updateFields[] = sprintf('负责人 = "%s"', $data['leader']);
-        }
-        if (isset($data['region'])) {
-            $updateFields[] = sprintf('属地 = "%s"', $data['region']);
-        }
-        if (isset($data['budgetFullName'])) {
-            $updateFields[] = sprintf('预算表部门全称 = "%s"', $data['budgetFullName']);
-        }
-        if (isset($data['hasChildren'])) {
-            $updateFields[] = sprintf('有无下级部门 = "%s"', $data['hasChildren']);
+        // 从前端数据中提取业务字段（中文字段名），排除前端专用字段
+        $updateData = [];
+        foreach ($data as $key => $value) {
+            if (in_array($key, ['guid', 'parentCode'], true)) {
+                continue;
+            }
+            $updateData[$key] = $value;
         }
 
-        if (empty($updateFields)) {
+        // 业务逻辑：修改部门名称时同步更新部门全称
+        if (isset($updateData['部门名称']) && $updateData['部门名称'] !== $oldRecord['部门名称']) {
+            $parentFullName = $this->getParentFullName($oldRecord['上级部门编码']);
+            $newFullName = $parentFullName ? $parentFullName . '>>' . $updateData['部门名称'] : $updateData['部门名称'];
+            $updateData['部门全称'] = $newFullName;
+        }
+
+        if (empty($updateData)) {
             return $this->success(null, '没有需要更新的字段');
         }
 
-        $updateFields[] = '操作记录 = "更新[2]"';
-        $updateFields[] = '操作来源 = "页面更新"';
-        $updateFields[] = sprintf('操作人员 = "%s"', $this->getUserWorkId());
-        $updateFields[] = sprintf('结束操作时间 = "%s"', date('Y-m-d H:i:s'));
+        // 注入审计字段
+        $updateData = $this->buildUpdateData($updateData, '更新[2]');
 
-        $updateSql = sprintf('UPDATE def_dept SET %s WHERE GUID = "%s"', implode(', ', $updateFields), $guid);
-        $num = $this->model->exec($updateSql);
+        $num = $this->updateRecord('def_dept', $updateData, sprintf('GUID = "%s"', $guid));
 
         if ($num > 0) {
             return $this->success(null, '修改部门信息成功');

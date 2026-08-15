@@ -9,6 +9,7 @@ export interface AddField {
   required?: boolean;
   objectOptions?: Array<{ value: string; label: string }>;
   defaultValue?: any;
+  inputType?: string;
 }
 
 export interface DetailField {
@@ -67,7 +68,8 @@ export function useWorkbenchFields() {
           editable: field.editable !== undefined ? field.editable : true,
           required: field.required || false,
           objectOptions: field.objectOptions || [],
-          defaultValue: field.defaultValue
+          defaultValue: field.defaultValue,
+          inputType: field.inputType || 'text'
         }));
 
         if (additionalOptions) {

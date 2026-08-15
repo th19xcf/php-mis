@@ -4,6 +4,8 @@ import type { TreeOption } from 'naive-ui';
 import { useDialog, useMessage } from 'naive-ui';
 import { fetchAddDept, fetchUpdateDept, fetchDeleteDept, fetchDeptOptions } from '@/service/api';
 import { fetchPopupLevels, fetchPopupLevelData } from '@/service/api/workbench';
+import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
+import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
 import { useDeptStore } from '@/store/modules/dept';
 
 const dialog = useDialog();
@@ -15,14 +17,15 @@ const selectedGuid = computed(() => deptStore.selectedGuid);
 const deptDetail = computed(() => deptStore.deptDetail);
 const isAddingMode = computed(() => deptStore.isAddingMode);
 const isEditingMode = computed(() => deptStore.isEditingMode);
-const addForm = computed({
-  get: () => deptStore.addForm,
-  set: val => deptStore.setAddForm(val)
-});
-const editForm = computed({
-  get: () => deptStore.editForm,
-  set: val => deptStore.setEditForm(val)
-});
+
+// 字段配置：从 def_query_column 读取
+const FUNCTION_CODE = '1010';
+const { addFields, detailFields, loadFields } = useWorkbenchFields();
+const { buildEditForm } = usePersonnelEditFormInit();
+
+// 动态表单数据（key 为中文字段名）
+const addFormDynamic = ref<Record<string, any>>({});
+const editFormDynamic = ref<Record<string, any>>({});
 
 const leftWidth = ref(320);
 const minLeftWidth = 200;
@@ -41,11 +44,11 @@ const popupMaxLevel = ref(1);
 const popupCascaderOptions = ref<any[]>([]);
 const popupSelectedValue = ref<string | null>(null);
 const popupSelectedOption = ref<any>(null);
-const popupTargetField = ref<'add' | 'edit'>('add'); // 目标字段：新增表单或编辑表单
+const popupTargetField = ref<'add' | 'edit'>('add');
+const popupColumnName = ref<string>('预算表部门全称');
 
-// 弹窗对象名称（来自 def_query_column 配置）
+// 弹窗对象名称（来自 def_query_column 配置：赋值类型=弹窗, 对象=预算部门^全称）
 const POPUP_OBJECT_NAME = '预算部门^全称';
-const FUNCTION_CODE = 'system_dept';
 
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -84,21 +87,29 @@ async function handleSelect(keys: string[]) {
   await deptStore.loadDeptDetail(keys[0]);
 }
 
-function openAddModal() {
+async function openAddModal() {
   if (!deptDetail.value) {
     message.warning('请先选择上级部门');
     return;
   }
 
-  deptStore.setAddForm({
-    parentCode: deptDetail.value.部门编码 || '',
-    parentName: deptDetail.value.部门名称 || '',
-    deptName: '',
-    leader: '',
-    region: '',
-    budgetFullName: '',
-    effectiveDate: new Date().toISOString().split('T')[0]
+  // 确保字段配置已加载
+  if (!addFields.value.length) {
+    await loadFields(FUNCTION_CODE);
+  }
+
+  // 从 addFields 初始化表单
+  const initialForm: Record<string, any> = {};
+  addFields.value.forEach(field => {
+    if (field.fieldType === '日期') {
+      initialForm[field.columnName] = new Date().toISOString().split('T')[0];
+    } else if (field.defaultValue !== undefined && field.defaultValue !== '') {
+      initialForm[field.columnName] = field.defaultValue;
+    } else {
+      initialForm[field.columnName] = '';
+    }
   });
+  addFormDynamic.value = initialForm;
   deptStore.setAddingMode(true);
 }
 
@@ -107,20 +118,20 @@ function cancelAddMode() {
 }
 
 async function saveAddMode() {
-  if (!addForm.value.deptName?.trim()) {
-    message.error('部门名称不能为空');
+  // 校验必填字段
+  const requiredField = addFields.value.find(
+    field => field.required && !addFormDynamic.value[field.columnName]?.toString().trim()
+  );
+  if (requiredField) {
+    message.error(`${requiredField.fieldName}不能为空`);
     return;
   }
 
   submitting.value = true;
   const { error } = await fetchAddDept({
-    parentCode: addForm.value.parentCode,
-    deptName: addForm.value.deptName,
-    leader: addForm.value.leader,
-    region: addForm.value.region,
-    budgetFullName: addForm.value.budgetFullName,
-    effectiveDate: addForm.value.effectiveDate || new Date().toISOString().split('T')[0]
-  });
+    ...addFormDynamic.value,
+    parentCode: deptDetail.value?.部门编码 || ''
+  } as Api.Dept.DeptAddParams);
   submitting.value = false;
 
   if (!error) {
@@ -130,19 +141,21 @@ async function saveAddMode() {
   }
 }
 
-function startEditMode() {
+async function startEditMode() {
   if (!deptDetail.value) {
     message.warning('请先选择要编辑的部门');
     return;
   }
 
-  deptStore.setEditForm({
-    guid: deptDetail.value.GUID,
-    deptName: deptDetail.value.部门名称 || '',
-    leader: deptDetail.value.负责人 || '',
-    region: deptDetail.value.属地 || '',
-    budgetFullName: deptDetail.value.预算表部门全称 || ''
-  });
+  if (!addFields.value.length) {
+    await loadFields(FUNCTION_CODE);
+  }
+
+  editFormDynamic.value = buildEditForm(
+    deptDetail.value as Record<string, any>,
+    addFields.value,
+    detailFields.value
+  );
   deptStore.setEditingMode(true);
 }
 
@@ -151,19 +164,20 @@ function cancelEditMode() {
 }
 
 async function saveEditMode() {
-  if (!editForm.value.deptName?.trim()) {
-    message.error('部门名称不能为空');
+  // 校验必填字段
+  const requiredField = detailFields.value.find(
+    field => field.editable && !editFormDynamic.value[field.columnName]?.toString().trim()
+  );
+  if (requiredField) {
+    message.error(`${requiredField.fieldName}不能为空`);
     return;
   }
 
   submitting.value = true;
   const { error } = await fetchUpdateDept({
-    guid: editForm.value.guid,
-    deptName: editForm.value.deptName,
-    leader: editForm.value.leader,
-    region: editForm.value.region,
-    budgetFullName: editForm.value.budgetFullName
-  });
+    ...editFormDynamic.value,
+    guid: deptDetail.value!.GUID
+  } as Api.Dept.DeptUpdateParams);
   submitting.value = false;
 
   if (!error) {
@@ -217,8 +231,9 @@ function renderPrefix({ option }: { option: TreeOption }) {
 }
 
 // 打开弹窗选择
-async function openPopupSelect(target: 'add' | 'edit') {
+async function openPopupSelect(target: 'add' | 'edit', columnName: string = '预算表部门全称') {
   popupTargetField.value = target;
+  popupColumnName.value = columnName;
   popupVisible.value = true;
   popupLoading.value = true;
   popupSelectedValue.value = null;
@@ -275,9 +290,9 @@ function handlePopupReplace() {
   if (popupSelectedOption.value) {
     const fullName = popupSelectedOption.value.fullName || popupSelectedOption.value.label;
     if (popupTargetField.value === 'add') {
-      addForm.value.budgetFullName = fullName;
+      addFormDynamic.value[popupColumnName.value] = fullName;
     } else {
-      editForm.value.budgetFullName = fullName;
+      editFormDynamic.value[popupColumnName.value] = fullName;
     }
   }
   popupVisible.value = false;
@@ -288,11 +303,11 @@ function handlePopupAppend() {
   if (popupSelectedOption.value) {
     const fullName = popupSelectedOption.value.fullName || popupSelectedOption.value.label;
     if (popupTargetField.value === 'add') {
-      const current = addForm.value.budgetFullName || '';
-      addForm.value.budgetFullName = current ? `${current},${fullName}` : fullName;
+      const current = addFormDynamic.value[popupColumnName.value] || '';
+      addFormDynamic.value[popupColumnName.value] = current ? `${current},${fullName}` : fullName;
     } else {
-      const current = editForm.value.budgetFullName || '';
-      editForm.value.budgetFullName = current ? `${current},${fullName}` : fullName;
+      const current = editFormDynamic.value[popupColumnName.value] || '';
+      editFormDynamic.value[popupColumnName.value] = current ? `${current},${fullName}` : fullName;
     }
   }
   popupVisible.value = false;
@@ -307,9 +322,21 @@ onMounted(async () => {
     }
   }
   deptStore.loadTreeData();
+  // 加载字段配置（从 def_query_column 读取）
+  await loadFields(FUNCTION_CODE);
+  // 属地下拉选项由后端 def_query_column 配置驱动（赋值类型=固定值, 对象=属地）
+  // fetchDeptOptions 仅用于树形结构等场景，不再强制注入 regionOptions
   const { data } = await fetchDeptOptions();
   if (data) {
     regionOptions.value = data.region || [];
+    // 兼容：若后端未返回属地下拉，则用前端选项注入 addFields
+    if (regionOptions.value.length) {
+      addFields.value.forEach(field => {
+        if (field.columnName === '属地') {
+          field.objectOptions = regionOptions.value;
+        }
+      });
+    }
   }
 });
 </script>
@@ -367,9 +394,13 @@ onMounted(async () => {
         </NSpace>
       </div>
       <div class="panel-content">
+        <!-- 新增模式：从 def_query_column.可新增=1 渲染 -->
         <div v-if="isAddingMode" class="space-y-4">
           <div class="flex justify-between items-center mb-2">
             <span class="text-lg font-600">新增下级部门</span>
+            <span class="text-sm text-gray-500">
+              上级部门：{{ deptDetail?.部门名称 }} ({{ deptDetail?.部门编码 }})
+            </span>
             <NSpace>
               <NButton type="primary" size="small" :loading="submitting" @click="saveAddMode">保存</NButton>
               <NButton size="small" @click="cancelAddMode">取消</NButton>
@@ -384,74 +415,60 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>上级部门</td>
-                <td><NTag type="success" size="small">是</NTag></td>
-                <td>{{ addForm.parentName }}</td>
-              </tr>
-              <tr>
+              <tr v-for="field in addFields" :key="field.columnName">
                 <td>
-                  部门名称
-                  <span class="text-red-500 ml-1">*</span>
+                  {{ field.fieldName }}
+                  <span v-if="field.required" class="text-red-500 ml-1">*</span>
                 </td>
                 <td><NTag type="success" size="small">是</NTag></td>
                 <td>
-                  <NInput v-model:value="addForm.deptName" placeholder="请输入部门名称" size="small" />
-                </td>
-              </tr>
-              <tr>
-                <td>负责人</td>
-                <td><NTag type="success" size="small">是</NTag></td>
-                <td>
-                  <NInput v-model:value="addForm.leader" placeholder="请输入负责人" size="small" />
-                </td>
-              </tr>
-              <tr>
-                <td>属地</td>
-                <td><NTag type="success" size="small">是</NTag></td>
-                <td>
+                  <!-- 弹窗选择 -->
+                  <template v-if="field.inputType === 'popup'">
+                    <NInput
+                      :value="addFormDynamic[field.columnName]"
+                      placeholder="请选择"
+                      size="small"
+                      readonly
+                    >
+                      <template #suffix>
+                        <NButton text type="primary" size="tiny" @click="openPopupSelect('add', field.columnName)">
+                          <template #icon>
+                            <icon-mdi-magnify />
+                          </template>
+                          选择
+                        </NButton>
+                      </template>
+                    </NInput>
+                  </template>
+                  <!-- 下拉选择（固定值/多选） -->
                   <NSelect
-                    v-model:value="addForm.region"
-                    :options="regionOptions || []"
-                    placeholder="请选择属地"
+                    v-else-if="field.objectOptions && field.objectOptions.length > 0"
+                    v-model:value="addFormDynamic[field.columnName]"
+                    :options="field.objectOptions"
                     size="small"
                     clearable
                   />
-                </td>
-              </tr>
-              <tr>
-                <td>预算表全称</td>
-                <td><NTag type="success" size="small">是</NTag></td>
-                <td>
-                  <NInput :value="addForm.budgetFullName" placeholder="请选择预算表部门全称" size="small" readonly>
-                    <template #suffix>
-                      <NButton text type="primary" size="tiny" @click="openPopupSelect('add')">
-                        <template #icon>
-                          <icon-mdi-magnify />
-                        </template>
-                        选择
-                      </NButton>
-                    </template>
-                  </NInput>
-                </td>
-              </tr>
-              <tr>
-                <td>生效日期</td>
-                <td><NTag type="success" size="small">是</NTag></td>
-                <td>
+                  <!-- 日期选择 -->
                   <NDatePicker
-                    v-model:formatted-value="addForm.effectiveDate"
+                    v-else-if="field.fieldType === '日期'"
+                    v-model:formatted-value="addFormDynamic[field.columnName]"
                     value-format="yyyy-MM-dd"
                     type="date"
                     size="small"
                     class="w-full"
                   />
+                  <!-- 文本输入 -->
+                  <NInput v-else v-model:value="addFormDynamic[field.columnName]" size="small" />
                 </td>
+              </tr>
+              <tr v-if="!addFields.length">
+                <td colspan="3" class="text-center text-gray-400">未配置可新增字段</td>
               </tr>
             </tbody>
           </NTable>
         </div>
 
+        <!-- 详情/编辑模式：从 def_query_column 全部列渲染 -->
         <div v-else-if="deptDetail" class="space-y-4">
           <div class="flex justify-between items-center mb-2">
             <span class="text-lg font-600">部门信息</span>
@@ -477,99 +494,83 @@ onMounted(async () => {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>部门编码</td>
-                <td><NTag type="default" size="small">否</NTag></td>
-                <td>{{ deptDetail.部门编码 }}</td>
-              </tr>
-              <tr>
-                <td>部门名称</td>
-                <td><NTag type="success" size="small">是</NTag></td>
+              <tr v-for="field in detailFields" :key="field.columnName">
+                <td>{{ field.fieldName }}</td>
                 <td>
-                  <template v-if="isEditingMode">
-                    <NInput v-model:value="editForm.deptName" placeholder="请输入部门名称" size="small" />
-                  </template>
-                  <template v-else>{{ deptDetail.部门名称 }}</template>
-                </td>
-              </tr>
-              <tr>
-                <td>部门全称</td>
-                <td><NTag type="default" size="small">否</NTag></td>
-                <td>{{ deptDetail.部门全称 }}</td>
-              </tr>
-              <tr>
-                <td>部门级别</td>
-                <td><NTag type="default" size="small">否</NTag></td>
-                <td>{{ deptDetail.部门级别 }}级</td>
-              </tr>
-              <tr>
-                <td>负责人</td>
-                <td><NTag type="success" size="small">是</NTag></td>
-                <td>
-                  <template v-if="isEditingMode">
-                    <NInput v-model:value="editForm.leader" placeholder="请输入负责人" size="small" />
-                  </template>
-                  <template v-else>{{ deptDetail.负责人 || '-' }}</template>
-                </td>
-              </tr>
-              <tr>
-                <td>上级部门编码</td>
-                <td><NTag type="default" size="small">否</NTag></td>
-                <td>{{ deptDetail.上级部门编码 || '-' }}</td>
-              </tr>
-              <tr>
-                <td>有无下级</td>
-                <td><NTag type="default" size="small">否</NTag></td>
-                <td>
-                  <NTag :type="deptDetail.有无下级部门 === '有' ? 'success' : 'default'" size="small">
-                    {{ deptDetail.有无下级部门 }}
+                  <NTag :type="field.editable ? 'success' : 'default'" size="small">
+                    {{ field.editable ? '是' : '否' }}
                   </NTag>
                 </td>
-              </tr>
-              <tr>
-                <td>属地</td>
-                <td><NTag type="success" size="small">是</NTag></td>
                 <td>
-                  <template v-if="isEditingMode">
-                    <NSelect
-                      v-model:value="editForm.region"
-                      :options="regionOptions || []"
-                      placeholder="请选择属地"
+                  <!-- 编辑模式 + 可修改字段 -->
+                  <template v-if="isEditingMode && field.editable">
+                    <template v-for="addField in addFields" :key="addField.columnName">
+                      <template v-if="addField.columnName === field.columnName">
+                        <!-- 弹窗选择 -->
+                        <NInput
+                          v-if="addField.inputType === 'popup'"
+                          :value="editFormDynamic[field.columnName]"
+                          placeholder="请选择"
+                          size="small"
+                          readonly
+                        >
+                          <template #suffix>
+                            <NButton
+                              text
+                              type="primary"
+                              size="tiny"
+                              @click="openPopupSelect('edit', field.columnName)"
+                            >
+                              <template #icon>
+                                <icon-mdi-magnify />
+                              </template>
+                              选择
+                            </NButton>
+                          </template>
+                        </NInput>
+                        <!-- 下拉选择 -->
+                        <NSelect
+                          v-else-if="addField.objectOptions && addField.objectOptions.length > 0"
+                          v-model:value="editFormDynamic[field.columnName]"
+                          :options="addField.objectOptions"
+                          size="small"
+                          clearable
+                        />
+                        <!-- 日期选择 -->
+                        <NDatePicker
+                          v-else-if="addField.fieldType === '日期'"
+                          v-model:formatted-value="editFormDynamic[field.columnName]"
+                          value-format="yyyy-MM-dd"
+                          type="date"
+                          size="small"
+                          class="w-full"
+                        />
+                        <!-- 文本输入 -->
+                        <NInput v-else v-model:value="editFormDynamic[field.columnName]" size="small" />
+                      </template>
+                    </template>
+                    <!-- detailFields 中可修改但 addFields 中无配置的字段：用文本输入兜底 -->
+                    <NInput
+                      v-if="!addFields.some(f => f.columnName === field.columnName)"
+                      v-model:value="editFormDynamic[field.columnName]"
                       size="small"
-                      clearable
                     />
                   </template>
-                  <template v-else>{{ deptDetail.属地 || '-' }}</template>
-                </td>
-              </tr>
-              <tr>
-                <td>预算表部门全称</td>
-                <td><NTag type="success" size="small">是</NTag></td>
-                <td>
-                  <template v-if="isEditingMode">
-                    <NInput :value="editForm.budgetFullName" placeholder="请选择预算表部门全称" size="small" readonly>
-                      <template #suffix>
-                        <NButton text type="primary" size="tiny" @click="openPopupSelect('edit')">
-                          <template #icon>
-                            <icon-mdi-magnify />
-                          </template>
-                          选择
-                        </NButton>
-                      </template>
-                    </NInput>
+                  <!-- 非编辑模式 或 不可修改字段：显示文本 -->
+                  <template v-else>
+                    <template v-if="field.columnName === '有无下级部门'">
+                      <NTag :type="deptDetail[field.columnName] === '有' ? 'success' : 'default'" size="small">
+                        {{ deptDetail[field.columnName] || '-' }}
+                      </NTag>
+                    </template>
+                    <template v-else>
+                      {{ deptDetail[field.columnName] ?? '-' }}
+                    </template>
                   </template>
-                  <template v-else>{{ deptDetail.预算表部门全称 || '-' }}</template>
                 </td>
               </tr>
-              <tr>
-                <td>记录开始日期</td>
-                <td><NTag type="default" size="small">否</NTag></td>
-                <td>{{ deptDetail.记录开始日期 || '-' }}</td>
-              </tr>
-              <tr>
-                <td>记录结束日期</td>
-                <td><NTag type="default" size="small">否</NTag></td>
-                <td>{{ deptDetail.记录结束日期 || '-' }}</td>
+              <tr v-if="!detailFields.length">
+                <td colspan="3" class="text-center text-gray-400">未配置字段</td>
               </tr>
             </tbody>
           </NTable>
