@@ -82,6 +82,17 @@ async function loadDeptTree() {
 
 async function handleSelect(keys: string[]) {
   if (keys.length === 0) return;
+
+  // 编辑/新增模式下阻止切换部门，防止丢失未保存的修改
+  if (isEditingMode.value) {
+    message.warning('当前正在编辑部门信息，请先保存或取消后再切换部门');
+    return;
+  }
+  if (isAddingMode.value) {
+    message.warning('当前正在新增部门，请先保存或取消后再切换部门');
+    return;
+  }
+
   await deptStore.loadDeptDetail(keys[0]);
 }
 
