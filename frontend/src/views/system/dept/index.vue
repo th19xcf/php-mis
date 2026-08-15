@@ -585,7 +585,7 @@ onMounted(async () => {
   <NModal
     :show="popupVisible"
     preset="card"
-    title="选择预算表部门全称"
+    :title="`选择${popupColumnName}`"
     class="w-600px"
     :mask-closable="false"
     @update:show="popupVisible = $event"
