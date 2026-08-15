@@ -45,10 +45,8 @@ const popupCascaderOptions = ref<any[]>([]);
 const popupSelectedValue = ref<string | null>(null);
 const popupSelectedOption = ref<any>(null);
 const popupTargetField = ref<'add' | 'edit'>('add');
-const popupColumnName = ref<string>('预算表部门全称');
-
-// 弹窗对象名称（来自 def_query_column 配置：赋值类型=弹窗, 对象=预算部门^全称）
-const POPUP_OBJECT_NAME = '预算部门^全称';
+const popupColumnName = ref<string>('');
+const popupObjectName = ref<string>('');
 
 function startResize(e: MouseEvent) {
   isResizing.value = true;
@@ -231,22 +229,23 @@ function renderPrefix({ option }: { option: TreeOption }) {
 }
 
 // 打开弹窗选择
-async function openPopupSelect(target: 'add' | 'edit', columnName: string = '预算表部门全称') {
+async function openPopupSelect(target: 'add' | 'edit', columnName: string, objectName: string) {
   popupTargetField.value = target;
   popupColumnName.value = columnName;
+  popupObjectName.value = objectName;
   popupVisible.value = true;
   popupLoading.value = true;
   popupSelectedValue.value = null;
   popupSelectedOption.value = null;
 
   try {
-    const { data } = await fetchPopupLevels(FUNCTION_CODE, POPUP_OBJECT_NAME);
+    const { data } = await fetchPopupLevels(FUNCTION_CODE, objectName);
     if (data) {
       popupLevels.value = data.levels || [];
       popupMaxLevel.value = data.maxLevel || 1;
 
       // 加载第一级数据
-      const levelData = await fetchPopupLevelData(FUNCTION_CODE, POPUP_OBJECT_NAME, 1, '');
+      const levelData = await fetchPopupLevelData(FUNCTION_CODE, objectName, 1, '');
       if (levelData.data) {
         popupCascaderOptions.value = levelData.data.items.map(item => ({
           label: item.name,
@@ -267,7 +266,7 @@ async function openPopupSelect(target: 'add' | 'edit', columnName: string = '预
 // 懒加载子节点
 async function handleLoadCascaderChildren(node: any): Promise<void> {
   const parentCode = node.fullName || node.value;
-  const { data } = await fetchPopupLevelData(FUNCTION_CODE, POPUP_OBJECT_NAME, node.level + 1, parentCode);
+  const { data } = await fetchPopupLevelData(FUNCTION_CODE, popupObjectName.value, node.level + 1, parentCode);
   if (data) {
     node.children = data.items.map(item => ({
       label: item.name,
@@ -431,7 +430,7 @@ onMounted(async () => {
                       readonly
                     >
                       <template #suffix>
-                        <NButton text type="primary" size="tiny" @click="openPopupSelect('add', field.columnName)">
+                        <NButton text type="primary" size="tiny" @click="openPopupSelect('add', field.columnName, field.objectName || '')">
                           <template #icon>
                             <icon-mdi-magnify />
                           </template>
@@ -519,7 +518,7 @@ onMounted(async () => {
                               text
                               type="primary"
                               size="tiny"
-                              @click="openPopupSelect('edit', field.columnName)"
+                              @click="openPopupSelect('edit', field.columnName, addField.objectName || '')"
                             >
                               <template #icon>
                                 <icon-mdi-magnify />
