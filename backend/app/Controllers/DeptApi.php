@@ -44,6 +44,10 @@ class DeptApi extends BaseApiController
             return $this->notFound('部门不存在');
         }
 
+        // 剔除二进制 UUID 字段，避免 JSON 编码失败（Malformed UTF-8 characters）
+        // UUID 字段供 def_audit_log 审计日志关联使用，不向前端返回
+        unset($result['UUID']);
+
         return $this->success($result);
     }
 

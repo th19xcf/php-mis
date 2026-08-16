@@ -1,8 +1,9 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue';
-import { NButton, NInput, NTag, NCard, NDropdown, useMessage } from 'naive-ui';
+import { NButton, NInput, NTag, NCard, NDropdown } from 'naive-ui';
 import SvgIcon from '@/components/custom/svg-icon.vue';
 import { invalidateAllCache } from '@/service/api/cache';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
 defineProps<{
   quickKeyword: string;
@@ -40,7 +41,7 @@ const emit = defineEmits<{
   refreshCache: [];
 }>();
 
-const ms = useMessage();
+const ms = useMessageWithConsole();
 const cacheRefreshing = ref(false);
 
 async function handleRefreshCache() {

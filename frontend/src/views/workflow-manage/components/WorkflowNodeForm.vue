@@ -1,6 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, watch, computed } from 'vue';
-import { useMessage, useDialog } from 'naive-ui';
+import { useDialog } from 'naive-ui';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
   fetchWorkflowNodeCreate,
   fetchWorkflowNodeUpdate,
@@ -21,7 +22,7 @@ const emit = defineEmits<{
   success: [];
 }>();
 
-const message = useMessage();
+const message = useMessageWithConsole();
 const dialog = useDialog();
 
 const formData = ref({

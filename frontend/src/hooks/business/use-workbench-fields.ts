@@ -17,6 +17,7 @@ export interface DetailField {
   columnName: string;
   fieldName: string;
   editable?: boolean;
+  required?: boolean;
 }
 
 export interface WorkbenchFieldOptions {
@@ -93,7 +94,8 @@ export function useWorkbenchFields() {
         detailFields.value = detailResult.data.fields.map((field: any) => ({
           columnName: field.columnName,
           fieldName: field.fieldName,
-          editable: field.editable !== undefined ? field.editable : false
+          editable: field.editable !== undefined ? field.editable : false,
+          required: field.required === true || field.required === '1' || field.required === 1
         }));
       }
     } catch (error) {

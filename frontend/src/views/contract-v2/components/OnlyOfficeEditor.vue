@@ -1,6 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
-import { useMessage } from 'naive-ui';
+import {  } from 'naive-ui';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
 declare global {
   interface Window {
@@ -23,7 +24,7 @@ const emit = defineEmits<{
   error: [error: any];
 }>();
 
-const message = useMessage();
+const message = useMessageWithConsole();
 const editorContainerRef = ref<HTMLDivElement | null>(null);
 let docEditor: any = null;
 

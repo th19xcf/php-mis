@@ -1,8 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
-import { useDialog, useMessage } from 'naive-ui';
+import { useDialog } from 'naive-ui';
 import {
   fetchWorkflowDefinitionList,
   fetchWorkflowDefinitionDelete,
@@ -20,13 +20,14 @@ import {
   fetchWorkflowEdgeDelete
 } from '@/service/api/workflow';
 import { useConfigDrivenGrid, useSplitter } from '@/hooks/business';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import WorkflowDefForm from './components/WorkflowDefForm.vue';
 import WorkflowNodeForm from './components/WorkflowNodeForm.vue';
 import WorkflowEdgeForm from './components/WorkflowEdgeForm.vue';
 import WorkflowFlowTimeline from './components/WorkflowFlowTimeline.vue';
 
 const dialog = useDialog();
-const message = useMessage();
+const message = useMessageWithConsole();
 
 // 左右分栏（抽取为 useSplitter）
 const { leftWidth, isResizing, startResize } = useSplitter({

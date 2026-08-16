@@ -1,7 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, computed, watch, toRef } from 'vue';
 import type { TreeOption } from 'naive-ui';
-import { useMessage } from 'naive-ui';
+import {  } from 'naive-ui';
 import { useRoute } from 'vue-router';
 import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview } from '@/service/api';
 import { useInterviewStore } from '@/store/modules/interview';
@@ -12,8 +12,9 @@ import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 import { usePersonnelTreeSearch } from '@/hooks/business/use-personnel-tree-search';
 import { usePersonnelTreeIcon } from '@/hooks/business/use-personnel-tree-icon';
 import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
-const message = useMessage();
+const message = useMessageWithConsole();
 const route = useRoute();
 const interviewStore = useInterviewStore();
 const { confirmDelete, confirmTransfer } = useDangerConfirm();

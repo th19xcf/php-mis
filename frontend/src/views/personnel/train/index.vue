@@ -1,8 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed, watch, onMounted, toRef } from 'vue';
 import { useRoute } from 'vue-router';
 import type { TreeOption } from 'naive-ui';
-import { useMessage } from 'naive-ui';
+import {  } from 'naive-ui';
 import { useTrainStore } from '@/store/modules/train';
 import { fetchUpdateTrain, fetchBatchUpdateTrain, fetchDeleteTrain, fetchTransferTrain } from '@/service/api';
 import { useSplitter } from '@/hooks/business/use-splitter';
@@ -12,9 +12,10 @@ import { useDangerConfirm } from '@/hooks/business/use-danger-confirm';
 import { usePersonnelTreeSearch } from '@/hooks/business/use-personnel-tree-search';
 import { usePersonnelTreeIcon } from '@/hooks/business/use-personnel-tree-icon';
 import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
 const route = useRoute();
-const message = useMessage();
+const message = useMessageWithConsole();
 const trainStore = useTrainStore();
 const { confirmDelete, confirmBatch, confirmTransfer } = useDangerConfirm();
 

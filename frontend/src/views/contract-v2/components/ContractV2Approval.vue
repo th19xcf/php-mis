@@ -1,7 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, computed } from 'vue';
-import { useMessage } from 'naive-ui';
+import {  } from 'naive-ui';
 import { useContractV2Store } from '@/store/modules/contract-v2';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
 const props = defineProps<{
   visible: boolean;
@@ -13,7 +14,7 @@ const emit = defineEmits<{
   success: [];
 }>();
 
-const message = useMessage();
+const message = useMessageWithConsole();
 const contractV2Store = useContractV2Store();
 
 const loading = computed(() => contractV2Store.loading);

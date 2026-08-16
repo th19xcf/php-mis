@@ -23,6 +23,12 @@ class BaseApiController extends BaseController
 
     private ?AuthorizationService $authService = null;
 
+    /**
+     * 表字段列表缓存（请求内静态缓存，避免同一表反复 SHOW COLUMNS）
+     * 格式: [tableName => [col1, col2, ...]]
+     */
+    private static array $tableColumnsCache = [];
+
     public function initController(RequestInterface $request, ResponseInterface $response, LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
@@ -250,12 +256,15 @@ class BaseApiController extends BaseController
             throw new \InvalidArgumentException("非法表名: {$table}");
         }
 
+        $columns = $this->getTableColumns($table);
         $fields = [];
         $values = [];
 
         foreach ($data as $key => $value) {
             if ($key === '操作') continue;
             if (!$this->isValidIdentifier($key)) continue;
+            // 过滤掉表中不存在的字段（如老表无"操作时间"列）
+            if (!empty($columns) && !in_array($key, $columns, true)) continue;
             $fields[] = sprintf('`%s`', $key);
             $values[] = $this->model->quote((string)$value);
         }
@@ -271,7 +280,38 @@ class BaseApiController extends BaseController
             implode(',', $values)
         );
 
-        return $this->model->exec($sql);
+        $affected = $this->model->exec($sql);
+
+        // 写入审计日志
+        if ($affected > 0) {
+            try {
+                $db = $this->model->getDb();
+                $newGuid = (string) $db->insertID();
+
+                // 查新行的 UUID（仅当表存在 UUID 列时）
+                $newUuidBin = null;
+                if (in_array('UUID', $columns, true)) {
+                    $row = $this->model->select("SELECT UUID FROM `{$table}` WHERE GUID={$newGuid}")->getRowArray();
+                    if ($row && !empty($row['UUID'])) {
+                        $newUuidBin = $row['UUID'];
+                    }
+                }
+
+                $this->writeAuditLog(
+                    $table,
+                    $newGuid,
+                    $newUuidBin,
+                    '新增',
+                    '全部',
+                    null,
+                    '新增记录'
+                );
+            } catch (\Throwable $e) {
+                $this->logTrace('error', "审计日志写入失败(insert) table={$table}: " . $e->getMessage());
+            }
+        }
+
+        return $affected;
     }
 
     protected function updateRecord(string $table, array $data, string $where): int
@@ -280,13 +320,120 @@ class BaseApiController extends BaseController
             throw new \InvalidArgumentException("非法表名: {$table}");
         }
 
-        $updateFields = [];
+        $columns = $this->getTableColumns($table);
 
+        // 计算 effectiveUpdateKeys（实际会写入数据库的字段，与下方 updateFields 逻辑保持一致）
+        $effectiveUpdateKeys = [];
         foreach ($data as $key => $value) {
             if (in_array($key, ['guid', '操作', '人员'])) continue;
             if (!$this->isValidIdentifier($key)) continue;
             if ($value === '') continue;
-            $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote((string)$value));
+            if (!empty($columns) && !in_array($key, $columns, true)) continue;
+            $effectiveUpdateKeys[] = $key;
+        }
+
+        if (empty($effectiveUpdateKeys)) {
+            return 0;
+        }
+
+        // === 写入前：读取旧值快照（GUID/UUID/受影响字段） ===
+        $oldRows = [];
+        try {
+            $selectCols = ['GUID'];
+            if (in_array('UUID', $columns, true)) {
+                $selectCols[] = 'UUID';
+            }
+            foreach ($effectiveUpdateKeys as $k) {
+                if (!in_array($k, $selectCols, true)) {
+                    $selectCols[] = $k;
+                }
+            }
+            $colList = implode(',', array_map(fn($c) => "`{$c}`", $selectCols));
+            $oldRows = $this->model->select("SELECT {$colList} FROM `{$table}` WHERE {$where}")->getResultArray() ?: [];
+        } catch (\Throwable $e) {
+            $this->logTrace('error', "审计日志读取旧值失败(update) table={$table}: " . $e->getMessage());
+        }
+
+        // === 执行原 update ===
+        $updateFields = [];
+        foreach ($effectiveUpdateKeys as $key) {
+            $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote((string)$data[$key]));
+        }
+
+        $sql = sprintf(
+            'UPDATE `%s` SET %s WHERE %s',
+            $table,
+            implode(',', $updateFields),
+            $where
+        );
+
+        $affected = $this->model->exec($sql);
+
+        // === 写入后：按字段对比，写审计日志 ===
+        if ($affected > 0 && !empty($oldRows)) {
+            try {
+                foreach ($oldRows as $oldRow) {
+                    $rowGuid = (string)($oldRow['GUID'] ?? '');
+                    $rowUuid = $oldRow['UUID'] ?? null;
+
+                    foreach ($effectiveUpdateKeys as $field) {
+                        $oldVal = $oldRow[$field] ?? null;
+                        $newVal = $data[$field] ?? null;
+
+                        // 值未变化则跳过（NULL 与空串视为相同）
+                        if ((string)$oldVal === (string)$newVal) continue;
+
+                        $this->writeAuditLog(
+                            $table,
+                            $rowGuid,
+                            $rowUuid,
+                            '更新',
+                            $field,
+                            $oldVal !== null ? (string)$oldVal : null,
+                            $newVal !== null ? (string)$newVal : null
+                        );
+                    }
+                }
+            } catch (\Throwable $e) {
+                $this->logTrace('error', "审计日志写入失败(update) table={$table}: " . $e->getMessage());
+            }
+        }
+
+        return $affected;
+    }
+
+    protected function deleteRecord(string $table, string $where): int
+    {
+        if (!$this->isValidIdentifier($table)) {
+            throw new \InvalidArgumentException("非法表名: {$table}");
+        }
+
+        $columns = $this->getTableColumns($table);
+
+        // === 删除前：读取整行快照（GUID/UUID） ===
+        $oldRows = [];
+        try {
+            $selectCols = ['GUID'];
+            if (in_array('UUID', $columns, true)) {
+                $selectCols[] = 'UUID';
+            }
+            $colList = implode(',', array_map(fn($c) => "`{$c}`", $selectCols));
+            $oldRows = $this->model->select("SELECT {$colList} FROM `{$table}` WHERE {$where}")->getResultArray() ?: [];
+        } catch (\Throwable $e) {
+            $this->logTrace('error', "审计日志读取旧值失败(delete) table={$table}: " . $e->getMessage());
+        }
+
+        $deleteData = $this->buildDeleteData();
+        $updateFields = [];
+
+        foreach ($deleteData as $key => $value) {
+            if (!empty($columns) && !in_array($key, $columns, true)) continue;
+            $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote($value));
+        }
+
+        // 记录结束日期：仅当表存在该列时才写入
+        if (empty($columns) || in_array('记录结束日期', $columns, true)) {
+            $updateFields[] = sprintf('`记录结束日期`=%s', $this->model->quote(date('Y-m-d')));
         }
 
         if (empty($updateFields)) {
@@ -300,31 +447,110 @@ class BaseApiController extends BaseController
             $where
         );
 
-        return $this->model->exec($sql);
+        $affected = $this->model->exec($sql);
+
+        // === 写入审计日志 ===
+        if ($affected > 0 && !empty($oldRows)) {
+            try {
+                foreach ($oldRows as $oldRow) {
+                    $rowGuid = (string)($oldRow['GUID'] ?? '');
+                    $rowUuid = $oldRow['UUID'] ?? null;
+
+                    $this->writeAuditLog(
+                        $table,
+                        $rowGuid,
+                        $rowUuid,
+                        '删除',
+                        '全部',
+                        '删除前记录',
+                        null
+                    );
+                }
+            } catch (\Throwable $e) {
+                $this->logTrace('error', "审计日志写入失败(delete) table={$table}: " . $e->getMessage());
+            }
+        }
+
+        return $affected;
     }
 
-    protected function deleteRecord(string $table, string $where): int
-    {
-        if (!$this->isValidIdentifier($table)) {
-            throw new \InvalidArgumentException("非法表名: {$table}");
+    /**
+     * 写入审计日志到 def_audit_log
+     *
+     * 设计原则：
+     *  - 失败时只记 log，不抛异常（避免审计拖垮主业务）
+     *  - 记录UUID 为 NULL 时用 0x00...00 占位（满足 NOT NULL 约束）
+     *  - 原值/新值截断到 200 字符（匹配 varchar(200) 列定义）
+     *
+     * @param string       $table    业务表名
+     * @param string       $pkGuid   业务记录 GUID（字符串形式）
+     * @param string|null  $pkUuid   业务记录 UUID（binary 16 字节）
+     * @param string       $opType   操作类型（新增/更新/删除）
+     * @param string       $field    变更字段名（INSERT/DELETE 用"全部"）
+     * @param string|null  $oldValue 原值
+     * @param string|null  $newValue 新值
+     */
+    private function writeAuditLog(
+        string $table,
+        string $pkGuid,
+        ?string $pkUuid,
+        string $opType,
+        string $field,
+        ?string $oldValue,
+        ?string $newValue
+    ): void {
+        // 操作人员：优先从 SessionUserContext 获取，失败兜底为 'system'
+        try {
+            $operator = $this->userContext->getWorkId() ?: 'system';
+        } catch (\Throwable $e) {
+            $operator = 'system';
         }
 
-        $deleteData = $this->buildDeleteData();
-        $updateFields = [];
+        // UUID 兜底：NULL 时用 16 字节 0x00 占位（满足 binary(16) NOT NULL 约束）
+        $uuidBin = $pkUuid ?? str_repeat("\x00", 16);
 
-        foreach ($deleteData as $key => $value) {
-            $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote($value));
-        }
+        // 原值/新值截断到 200 字符
+        $oldValTrimmed = $oldValue !== null ? mb_substr((string)$oldValue, 0, 200) : null;
+        $newValTrimmed = $newValue !== null ? mb_substr((string)$newValue, 0, 200) : null;
 
-        $sql = sprintf(
-            'UPDATE `%s` SET %s, `记录结束日期`=%s WHERE %s',
+        // 用参数绑定写入，避免 SQL 注入和二进制转义问题
+        $sql = "INSERT INTO def_audit_log (表名, 记录GUID, 记录UUID, 操作类型, 变更字段, 原值, 新值, 操作人员) "
+             . "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+        $this->model->query($sql, [
             $table,
-            implode(',', $updateFields),
-            $this->model->quote(date('Y-m-d')),
-            $where
-        );
+            $pkGuid,
+            $uuidBin,
+            $opType,
+            $field,
+            $oldValTrimmed,
+            $newValTrimmed,
+            $operator,
+        ]);
+    }
 
-        return $this->model->exec($sql);
+    /**
+     * 获取表的实际字段列表（带请求级静态缓存）
+     *
+     * 用于 insertRecord/updateRecord/deleteRecord 过滤掉表中不存在的字段，
+     * 避免 AuditFieldsTrait 注入的"操作时间"等字段在老表（如 def_dept）上引发
+     * "Unknown column" 500 错误。
+     *
+     * @param string $table 表名
+     * @return array 字段名列表，空数组表示查询失败
+     */
+    protected function getTableColumns(string $table): array
+    {
+        if (!isset(self::$tableColumnsCache[$table])) {
+            try {
+                $rows = $this->model->select("SHOW COLUMNS FROM `{$table}`")->getResultArray();
+                self::$tableColumnsCache[$table] = $rows ? array_column($rows, 'Field') : [];
+            } catch (\Throwable $e) {
+                self::$tableColumnsCache[$table] = [];
+                log_message('error', "[getTableColumns] 获取表字段失败 table={$table} error=" . $e->getMessage());
+            }
+        }
+        return self::$tableColumnsCache[$table];
     }
 
     /**

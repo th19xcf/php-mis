@@ -1,15 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted, h, computed } from 'vue';
 import type { TreeOption } from 'naive-ui';
-import { useDialog, useMessage } from 'naive-ui';
+import { useDialog } from 'naive-ui';
 import { fetchAddDept, fetchUpdateDept, fetchDeleteDept, fetchDeptOptions } from '@/service/api';
 import { fetchPopupLevels, fetchPopupLevelData } from '@/service/api/workbench';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
 import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
 import { useDeptStore } from '@/store/modules/dept';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
 const dialog = useDialog();
-const message = useMessage();
+const message = useMessageWithConsole();
 const deptStore = useDeptStore();
 
 const treeData = computed(() => deptStore.treeData);
@@ -127,9 +128,13 @@ function cancelAddMode() {
 }
 
 async function saveAddMode() {
-  // 校验必填字段
+  // 校验必填字段：required=true 才校验，editable 仅表示是否允许修改
   const requiredField = addFields.value.find(
-    field => field.required && !addFormDynamic.value[field.columnName]?.toString().trim()
+    field => field.required && (
+      addFormDynamic.value[field.columnName] === undefined
+      || addFormDynamic.value[field.columnName] === null
+      || !String(addFormDynamic.value[field.columnName]).trim()
+    )
   );
   if (requiredField) {
     message.error(`${requiredField.fieldName}不能为空`);
@@ -173,9 +178,13 @@ function cancelEditMode() {
 }
 
 async function saveEditMode() {
-  // 校验必填字段
+  // 校验必填字段：required=true 才校验，editable 仅表示是否允许修改
   const requiredField = detailFields.value.find(
-    field => field.editable && !editFormDynamic.value[field.columnName]?.toString().trim()
+    field => field.required && (
+      editFormDynamic.value[field.columnName] === undefined
+      || editFormDynamic.value[field.columnName] === null
+      || !String(editFormDynamic.value[field.columnName]).trim()
+    )
   );
   if (requiredField) {
     message.error(`${requiredField.fieldName}不能为空`);

@@ -54,9 +54,6 @@ class FieldConfigService
             $columns = array_values($columns);
             log_message('info', "getAddFields: found " . count($columns) . " columns");
 
-            $popupColumnMap = $this->getPopupColumnMap();
-            log_message('info', "getAddFields: popupColumnMap keys: " . json_encode(array_keys($popupColumnMap), JSON_UNESCAPED_UNICODE));
-
             $objectNames = [];
             foreach ($columns as $col) {
                 $赋值类型 = $col['赋值类型'] ?? '';
@@ -101,14 +98,6 @@ class FieldConfigService
                 if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
                     $field['inputType'] = 'popup';
                     $field['objectName'] = $对象;
-                }
-
-                $columnName = $col['列名'] ?? '';
-                $inPopupMap = isset($popupColumnMap[$columnName]);
-                if ($inPopupMap) {
-                    $field['inputType'] = 'popup';
-                    $field['objectName'] = $popupColumnMap[$columnName];
-                    log_message('info', "getAddFields: columnName={$columnName} found in popupColumnMap, objectName={$field['objectName']}");
                 }
 
                 if (empty($field['inputType'])) {
@@ -196,8 +185,6 @@ class FieldConfigService
             $columns = array_values($columns);
             $fields = [];
 
-            $popupColumnMap = $this->getPopupColumnMap();
-
             $objectNames = [];
             foreach ($columns as $col) {
                 $赋值类型 = $col['赋值类型'] ?? '';
@@ -251,12 +238,6 @@ class FieldConfigService
                     $field['objectName'] = $对象;
                 }
 
-                $columnName = $col['列名'] ?? '';
-                if (!empty($columnName) && isset($popupColumnMap[$columnName])) {
-                    $field['inputType'] = 'popup';
-                    $field['objectName'] = $popupColumnMap[$columnName];
-                }
-
                 $fields[] = $field;
             }
 
@@ -285,8 +266,6 @@ class FieldConfigService
             $columns = array_filter($allColumns, fn($c) => in_array(($c['可修改'] ?? '0'), ['1', '2'], true));
             $columns = array_values($columns);
             $fields = [];
-
-            $popupColumnMap = $this->getPopupColumnMap();
 
             $objectNames = [];
             foreach ($columns as $col) {
@@ -329,12 +308,6 @@ class FieldConfigService
                 if (strpos($赋值类型, '弹窗') !== false && !empty($对象)) {
                     $field['inputType']  = 'popup';
                     $field['objectName'] = $对象;
-                }
-
-                $columnName = $col['列名'] ?? '';
-                if (!empty($columnName) && isset($popupColumnMap[$columnName])) {
-                    $field['inputType'] = 'popup';
-                    $field['objectName'] = $popupColumnMap[$columnName];
                 }
 
                 $fields[] = $field;
@@ -526,16 +499,6 @@ class FieldConfigService
             log_message('error', 'getObjectOptionsBatch 失败: ' . $e->getMessage());
             return array_fill_keys(array_values(array_unique($objectNames)), []);
         }
-    }
-
-    /**
-     * 从 def_query_column 表获取弹窗配置映射（使用长缓存）
-     *
-     * @return array [列名/查询名/字段名 => 对象名]
-     */
-    private function getPopupColumnMap(): array
-    {
-        return $this->metadataCache->getPopupColumnMap();
     }
 
     /**

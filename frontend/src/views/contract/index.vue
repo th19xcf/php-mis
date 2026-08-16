@@ -1,11 +1,12 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
 import { themeAlpine, type GridApi } from 'ag-grid-community';
-import { useDialog, useMessage, useNotification } from 'naive-ui';
+import { useDialog,  useNotification } from 'naive-ui';
 import { useThemeStore } from '@/store/modules/theme';
 import { useContractStore } from '@/store/modules/contract';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import ContractForm from './components/ContractForm.vue';
 import ContractApproval from './components/ContractApproval.vue';
 import ContractSigning from './components/ContractSigning.vue';
@@ -33,7 +34,7 @@ const darkGridTheme = themeAlpine.withParams({
 const gridTheme = computed(() => (isDarkMode.value ? darkGridTheme : lightGridTheme));
 
 const dialog = useDialog();
-const message = useMessage();
+const message = useMessageWithConsole();
 const notification = useNotification();
 const contractStore = useContractStore();
 

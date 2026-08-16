@@ -1,12 +1,13 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref, reactive } from 'vue';
 import type { VNode } from 'vue';
 import { useAuthStore } from '@/store/modules/auth';
 import { useRouterPush } from '@/hooks/common/router';
 import { useSvgIcon } from '@/hooks/common/icon';
 import { fetchChangePassword } from '@/service/api/auth';
-import { useMessage } from 'naive-ui';
+import {  } from 'naive-ui';
 import { $t } from '@/locales';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
 defineOptions({
   name: 'UserAvatar'
@@ -15,7 +16,7 @@ defineOptions({
 const authStore = useAuthStore();
 const { routerPushByKey, toLogin } = useRouterPush();
 const { SvgIconVNode } = useSvgIcon();
-const message = useMessage();
+const message = useMessageWithConsole();
 
 function loginOrRegister() {
   toLogin();

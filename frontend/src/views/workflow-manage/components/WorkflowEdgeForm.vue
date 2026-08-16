@@ -1,6 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, watch, computed } from 'vue';
-import { useMessage } from 'naive-ui';
+import {  } from 'naive-ui';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
   fetchWorkflowEdgeCreate,
   fetchWorkflowEdgeUpdate
@@ -19,7 +20,7 @@ const emit = defineEmits<{
   success: [];
 }>();
 
-const message = useMessage();
+const message = useMessageWithConsole();
 
 const formData = ref({
   源节点编码: '',

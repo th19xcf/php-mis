@@ -1,6 +1,7 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, watch } from 'vue';
-import { useMessage } from 'naive-ui';
+import {  } from 'naive-ui';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
   fetchWorkflowTemplateList,
   fetchWorkflowTemplateDelete
@@ -16,7 +17,7 @@ const emit = defineEmits<{
   select: [template: Record<string, any>];
 }>();
 
-const message = useMessage();
+const message = useMessageWithConsole();
 
 const loading = ref(false);
 const templateList = ref<any[]>([]);

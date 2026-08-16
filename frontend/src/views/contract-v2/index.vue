@@ -1,8 +1,8 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, onActivated, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
-import { useDialog, useMessage } from 'naive-ui';
+import { useDialog } from 'naive-ui';
 import { useContractV2Store } from '@/store/modules/contract-v2';
 import {
   fetchContractV2List,
@@ -13,13 +13,14 @@ import {
 } from '@/service/api/contract-v2';
 import { useConfigDrivenGrid, useSplitter, useConditionPanel } from '@/hooks/business';
 import { fetchWorkbenchPage } from '@/service/api/workbench';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import ContractV2Form from './components/ContractV2Form.vue';
 import ContractV2Approval from './components/ContractV2Approval.vue';
 import ContractV2FlowTimeline from './components/ContractV2FlowTimeline.vue';
 import OnlyOfficeEditor from './components/OnlyOfficeEditor.vue';
 
 const dialog = useDialog();
-const message = useMessage();
+const message = useMessageWithConsole();
 const contractV2Store = useContractV2Store();
 
 // 左右分栏（抽取为 useSplitter）
