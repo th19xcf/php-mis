@@ -404,6 +404,21 @@ onMounted(async () => {
             </template>
             新增下级
           </NButton>
+          <NButton
+            v-if="!isAddingMode && deptDetail && !isEditingMode"
+            type="primary"
+            size="small"
+            @click="startEditMode"
+          >
+            <template #icon>
+              <icon-mdi-pencil />
+            </template>
+            编辑
+          </NButton>
+          <template v-else-if="isEditingMode">
+            <NButton type="primary" size="small" :loading="submitting" @click="saveEditMode">保存</NButton>
+            <NButton size="small" @click="cancelEditMode">取消</NButton>
+          </template>
           <NButton type="error" size="small" @click="handleDelete">
             <template #icon>
               <icon-mdi-delete />
@@ -489,21 +504,6 @@ onMounted(async () => {
 
         <!-- 详情/编辑模式：从 def_query_column 全部列渲染 -->
         <div v-else-if="deptDetail" class="space-y-4">
-          <div class="flex justify-between items-center mb-2">
-            <span class="text-lg font-600">部门信息</span>
-            <div>
-              <NButton v-if="!isEditingMode" type="primary" size="small" @click="startEditMode">
-                <template #icon>
-                  <icon-mdi-pencil />
-                </template>
-                编辑
-              </NButton>
-              <NSpace v-else>
-                <NButton type="primary" size="small" :loading="submitting" @click="saveEditMode">保存</NButton>
-                <NButton size="small" @click="cancelEditMode">取消</NButton>
-              </NSpace>
-            </div>
-          </div>
           <NTable size="small" :single-line="false">
             <thead>
               <tr>
