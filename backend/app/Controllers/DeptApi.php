@@ -183,6 +183,13 @@ class DeptApi extends BaseApiController
 
         $guid = $data['guid'];
 
+        // 删除前先记录上级部门编码（软删除后查询条件会排除该行，提前取出最稳妥）
+        $parentSql = sprintf('
+            SELECT 上级部门编码 FROM def_dept WHERE GUID = "%s"
+        ', $guid);
+        $parentRow = $this->model->select($parentSql)->getRowArray();
+        $parentCode = $parentRow['上级部门编码'] ?? '';
+
         $checkSql = sprintf('
             SELECT COUNT(*) as cnt FROM def_dept
             WHERE 上级部门编码 = (SELECT 部门编码 FROM def_dept WHERE GUID = "%s")
@@ -197,6 +204,22 @@ class DeptApi extends BaseApiController
         $num = $this->deleteRecord('def_dept', sprintf('GUID = "%s"', $guid));
 
         if ($num > 0) {
+            // 上级部门没有剩余有效下级时，回写「有无下级部门 = 无」
+            if ($parentCode !== '') {
+                $remainSql = sprintf('
+                    SELECT COUNT(*) as cnt FROM def_dept
+                    WHERE 上级部门编码 = "%s" AND 删除标识 = "0" AND 有效标识 = "1"
+                ', $parentCode);
+                $remainRow = $this->model->select($remainSql)->getRowArray();
+
+                if ($remainRow && (int) $remainRow['cnt'] === 0) {
+                    $resetSql = sprintf('
+                        UPDATE def_dept SET 有无下级部门 = "无" WHERE 部门编码 = "%s"
+                    ', $parentCode);
+                    $this->model->exec($resetSql);
+                }
+            }
+
             return $this->success(null, '删除部门成功');
         }
 
