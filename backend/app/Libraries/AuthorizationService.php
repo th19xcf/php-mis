@@ -131,7 +131,10 @@ class AuthorizationService
         $roleAuthz = (string) ($sessionUser['roleAuthz'] ?? '');
 
         $userAuth = $this->loadUserAuthField('属地赋权', (string) ($sessionUser['workId'] ?? ''), $employeeRegion);
-        $roleAuth = $this->loadRoleAuthField($functionCode, '属地赋权', '角色表属地', $roleAuthz);
+        $roleAuthFields = $this->loadRoleAuthFields($functionCode, [
+            ['fieldName' => '属地赋权', 'aliasName' => '角色表属地'],
+        ], $roleAuthz);
+        $roleAuth = $roleAuthFields['属地赋权'] ?? '';
 
         return $this->resolve($userAuth, $roleAuth, $employeeRegion);
     }
@@ -216,7 +219,7 @@ class AuthorizationService
     /**
      * 批量加载角色表上的多个赋权字段（一次查询取多个字段）。
      *
-     * 与 loadRoleAuthField 相同的数据源，但支持一次查询获取多个字段值，
+     * 与 loadUserAuthFields 对应的角色表批量版本，一次查询获取多个字段值，
      * 避免对同一 functionCode + roleAuthz 组合重复查询 view_role。
      * 使用一次 SQL 查出所有字段，PHP 端拆分逗号分隔值并去重。
      *
@@ -331,66 +334,6 @@ class AuthorizationService
         }
 
         return $output;
-    }
-
-    /**
-     * 加载角色表上的赋权字段（如 属地赋权 / 部门全称赋权）。
-     *
-     * 从 view_role 表查询指定功能编码下、当前用户角色对应的赋权字段值，
-     * 使用 def_GUID 辅助表对逗号分隔的值进行拆行，最终去重并返回。
-     *
-     * @param string $functionCode 功能编码
-     * @param string $fieldName    字段名（如 "属地赋权"、"部门全称赋权"）
-     * @param string $aliasName    SQL 别名（如 "角色表属地"、"全称赋权"）
-     * @param string $roleAuthz    角色编码列表（逗号分隔，来自 session）
-     * @return string              规范化后的赋权值（逗号分隔），无数据返回空字符串
-     */
-    public function loadRoleAuthField(string $functionCode, string $fieldName, string $aliasName, string $roleAuthz): string
-    {
-        $roleAuthz = trim($roleAuthz);
-        if ($roleAuthz === '' || $functionCode === '') {
-            return '';
-        }
-
-        // 安全：将角色编码逐个 quote 后再拼入 IN 子句，防止 SQL 注入
-        $roleParts = array_map(
-            fn($r) => $this->model->quote(trim($r)),
-            explode(',', $roleAuthz)
-        );
-        $roleList = implode(',', $roleParts);
-
-        $sql = sprintf(
-            'select substring_index(substring_index(%s,",",t2.GUID+1),",",-1) as %s
-            from
-            (
-                select GUID,replace(replace(%s,"，",",")," ","") as %s
-                from view_role
-                where 有效标识="1" and 角色编码 in (%s) and 功能编码赋权=%s
-            ) as t1
-            inner join def_GUID as t2 on t2.GUID<(length(%s)-length(replace(%s,",",""))+1)
-            group by %s
-            order by %s',
-            $aliasName, $fieldName,
-            $fieldName, $aliasName,
-            $roleList, $this->model->quote($functionCode),
-            $aliasName, $aliasName,
-            $fieldName, $fieldName
-        );
-
-        $result = $this->model->select($sql);
-        if ($result === false) {
-            return '';
-        }
-
-        $values = [];
-        foreach ($result->getResultArray() as $row) {
-            $value = trim((string) ($row[$fieldName] ?? ''));
-            if ($value !== '') {
-                $values[] = $value;
-            }
-        }
-
-        return implode(',', array_values(array_unique($values)));
     }
 
     /**

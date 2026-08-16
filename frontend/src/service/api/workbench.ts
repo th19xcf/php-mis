@@ -34,14 +34,6 @@ export function fetchWorkbenchPageWithData(
   });
 }
 
-export function fetchWorkbenchQuery(functionCode: string, data: Api.Workbench.QueryPayload) {
-  return request<Api.Common.PaginatingQueryRecord<Api.Workbench.QueryRecord>>({
-    url: `/workbench/query/${encodeURIComponent(functionCode)}`,
-    method: 'post',
-    data
-  });
-}
-
 /**
  * 分页查询工作台数据
  * @param functionCode 功能编码

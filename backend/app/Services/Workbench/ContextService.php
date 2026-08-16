@@ -16,7 +16,7 @@ use Config\Services;
  * 上下文服务类
  *
  * 负责构建工作台上下文信息（用户授权、功能授权、查询配置等）。
- * 角色级授权查询已委托给 AuthorizationService::loadRoleAuthField，
+ * 角色级授权查询已委托给 AuthorizationService::loadRoleAuthFields，
  * 数据整理执行已迁至 Workbench 控制器，条件变量替换已迁至 ChartService。
  *
  * 缓存读写与失效已委托给 ContextCacheService（含反向索引精准删除，

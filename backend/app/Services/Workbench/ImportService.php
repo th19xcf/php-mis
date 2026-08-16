@@ -634,13 +634,52 @@ class ImportService
 
             $duplicateFields = $row['滤重字段'];
 
+            // 解析滤重字段（配置值以 "`,`" 分隔多字段，如 "身份证号`,`姓名"）
+            $fieldList = array_map('trim', explode('`,`', $duplicateFields));
+            $fieldList = array_values(array_filter($fieldList, fn($f) => $f !== ''));
+            if (empty($fieldList)) {
+                return ['hasError' => false, 'message' => '', 'errors' => []];
+            }
+            $quotedFieldList = implode(', ', array_map(fn($f) => sprintf('`%s`', $f), $fieldList));
+
+            // 先读临时表（仅本次导入批次，数据量小），PHP 端构造行构造子元组
+            $sqlTmp = sprintf('select %s from `%s`', $quotedFieldList, $tmpTableName);
+            $tmpResult = $this->model->select($sqlTmp);
+            if ($tmpResult === false) {
+                return ['hasError' => false, 'message' => '', 'errors' => []];
+            }
+
+            $tuples = [];
+            foreach ($tmpResult->getResultArray() as $tmpRow) {
+                $tupleParts = [];
+                $hasNull = false;
+                foreach ($fieldList as $f) {
+                    $val = $tmpRow[$f] ?? null;
+                    if ($val === null) {
+                        // 与原 concat 语义一致：任一字段为 NULL 则该行不参与匹配
+                        $hasNull = true;
+                        break;
+                    }
+                    $tupleParts[] = $this->model->quote((string) $val);
+                }
+                if ($hasNull) {
+                    continue;
+                }
+                $tuples[] = '(' . implode(',', $tupleParts) . ')';
+            }
+
+            if (empty($tuples)) {
+                return ['hasError' => false, 'message' => '', 'errors' => []];
+            }
+
+            // 行构造子 IN：裸列逐字段比较可利用复合索引，
+            // 替代原 concat(`字段`) in (select concat(...) ) 对业务主表的全表扫描
             $sql = sprintf(
-                'select `%s` from `%s` where concat(`%s`) in (select concat(`%s`) from `%s`)',
+                'select `%s` from `%s` where (%s) in (%s)',
                 $duplicateFields,
                 $dataTable,
-                $duplicateFields,
-                $duplicateFields,
-                $tmpTableName
+                $quotedFieldList,
+                implode(',', $tuples)
             );
 
             $result = $this->model->select($sql);

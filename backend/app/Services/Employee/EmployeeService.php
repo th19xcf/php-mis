@@ -99,28 +99,40 @@ class EmployeeService
         $db->transStart();
 
         try {
+            // 先按 GUID（唯一）精确查出身份证号+入职次数，
+            // 避免 concat(身份证号,入职次数) 包裹列导致索引失效全表扫描
+            $sqlFind = sprintf(
+                'select 身份证号, 入职次数 from ee_onjob where GUID=%s',
+                $this->model->quote($guid)
+            );
+            $result = $this->model->select($sqlFind);
+            if ($result === false) {
+                $db->transComplete();
+                return 0;
+            }
+
+            $idRow = $result->getRowArray();
+            if (empty($idRow)) {
+                $db->transComplete();
+                return 0;
+            }
+
+            // 裸列等值条件可走索引，定位同"身份证号+入职次数"的全部版本记录
             $sql = sprintf(
                 'update ee_onjob
                 set 员工状态=%s,
                     离职日期=%s,
                     离职原因=%s,
                     记录结束日期=if(记录结束日期="",%s,记录结束日期)
-                where concat(身份证号,入职次数) in
-                    (
-                        select concat(身份证号,入职次数)
-                        from
-                        (
-                            select 身份证号,入职次数
-                            from ee_onjob
-                            where GUID=%s
-                        ) as ta
-                    )
+                where 身份证号=%s
+                    and 入职次数=%s
                     and 员工状态!="离职"',
                 $this->model->quote($data['员工状态'] ?? ''),
                 $this->model->quote($data['离职日期'] ?? ''),
                 $this->model->quote($data['离职原因'] ?? ''),
                 $this->model->quote($data['离职日期'] ?? ''),
-                $this->model->quote($guid)
+                $this->model->quote((string) ($idRow['身份证号'] ?? '')),
+                $this->model->quote((string) ($idRow['入职次数'] ?? ''))
             );
 
             $db->query($sql);

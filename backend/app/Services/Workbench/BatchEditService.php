@@ -2,6 +2,7 @@
 
 namespace App\Services\Workbench;
 
+use App\Exceptions\BusinessException;
 use App\Models\Mcommon;
 use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
@@ -54,107 +55,200 @@ class BatchEditService
             return 0;
         }
 
-        $num = 0;
+        // 主键值去重并转义，构建批量 IN 条件（本方法仅支持单字段主键，与原实现一致）
+        $rawKeyValues = [];
+        $quotedKeyValues = [];
+        foreach ($keyValues as $keyVal) {
+            $raw = (string) $keyVal;
+            if (!in_array($raw, $rawKeyValues, true)) {
+                $rawKeyValues[] = $raw;
+                $quotedKeyValues[] = $this->model->quote($raw);
+            }
+        }
+        $whereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $quotedKeyValues));
+
         switch ($dataModel) {
             case '0':
-                foreach ($keyValues as $keyVal) {
-                    $where = sprintf('%s = %s', $primaryKey, $this->model->quote((string) $keyVal));
-                    $sql = sprintf(
-                        'UPDATE %s SET %s WHERE %s',
-                        $dataTable,
-                        implode(', ', $updates),
-                        $where
-                    );
-                    $this->model->sql_log('批量修改[0]', $functionCode, [
-                        'table' => $dataTable,
-                        'pk' => $primaryKey,
-                        'pk_values' => [$keyVal],
-                        'fields' => $formData,
-                        'note' => '直接UPDATE',
-                    ]);
-                    $num += $this->model->exec($sql);
-                }
+                // 所有记录 SET 相同值，逐条 UPDATE 等价合并为一条批量 UPDATE（单条语句自带原子性）
+                $sql = sprintf(
+                    'UPDATE %s SET %s WHERE %s',
+                    $dataTable,
+                    implode(', ', $updates),
+                    $whereIn
+                );
+                $this->model->sql_log('批量修改[0]', $functionCode, [
+                    'table' => $dataTable,
+                    'pk' => $primaryKey,
+                    'pk_values' => $rawKeyValues,
+                    'fields' => $formData,
+                    'note' => '直接UPDATE(批量IN)',
+                    'batch_count' => count($rawKeyValues),
+                ]);
+                $num = $this->model->exec($sql);
                 $this->invalidateConfigCache($dataTable);
                 return $num;
 
             case '1':
             case '2':
-                foreach ($keyValues as $keyVal) {
-                    $where = sprintf('%s = %s', $primaryKey, $this->model->quote((string) $keyVal));
-
-                    $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where);
-                    $result = $this->model->select($sqlSelect);
-                    if ($result === false) {
-                        continue;
-                    }
-                    $originalRow = $result->getRowArray();
-                    if (empty($originalRow)) {
-                        continue;
-                    }
-
-                    $sqlUpdateOld = sprintf(
-                        'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
-                        $dataTable,
-                        $userWorkid,
-                        date('Y-m-d H:i:s'),
-                        date('Y-m-d H:i:s'),
-                        $where
-                    );
-                    $this->model->sql_log('批量修改[1-旧]', $functionCode, [
-                        'table' => $dataTable,
-                        'pk' => $primaryKey,
-                        'pk_values' => [$keyVal],
-                        'note' => '流水旧记录置无效',
-                    ]);
-                    $this->model->exec($sqlUpdateOld);
-
-                    $fields = [];
-                    $values = [];
-                    foreach ($originalRow as $key => $val) {
-                        if (array_key_exists($key, $formData)) {
-                            $fields[] = sprintf('`%s`', $key);
-                            $values[] = $this->model->quote((string) $formData[$key]);
-                        } else {
-                            $fields[] = sprintf('`%s`', $key);
-                            $values[] = $this->model->quote((string) $val);
-                        }
-                    }
-                    $fields[] = '`操作记录`';
-                    $values[] = '"新增"';
-                    $fields[] = '`操作来源`';
-                    $values[] = '"工作台"';
-                    $fields[] = '`操作人员`';
-                    $values[] = sprintf('"%s"', $userWorkid);
-                    $fields[] = '`操作时间`';
-                    $values[] = sprintf('"%s"', date('Y-m-d H:i:s'));
-                    $fields[] = '`结束操作时间`';
-                    $values[] = '"9999-12-31"';
-                    $fields[] = '`删除标识`';
-                    $values[] = '"0"';
-                    $fields[] = '`有效标识`';
-                    $values[] = '"1"';
-
-                    $sqlInsert = sprintf(
-                        'INSERT INTO %s (%s) VALUES (%s)',
-                        $dataTable,
-                        implode(', ', $fields),
-                        implode(', ', $values)
-                    );
-                    $this->model->sql_log('批量修改[1-新]', $functionCode, [
-                        'table' => $dataTable,
-                        'pk' => $primaryKey,
-                        'pk_values' => [$keyVal],
-                        'fields' => $formData,
-                        'note' => '流水插新版本',
-                    ]);
-                    $num += $this->model->exec($sqlInsert);
-                }
+                $num = $this->batchUpdateFlowVersioned(
+                    $dataTable,
+                    $primaryKey,
+                    $whereIn,
+                    $rawKeyValues,
+                    $formData,
+                    $userWorkid,
+                    $functionCode
+                );
                 $this->invalidateConfigCache($dataTable);
                 return $num;
 
             default:
                 return -1;
         }
+    }
+
+    /**
+     * 流水模式批量修改（数据模式 1/2：旧记录批量置无效 + 批量插入新版本）
+     *
+     * 优化说明：原实现对每条记录循环执行 SELECT + UPDATE + INSERT（3N 次 SQL），
+     * 现改为一次预取旧记录 + 一条批量置无效 + 一条多值 INSERT（固定 3 次 SQL），
+     * 并用事务包裹：中途失败整体回滚，避免出现"旧记录已置无效而新版本未插入"
+     * 导致记录在工作台查询中消失的数据完整性问题。
+     *
+     * @param string $dataTable 数据表
+     * @param string $primaryKey 主键字段（单字段）
+     * @param string $whereIn 主键 IN 条件（覆盖全部提交的主键值）
+     * @param array $rawKeyValues 去重后的主键原始值
+     * @param array $formData 表单数据（覆盖字段）
+     * @param string $userWorkid 用户工号
+     * @param string $functionCode 功能编码
+     * @return int 新插入的记录数
+     * @throws BusinessException 预取失败或事务提交失败时抛出
+     */
+    private function batchUpdateFlowVersioned(
+        string $dataTable,
+        string $primaryKey,
+        string $whereIn,
+        array $rawKeyValues,
+        array $formData,
+        string $userWorkid,
+        string $functionCode
+    ): int {
+        $db = $this->model->getDb();
+        $db->transStart();
+
+        try {
+            // 1. 一次预取全部旧记录，按主键值索引
+            $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $whereIn);
+            $result = $this->model->select($sqlSelect);
+            if ($result === false) {
+                throw new BusinessException(sprintf('批量修改失败:预取原始记录失败(表=%s)', $dataTable));
+            }
+
+            $originalRows = [];
+            foreach ($result->getResultArray() as $row) {
+                $originalRows[(string) $row[$primaryKey]] = $row;
+            }
+
+            // 只处理实际命中的主键，未命中的跳过（与原逐条实现行为一致）
+            $hitKeyValues = [];
+            foreach ($rawKeyValues as $raw) {
+                if (isset($originalRows[$raw])) {
+                    $hitKeyValues[] = $raw;
+                }
+            }
+            if (empty($hitKeyValues)) {
+                $db->transComplete();
+                return 0;
+            }
+
+            $hitQuoted = array_map(fn($v) => $this->model->quote($v), $hitKeyValues);
+            $hitWhereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $hitQuoted));
+
+            // 2. 一条批量置无效（仅命中记录）
+            $now = date('Y-m-d H:i:s');
+            $sqlUpdateOld = sprintf(
+                'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
+                $dataTable,
+                $userWorkid,
+                $now,
+                $now,
+                $hitWhereIn
+            );
+            $this->model->sql_log('批量修改[1-旧]', $functionCode, [
+                'table' => $dataTable,
+                'pk' => $primaryKey,
+                'pk_values' => $hitKeyValues,
+                'note' => '流水旧记录批量置无效',
+                'batch_count' => count($hitKeyValues),
+            ]);
+            $this->model->exec($sqlUpdateOld);
+
+            // 3. PHP 内存中合并旧值 + 表单新值，一条多值 INSERT 插入全部新版本
+            $allFields = [];
+            $insertValuesList = [];
+            foreach ($hitKeyValues as $raw) {
+                $originalRow = $originalRows[$raw];
+
+                if (empty($allFields)) {
+                    foreach ($originalRow as $key => $val) {
+                        $allFields[] = sprintf('`%s`', $key);
+                    }
+                    $allFields = array_merge($allFields, [
+                        '`操作记录`', '`操作来源`', '`操作人员`', '`操作时间`',
+                        '`结束操作时间`', '`删除标识`', '`有效标识`',
+                    ]);
+                }
+
+                $values = [];
+                foreach ($originalRow as $key => $val) {
+                    $values[] = array_key_exists($key, $formData)
+                        ? $this->model->quote((string) $formData[$key])
+                        : $this->model->quote((string) $val);
+                }
+                $values[] = '"新增"';
+                $values[] = '"工作台"';
+                $values[] = sprintf('"%s"', $userWorkid);
+                $values[] = sprintf('"%s"', $now);
+                $values[] = '"9999-12-31"';
+                $values[] = '"0"';
+                $values[] = '"1"';
+
+                $insertValuesList[] = '(' . implode(', ', $values) . ')';
+            }
+
+            $sqlInsert = sprintf(
+                'INSERT INTO %s (%s) VALUES %s',
+                $dataTable,
+                implode(', ', $allFields),
+                implode(', ', $insertValuesList)
+            );
+            $this->model->sql_log('批量修改[1-新]', $functionCode, [
+                'table' => $dataTable,
+                'pk' => $primaryKey,
+                'pk_values' => $hitKeyValues,
+                'fields' => $formData,
+                'note' => '流水批量插新版本',
+                'batch_count' => count($insertValuesList),
+            ]);
+            $num = $this->model->exec($sqlInsert);
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            throw $e;
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            // 生产环境 DBDebug=false 时 SQL 失败不抛异常，此处兜底检测事务状态
+            throw new BusinessException(sprintf(
+                '批量修改失败:事务提交已回滚(表=%s,主键=%s,提交 %d 条)',
+                $dataTable,
+                $primaryKey,
+                count($hitKeyValues)
+            ));
+        }
+
+        return $num;
     }
 
     /**
