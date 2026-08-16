@@ -39,7 +39,7 @@ class Mcommon extends Model
         return $trace;
     }
 
-    private function getDb(): object
+    public function getDb(): object
     {
         if ($this->dbInstance === null) {
             // 当前配置：btdc.pConnect=false（非持久连接），每请求结束自动关闭连接

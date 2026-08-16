@@ -260,6 +260,12 @@ class BaseApiController extends BaseController
         $fields = [];
         $values = [];
 
+        // 当表存在 UUID 列且调用方未提供 UUID 时，自动生成 UUIDv7
+        $autoUuid = null;
+        if (!empty($columns) && in_array('UUID', $columns, true) && !isset($data['UUID'])) {
+            $autoUuid = $this->generateUuidv7Binary();
+        }
+
         foreach ($data as $key => $value) {
             if ($key === '操作') continue;
             if (!$this->isValidIdentifier($key)) continue;
@@ -267,6 +273,12 @@ class BaseApiController extends BaseController
             if (!empty($columns) && !in_array($key, $columns, true)) continue;
             $fields[] = sprintf('`%s`', $key);
             $values[] = $this->model->quote((string)$value);
+        }
+
+        // 追加自动生成的 UUID（binary(16) 用 0x 十六进制格式写入）
+        if ($autoUuid !== null) {
+            $fields[] = '`UUID`';
+            $values[] = '0x' . bin2hex($autoUuid);
         }
 
         if (empty($fields)) {
@@ -288,19 +300,10 @@ class BaseApiController extends BaseController
                 $db = $this->model->getDb();
                 $newGuid = (string) $db->insertID();
 
-                // 查新行的 UUID（仅当表存在 UUID 列时）
-                $newUuidBin = null;
-                if (in_array('UUID', $columns, true)) {
-                    $row = $this->model->select("SELECT UUID FROM `{$table}` WHERE GUID={$newGuid}")->getRowArray();
-                    if ($row && !empty($row['UUID'])) {
-                        $newUuidBin = $row['UUID'];
-                    }
-                }
-
                 $this->writeAuditLog(
                     $table,
                     $newGuid,
-                    $newUuidBin,
+                    $autoUuid,
                     '新增',
                     '全部',
                     null,
@@ -509,24 +512,27 @@ class BaseApiController extends BaseController
         // UUID 兜底：NULL 时用 16 字节 0x00 占位（满足 binary(16) NOT NULL 约束）
         $uuidBin = $pkUuid ?? str_repeat("\x00", 16);
 
-        // 原值/新值截断到 200 字符
+        // 原值/新值截断到 200 字符，NULL 保持 NULL 以写入 NULL（而非字符串 'NULL'）
         $oldValTrimmed = $oldValue !== null ? mb_substr((string)$oldValue, 0, 200) : null;
         $newValTrimmed = $newValue !== null ? mb_substr((string)$newValue, 0, 200) : null;
 
-        // 用参数绑定写入，避免 SQL 注入和二进制转义问题
-        $sql = "INSERT INTO def_audit_log (表名, 记录GUID, 记录UUID, 操作类型, 变更字段, 原值, 新值, 操作人员) "
-             . "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        // 拼接 SQL：CI4 MySQLi 的 $db->query(sql, binds) 会走 Query Builder 预处理，
+        // 对原生 INSERT 抛 "You must set the database table to be used with your query" 错误。
+        // 故改用 quote() + 0x 十六进制格式内联写入，兼容 binary(16) UUID。
+        $sql = sprintf(
+            "INSERT INTO def_audit_log (表名, 记录GUID, 记录UUID, 操作类型, 变更字段, 原值, 新值, 操作人员) "
+          . "VALUES (%s, %s, 0x%s, %s, %s, %s, %s, %s)",
+            $this->model->quote($table),
+            $this->model->quote($pkGuid),
+            bin2hex($uuidBin),
+            $this->model->quote($opType),
+            $this->model->quote($field),
+            $oldValTrimmed !== null ? $this->model->quote($oldValTrimmed) : 'NULL',
+            $newValTrimmed !== null ? $this->model->quote($newValTrimmed) : 'NULL',
+            $this->model->quote($operator)
+        );
 
-        $this->model->query($sql, [
-            $table,
-            $pkGuid,
-            $uuidBin,
-            $opType,
-            $field,
-            $oldValTrimmed,
-            $newValTrimmed,
-            $operator,
-        ]);
+        $this->model->exec($sql);
     }
 
     /**
@@ -551,6 +557,40 @@ class BaseApiController extends BaseController
             }
         }
         return self::$tableColumnsCache[$table];
+    }
+
+    /**
+     * 生成 UUIDv7（RFC 4122，16 字节二进制）
+     *
+     * UUIDv7 布局：
+     *  - bytes[0-5]  (48 bit): Unix 时间戳（毫秒，big-endian）
+     *  - bytes[6]    ( 4 bit): 版本 = 0111（7）
+     *  - bytes[6-7]  (12 bit): 随机
+     *  - bytes[8]    ( 2 bit): 变体 = 10
+     *  - bytes[8-15] (62 bit): 随机
+     *
+     * @return string 16 字节二进制字符串（可直接写入 binary(16) 列）
+     */
+    private function generateUuidv7Binary(): string
+    {
+        $tsMs = (int) (microtime(true) * 1000);
+
+        // 48 bit 时间戳 → 6 字节 big-endian
+        $timeBytes = '';
+        for ($i = 5; $i >= 0; $i--) {
+            $timeBytes .= chr(($tsMs >> ($i * 8)) & 0xFF);
+        }
+
+        // 10 字节随机数
+        $randBytes = random_bytes(10);
+
+        // byte[6] 高 4 位设为 0111（版本 7）
+        $randBytes[0] = chr((ord($randBytes[0]) & 0x0F) | 0x70);
+
+        // byte[8] 高 2 位设为 10（RFC 4122 变体）
+        $randBytes[2] = chr((ord($randBytes[2]) & 0x3F) | 0x80);
+
+        return $timeBytes . $randBytes;
     }
 
     /**
