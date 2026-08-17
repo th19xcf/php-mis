@@ -1005,7 +1005,11 @@ const { handleReset, handleRefresh } = useWorkbenchStateReset({
 const { handleUpkeep } = useWorkbenchUpkeep({
   getFunctionCode,
   loading,
-  loadPage,
+  refreshAfterMutation: () => {
+    workbenchStore.clearCache(getFunctionCode(), getParams());
+    isDataLoaded.value = false;
+    return loadPage();
+  },
   notify
 });
 

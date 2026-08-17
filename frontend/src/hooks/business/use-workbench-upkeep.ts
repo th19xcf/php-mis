@@ -6,7 +6,8 @@ type NotifyType = 'success' | 'error' | 'warning' | 'info';
 interface UseWorkbenchUpkeepOptions {
   getFunctionCode: () => string;
   loading: Ref<boolean>;
-  loadPage: () => Promise<void> | void;
+  /** 写操作成功后刷新表格数据：清缓存 + 重置加载标志 + 重新请求 */
+  refreshAfterMutation: () => void | Promise<void>;
   notify: (type: NotifyType, message: string) => void;
 }
 
@@ -25,7 +26,7 @@ function extractErrorMessage(error: any, fallback: string): string {
 /**
  * 工作台「数据整理」组合式函数
  *  - 调后端 /workbench/upkeep/:functionCode
- *  - 成功时调用 loadPage 重新加载
+ *  - 成功时调用 refreshAfterMutation 清缓存并重新加载表格数据
  */
 export function useWorkbenchUpkeep(options: UseWorkbenchUpkeepOptions) {
   async function handleUpkeep() {
@@ -45,7 +46,7 @@ export function useWorkbenchUpkeep(options: UseWorkbenchUpkeepOptions) {
 
       if (data?.success) {
         options.notify('success', data.message || '数据整理执行成功');
-        await options.loadPage();
+        await options.refreshAfterMutation();
       } else {
         options.notify('error', data?.message || '执行数据整理失败');
       }
