@@ -634,8 +634,9 @@ class ImportService
 
             $duplicateFields = $row['滤重字段'];
 
-            // 解析滤重字段（配置值以 "`,`" 分隔多字段，如 "身份证号`,`姓名"）
-            $fieldList = array_map('trim', explode('`,`', $duplicateFields));
+            // 解析滤重字段（兼容 "`,`" 和 "," 两种分隔符，如 "身份证号`,`姓名" 或 "身份证号,姓名"）
+            $normalizedFields = str_replace('`,`', ',', $duplicateFields);
+            $fieldList = array_map('trim', explode(',', $normalizedFields));
             $fieldList = array_values(array_filter($fieldList, fn($f) => $f !== ''));
             if (empty($fieldList)) {
                 return ['hasError' => false, 'message' => '', 'errors' => []];
@@ -675,8 +676,8 @@ class ImportService
             // 行构造子 IN：裸列逐字段比较可利用复合索引，
             // 替代原 concat(`字段`) in (select concat(...) ) 对业务主表的全表扫描
             $sql = sprintf(
-                'select `%s` from `%s` where (%s) in (%s)',
-                $duplicateFields,
+                'select %s from `%s` where (%s) in (%s)',
+                $quotedFieldList,
                 $dataTable,
                 $quotedFieldList,
                 implode(',', $tuples)
@@ -684,7 +685,7 @@ class ImportService
 
             $result = $this->model->select($sql);
             if ($result === false) {
-                return ['hasError' => false, 'message' => '', 'errors' => []];
+                return ['hasError' => true, 'message' => '滤重检查失败: SQL 执行错误', 'errors' => []];
             }
 
             $errs = $result->getResultArray();
@@ -711,7 +712,7 @@ class ImportService
             return ['hasError' => false, 'message' => '', 'errors' => []];
         } catch (\Throwable $e) {
             log_message('error', '滤重检查失败: ' . $e->getMessage());
-            return ['hasError' => false, 'message' => '', 'errors' => []];
+            return ['hasError' => true, 'message' => '滤重检查失败: ' . $e->getMessage(), 'errors' => []];
         }
     }
 

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, onMounted, computed, watch, toRef } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import {  } from 'naive-ui';
@@ -13,15 +13,25 @@ import { usePersonnelTreeSearch } from '@/hooks/business/use-personnel-tree-sear
 import { usePersonnelTreeIcon } from '@/hooks/business/use-personnel-tree-icon';
 import { usePersonnelEditFormInit } from '@/hooks/business/use-personnel-edit-form-init';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
+import { useWorkbenchImport } from '@/hooks/business/use-workbench-import';
+import { fetchWorkbenchPage } from '@/service/api/workbench';
+import { useThemeStore } from '@/store/modules/theme';
+import { WorkbenchImport } from '@/views/menu-bridge/modules/components';
+import type { GridApi } from 'ag-grid-community';
 
 const message = useMessageWithConsole();
 const route = useRoute();
+const themeStore = useThemeStore();
+const isDarkMode = computed(() => themeStore.darkMode);
 const interviewStore = useInterviewStore();
 const { confirmDelete, confirmTransfer } = useDangerConfirm();
 
 const functionCode = computed(() => {
   return String(route.query.functionCode || route.meta?.functionCode || '2016');
 });
+
+// 导入按钮可见性：与通用工作台 toolbar.import 同一逻辑（导入授权=1 且已配置导入模块）
+const canImport = ref(false);
 
 const treeData = computed(() => interviewStore.treeData);
 const selectedGuids = computed(() => interviewStore.selectedGuids);
@@ -93,6 +103,37 @@ const { buildEditForm } = usePersonnelEditFormInit();
 async function loadTree() {
   await interviewStore.refreshTree();
 }
+
+// 导入功能：复用通用工作台导入弹窗与流程（后端 /workbench/import 接口按功能码通用）
+// 本页面无 ag-grid 表格，gridApi 仅作为 hook 参数占位（仅在后端无导入列配置时模板下载兜底会用到）
+const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
+
+const {
+  importVisible,
+  importLoading,
+  importPreviewData,
+  importError,
+  importSuccess,
+  fileInputRef,
+  importPreviewColumns,
+  handleImport,
+  triggerFileInput,
+  handleFileSelect,
+  confirmImport,
+  downloadImportTemplate,
+  resetImportPreview
+} = useWorkbenchImport({
+  gridApi,
+  getFunctionCode: () => functionCode.value,
+  getParams: () => '',
+  getMenu1: () => '',
+  getMenu2: () => '',
+  reloadPage: () => {
+    loadTree();
+  },
+  clearCache: () => {},
+  notify: (type, msg) => message[type](msg)
+});
 
 function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
   if (keys.length === 0) return;
@@ -317,6 +358,14 @@ async function handleSecondInterviewConfirm() {
 }
 
 onMounted(async () => {
+  // 拉取功能权限，控制导入按钮显示（toolbar.import = 导入授权 && 导入模块已配置）
+  try {
+    const { data } = await fetchWorkbenchPage(functionCode.value);
+    canImport.value = data?.meta?.toolbar?.import === true;
+  } catch {
+    canImport.value = false;
+  }
+
   if (!interviewStore.isLoaded) {
     interviewStore.loadTreeData();
   }
@@ -352,12 +401,20 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], ne
           <span class="text-lg font-600">面试人员</span>
           <NTag type="success" size="small">{{ functionCode }}</NTag>
         </div>
-        <NButton size="small" @click="loadTree">
-          <template #icon>
-            <icon-mdi-refresh />
-          </template>
-          刷新
-        </NButton>
+        <NSpace :size="8">
+          <NButton v-if="canImport" size="small" @click="handleImport">
+            <template #icon>
+              <icon-mdi-upload />
+            </template>
+            导入
+          </NButton>
+          <NButton size="small" @click="loadTree">
+            <template #icon>
+              <icon-mdi-refresh />
+            </template>
+            刷新
+          </NButton>
+        </NSpace>
       </div>
       <div class="panel-content">
         <div class="mb-2">
@@ -718,6 +775,31 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], ne
         <NEmpty v-else description="请选择左侧人员查看详情" class="py-20" />
       </div>
     </div>
+
+    <!-- 数据导入弹窗（与通用工作台 2020 导入功能一致） -->
+    <WorkbenchImport
+      v-model:visible="importVisible"
+      :loading="importLoading"
+      :preview-data="importPreviewData"
+      :error="importError"
+      :success="importSuccess"
+      :preview-columns="importPreviewColumns"
+      :is-dark-mode="isDarkMode"
+      @trigger-file-input="triggerFileInput"
+      @download-template="downloadImportTemplate"
+      @reset="resetImportPreview"
+      @confirm="confirmImport"
+    >
+      <template #file-input>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept=".xlsx,.xls,.csv"
+          style="display:none"
+          @change="handleFileSelect"
+        />
+      </template>
+    </WorkbenchImport>
   </div>
 </template>
 
