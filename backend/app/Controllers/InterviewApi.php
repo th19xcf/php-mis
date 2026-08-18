@@ -152,6 +152,7 @@ class InterviewApi extends BaseApiController
 
             $sql = sprintf('
                 insert into ee_train (
+                    初始编码,
                     姓名,身份证号,手机号码,属地,
                     培训业务,培训状态,
                     培训批次,培训老师,
@@ -159,7 +160,8 @@ class InterviewApi extends BaseApiController
                     面试信息,
                     操作记录,操作来源,操作人员,开始操作时间,
                     有效标识,删除标识)
-                select 姓名,身份证号,手机号码,属地,
+                select 邀约编码 as 初始编码,
+                    姓名,身份证号,手机号码,属地,
                     "%s" as 培训业务,"%s" as 培训状态,
                     "%s" as 培训批次,"%s" as 培训老师,
                     "%s" as 培训开始日期,"%s" as 预计完成日期,

@@ -172,6 +172,7 @@ class TrainApi extends BaseApiController
 
             $sql = sprintf('
                 insert into ee_onjob (
+                    培训编码,
                     姓名,身份证号,手机号码,属地,入职次数,
                     招聘渠道,
                     员工类别,
@@ -190,6 +191,7 @@ class TrainApi extends BaseApiController
                     开始操作时间,结束操作时间,
                     校验标识,删除标识,有效标识)
                 select 
+                    t1.初始编码 as 培训编码,
                     t1.姓名,t1.身份证号,t1.手机号码,t1.属地,%d,
                     t2.招聘渠道,
                     if(t2.招聘渠道="校招","未毕业学生","合同制员工") as 员工类别,
@@ -209,7 +211,7 @@ class TrainApi extends BaseApiController
                     "0" as 校验标识,"0" as 删除标识,"1" as 有效标识
                 from
                 (
-                    select GUID,姓名,身份证号,手机号码,属地,培训业务,培训状态,
+                    select GUID,初始编码,姓名,身份证号,手机号码,属地,培训业务,培训状态,
                         培训批次,培训老师,培训开始日期,预计完成日期,
                         培训完成日期,培训离开日期,培训离开原因,面试信息
                     from ee_train

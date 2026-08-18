@@ -71,6 +71,8 @@ class InvitationApi extends BaseApiController
         }
 
         $data = $this->buildInsertData($data);
+        // 生成邀约编码：流程实例级关联键源头，贯穿面试→培训→主档
+        $data['邀约编码'] = $this->generateInvitationCode(1);
         $num = $this->insertRecord('ee_store', $data);
 
         if ($num > 0) {
@@ -78,6 +80,30 @@ class InvitationApi extends BaseApiController
         }
 
         return $this->serverError('新增邀约信息失败');
+    }
+
+    /**
+     * 生成邀约编码
+     *
+     * 格式：YY + YYYYMMDD + 4位顺序号，例如 YY202608180001
+     * 通过 CALL sp_生成邀约编码 存储过程取号，def_seq 表原子自增防并发重号。
+     * Excel 导入路径不复用此方法，而是通过 def_import_config.前处理模块
+     * 配置 sp_邀约_导入前处理($源表, @out) 批量赋号，确保两条路径共用同一发号核心。
+     *
+     * @param int $count 本次需要的编码数量（页面新增=1）
+     * @return string 邀约编码（count=1 时直接返回；count>1 时返回起始编码，调用方自行展开）
+     */
+    private function generateInvitationCode(int $count = 1): string
+    {
+        // 初始化会话变量（防残留）
+        $this->model->select("SET @seq = 0, @prefix = ''");
+        // 调用发号存储过程（def_seq 表 INSERT ON DUPLICATE KEY UPDATE 原子自增）
+        $this->model->select(sprintf('CALL sp_生成邀约编码(%d, @seq, @prefix)', $count));
+        // 读取 OUT 参数（同一会话连接，@变量可见）
+        $row = $this->model->select('SELECT @prefix AS p, @seq AS s')->getRowArray() ?: [];
+        $prefix = $row['p'] ?? '';
+        $seq = (int) ($row['s'] ?? 0);
+        return $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
     }
 
     public function update()
@@ -156,6 +182,7 @@ class InvitationApi extends BaseApiController
         if ($data['面试结果'] === '通过' || $data['面试结果'] === '未通过') {
             $sql = sprintf('
                 insert into ee_interview (
+                    邀约编码,
                     姓名,身份证号,手机号码,属地,
                     招聘渠道,渠道类型,渠道名称,
                     面试业务,面试岗位,
@@ -163,7 +190,8 @@ class InvitationApi extends BaseApiController
                     预约培训日期,邀约信息,
                     操作记录,操作来源,操作人员,开始操作时间,
                     有效标识,删除标识)
-                select 姓名,身份证号,手机号码,属地,
+                select 邀约编码,
+                    姓名,身份证号,手机号码,属地,
                     招聘渠道,渠道类型,渠道名称,
                     邀约业务,邀约岗位,
                     "%s","%s","%s",
