@@ -71,8 +71,8 @@ class InvitationApi extends BaseApiController
         }
 
         $data = $this->buildInsertData($data);
-        // 生成邀约编码：流程实例级关联键源头，贯穿面试→培训→主档
-        $data['邀约编码'] = $this->generateInvitationCode(1);
+        // 生成候选人编码：按邀约日期分桶发号，LAST_INSERT_ID 防多人并发重号
+        $data['候选人编码'] = $this->generateCandidateCode(1, $data['邀约日期'] ?? '');
         $num = $this->insertRecord('ee_store', $data);
 
         if ($num > 0) {
@@ -83,27 +83,42 @@ class InvitationApi extends BaseApiController
     }
 
     /**
-     * 生成邀约编码
+     * 生成候选人编码
      *
-     * 格式：YY + YYYYMMDD + 4位顺序号，例如 YY202608180001
-     * 通过 CALL sp_生成邀约编码 存储过程取号，def_seq 表原子自增防并发重号。
+     * 格式：C + YYYYMMDD + 3位顺序号，例如 C20260818001
+     * 日期来源：ee_store.邀约日期（业务日期，非录入日期）
+     *   - 历史数据录入/导入不及时时，编码日期与业务日期一致，时序正确
+     * 并发安全：通过 LAST_INSERT_ID(expr) 技巧，连接级变量天然隔离
+     *   - UPDATE 单语句原子（InnoDB 行锁串行化）
+     *   - LAST_INSERT_ID(expr) 写入当前连接变量，其他连接读不到也影响不了
+     *   - autocommit 模式也安全，多人同时新增/导入不重号
      * Excel 导入路径不复用此方法，而是通过 def_import_config.前处理模块
      * 配置 sp_邀约_导入前处理($源表, @out) 批量赋号，确保两条路径共用同一发号核心。
      *
-     * @param int $count 本次需要的编码数量（页面新增=1）
-     * @return string 邀约编码（count=1 时直接返回；count>1 时返回起始编码，调用方自行展开）
+     * @param int    $count   本次需要的编码数量（页面新增=1）
+     * @param string $bizDate 业务日期（ee_store.邀约日期），空则用今天
+     * @return string 候选人编码
      */
-    private function generateInvitationCode(int $count = 1): string
+    private function generateCandidateCode(int $count = 1, string $bizDate = ''): string
     {
+        $date = $bizDate ?: date('Y-m-d');
+        // 严格校验日期格式，防 SQL 注入（sp_生成候选人编码 的 p_date 参数）
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $date = date('Y-m-d');
+        }
         // 初始化会话变量（防残留）
         $this->model->select("SET @seq = 0, @prefix = ''");
-        // 调用发号存储过程（def_seq 表 INSERT ON DUPLICATE KEY UPDATE 原子自增）
-        $this->model->select(sprintf('CALL sp_生成邀约编码(%d, @seq, @prefix)', $count));
+        // 调用发号存储过程（LAST_INSERT_ID 防并发，按业务日期分桶）
+        $this->model->select(sprintf(
+            "CALL sp_生成候选人编码(%d, '%s', @seq, @prefix)",
+            $count,
+            $date
+        ));
         // 读取 OUT 参数（同一会话连接，@变量可见）
         $row = $this->model->select('SELECT @prefix AS p, @seq AS s')->getRowArray() ?: [];
         $prefix = $row['p'] ?? '';
         $seq = (int) ($row['s'] ?? 0);
-        return $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+        return $prefix . str_pad((string) $seq, 3, '0', STR_PAD_LEFT);
     }
 
     public function update()
@@ -182,7 +197,7 @@ class InvitationApi extends BaseApiController
         if ($data['面试结果'] === '通过' || $data['面试结果'] === '未通过') {
             $sql = sprintf('
                 insert into ee_interview (
-                    邀约编码,
+                    候选人编码,
                     姓名,身份证号,手机号码,属地,
                     招聘渠道,渠道类型,渠道名称,
                     面试业务,面试岗位,
@@ -190,7 +205,7 @@ class InvitationApi extends BaseApiController
                     预约培训日期,邀约信息,
                     操作记录,操作来源,操作人员,开始操作时间,
                     有效标识,删除标识)
-                select 邀约编码,
+                select 候选人编码,
                     姓名,身份证号,手机号码,属地,
                     招聘渠道,渠道类型,渠道名称,
                     邀约业务,邀约岗位,

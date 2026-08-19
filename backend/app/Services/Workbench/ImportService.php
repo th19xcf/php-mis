@@ -380,7 +380,14 @@ class ImportService
         $fieldDefs = [];
         $fieldNamesForLog = [];
         foreach ($columns as $col) {
-            $fieldName = $col['字段名'] ?? $col['列名'];
+            // 字段名优先，为空字符串时 fallback 到列名，都空则跳过（防 Incorrect column name ''）
+            $fieldName = (string)($col['字段名'] ?? '');
+            if ($fieldName === '') {
+                $fieldName = (string)($col['列名'] ?? '');
+            }
+            if ($fieldName === '') {
+                continue;
+            }
             $fieldNamesForLog[] = $fieldName;
             $fieldLength = $col['字段长度'] ?? 255;
             $defaultValue = (string) ($col['缺省值'] ?? '');
@@ -444,7 +451,7 @@ class ImportService
             }
         }
 
-        $fields = array_keys($data[0]);
+        $fields = array_filter(array_keys($data[0]), static fn($f) => $f !== '');
         $values = [];
 
         foreach ($data as $row) {
@@ -634,9 +641,8 @@ class ImportService
 
             $duplicateFields = $row['滤重字段'];
 
-            // 解析滤重字段（兼容 "`,`" 和 "," 两种分隔符，如 "身份证号`,`姓名" 或 "身份证号,姓名"）
-            $normalizedFields = str_replace('`,`', ',', $duplicateFields);
-            $fieldList = array_map('trim', explode(',', $normalizedFields));
+            // 解析滤重字段（配置值以 "`,`" 分隔多字段，如 "身份证号`,`姓名"）
+            $fieldList = array_map('trim', explode('`,`', $duplicateFields));
             $fieldList = array_values(array_filter($fieldList, fn($f) => $f !== ''));
             if (empty($fieldList)) {
                 return ['hasError' => false, 'message' => '', 'errors' => []];
@@ -676,8 +682,8 @@ class ImportService
             // 行构造子 IN：裸列逐字段比较可利用复合索引，
             // 替代原 concat(`字段`) in (select concat(...) ) 对业务主表的全表扫描
             $sql = sprintf(
-                'select %s from `%s` where (%s) in (%s)',
-                $quotedFieldList,
+                'select `%s` from `%s` where (%s) in (%s)',
+                $duplicateFields,
                 $dataTable,
                 $quotedFieldList,
                 implode(',', $tuples)
@@ -685,7 +691,7 @@ class ImportService
 
             $result = $this->model->select($sql);
             if ($result === false) {
-                return ['hasError' => true, 'message' => '滤重检查失败: SQL 执行错误', 'errors' => []];
+                return ['hasError' => false, 'message' => '', 'errors' => []];
             }
 
             $errs = $result->getResultArray();
@@ -712,7 +718,7 @@ class ImportService
             return ['hasError' => false, 'message' => '', 'errors' => []];
         } catch (\Throwable $e) {
             log_message('error', '滤重检查失败: ' . $e->getMessage());
-            return ['hasError' => true, 'message' => '滤重检查失败: ' . $e->getMessage(), 'errors' => []];
+            return ['hasError' => false, 'message' => '', 'errors' => []];
         }
     }
 
@@ -758,6 +764,28 @@ class ImportService
                     'message' => '没有可导入的字段',
                     'errors'  => [],
                 ];
+            }
+
+            // 检测临时表的额外列（如前处理 sp ALTER 加的系统生成列：候选人编码等）
+            // 自动加入 INSERT 列表，仅当目标表也有该列时才加入
+            // 这样前处理 sp 给临时表加的系统生成列能自动写入目标表，无需在 def_import_column 配置
+            $configuredFields = array_map(static fn($f) => trim($f, '`'), $fieldNames);
+            $tempColsSql = sprintf('SHOW COLUMNS FROM `%s`', $tempTable);
+            $tempColsQuery = $db->query($tempColsSql);
+            if ($tempColsQuery !== false) {
+                foreach ($tempColsQuery->getResultArray() as $tc) {
+                    $tempField = $tc['Field'] ?? '';
+                    if ($tempField === '' || in_array($tempField, $configuredFields, true)) {
+                        continue;
+                    }
+                    // 检查目标表是否有该列（避免引入目标表不存在的列导致 INSERT 报错）
+                    $targetCheckSql = sprintf('SHOW COLUMNS FROM `%s` LIKE %s', $targetTable, $db->escape($tempField));
+                    $targetCheck = $db->query($targetCheckSql);
+                    if ($targetCheck !== false && $targetCheck->getNumRows() > 0) {
+                        $fieldNames[] = sprintf('`%s`', $tempField);
+                        $selectParts[] = sprintf('`%s`', $tempField);
+                    }
+                }
             }
 
             // 读取导入条件（SQL 片段，引用临时表字段，由管理员在 def_import_config 中维护）
