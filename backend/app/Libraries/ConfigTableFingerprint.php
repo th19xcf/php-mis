@@ -20,14 +20,14 @@ use Config\Services;
  *
  * 性能特征：
  *  - 指纹查询走 information_schema 元数据表（不扫业务表数据），约 1-2ms
- *  - 指纹查询结果在进程内缓存 60 秒，同一请求内多次读同一表只查一次
+ *  - 指纹查询结果在进程内缓存 10 秒，同一请求内多次读同一表只查一次
  *  - 净收益：用 1-2ms 换取 50-500ms 的完整 SQL 查询
  */
 class ConfigTableFingerprint
 {
     /** 指纹缓存键前缀（独立于业务缓存，避免被 invalidateTable 误删） */
     private const FP_CACHE_PREFIX = 'config_fp_';
-    private const FP_CACHE_TTL = 60;
+    private const FP_CACHE_TTL = 10;
 
     /** 监控表清单缓存键（独立键，避免与单表指纹缓存混淆） */
     private const MONITORED_TABLES_CACHE_KEY = 'config_fp_monitored_tables';
