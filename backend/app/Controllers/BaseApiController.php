@@ -202,58 +202,43 @@ class BaseApiController extends BaseController
     }
 
     /**
-     * 构建 detail() 的 SELECT 字段列表（配置驱动，view_function 优先，硬编码兜底）
+     * 构建 detail() 的 SELECT 字段列表（配置驱动，无兜底）
      *
      * 1. 从 MetadataCache::getViewFunctionColumns() 读取功能编码对应的列配置
      * 2. 提取「字段名」，与目标表实际列交叉验证（防配置错误导致 SQL 报错）
-     * 3. 配置为空或全部不匹配时，fallback 到调用方传入的硬编码字段列表
+     * 3. 配置为空或全部不匹配时抛 BusinessException，直接暴露配置问题
      *
-     * @param string $functionCode    功能编码（如 '2015'）
-     * @param string $table           目标表名（如 'ee_store'）
-     * @param array  $fallbackFields  兜底字段列表（如 ['GUID','候选人编码','姓名',...]）
+     * @param string $functionCode 功能编码（如 '2015'）
+     * @param string $table        目标表名（如 'ee_store'）
      * @return string 反引号包裹的逗号分隔字段列表，如 `GUID`,`候选人编码`,`姓名`
+     * @throws BusinessException 配置为空或字段均不匹配时
      */
-    protected function buildDetailSelectFields(
-        string $functionCode,
-        string $table,
-        array $fallbackFields
-    ): string {
-        try {
-            $columns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
-            $tableCols = $this->getTableColumns($table);
-            $tableColSet = $tableCols ? array_flip($tableCols) : [];
+    protected function buildDetailSelectFields(string $functionCode, string $table): string
+    {
+        $columns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
+        $tableCols = $this->getTableColumns($table);
+        $tableColSet = $tableCols ? array_flip($tableCols) : [];
 
-            $parts = [];
-            foreach ($columns as $col) {
-                $fieldName = (string) ($col['字段名'] ?? '');
-                if ($fieldName === '' || !isset($tableColSet[$fieldName])) {
-                    continue;
-                }
-                $queryName = (string) ($col['查询名'] ?? '');
-                if ($queryName !== '' && $queryName !== $fieldName) {
-                    $parts[] = "`{$fieldName}` as `{$queryName}`";
-                } else {
-                    $parts[] = "`{$fieldName}`";
-                }
-            }
-
-            if (!empty($parts)) {
-                return implode(',', $parts);
-            }
-        } catch (\Throwable $e) {
-            log_message('error', "[buildDetailSelectFields] 配置读取失败 code={$functionCode} table={$table} error=" . $e->getMessage());
-        }
-
-        // fallback：硬编码字段列表（支持 "字段名 as 别名" 格式）
         $parts = [];
-        foreach ($fallbackFields as $f) {
-            if (stripos($f, ' as ') !== false) {
-                [$col, $alias] = preg_split('/\s+as\s+/i', $f, 2);
-                $parts[] = "`{$col}` as `{$alias}`";
+        foreach ($columns as $col) {
+            $fieldName = (string) ($col['字段名'] ?? '');
+            if ($fieldName === '' || !isset($tableColSet[$fieldName])) {
+                continue;
+            }
+            $queryName = (string) ($col['查询名'] ?? '');
+            if ($queryName !== '' && $queryName !== $fieldName) {
+                $parts[] = "`{$fieldName}` as `{$queryName}`";
             } else {
-                $parts[] = "`{$f}`";
+                $parts[] = "`{$fieldName}`";
             }
         }
+
+        if (empty($parts)) {
+            throw new BusinessException(
+                "功能编码 {$functionCode} 的 view_function 配置为空或字段均不匹配表 {$table}，请检查 def_query_column 配置并刷新缓存"
+            );
+        }
+
         return implode(',', $parts);
     }
 

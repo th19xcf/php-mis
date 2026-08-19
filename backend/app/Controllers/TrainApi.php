@@ -115,13 +115,7 @@ class TrainApi extends BaseApiController
             return $this->paramError('人员GUID不能为空');
         }
 
-        $selectFields = $this->buildDetailSelectFields('2035', 'ee_train', [
-            'GUID', '姓名', '身份证号', '手机号码', '属地',
-            '培训业务', '培训状态', '培训批次', '培训老师',
-            '培训开始日期', '预计完成日期',
-            '培训完成日期', '培训离开日期',
-            '培训离开原因', '培训天数',
-        ]);
+        $selectFields = $this->buildDetailSelectFields('2035', 'ee_train');
 
         $sql = sprintf('
             select %s

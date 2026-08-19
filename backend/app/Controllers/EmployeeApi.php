@@ -103,14 +103,7 @@ class EmployeeApi extends BaseApiController
             return $this->paramError('人员GUID不能为空');
         }
 
-        $selectFields = $this->buildDetailSelectFields('2045', 'ee_onjob', [
-            'GUID', '姓名', '身份证号', '属地', '员工状态',
-            '培训开始日期', '培训完成日期',
-            '一阶段日期', '二阶段日期',
-            '岗位名称', '岗位类型', '结算类型',
-            '部门名称', '班组', '工号1',
-            '离职日期', '离职原因',
-        ]);
+        $selectFields = $this->buildDetailSelectFields('2045', 'ee_onjob');
 
         $sql = sprintf('
             select %s

@@ -117,14 +117,7 @@ class InterviewApi extends BaseApiController
             return $this->paramError('人员GUID不能为空');
         }
 
-        $selectFields = $this->buildDetailSelectFields('2025', 'ee_interview', [
-            'GUID', '姓名', '身份证号', '手机号码', '属地',
-            '招聘渠道', '渠道类型', '渠道名称', '信息来源', '实习结束日期',
-            '面试业务', '面试岗位', '一次面试日期 as 面试日期',
-            '一次面试结果 as 面试结果', '一次面试人 as 面试人',
-            '预约培训日期', '住宿', '备注说明', '参培信息',
-            '操作记录', '操作来源', '操作人员', '开始操作时间', '结束操作时间', '操作时间',
-        ]);
+        $selectFields = $this->buildDetailSelectFields('2025', 'ee_interview');
 
         $sql = sprintf('
             select %s
