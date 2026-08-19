@@ -89,6 +89,7 @@ $routes->group('dept', static function ($routes) {
 
 $routes->group('invitation', static function ($routes) {
 	$routes->get('tree', 'InvitationApi::tree');
+	$routes->get('debug-tree', 'InvitationApi::debugTree');
 	$routes->get('detail/(:segment)', 'InvitationApi::detail/$1');
 	$routes->post('add', 'InvitationApi::add');
 	$routes->post('update', 'InvitationApi::update');
@@ -99,6 +100,7 @@ $routes->group('invitation', static function ($routes) {
 
 $routes->group('interview', static function ($routes) {
 	$routes->get('tree', 'InterviewApi::tree');
+	$routes->get('debug-tree', 'InterviewApi::debugTree');
 	$routes->get('detail/(:segment)', 'InterviewApi::detail/$1');
 	$routes->post('add', 'InterviewApi::add');
 	$routes->post('update', 'InterviewApi::update');
@@ -109,6 +111,7 @@ $routes->group('interview', static function ($routes) {
 
 $routes->group('train', static function ($routes) {
 	$routes->get('tree', 'TrainApi::tree');
+	$routes->get('debug-tree', 'TrainApi::debugTree');
 	$routes->get('detail/(:segment)', 'TrainApi::detail/$1');
 	$routes->post('update', 'TrainApi::update');
 	$routes->post('batchUpdate', 'TrainApi::batchUpdate');
@@ -119,6 +122,7 @@ $routes->group('train', static function ($routes) {
 
 $routes->group('employee', static function ($routes) {
 	$routes->get('tree', 'EmployeeApi::tree');
+	$routes->get('debug-tree', 'EmployeeApi::debugTree');
 	$routes->get('detail/(:segment)', 'EmployeeApi::detail/$1');
 	$routes->post('update', 'EmployeeApi::update');
 	$routes->post('batchUpdate', 'EmployeeApi::batchUpdate');

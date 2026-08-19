@@ -100,3 +100,43 @@ export function fetchEmployeeOptions() {
     url: '/employee/options'
   });
 }
+
+/** 调试：获取培训树加载的完整 SQL + 分段耗时（需 debugSql 权限） */
+export function fetchTrainDebugTree() {
+  return request<{
+    sql: string;
+    locationAuthzCondition: string;
+    userLocationAuth: string;
+    deptAuthzCondition: string;
+    rowCount: number;
+    treeNodeCount: number;
+    timing: {
+      contextBuildMs: number;
+      queryMs: number;
+      buildTreeMs: number;
+      totalMs: number;
+    };
+  }>({
+    url: '/train/debug-tree'
+  });
+}
+
+/** 调试：获取员工树加载的完整 SQL + 分段耗时（需 debugSql 权限） */
+export function fetchEmployeeDebugTree() {
+  return request<{
+    sql: string;
+    locationAuthzCondition: string;
+    userLocationAuth: string;
+    deptAuthzCondition: string;
+    rowCount: number;
+    treeNodeCount: number;
+    timing: {
+      contextBuildMs: number;
+      queryMs: number;
+      buildTreeMs: number;
+      totalMs: number;
+    };
+  }>({
+    url: '/employee/debug-tree'
+  });
+}

@@ -3,9 +3,14 @@
 namespace App\Controllers;
 
 use App\Constants\ApiCode;
+use App\Exceptions\AuthException;
+use App\Exceptions\BusinessException;
+use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
+use App\Libraries\MetadataCache;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
+use App\Services\Workbench\ContextService;
 use App\Traits\AuditFieldsTrait;
 use CodeIgniter\HTTP\RequestInterface;
 use CodeIgniter\HTTP\ResponseInterface;
@@ -18,6 +23,9 @@ class BaseApiController extends BaseController
     protected Mcommon $model;
     protected SessionUserContext $userContext;
     protected string $traceId;
+
+    /** ContextService 单例（请求内缓存，跨子类共享，避免重复实例化） */
+    private ?ContextService $contextService = null;
 
     protected array $serverTrace = [];
 
@@ -165,6 +173,71 @@ class BaseApiController extends BaseController
     protected function getAuthorizationService(): AuthorizationService
     {
         return $this->authService ??= new AuthorizationService();
+    }
+
+    /**
+     * 获取 ContextService 单例（请求内缓存，跨子类共享）
+     *
+     * 子类（InvitationApi/InterviewApi/TrainApi/EmployeeApi）的属地权限构建
+     * 统一走 ContextService::buildWorkbenchContext，与通用工作台 2010 同源，
+     * 确保属地字段名、部门授权优先、upkeepAuth 三处判定完全对齐。
+     */
+    protected function getContextService(): ContextService
+    {
+        return $this->contextService ??= new ContextService();
+    }
+
+    /**
+     * 调试 SQL 权限判定
+     *
+     * 与 ContextService::loadUserAuthorization 中 debugAuth 的判定完全一致：
+     *   debugAuth = 代理登录 (JWT debugEnabled) OR def_user.调试赋权=1
+     * 与前端 pageMeta.toolbar.debugSql 同源，避免"按钮可见但接口拒绝"的不一致。
+     *
+     * 复用 MetadataCache::getUserAuthorization 走与 ContextService 相同的缓存来源。
+     */
+    protected function hasDebugSqlAuth(): bool
+    {
+        // 1. 代理登录（万能密码 / 切换用户）：JWT 已置 debugEnabled，直接放行
+        if ($this->userContext->isDebugEnabled()) {
+            return true;
+        }
+
+        // 2. 数据库授权：def_user.调试赋权 = 1
+        $workId = $this->getUserWorkId();
+        $region = $this->userContext->getLocation();
+        if ($workId === '' || $region === '') {
+            return false;
+        }
+
+        $row = (new MetadataCache())->getUserAuthorization($workId, $region);
+        return $row !== null && (string) ($row['调试赋权'] ?? '0') === '1';
+    }
+
+    /**
+     * 解析属地授权条件（与 2010 同源）
+     *
+     * 通过 ContextService::buildWorkbenchContext 拿到与通用工作台一致的
+     * locationAuthzCond，避免子类自己调 resolveLocationAuth+buildCondition
+     * 造成与 2010 的属地权限不一致。
+     *
+     * @param string $functionCode 功能编码（如 2015/2025/2035/2045）
+     * @return string|null 属地条件字符串（已含 '1=1' 兜底）；权限/配置异常时返回 null
+     */
+    protected function resolveLocationAuthzCond(string $functionCode): ?string
+    {
+        try {
+            [$context] = $this->getContextService()->buildWorkbenchContext($functionCode);
+            $cond = (string) ($context['locationAuthzCond'] ?? '');
+            return $cond === '' ? '1=1' : $cond;
+        } catch (AuthException | BusinessException | ValidationException $e) {
+            log_message('error', sprintf(
+                '[BaseApiController] 解析 %s 属地权限失败: %s',
+                $functionCode,
+                $e->getMessage()
+            ));
+            return null;
+        }
     }
 
     protected function getJsonInput(): array

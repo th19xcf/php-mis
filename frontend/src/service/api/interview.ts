@@ -54,3 +54,23 @@ export function fetchInterviewOptions() {
     url: '/interview/options'
   });
 }
+
+/** 调试：获取面试树加载的完整 SQL + 分段耗时（需 debugSql 权限） */
+export function fetchInterviewDebugTree() {
+  return request<{
+    sql: string;
+    locationAuthzCondition: string;
+    userLocationAuth: string;
+    deptAuthzCondition: string;
+    rowCount: number;
+    treeNodeCount: number;
+    timing: {
+      contextBuildMs: number;
+      queryMs: number;
+      buildTreeMs: number;
+      totalMs: number;
+    };
+  }>({
+    url: '/interview/debug-tree'
+  });
+}

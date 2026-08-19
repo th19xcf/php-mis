@@ -7,6 +7,26 @@ export function fetchInvitationTree(menuId?: string) {
   });
 }
 
+/** 调试：获取邀约树加载的完整 SQL + 分段耗时（需 debugSql 权限） */
+export function fetchDebugTree() {
+  return request<{
+    sql: string;
+    locationAuthzCondition: string;
+    userLocationAuth: string;
+    deptAuthzCondition: string;
+    rowCount: number;
+    treeNodeCount: number;
+    timing: {
+      contextBuildMs: number;
+      queryMs: number;
+      buildTreeMs: number;
+      totalMs: number;
+    };
+  }>({
+    url: '/invitation/debug-tree'
+  });
+}
+
 export function fetchInvitationDetail(guid: string) {
   return request<Api.Invitation.InvitationDetail>({
     url: `/invitation/detail/${guid}`

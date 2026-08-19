@@ -1,10 +1,11 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed, watch, onMounted, toRef } from 'vue';
 import { useRoute } from 'vue-router';
 import type { TreeOption } from 'naive-ui';
 import {  } from 'naive-ui';
 import { useTrainStore } from '@/store/modules/train';
-import { fetchUpdateTrain, fetchBatchUpdateTrain, fetchDeleteTrain, fetchTransferTrain } from '@/service/api';
+import { fetchUpdateTrain, fetchBatchUpdateTrain, fetchDeleteTrain, fetchTransferTrain, fetchTrainDebugTree } from '@/service/api';
+import { fetchWorkbenchPage } from '@/service/api/workbench';
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
 import { useWorkbenchFields } from '@/hooks/business/use-workbench-fields';
@@ -20,6 +21,9 @@ const trainStore = useTrainStore();
 const { confirmDelete, confirmBatch, confirmTransfer } = useDangerConfirm();
 
 const functionCode = computed(() => route.params.code || '2035');
+
+// 调试按钮可见性：与 pageMeta.toolbar.debugSql 同源（def_user.调试赋权=1 或代理登录）
+const canDebug = ref(false);
 
 const treeData = computed(() => trainStore.treeData);
 const selectedGuids = computed(() => trainStore.selectedGuids);
@@ -85,6 +89,35 @@ const { buildEditForm } = usePersonnelEditFormInit();
 
 async function loadTree() {
   await trainStore.refreshTree();
+}
+
+// 调试：打印左侧培训树加载的完整 SQL + 分段耗时到浏览器控制台
+// 权限：canDebug = pageMeta.toolbar.debugSql（def_user.调试赋权=1 或代理登录）
+async function handleDebugTree() {
+  try {
+    const { data } = await fetchTrainDebugTree();
+    if (!data) {
+      message.error('调试信息为空');
+      return;
+    }
+    console.group('%c[调试] 培训树 SQL 追踪', 'color: #fa8c16; font-weight: bold');
+    console.log('%cSQL 语句：', 'color: #1890ff; font-weight: bold');
+    console.log(data.sql);
+    console.log('%c权限条件（属地）：', 'color: #52c41a; font-weight: bold');
+    console.log(data.locationAuthzCondition);
+    console.log('%c用户级属地赋权：', 'color: #13c2c2; font-weight: bold');
+    console.log(data.userLocationAuth || '(空)');
+    console.log('%c部门授权条件：', 'color: #eb2f96; font-weight: bold');
+    console.log(data.deptAuthzCondition || '(空 → 走属地授权)');
+    console.log('%c分段耗时（ms）：', 'color: #722ed1; font-weight: bold');
+    console.table(data.timing);
+    console.log('查询行数：', data.rowCount);
+    console.log('树节点数：', data.treeNodeCount);
+    console.groupEnd();
+    message.success('调试信息已输出到控制台（F12 查看）');
+  } catch {
+    message.error('调试信息获取失败');
+  }
 }
 
 function handleSelect(keys: string[], optionNodes: (TreeOption | null)[]) {
@@ -252,6 +285,14 @@ watch([isEditingDetail, isBatchMode, isTransferMode], newValues => {
 });
 
 onMounted(async () => {
+  // 拉取调试按钮可见性（toolbar.debugSql = 调试赋权 或代理登录）
+  try {
+    const { data } = await fetchWorkbenchPage(String(functionCode.value));
+    canDebug.value = data?.meta?.toolbar?.debugSql === true;
+  } catch {
+    canDebug.value = false;
+  }
+
   if (!trainStore.isLoaded) {
     await trainStore.loadTreeData();
   }
@@ -270,10 +311,16 @@ onMounted(async () => {
           <span class="text-lg font-600">培训人员</span>
           <NTag type="success" size="small">{{ functionCode }}</NTag>
         </div>
-        <NButton size="small" @click="loadTree">
-          <template #icon><icon-mdi-refresh /></template>
-          刷新
-        </NButton>
+        <NSpace :size="8">
+          <NButton size="small" @click="loadTree">
+            <template #icon><icon-mdi-refresh /></template>
+            刷新
+          </NButton>
+          <NButton v-if="canDebug" size="small" type="warning" @click="handleDebugTree">
+            <template #icon><icon-mdi-bug /></template>
+            调试
+          </NButton>
+        </NSpace>
       </div>
       <div class="panel-content">
         <div class="mb-2">

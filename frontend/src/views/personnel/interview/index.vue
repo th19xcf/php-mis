@@ -3,7 +3,7 @@ import { ref, onMounted, computed, watch, toRef } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import {  } from 'naive-ui';
 import { useRoute } from 'vue-router';
-import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview } from '@/service/api';
+import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview, fetchInterviewDebugTree } from '@/service/api';
 import { useInterviewStore } from '@/store/modules/interview';
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
@@ -32,6 +32,9 @@ const functionCode = computed(() => {
 
 // 导入按钮可见性：与通用工作台 toolbar.import 同一逻辑（导入授权=1 且已配置导入模块）
 const canImport = ref(false);
+
+// 调试按钮可见性：与 pageMeta.toolbar.debugSql 同源（def_user.调试赋权=1 或代理登录）
+const canDebug = ref(false);
 
 const treeData = computed(() => interviewStore.treeData);
 const selectedGuids = computed(() => interviewStore.selectedGuids);
@@ -102,6 +105,35 @@ const { buildEditForm } = usePersonnelEditFormInit();
 
 async function loadTree() {
   await interviewStore.refreshTree();
+}
+
+// 调试：打印左侧面试树加载的完整 SQL + 分段耗时到浏览器控制台
+// 权限：canDebug = pageMeta.toolbar.debugSql（def_user.调试赋权=1 或代理登录）
+async function handleDebugTree() {
+  try {
+    const { data } = await fetchInterviewDebugTree();
+    if (!data) {
+      message.error('调试信息为空');
+      return;
+    }
+    console.group('%c[调试] 面试树 SQL 追踪', 'color: #fa8c16; font-weight: bold');
+    console.log('%cSQL 语句：', 'color: #1890ff; font-weight: bold');
+    console.log(data.sql);
+    console.log('%c权限条件（属地）：', 'color: #52c41a; font-weight: bold');
+    console.log(data.locationAuthzCondition);
+    console.log('%c用户级属地赋权：', 'color: #13c2c2; font-weight: bold');
+    console.log(data.userLocationAuth || '(空)');
+    console.log('%c部门授权条件：', 'color: #eb2f96; font-weight: bold');
+    console.log(data.deptAuthzCondition || '(空 → 走属地授权)');
+    console.log('%c分段耗时（ms）：', 'color: #722ed1; font-weight: bold');
+    console.table(data.timing);
+    console.log('查询行数：', data.rowCount);
+    console.log('树节点数：', data.treeNodeCount);
+    console.groupEnd();
+    message.success('调试信息已输出到控制台（F12 查看）');
+  } catch {
+    message.error('调试信息获取失败');
+  }
 }
 
 // 导入功能：复用通用工作台导入弹窗与流程（后端 /workbench/import 接口按功能码通用）
@@ -359,11 +391,14 @@ async function handleSecondInterviewConfirm() {
 
 onMounted(async () => {
   // 拉取功能权限，控制导入按钮显示（toolbar.import = 导入授权 && 导入模块已配置）
+  // 同时拉取调试按钮可见性（toolbar.debugSql = 调试赋权 或代理登录）
   try {
     const { data } = await fetchWorkbenchPage(functionCode.value);
     canImport.value = data?.meta?.toolbar?.import === true;
+    canDebug.value = data?.meta?.toolbar?.debugSql === true;
   } catch {
     canImport.value = false;
+    canDebug.value = false;
   }
 
   if (!interviewStore.isLoaded) {
@@ -413,6 +448,12 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], ne
               <icon-mdi-refresh />
             </template>
             刷新
+          </NButton>
+          <NButton v-if="canDebug" size="small" type="warning" @click="handleDebugTree">
+            <template #icon>
+              <icon-mdi-bug />
+            </template>
+            调试
           </NButton>
         </NSpace>
       </div>

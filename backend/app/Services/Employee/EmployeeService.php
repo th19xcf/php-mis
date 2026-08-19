@@ -40,11 +40,26 @@ class EmployeeService
      */
     public function getEmployeeList(string $locationAuthzCond): array
     {
+        $sql = $this->getEmployeeListSql($locationAuthzCond);
+        $result = $this->model->select($sql);
+        return $result ? $result->getResultArray() : [];
+    }
+
+    /**
+     * 构建 ee_onjob 人员列表 SQL（带属地权限过滤）
+     *
+     * 抽取出来供 EmployeeApi::debugTree 复用，确保调试输出与 tree() 完全一致。
+     *
+     * @param string $locationAuthzCond 属地权限 WHERE 条件
+     * @return string 完整 SQL 语句
+     */
+    public function getEmployeeListSql(string $locationAuthzCond): string
+    {
         if ($locationAuthzCond === '') {
             $locationAuthzCond = '1=1';
         }
 
-        $sql = sprintf('
+        return sprintf('
             select GUID,姓名,工号1 as 工号,属地,员工状态,
                 部门名称,if(班组="","未分班组",班组) as 班组,
                 岗位名称,岗位类型,结算类型,培训完成日期,
@@ -57,9 +72,6 @@ class EmployeeService
                 convert(姓名 using gbk)',
             $locationAuthzCond
         );
-
-        $result = $this->model->select($sql);
-        return $result ? $result->getResultArray() : [];
     }
 
     /**

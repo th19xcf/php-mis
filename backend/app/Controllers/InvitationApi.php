@@ -2,19 +2,22 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AuthException;
+use App\Exceptions\BusinessException;
+use App\Exceptions\ValidationException;
+
 class InvitationApi extends BaseApiController
 {
     public function tree()
     {
-        $service = $this->getAuthorizationService();
-        $resolvedAuth = $service->resolveLocationAuth('2015');
-        $locationAuthzCond = $service->buildCondition('属地', $resolvedAuth, false);
-        if ($locationAuthzCond === '') {
-            $locationAuthzCond = '1=1';
+        // 属地权限：与 2010 同源（走 ContextService，含部门授权优先、upkeepAuth）
+        $locationAuthzCond = $this->resolveLocationAuthzCond('2015');
+        if ($locationAuthzCond === null) {
+            return $this->serverError('无法获取属地权限');
         }
 
         $sql = sprintf('
-            select 
+            select
                 GUID,姓名,身份证号,性别,年龄,手机号码,
                 学校,专业,现住址,属地,
                 邀约结果,招聘渠道,邀约日期,邀约人,
@@ -30,6 +33,87 @@ class InvitationApi extends BaseApiController
 
         return $this->success($tree);
     }
+
+    /**
+     * 调试：打印左侧邀约树加载的完整 SQL + 分段耗时
+     *
+     * 权限：与 pageMeta.toolbar.debugSql 同一判定（前端按钮 v-if="canDebug" 同源）
+     *   debugAuth = 代理登录 (JWT debugEnabled) OR def_user.调试赋权=1
+     *   与 ContextService::loadUserAuthorization 中 debugAuth 的判定完全一致
+     */
+    public function debugTree()
+    {
+        // 调试权限校验：与 pageMeta.toolbar.debugSql 同源，避免按钮可见但接口拒绝
+        if (! $this->hasDebugSqlAuth()) {
+            return $this->serverError('无调试权限');
+        }
+
+        $totalStart = hrtime(true);
+
+        // 1. 构建工作台上下文（与 tree() 同源，与 2010 完全一致）
+        //    直接调 buildWorkbenchContext 一次性拿到完整诊断信息：
+        //    用户级属地赋权 / 部门条件 / 最终属地条件
+        $contextStart = hrtime(true);
+        try {
+            [$context] = $this->getContextService()->buildWorkbenchContext('2015');
+        } catch (AuthException | BusinessException | ValidationException $e) {
+            log_message('error', '[InvitationApi::debugTree] 构建上下文失败: ' . $e->getMessage());
+            return $this->serverError('无法获取属地权限: ' . $e->getMessage());
+        }
+        $locationAuthzCond = (string) ($context['locationAuthzCond'] ?? '');
+        if ($locationAuthzCond === '') {
+            $locationAuthzCond = '1=1';
+        }
+        $userLocationAuth   = (string) ($context['user']['locationAuth'] ?? '');
+        $deptAuthzCond      = (string) ($context['deptAuthzCond'] ?? '');
+        $contextEnd = hrtime(true);
+
+        // 2. 构建 SQL（与 tree() 完全一致）
+        $sql = sprintf('
+            select
+                GUID,姓名,身份证号,性别,年龄,手机号码,
+                学校,专业,现住址,属地,
+                邀约结果,招聘渠道,邀约日期,邀约人,
+                邀约业务,邀约岗位,预约面试日期,
+                if(面试信息="","待面试",面试信息) as 面试信息
+            from ee_store
+            where %s and 有效标识="1" and 删除标识="0"
+            order by 属地,field(邀约结果,"通过","未通过","考虑","拒绝","未邀约"),面试信息,招聘渠道,convert(姓名 using gbk)',
+            $locationAuthzCond);
+
+        // 3. 执行查询
+        $queryStart = hrtime(true);
+        $results = $this->model->select($sql)->getResultArray();
+        $queryEnd = hrtime(true);
+
+        // 4. 构建树
+        $buildStart = hrtime(true);
+        $tree = $this->buildGroupedInvitationTree($results);
+        $buildEnd = hrtime(true);
+
+        $totalEnd = hrtime(true);
+
+        return $this->success([
+            'sql'                    => $sql,
+            'locationAuthzCondition' => $locationAuthzCond,
+            'userLocationAuth'       => $userLocationAuth,
+            'deptAuthzCondition'     => $deptAuthzCond,
+            'rowCount'               => count($results),
+            'treeNodeCount'          => count($tree),
+            'timing' => [
+                'contextBuildMs' => round(($contextEnd - $contextStart) / 1e6, 2),
+                'queryMs'        => round(($queryEnd - $queryStart) / 1e6, 2),
+                'buildTreeMs'    => round(($buildEnd - $buildStart) / 1e6, 2),
+                'totalMs'        => round(($totalEnd - $totalStart) / 1e6, 2),
+            ],
+        ]);
+    }
+
+    /**
+     * 调试 SQL 权限判定、ContextService 单例、属地权限解析
+     * 已上提到 BaseApiController（hasDebugSqlAuth / getContextService / resolveLocationAuthzCond）
+     * 4 个子类（InvitationApi/InterviewApi/TrainApi/EmployeeApi）共用同一份实现。
+     */
 
     public function detail($guid = '')
     {
@@ -232,8 +316,11 @@ class InvitationApi extends BaseApiController
 
     public function options()
     {
-        $resolvedAuth = $this->getAuthorizationService()->resolveLocationAuth('2015');
-        $locationAuthz = $resolvedAuth;
+        // 下拉选项过滤：与 2010 同源（FieldConfigService::getObjectOptions）
+        // 用 userContext->getLocation()（员工属地单值），不再用 resolveLocationAuth
+        // 的合并赋权字符串（如 "北京,上海|北京,广州"），后者在 locate 子串匹配下几乎
+        // 匹配不到任何选项，语义错误。
+        $userLocation = $this->userContext->getLocation();
 
         $regionSql = sprintf('
             select distinct 对象值 as value, 对象值 as label
@@ -241,7 +328,7 @@ class InvitationApi extends BaseApiController
             where 对象名称="属地" and 有效标识="1"
                 and (属地="" or locate(属地,"%s"))
             order by convert(对象值 using gbk)',
-            $locationAuthz
+            $userLocation
         );
 
         $channelSql = sprintf('
@@ -250,7 +337,7 @@ class InvitationApi extends BaseApiController
             where 对象名称="招聘渠道" and 有效标识="1"
                 and (属地="" or locate(属地,"%s"))
             order by convert(对象值 using gbk)',
-            $locationAuthz
+            $userLocation
         );
 
         $regionResult = $this->model->select($regionSql)->getResultArray();

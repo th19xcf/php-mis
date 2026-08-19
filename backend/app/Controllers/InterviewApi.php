@@ -2,15 +2,18 @@
 
 namespace App\Controllers;
 
+use App\Exceptions\AuthException;
+use App\Exceptions\BusinessException;
+use App\Exceptions\ValidationException;
+
 class InterviewApi extends BaseApiController
 {
     public function tree()
     {
-        $service = $this->getAuthorizationService();
-        $resolvedAuth = $service->resolveLocationAuth('2025');
-        $locationAuthzCond = $service->buildCondition('属地', $resolvedAuth, false);
-        if ($locationAuthzCond === '') {
-            $locationAuthzCond = '1=1';
+        // 属地权限：与 2010 同源（走 ContextService，含部门授权优先、upkeepAuth）
+        $locationAuthzCond = $this->resolveLocationAuthzCond('2025');
+        if ($locationAuthzCond === null) {
+            return $this->serverError('无法获取属地权限');
         }
 
         $sql = sprintf('
@@ -30,6 +33,78 @@ class InterviewApi extends BaseApiController
         $tree = $this->buildGroupedInterviewTree($results);
 
         return $this->success($tree);
+    }
+
+    /**
+     * 调试：打印左侧面试树加载的完整 SQL + 分段耗时
+     *
+     * 权限：与 pageMeta.toolbar.debugSql 同源（hasDebugSqlAuth）
+     * 属地权限：与 tree() 同源、与 2010 完全一致
+     */
+    public function debugTree()
+    {
+        if (! $this->hasDebugSqlAuth()) {
+            return $this->serverError('无调试权限');
+        }
+
+        $totalStart = hrtime(true);
+
+        // 1. 构建工作台上下文（与 tree() 同源，与 2010 完全一致）
+        $contextStart = hrtime(true);
+        try {
+            [$context] = $this->getContextService()->buildWorkbenchContext('2025');
+        } catch (AuthException | BusinessException | ValidationException $e) {
+            log_message('error', '[InterviewApi::debugTree] 构建上下文失败: ' . $e->getMessage());
+            return $this->serverError('无法获取属地权限: ' . $e->getMessage());
+        }
+        $locationAuthzCond = (string) ($context['locationAuthzCond'] ?? '');
+        if ($locationAuthzCond === '') {
+            $locationAuthzCond = '1=1';
+        }
+        $userLocationAuth = (string) ($context['user']['locationAuth'] ?? '');
+        $deptAuthzCond    = (string) ($context['deptAuthzCond'] ?? '');
+        $contextEnd = hrtime(true);
+
+        // 2. 构建 SQL（与 tree() 完全一致）
+        $sql = sprintf('
+            select GUID,姓名,身份证号,手机号码,属地,
+                if(mod(substr(身份证号,17,1),2)=0,"女","男") as 性别,
+                招聘渠道,一次面试结果 as 面试结果,
+                if(参培信息="","待参培",参培信息) as 参培信息,
+                一次面试日期 as 面试日期,预约培训日期
+            from ee_interview
+            where %s and 有效标识="1" and 删除标识="0"
+            order by 属地,field(面试结果,"未面试","通过","未通过"),
+                field(参培信息,"待参培","已参培","未参培"),
+                招聘渠道,预约培训日期 desc,convert(姓名 using gbk)',
+            $locationAuthzCond);
+
+        // 3. 执行查询
+        $queryStart = hrtime(true);
+        $results = $this->model->select($sql)->getResultArray();
+        $queryEnd = hrtime(true);
+
+        // 4. 构建树
+        $buildStart = hrtime(true);
+        $tree = $this->buildGroupedInterviewTree($results);
+        $buildEnd = hrtime(true);
+
+        $totalEnd = hrtime(true);
+
+        return $this->success([
+            'sql'                     => $sql,
+            'locationAuthzCondition'  => $locationAuthzCond,
+            'userLocationAuth'        => $userLocationAuth,
+            'deptAuthzCondition'      => $deptAuthzCond,
+            'rowCount'                => count($results),
+            'treeNodeCount'           => count($tree),
+            'timing' => [
+                'contextBuildMs' => round(($contextEnd - $contextStart) / 1e6, 2),
+                'queryMs'        => round(($queryEnd - $queryStart) / 1e6, 2),
+                'buildTreeMs'    => round(($buildEnd - $buildStart) / 1e6, 2),
+                'totalMs'        => round(($totalEnd - $totalStart) / 1e6, 2),
+            ],
+        ]);
     }
 
     public function detail($guid = '')
@@ -189,8 +264,10 @@ class InterviewApi extends BaseApiController
 
     public function options()
     {
-        $resolvedAuth = $this->getAuthorizationService()->resolveLocationAuth('2025');
-        $locationAuthz = $resolvedAuth;
+        // 下拉选项过滤：与 2010 同源（FieldConfigService::getObjectOptions）
+        // 用 userContext->getLocation()（员工属地单值），不再用 resolveLocationAuth
+        // 的合并赋权字符串（locate 子串匹配语义错误）
+        $userLocation = $this->userContext->getLocation();
 
         $regionSql = sprintf('
             select distinct 对象值 as value, 对象值 as label
@@ -198,7 +275,7 @@ class InterviewApi extends BaseApiController
             where 对象名称="属地" and 有效标识="1"
                 and (属地="" or locate(属地,"%s"))
             order by convert(对象值 using gbk)',
-            $locationAuthz
+            $userLocation
         );
 
         $channelSql = sprintf('
@@ -207,7 +284,7 @@ class InterviewApi extends BaseApiController
             where 对象名称="招聘渠道" and 有效标识="1"
                 and (属地="" or locate(属地,"%s"))
             order by convert(对象值 using gbk)',
-            $locationAuthz
+            $userLocation
         );
 
         $trainBizSql = sprintf('
@@ -216,7 +293,7 @@ class InterviewApi extends BaseApiController
             where 对象名称="培训业务" and 有效标识="1"
                 and (属地="" or locate(属地,"%s"))
             order by convert(对象值 using gbk)',
-            $locationAuthz
+            $userLocation
         );
 
         $regionResult = $this->model->select($regionSql)->getResultArray();
