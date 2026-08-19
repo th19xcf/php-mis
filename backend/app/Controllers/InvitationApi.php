@@ -125,16 +125,21 @@ class InvitationApi extends BaseApiController
             return $this->paramError('人员GUID不能为空');
         }
 
+        $selectFields = $this->buildDetailSelectFields('2015', 'ee_store', [
+            'GUID', '候选人编码', '姓名', '身份证号', '手机号码', '邀约次数', '性别', '年龄',
+            '学校', '专业', '现住址', '工作履历',
+            '渠道类型', '招聘渠道', '渠道名称',
+            '属地', '部门名称', '邀约业务', '邀约岗位', '工作地点',
+            '邀约日期', '邀约人', '邀约结果',
+            '预约面试日期', '面试信息',
+            '操作记录', '操作来源', '操作人员', '开始操作时间', '结束操作时间', '操作时间',
+        ]);
+
         $sql = sprintf('
-            select GUID,姓名,身份证号,手机号码,邀约次数,性别,年龄,
-                学校,专业,现住址,工作履历,
-                渠道类型,招聘渠道,渠道名称,
-                属地,部门名称,邀约业务,邀约岗位,工作地点,
-                邀约日期,邀约人,邀约结果,
-                预约面试日期,面试信息,
-                操作记录,操作来源,操作人员,开始操作时间,结束操作时间,操作时间
+            select %s
             from ee_store
             where GUID="%s" and 有效标识="1" and 删除标识="0"',
+            $selectFields,
             $guid);
 
         $result = $this->model->select($sql)->getRowArray();

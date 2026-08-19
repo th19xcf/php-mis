@@ -31,6 +31,9 @@ class BaseApiController extends BaseController
 
     private ?AuthorizationService $authService = null;
 
+    /** MetadataCache 单例（请求内缓存，避免重复实例化） */
+    private ?MetadataCache $metadataCache = null;
+
     /**
      * 表字段列表缓存（请求内静态缓存，避免同一表反复 SHOW COLUMNS）
      * 格式: [tableName => [col1, col2, ...]]
@@ -185,6 +188,73 @@ class BaseApiController extends BaseController
     protected function getContextService(): ContextService
     {
         return $this->contextService ??= new ContextService();
+    }
+
+    /**
+     * 获取 MetadataCache 单例（请求内缓存，跨子类共享）
+     *
+     * 子类（InvitationApi/InterviewApi/TrainApi/EmployeeApi）的 detail() 等
+     * 配置驱动查询统一走此单例，避免重复实例化。
+     */
+    protected function getMetadataCache(): MetadataCache
+    {
+        return $this->metadataCache ??= new MetadataCache();
+    }
+
+    /**
+     * 构建 detail() 的 SELECT 字段列表（配置驱动，view_function 优先，硬编码兜底）
+     *
+     * 1. 从 MetadataCache::getViewFunctionColumns() 读取功能编码对应的列配置
+     * 2. 提取「字段名」，与目标表实际列交叉验证（防配置错误导致 SQL 报错）
+     * 3. 配置为空或全部不匹配时，fallback 到调用方传入的硬编码字段列表
+     *
+     * @param string $functionCode    功能编码（如 '2015'）
+     * @param string $table           目标表名（如 'ee_store'）
+     * @param array  $fallbackFields  兜底字段列表（如 ['GUID','候选人编码','姓名',...]）
+     * @return string 反引号包裹的逗号分隔字段列表，如 `GUID`,`候选人编码`,`姓名`
+     */
+    protected function buildDetailSelectFields(
+        string $functionCode,
+        string $table,
+        array $fallbackFields
+    ): string {
+        try {
+            $columns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
+            $tableCols = $this->getTableColumns($table);
+            $tableColSet = $tableCols ? array_flip($tableCols) : [];
+
+            $parts = [];
+            foreach ($columns as $col) {
+                $fieldName = (string) ($col['字段名'] ?? '');
+                if ($fieldName === '' || !isset($tableColSet[$fieldName])) {
+                    continue;
+                }
+                $queryName = (string) ($col['查询名'] ?? '');
+                if ($queryName !== '' && $queryName !== $fieldName) {
+                    $parts[] = "`{$fieldName}` as `{$queryName}`";
+                } else {
+                    $parts[] = "`{$fieldName}`";
+                }
+            }
+
+            if (!empty($parts)) {
+                return implode(',', $parts);
+            }
+        } catch (\Throwable $e) {
+            log_message('error', "[buildDetailSelectFields] 配置读取失败 code={$functionCode} table={$table} error=" . $e->getMessage());
+        }
+
+        // fallback：硬编码字段列表（支持 "字段名 as 别名" 格式）
+        $parts = [];
+        foreach ($fallbackFields as $f) {
+            if (stripos($f, ' as ') !== false) {
+                [$col, $alias] = preg_split('/\s+as\s+/i', $f, 2);
+                $parts[] = "`{$col}` as `{$alias}`";
+            } else {
+                $parts[] = "`{$f}`";
+            }
+        }
+        return implode(',', $parts);
     }
 
     /**
