@@ -502,7 +502,13 @@ const {
   confirmUpdate,
   handleOpenBatchUpdate,
   confirmBatchUpdate,
-  setEditFieldValue
+  setEditFieldValue,
+  addDirty,
+  updateDirty,
+  batchUpdateDirty,
+  markAddDirty,
+  markUpdateDirty,
+  markBatchDirty
 } = useWorkbenchEditForms({
   gridApi,
   getFunctionCode,
@@ -513,6 +519,42 @@ const {
   },
   notify
 });
+
+// 表单字段变化时标记 dirty（用于关闭/切换前未保存提示）
+function handleAddFormUpdate(val: Record<string, any>) {
+  addFormData.value = val;
+  markAddDirty();
+}
+function handleUpdateFormUpdate(val: Record<string, any>) {
+  updateFormData.value = val;
+  markUpdateDirty();
+}
+function handleBatchFormUpdate(val: Record<string, any>) {
+  batchUpdateFormData.value = val;
+  markBatchDirty();
+}
+
+// 当前右侧表单有未保存修改时，弹确认框；返回是否可继续（true=可离开/切换，false=取消）
+async function confirmDiscardIfDirty(): Promise<boolean> {
+  const mode = rightPanelMode.value;
+  const dirty =
+    (mode === 'add' && addDirty.value) ||
+    (mode === 'update' && updateDirty.value) ||
+    (mode === 'batch' && batchUpdateDirty.value);
+  if (!dirty) return true;
+  return new Promise<boolean>(resolve => {
+    window.$dialog?.warning({
+      title: '未保存的修改',
+      content: '当前表单有未保存的修改，是否确认离开？',
+      positiveText: '离开',
+      negativeText: '取消',
+      onPositiveClick: () => resolve(true),
+      onNegativeClick: () => resolve(false),
+      onMaskClick: () => resolve(false),
+      onClose: () => resolve(false)
+    });
+  });
+}
 
 // —— 右栏状态持久化：组件 mount / activate 时从 store 读回，watch 实时写回 ——
 const rightPanelStore = useWorkbenchRightPanelStore();
@@ -617,19 +659,36 @@ function clearAddPanel() {
   addVisible.value = false;
   addError.value = '';
   addSuccess.value = '';
+  addDirty.value = false;
   editPanelMaximized.value = false;
 }
 function clearUpdatePanel() {
   updateVisible.value = false;
   updateError.value = '';
   updateSuccess.value = '';
+  updateDirty.value = false;
   editPanelMaximized.value = false;
 }
 function clearBatchUpdatePanel() {
   batchUpdateVisible.value = false;
   batchUpdateError.value = '';
   batchUpdateSuccess.value = '';
+  batchUpdateDirty.value = false;
   editPanelMaximized.value = false;
+}
+
+// 表单内部「关闭」按钮：先确认未保存修改，再清空（与切换/整体关闭同源的 guard）
+async function closeAddPanelWithConfirm() {
+  if (!(await confirmDiscardIfDirty())) return;
+  clearAddPanel();
+}
+async function closeUpdatePanelWithConfirm() {
+  if (!(await confirmDiscardIfDirty())) return;
+  clearUpdatePanel();
+}
+async function closeBatchPanelWithConfirm() {
+  if (!(await confirmDiscardIfDirty())) return;
+  clearBatchUpdatePanel();
 }
 
 // 「添加样本数据」：把表格勾选的 1 行数据合并到 addFormData
@@ -676,6 +735,7 @@ function clearCommentPanel() {
 }
 
 async function handleOpenAddPanel() {
+  if (!(await confirmDiscardIfDirty())) return;
   // 关闭其它右侧面板
   clearUpdatePanel();
   clearBatchUpdatePanel();
@@ -689,6 +749,7 @@ async function handleOpenAddPanel() {
 }
 
 async function handleOpenUpdatePanel() {
+  if (!(await confirmDiscardIfDirty())) return;
   clearAddPanel();
   clearBatchUpdatePanel();
   clearCommentPanel();
@@ -715,6 +776,7 @@ async function handleOpenUpdatePanel() {
 }
 
 async function handleOpenBatchUpdatePanel() {
+  if (!(await confirmDiscardIfDirty())) return;
   clearAddPanel();
   clearUpdatePanel();
   clearCommentPanel();
@@ -792,7 +854,8 @@ async function handleOpenViewCommentPanel() {
   }
 }
 
-function handleCloseRightPanel() {
+async function handleCloseRightPanel() {
+  if (!(await confirmDiscardIfDirty())) return;
   rightPanelMode.value = null;
   clearAddPanel();
   clearUpdatePanel();
@@ -1001,6 +1064,12 @@ const { handleReset, handleRefresh } = useWorkbenchStateReset({
   notify
 });
 
+// 点击「刷新」时先关闭右侧已打开的表单（新增/单条修改/多条修改/评论等），再执行刷新
+async function onToolbarRefresh() {
+  rightPanelMode.value = null;
+  await handleRefresh();
+}
+
 // 数据整理
 const { handleUpkeep } = useWorkbenchUpkeep({
   getFunctionCode,
@@ -1127,7 +1196,7 @@ function onGridReady(event: any) {
       :update-loading="updateLoading"
       :batch-update-loading="batchUpdateLoading"
       :delete-loading="deleteLoading"
-      @refresh="handleRefresh"
+      @refresh="onToolbarRefresh"
       @reset="handleReset"
       @open-pin-column="handleOpenPinColumn"
       @open-field-column="handleOpenFieldColumn"
@@ -1277,9 +1346,9 @@ function onGridReady(event: any) {
         :key-field-count="keyFieldCount"
         @update:chart-maximized="chartMaximized = $event"
         @update:edit-panel-maximized="editPanelMaximized = $event"
-        @update:add-form-data="addFormData = $event"
-        @update:update-form-data="updateFormData = $event"
-        @update:batch-update-form-data="batchUpdateFormData = $event"
+        @update:add-form-data="handleAddFormUpdate"
+        @update:update-form-data="handleUpdateFormUpdate"
+        @update:batch-update-form-data="handleBatchFormUpdate"
         @update:comment-remark="commentRemark = $event"
         @close="handleCloseRightPanel"
         @refresh-chart="pageMeta && handleOpenChart(pageMeta)"
@@ -1291,9 +1360,9 @@ function onGridReady(event: any) {
         @confirm-batch-update="confirmBatchUpdate"
         @submit-comment="handleSubmitComment"
         @open-popup="handleOpenPopup"
-        @clear-add="clearAddPanel"
-        @clear-update="clearUpdatePanel"
-        @clear-batch="clearBatchUpdatePanel"
+        @clear-add="closeAddPanelWithConfirm"
+        @clear-update="closeUpdatePanelWithConfirm"
+        @clear-batch="closeBatchPanelWithConfirm"
         @clear-comment="clearCommentPanel"
         @add-sample="handleAddSample"
         @splitter-mousedown="handleSplitterMouseDown"

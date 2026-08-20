@@ -77,6 +77,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
   const addFormFields = ref<any[]>([]);
   const addError = ref('');
   const addSuccess = ref('');
+  const addDirty = ref(false);
 
   const updateVisible = ref(false);
   const updateLoading = ref(false);
@@ -84,11 +85,13 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
   const updateSuccess = ref('');
   const updateFormData = ref<Record<string, any>>({});
   const updateFormFields = ref<any[]>([]);
+  const updateDirty = ref(false);
 
   const batchUpdateVisible = ref(false);
   const batchUpdateLoading = ref(false);
   const batchUpdateError = ref('');
   const batchUpdateSuccess = ref('');
+  const batchUpdateDirty = ref(false);
   const batchUpdateFormData = ref<Record<string, any>>({});
   const batchUpdateFormFields = ref<any[]>([]);
 
@@ -128,6 +131,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       options.notify('error', addError.value);
     } finally {
       addLoading.value = false;
+      addDirty.value = false;
     }
   }
 
@@ -153,6 +157,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
 
       if (data.success) {
         addSuccess.value = data.message || '新增成功';
+        addDirty.value = false;
         options.notify('success', addSuccess.value);
         setTimeout(() => {
           addVisible.value = false;
@@ -219,6 +224,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       options.notify('error', updateError.value);
     } finally {
       updateLoading.value = false;
+      updateDirty.value = false;
     }
   }
 
@@ -251,6 +257,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
 
       if (data.success) {
         updateSuccess.value = data.message || '修改成功';
+        updateDirty.value = false;
         options.notify('success', updateSuccess.value);
         setTimeout(() => {
           updateVisible.value = false;
@@ -307,6 +314,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
       options.notify('error', batchUpdateError.value);
     } finally {
       batchUpdateLoading.value = false;
+      batchUpdateDirty.value = false;
     }
   }
 
@@ -339,6 +347,7 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
 
       if (data.success) {
         batchUpdateSuccess.value = data.message || '批量修改成功';
+        batchUpdateDirty.value = false;
         options.notify('success', batchUpdateSuccess.value);
         setTimeout(() => {
           batchUpdateVisible.value = false;
@@ -362,6 +371,10 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
     batchUpdateFormData.value[fieldName] = value;
   }
 
+  function markAddDirty() { addDirty.value = true; }
+  function markUpdateDirty() { updateDirty.value = true; }
+  function markBatchDirty() { batchUpdateDirty.value = true; }
+
   return {
     addVisible,
     addLoading,
@@ -369,24 +382,30 @@ export function useWorkbenchEditForms(options: UseWorkbenchEditFormsOptions) {
     addFormFields,
     addError,
     addSuccess,
+    addDirty,
     updateVisible,
     updateLoading,
     updateError,
     updateSuccess,
     updateFormData,
     updateFormFields,
+    updateDirty,
     batchUpdateVisible,
     batchUpdateLoading,
     batchUpdateError,
     batchUpdateSuccess,
     batchUpdateFormData,
     batchUpdateFormFields,
+    batchUpdateDirty,
     handleOpenAdd,
     confirmAdd,
     handleOpenUpdate,
     confirmUpdate,
     handleOpenBatchUpdate,
     confirmBatchUpdate,
-    setEditFieldValue
+    setEditFieldValue,
+    markAddDirty,
+    markUpdateDirty,
+    markBatchDirty
   };
 }

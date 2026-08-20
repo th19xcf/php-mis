@@ -254,31 +254,30 @@ class RecordEditService
                 ]);
                 $this->model->exec($sqlUpdateOld);
 
-                $fields = [];
-                $values = [];
+                // 用关联数组构建，保证每个列只出现一次：原行打底 -> formData 覆盖业务字段
+                // -> 系统审计字段强制覆盖。避免原行/表单已含审计列时与追加的审计列重复，
+                // 触发 MySQL "Column 'xxx' specified twice" 错误。
+                $row = [];
                 foreach ($originalRow as $key => $val) {
-                    if (array_key_exists($key, $formData)) {
-                        $fields[] = sprintf('`%s`', $key);
-                        $values[] = $this->model->quote((string) $formData[$key]);
-                    } else {
-                        $fields[] = sprintf('`%s`', $key);
-                        $values[] = $this->model->quote((string) $val);
+                    // 跳过主键（GUID 为表自增列），由数据库自增生成新值，
+                    // 不沿用原行主键导致新版本主键冲突
+                    if ($key === $primaryKey) {
+                        continue;
                     }
+                    $row[$key] = array_key_exists($key, $formData)
+                        ? (string) $formData[$key]
+                        : (string) $val;
                 }
-                $fields[] = '`操作记录`';
-                $values[] = '"新增"';
-                $fields[] = '`操作来源`';
-                $values[] = '"工作台"';
-                $fields[] = '`操作人员`';
-                $values[] = sprintf('"%s"', $userWorkid);
-                $fields[] = '`操作时间`';
-                $values[] = sprintf('"%s"', date('Y-m-d H:i:s'));
-                $fields[] = '`结束操作时间`';
-                $values[] = '"9999-12-31"';
-                $fields[] = '`删除标识`';
-                $values[] = '"0"';
-                $fields[] = '`有效标识`';
-                $values[] = '"1"';
+                $row['操作记录'] = '新增';
+                $row['操作来源'] = '工作台';
+                $row['操作人员'] = $userWorkid;
+                $row['操作时间'] = date('Y-m-d H:i:s');
+                $row['结束操作时间'] = ''; // 有效记录留空，与历史数据一致；置失效时才写操作时间
+                $row['删除标识'] = '0';
+                $row['有效标识'] = '1';
+
+                $fields = array_map(fn($k) => sprintf('`%s`', $k), array_keys($row));
+                $values = array_map(fn($v) => $this->model->quote((string) $v), array_values($row));
 
                 $sqlInsert = sprintf(
                     'INSERT INTO %s (%s) VALUES (%s)',

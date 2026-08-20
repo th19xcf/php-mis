@@ -286,7 +286,7 @@ class FieldConfigService
                     'fieldType'  => $col['列类型'] ?? '字符',
                     'editorType' => $col['赋值类型'] ?? '',
                     'required'   => (string) ($col['不可为空'] ?? '0') === '1',
-                    'readonly'   => (string) ($col['可修改'] ?? '0') === '2',
+                    'readonly'   => false,
                     'objectName' => '',
                     'inputType'  => 'text',
                 ];
