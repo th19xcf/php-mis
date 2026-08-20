@@ -138,8 +138,8 @@ class BatchEditService
         $db->transStart();
 
         try {
-            // 1. 一次预取全部旧记录，按主键值索引
-            $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $whereIn);
+            // 1. 一次预取全部旧记录，按主键值索引；FOR UPDATE 行锁防并发修改产生多条有效版本
+            $sqlSelect = sprintf('SELECT * FROM %s WHERE %s FOR UPDATE', $dataTable, $whereIn);
             $result = $this->model->select($sqlSelect);
             if ($result === false) {
                 throw new BusinessException(sprintf('批量修改失败:预取原始记录失败(表=%s)', $dataTable));
@@ -210,7 +210,7 @@ class BatchEditService
                 $values[] = '"工作台"';
                 $values[] = sprintf('"%s"', $userWorkid);
                 $values[] = sprintf('"%s"', $now);
-                $values[] = '"9999-12-31"';
+                $values[] = '""'; // 有效记录留空，置失效时才写操作时间
                 $values[] = '"0"';
                 $values[] = '"1"';
 
@@ -470,7 +470,7 @@ class BatchEditService
                     $fields[] = '`操作时间`';
                     $values[] = sprintf('"%s"', date('Y-m-d H:i:s'));
                     $fields[] = '`结束操作时间`';
-                    $values[] = '"9999-12-31"';
+                    $values[] = '""'; // 有效记录留空，置失效时才写操作时间
                     $fields[] = '`删除标识`';
                     $values[] = '"0"';
                     $fields[] = '`有效标识`';

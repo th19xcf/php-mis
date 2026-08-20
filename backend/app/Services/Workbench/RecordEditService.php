@@ -5,6 +5,7 @@ namespace App\Services\Workbench;
 use App\Models\Mcommon;
 use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
+use App\Exceptions\BusinessException;
 
 /**
  * 单条记录编辑服务类
@@ -228,71 +229,96 @@ class RecordEditService
 
             case '1':
             case '2':
-                $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where);
-                $result = $this->model->select($sqlSelect);
-                if ($result === false) {
-                    return 0;
-                }
-                $originalRow = $result->getRowArray();
-                if (empty($originalRow)) {
-                    return 0;
-                }
+                // 事务保护：置无效与插新版本必须同成败，防止 UPDATE 成功、INSERT 失败导致记录"消失"
+                // （对齐 BatchEditService::batchUpdateFlowVersioned 的事务写法）
+                $db = $this->model->getDb();
+                $db->transStart();
 
-                $sqlUpdateOld = sprintf(
-                    'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
-                    $dataTable,
-                    $userWorkid,
-                    date('Y-m-d H:i:s'),
-                    date('Y-m-d H:i:s'),
-                    $where
-                );
-                $this->model->sql_log('修改[1-旧]', $functionCode, [
-                    'table' => $dataTable,
-                    'pk' => $primaryKey,
-                    'pk_values' => $keyValues,
-                    'note' => '流水旧记录置无效',
-                ]);
-                $this->model->exec($sqlUpdateOld);
-
-                // 用关联数组构建，保证每个列只出现一次：原行打底 -> formData 覆盖业务字段
-                // -> 系统审计字段强制覆盖。避免原行/表单已含审计列时与追加的审计列重复，
-                // 触发 MySQL "Column 'xxx' specified twice" 错误。
-                $row = [];
-                foreach ($originalRow as $key => $val) {
-                    // 跳过主键（GUID 为表自增列），由数据库自增生成新值，
-                    // 不沿用原行主键导致新版本主键冲突
-                    if ($key === $primaryKey) {
-                        continue;
+                try {
+                    // FOR UPDATE 行锁：锁住原行至事务提交，防止并发修改同一记录产生两条"有效"版本
+                    $sqlSelect = sprintf('SELECT * FROM %s WHERE %s FOR UPDATE', $dataTable, $where);
+                    $result = $this->model->select($sqlSelect);
+                    if ($result === false) {
+                        throw new BusinessException(sprintf('修改失败:查询原始记录失败(表=%s)', $dataTable));
                     }
-                    $row[$key] = array_key_exists($key, $formData)
-                        ? (string) $formData[$key]
-                        : (string) $val;
+                    $originalRow = $result->getRowArray();
+                    if (empty($originalRow)) {
+                        $db->transComplete();
+                        return 0;
+                    }
+
+                    $now = date('Y-m-d H:i:s');
+                    $sqlUpdateOld = sprintf(
+                        'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
+                        $dataTable,
+                        $userWorkid,
+                        $now,
+                        $now,
+                        $where
+                    );
+                    $this->model->sql_log('修改[1-旧]', $functionCode, [
+                        'table' => $dataTable,
+                        'pk' => $primaryKey,
+                        'pk_values' => $keyValues,
+                        'note' => '流水旧记录置无效',
+                    ]);
+                    $this->model->exec($sqlUpdateOld);
+
+                    // 用关联数组构建，保证每个列只出现一次：原行打底 -> formData 覆盖业务字段
+                    // -> 系统审计字段强制覆盖。避免原行/表单已含审计列时与追加的审计列重复，
+                    // 触发 MySQL "Column 'xxx' specified twice" 错误。
+                    $row = [];
+                    foreach ($originalRow as $key => $val) {
+                        // 跳过主键（GUID 为表自增列），由数据库自增生成新值，
+                        // 不沿用原行主键导致新版本主键冲突
+                        if ($key === $primaryKey) {
+                            continue;
+                        }
+                        $row[$key] = array_key_exists($key, $formData)
+                            ? (string) $formData[$key]
+                            : (string) $val;
+                    }
+                    $row['操作记录'] = '新增';
+                    $row['操作来源'] = '工作台';
+                    $row['操作人员'] = $userWorkid;
+                    $row['操作时间'] = $now;
+                    $row['结束操作时间'] = ''; // 有效记录留空，与历史数据一致；置失效时才写操作时间
+                    $row['删除标识'] = '0';
+                    $row['有效标识'] = '1';
+
+                    $fields = array_map(fn($k) => sprintf('`%s`', $k), array_keys($row));
+                    $values = array_map(fn($v) => $this->model->quote((string) $v), array_values($row));
+
+                    $sqlInsert = sprintf(
+                        'INSERT INTO %s (%s) VALUES (%s)',
+                        $dataTable,
+                        implode(', ', $fields),
+                        implode(', ', $values)
+                    );
+                    $this->model->sql_log('修改[1-新]', $functionCode, [
+                        'table' => $dataTable,
+                        'pk' => $primaryKey,
+                        'pk_values' => $keyValues,
+                        'fields' => $formData,
+                        'note' => '流水插新版本',
+                    ]);
+                    $affected = $this->model->exec($sqlInsert);
+                } catch (\Throwable $e) {
+                    $db->transRollback();
+                    throw $e;
                 }
-                $row['操作记录'] = '新增';
-                $row['操作来源'] = '工作台';
-                $row['操作人员'] = $userWorkid;
-                $row['操作时间'] = date('Y-m-d H:i:s');
-                $row['结束操作时间'] = ''; // 有效记录留空，与历史数据一致；置失效时才写操作时间
-                $row['删除标识'] = '0';
-                $row['有效标识'] = '1';
 
-                $fields = array_map(fn($k) => sprintf('`%s`', $k), array_keys($row));
-                $values = array_map(fn($v) => $this->model->quote((string) $v), array_values($row));
+                $db->transComplete();
+                if ($db->transStatus() === false) {
+                    // 生产环境 DBDebug=false 时 SQL 失败不抛异常，此处兜底检测事务状态
+                    throw new BusinessException(sprintf(
+                        '修改失败:事务提交已回滚(表=%s,主键=%s)',
+                        $dataTable,
+                        $primaryKey
+                    ));
+                }
 
-                $sqlInsert = sprintf(
-                    'INSERT INTO %s (%s) VALUES (%s)',
-                    $dataTable,
-                    implode(', ', $fields),
-                    implode(', ', $values)
-                );
-                $this->model->sql_log('修改[1-新]', $functionCode, [
-                    'table' => $dataTable,
-                    'pk' => $primaryKey,
-                    'pk_values' => $keyValues,
-                    'fields' => $formData,
-                    'note' => '流水插新版本',
-                ]);
-                $affected = $this->model->exec($sqlInsert);
+                // 事务提交成功后才失效配置缓存，回滚时数据未变无需失效
                 $this->invalidateConfigCache($dataTable);
                 return $affected;
 

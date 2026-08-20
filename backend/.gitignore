@@ -59,6 +59,13 @@ public/writable/
 
 php_errors.log
 
+# spark serve 运行时日志/错误输出
+spark-serve.err
+spark-serve.log
+
+# git-commit.ps1 辅助脚本生成的 commit 信息产物
+.git_commit_msg.txt
+
 #-------------------------
 # User Guide Temp Files
 #-------------------------
