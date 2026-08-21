@@ -688,6 +688,71 @@ class BaseApiController extends BaseController
     }
 
     /**
+     * 按字段归属表拆分输入数据（写入路由）
+     *
+     * 依据 def_query_column.字段归属表 配置（经 view_function 视图读取）：
+     * - 字段归属表为空 → 归主表（兼容存量配置，零迁移）
+     * - 字段归属表=表名（如 hr_person）→ 归该表
+     * - 输入字段未出现在配置中 → 归主表
+     * - 配置值含逗号 → 视为脏配置，按主表处理并记日志（不支持多值）
+     *
+     * 兼容双写：归属非主表的字段，若主表存在同名列，同时写入主表分组，
+     * 保证存量单表查询（如 ee_store 列表/树查询）在主档过渡期继续可用。
+     *
+     * @param string $functionCode 功能编码（如 2015）
+     * @param string $mainTable    主表名（如 ee_store）
+     * @param array  $data         输入数据（字段名 => 值）
+     * @return array<string, array> 表名 => 字段映射（至少含主表分组）
+     */
+    protected function splitDataByFieldOwner(string $functionCode, string $mainTable, array $data): array
+    {
+        $groups = [$mainTable => []];
+        $ownerMap = [];
+
+        try {
+            $columns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
+            foreach ($columns as $col) {
+                $owner = trim((string) ($col['字段归属表'] ?? ''));
+                if ($owner === '') {
+                    continue; // 空配置归主表，不进映射
+                }
+                if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $owner)) {
+                    // 逗号多值等脏配置：按主表处理并留痕
+                    $this->logTrace('warning', "[splitDataByFieldOwner] 非法字段归属表配置: {$owner}");
+                    continue;
+                }
+                // 查询名与字段名都建立映射，兼容前端两种字段名
+                $queryName = (string) ($col['查询名'] ?? '');
+                $fieldName = (string) ($col['字段名'] ?? '');
+                if ($queryName !== '') {
+                    $ownerMap[$queryName] = $owner;
+                }
+                if ($fieldName !== '') {
+                    $ownerMap[$fieldName] = $owner;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logTrace('warning', '[splitDataByFieldOwner] 字段归属配置读取失败，全部按主表处理: ' . $e->getMessage());
+        }
+
+        $mainCols = $this->getTableColumns($mainTable);
+
+        foreach ($data as $key => $value) {
+            if ($key === 'guid' || $key === '操作') {
+                continue;
+            }
+            $owner = $ownerMap[$key] ?? $mainTable;
+            $groups[$owner][$key] = $value;
+            // 兼容双写：主表有同名列时同步写入（过渡期存量查询依赖）
+            if ($owner !== $mainTable && in_array($key, $mainCols, true)) {
+                $groups[$mainTable][$key] = $value;
+            }
+        }
+
+        return $groups;
+    }
+
+    /**
      * 生成 UUIDv7（RFC 4122，16 字节二进制）
      *
      * UUIDv7 布局：

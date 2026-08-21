@@ -2,9 +2,11 @@
 
 namespace App\Controllers;
 
+use App\Constants\ApiCode;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
+use App\Services\Person\PersonService;
 
 class InvitationApi extends BaseApiController
 {
@@ -143,6 +145,22 @@ class InvitationApi extends BaseApiController
         return $this->success($result);
     }
 
+    /**
+     * 新增邀约（人员主档建档入口）
+     *
+     * 字段归属路由（def_query_column.字段归属表）：
+     * - 身份字段（姓名/证件号/手机等）→ hr_person 主档
+     * - 实例字段（邀约业务/岗位/渠道等）→ ee_store
+     * - 兼容双写：身份字段同时写 ee_store 同名列，过渡期存量单表查询不受影响
+     *
+     * 人员归属裁决：
+     * - person_code 非空 → 前端查重确认后显式挂既有档
+     * - 证件号精确命中（hard）→ 直接挂既有档（同一人再投递是正常业务）
+     * - 手机+姓名疑似（soft）且未 force_new → 返回 needConfirm，前端弹窗后带参重提
+     * - 无命中 / force_new → 事务内新建主档（sp_生成人员编码 发号）
+     *
+     * 事务：建档（或挂档同步）与 ee_store 写入同事务，失败整体回滚。
+     */
     public function add()
     {
         $data = $this->getJsonInput();
@@ -150,17 +168,118 @@ class InvitationApi extends BaseApiController
         if ($error = $this->requireParam($data, '姓名')) {
             return $error;
         }
-
-        $data = $this->buildInsertData($data);
-        // 生成候选人编码：按邀约日期分桶发号，LAST_INSERT_ID 防多人并发重号
-        $data['候选人编码'] = $this->generateCandidateCode(1, $data['邀约日期'] ?? '');
-        $num = $this->insertRecord('ee_store', $data);
-
-        if ($num > 0) {
-            return $this->success(null, '新增邀约信息成功');
+        if ($error = $this->requireParam($data, '手机号码')) {
+            return $error;
         }
 
-        return $this->serverError('新增邀约信息失败');
+        // 前端查重确认后的显式决策参数（非业务字段，不参与入库）
+        $attachCode = trim((string) ($data['person_code'] ?? ''));
+        $forceNew = !empty($data['force_new']);
+        unset($data['person_code'], $data['force_new']);
+
+        // 字段归属路由：身份字段 → hr_person，实例字段 → ee_store（+兼容双写）
+        $groups = $this->splitDataByFieldOwner('2015', 'ee_store', $data);
+        $personData = $groups['hr_person'] ?? [];
+        $storeData = $groups['ee_store'] ?? [];
+
+        // 过滤为主档实际列（防配置了归属但主档无该列）
+        $personCols = $this->getTableColumns('hr_person');
+        $personData = array_intersect_key($personData, array_flip($personCols));
+
+        $personService = new PersonService();
+        $personCode = '';
+
+        if ($attachCode !== '') {
+            // 显式挂档：校验主档存在
+            if ($personService->findPersonByCode($attachCode) === null) {
+                return $this->businessError('指定的人员主档不存在，请刷新后重试');
+            }
+            $personCode = $attachCode;
+        } else {
+            $dedup = $personService->dedup(
+                (string) $data['姓名'],
+                (string) $data['手机号码'],
+                trim((string) ($data['身份证号'] ?? ''))
+            );
+            if ($dedup['level'] === 'hard') {
+                // 证件号唯一命中：直接挂既有档，同时以表单最新身份信息回写主档
+                $personCode = (string) $dedup['person']['人员编码'];
+            } elseif ($dedup['level'] === 'soft' && !$forceNew) {
+                // 疑似重复：交前端确认（挂既有 person_code / 确认新建 force_new）
+                return $this->error(ApiCode::BUSINESS_ERROR, '存在疑似重复的人员主档，请确认是否为同一人', [
+                    'needConfirm' => true,
+                    'matches' => $dedup['matches'],
+                ]);
+            }
+            // none / forceNew：保持 $personCode=''，事务内新建
+        }
+
+        $db = $this->model->getDb();
+        $db->transStart();
+
+        try {
+            if ($personCode === '') {
+                $personCode = $personService->createPerson(
+                    $personData,
+                    $this->getUserWorkId(),
+                    (string) ($storeData['邀约日期'] ?? '')
+                );
+            } elseif (!empty($personData)) {
+                // 挂既有档：表单身份信息较新（如换了手机号），回写主档（空值跳过）
+                $personService->updatePersonFields($personCode, $personData, $this->getUserWorkId());
+            }
+
+            $storeData['人员编码'] = $personCode;
+            $storeData = $this->buildInsertData($storeData);
+            // 生成候选人编码：按邀约日期分桶发号，LAST_INSERT_ID 防多人并发重号
+            $storeData['候选人编码'] = $this->generateCandidateCode(1, $storeData['邀约日期'] ?? '');
+            $num = $this->insertRecord('ee_store', $storeData);
+
+            if ($num <= 0) {
+                throw new BusinessException('新增邀约信息失败');
+            }
+        } catch (BusinessException $e) {
+            $db->transRollback();
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            log_message('error', '[InvitationApi::add] 事务回滚: ' . $e->getMessage());
+            return $this->serverError('新增邀约信息失败');
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            // 生产环境 DBDebug=false 时 SQL 失败不抛异常，兜底检测事务状态
+            return $this->serverError('新增邀约信息失败(事务已回滚)');
+        }
+
+        return $this->success(['人员编码' => $personCode], '新增邀约信息成功');
+    }
+
+    /**
+     * 人员主档查重（邀约新增弹窗 / 导入确认页共用）
+     *
+     * 入参：姓名、手机号码（必填）、身份证号（可选）
+     * 返回：{ level: hard|soft|none, matches: [...疑似列表], person: hard 命中行 }
+     */
+    public function dedup()
+    {
+        $data = $this->getJsonInput();
+
+        if ($error = $this->requireParam($data, '姓名')) {
+            return $error;
+        }
+        if ($error = $this->requireParam($data, '手机号码')) {
+            return $error;
+        }
+
+        $result = (new PersonService())->dedup(
+            (string) $data['姓名'],
+            (string) $data['手机号码'],
+            trim((string) ($data['身份证号'] ?? ''))
+        );
+
+        return $this->success($result);
     }
 
     /**
@@ -202,6 +321,13 @@ class InvitationApi extends BaseApiController
         return $prefix . str_pad((string) $seq, 3, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * 修改邀约（字段归属路由）
+     *
+     * - 身份字段（hr_person 归属）→ 更新人员主档（权威源）+ ee_store 兼容双写
+     * - 实例字段（ee_store 归属）→ 原 updateRecord 路径
+     * - 存量行未挂档时，事务内按行内身份信息回填挂档（查重挂档或建档）
+     */
     public function update()
     {
         $data = $this->getJsonInput();
@@ -211,13 +337,76 @@ class InvitationApi extends BaseApiController
         }
 
         $guid = $data['guid'];
-        $data = $this->buildUpdateData($data);
-        $num = $this->updateRecord('ee_store', $data, sprintf('GUID="%s"', $guid));
+
+        // 字段归属路由：身份字段 → hr_person（+兼容双写），实例字段 → ee_store
+        $groups = $this->splitDataByFieldOwner('2015', 'ee_store', $data);
+        $personData = $groups['hr_person'] ?? [];
+        $storeData = $groups['ee_store'] ?? [];
+
+        // 无主档字段变更时保持原路径（纯实例字段修改）
+        if (empty($personData)) {
+            $data = $this->buildUpdateData($data);
+            $num = $this->updateRecord('ee_store', $data, sprintf('GUID="%s"', $guid));
+
+            if ($num > 0) {
+                return $this->success(null, '修改邀约信息成功');
+            }
+            return $this->success(null, '没有需要更新的字段');
+        }
+
+        // 读取当前行（身份字段 + 人员编码），用于存量数据回填挂档
+        $sql = sprintf(
+            'select GUID,人员编码,姓名,身份证号,手机号码,性别,年龄,学校,专业,学历,现住址,工作履历,属地,邀约日期
+             from ee_store where GUID=%s limit 1',
+            $this->model->quote((string) $guid)
+        );
+        $row = $this->model->select($sql)->getRowArray();
+        if (!$row) {
+            return $this->notFound('人员不存在');
+        }
+
+        // 过滤为主档实际列
+        $personCols = $this->getTableColumns('hr_person');
+        $personData = array_intersect_key($personData, array_flip($personCols));
+
+        $personService = new PersonService();
+        $num = 0;
+
+        $db = $this->model->getDb();
+        $db->transStart();
+
+        try {
+            // 存量行未挂档：按行内身份信息查重挂档或新建（行上身份字段含兼容双写副本）
+            $personCode = $personService->ensurePersonForStore(
+                $row,
+                $this->getUserWorkId(),
+                (string) ($row['邀约日期'] ?? '')
+            );
+
+            // 主档更新（权威源，空值跳过防误清空）
+            $personService->updatePersonFields($personCode, $personData, $this->getUserWorkId());
+
+            // 实例表更新（身份字段兼容双写副本 + 人员编码兜底回填）
+            $storeData['人员编码'] = $personCode;
+            $storeData = $this->buildUpdateData($storeData);
+            $num = $this->updateRecord('ee_store', $storeData, sprintf('GUID="%s"', $guid));
+        } catch (BusinessException $e) {
+            $db->transRollback();
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            log_message('error', '[InvitationApi::update] 事务回滚: ' . $e->getMessage());
+            return $this->serverError('修改邀约信息失败');
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            return $this->serverError('修改邀约信息失败(事务已回滚)');
+        }
 
         if ($num > 0) {
             return $this->success(null, '修改邀约信息成功');
         }
-
         return $this->success(null, '没有需要更新的字段');
     }
 
@@ -273,39 +462,57 @@ class InvitationApi extends BaseApiController
             $guidStr
         );
 
-        $num = $this->model->exec($sql);
+        // 事务保护：ee_store 状态更新与 ee_interview 转入插入必须同成败，
+        // 防止更新成功、插入失败导致记录"已面试"但面试表无数据
+        // （对齐 RecordEditService::updateRecord 的事务写法）
+        $db = $this->model->getDb();
+        $db->transStart();
+        $num = 0;
 
-        if ($data['面试结果'] === '通过' || $data['面试结果'] === '未通过') {
-            $sql = sprintf('
-                insert into ee_interview (
-                    候选人编码,
-                    姓名,身份证号,手机号码,属地,
-                    招聘渠道,渠道类型,渠道名称,
-                    面试业务,面试岗位,
-                    一次面试日期,一次面试人,一次面试结果,
-                    预约培训日期,邀约信息,
-                    操作记录,操作来源,操作人员,开始操作时间,
-                    有效标识,删除标识)
-                select 候选人编码,
-                    姓名,身份证号,手机号码,属地,
-                    招聘渠道,渠道类型,渠道名称,
-                    邀约业务,邀约岗位,
-                    "%s","%s","%s",
-                    "%s","通过",
-                    "邀约表转入","页面","%s","%s",
-                    "1","0"
-                from ee_store
-                where GUID in (%s)',
-                $data['面试日期'] ?? '',
-                $data['面试人'] ?? '',
-                $data['面试结果'],
-                $data['预约培训日期'] ?? '',
-                $this->getUserWorkId(),
-                date('Y-m-d H:i:s'),
-                $guidStr
-            );
+        try {
+            $num = $this->model->exec($sql);
 
-            $this->model->exec($sql);
+            if ($data['面试结果'] === '通过' || $data['面试结果'] === '未通过') {
+                $sql = sprintf('
+                    insert into ee_interview (
+                        候选人编码,
+                        姓名,身份证号,手机号码,属地,
+                        招聘渠道,渠道类型,渠道名称,
+                        面试业务,面试岗位,
+                        一次面试日期,一次面试人,一次面试结果,
+                        预约培训日期,邀约信息,
+                        操作记录,操作来源,操作人员,开始操作时间,
+                        有效标识,删除标识)
+                    select 候选人编码,
+                        姓名,身份证号,手机号码,属地,
+                        招聘渠道,渠道类型,渠道名称,
+                        邀约业务,邀约岗位,
+                        "%s","%s","%s",
+                        "%s","通过",
+                        "邀约表转入","页面","%s","%s",
+                        "1","0"
+                    from ee_store
+                    where GUID in (%s)',
+                    $data['面试日期'] ?? '',
+                    $data['面试人'] ?? '',
+                    $data['面试结果'],
+                    $data['预约培训日期'] ?? '',
+                    $this->getUserWorkId(),
+                    date('Y-m-d H:i:s'),
+                    $guidStr
+                );
+
+                $this->model->exec($sql);
+            }
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            log_message('error', '[InvitationApi::transfer] 事务回滚: ' . $e->getMessage());
+            return $this->serverError('转入面试失败');
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            return $this->serverError('转入面试失败(事务已回滚)');
         }
 
         return $this->success(null, sprintf('更新面试信息成功，更新 %d 条记录', $num));
