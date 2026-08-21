@@ -16,6 +16,7 @@ export interface AddField {
 export interface DetailField {
   columnName: string;
   fieldName: string;
+  fieldType?: string;
   editable?: boolean;
   required?: boolean;
 }
@@ -94,6 +95,7 @@ export function useWorkbenchFields() {
         detailFields.value = detailResult.data.fields.map((field: any) => ({
           columnName: field.columnName,
           fieldName: field.fieldName,
+          fieldType: field.fieldType || '文本',
           editable: field.editable !== undefined ? field.editable : false,
           required: field.required === true || field.required === '1' || field.required === 1
         }));

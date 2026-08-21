@@ -87,6 +87,12 @@ async function loadTree() {
   await employeeStore.loadTreeData();
 }
 
+// 在 addFields 里找与 detailField 同名的配置（拿 objectOptions/fieldType 等）
+// 找不到时返回 undefined（如离职日期/离职原因在新增表单未配置），由模板兜底渲染
+function findAddField(columnName: string) {
+  return addFields.value.find(f => f.columnName === columnName);
+}
+
 // 调试：打印左侧员工树加载的完整 SQL + 分段耗时到浏览器控制台
 // 权限：canDebug = pageMeta.toolbar.debugSql（def_user.调试赋权=1 或代理登录）
 async function handleDebugTree() {
@@ -451,26 +457,22 @@ onMounted(async () => {
                 </td>
                 <td>
                   <template v-if="field.editable">
-                    <template v-for="addField in addFields" :key="addField.columnName">
-                      <template v-if="addField.columnName === field.columnName">
-                        <NSelect
-                          v-if="addField.objectOptions && addField.objectOptions.length > 0"
-                          v-model:value="editDetailForm[field.columnName]"
-                          :options="addField.objectOptions"
-                          size="small"
-                          clearable
-                        />
-                        <NDatePicker
-                          v-else-if="addField.fieldType === '日期'"
-                          v-model:formatted-value="editDetailForm[field.columnName]"
-                          value-format="yyyy-MM-dd"
-                          type="date"
-                          size="small"
-                          class="w-full"
-                        />
-                        <NInput v-else v-model:value="editDetailForm[field.columnName]" size="small" />
-                      </template>
-                    </template>
+                    <NSelect
+                      v-if="findAddField(field.columnName)?.objectOptions?.length"
+                      v-model:value="editDetailForm[field.columnName]"
+                      :options="findAddField(field.columnName)!.objectOptions"
+                      size="small"
+                      clearable
+                    />
+                    <NDatePicker
+                      v-else-if="(findAddField(field.columnName)?.fieldType ?? field.fieldType) === '日期'"
+                      v-model:formatted-value="editDetailForm[field.columnName]"
+                      value-format="yyyy-MM-dd"
+                      type="date"
+                      size="small"
+                      class="w-full"
+                    />
+                    <NInput v-else v-model:value="editDetailForm[field.columnName]" size="small" />
                   </template>
                   <template v-else>
                     <span :class="{ 'text-gray-400': !editDetailForm[field.columnName] }">
