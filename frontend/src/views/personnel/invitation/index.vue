@@ -10,7 +10,8 @@ import {
   fetchTransferInvitation,
   fetchAddFields,
   fetchDetailFields,
-  fetchBatchEditFields
+  fetchBatchEditFields,
+  fetchInvitationDedup
 } from '@/service/api';
 import { fetchDebugTree } from '@/service/api/invitation';
 import { useInvitationStore } from '@/store/modules/invitation';
@@ -205,6 +206,12 @@ function cancelAddMode() {
   invitationStore.clearAddState();
 }
 
+// 人员主档查重确认弹窗状态
+const dedupVisible = ref(false);
+const dedupMatches = ref<Api.Invitation.PersonDedupMatch[]>([]);
+// 'new'=确认为新人员强制建档；其余值为选中挂接的人员编码
+const dedupChoice = ref('new');
+
 async function saveAddMode() {
   // 验证必填字段
   const requiredField = addFields.value.find(
@@ -215,15 +222,70 @@ async function saveAddMode() {
     return;
   }
 
+  // 人员主档查重：软命中（姓名+手机号码疑似同人）需人工确认挂档或新建，避免重复建档
   submitting.value = true;
-  const { error } = await fetchAddInvitation(addFormDynamic.value as Api.Invitation.InvitationAddParams);
+  const { data: dedupData, error: dedupError } = await fetchInvitationDedup({
+    姓名: String(addFormDynamic.value['姓名'] || ''),
+    手机号码: String(addFormDynamic.value['手机号码'] || ''),
+    身份证号: String(addFormDynamic.value['身份证号'] || '')
+  });
+  submitting.value = false;
+  if (dedupError) return; // 错误提示已由全局处理
+
+  if (dedupData?.level === 'soft' && dedupData.matches?.length) {
+    dedupMatches.value = dedupData.matches;
+    dedupChoice.value = 'new';
+    dedupVisible.value = true;
+    return;
+  }
+
+  // hard（证件号精确命中，后端自动挂既有档并回写最新身份信息）/ none（无命中直接新建）无需确认
+  await doSubmitAdd();
+}
+
+/**
+ * 提交新增邀约
+ *
+ * @param extra 查重确认后的决策参数：person_code（挂既有档）/ force_new（强制新建），二选一
+ * @returns 是否提交成功
+ */
+async function doSubmitAdd(extra?: { person_code?: string; force_new?: boolean }): Promise<boolean> {
+  submitting.value = true;
+  const { error, response } = await fetchAddInvitation({
+    ...addFormDynamic.value,
+    ...extra
+  } as Api.Invitation.InvitationAddParams);
   submitting.value = false;
 
   if (!error) {
     message.success('新增邀约信息成功');
     invitationStore.clearAddState();
+    dedupVisible.value = false;
     await loadTree();
+    return true;
   }
+
+  // 竞态兜底：查重通过后、提交前他人新建了同姓名+手机号主档，
+  // 后端返回 needConfirm + matches，转为弹窗确认后重提
+  const bizData = (
+    response?.data as { data?: { needConfirm?: boolean; matches?: Api.Invitation.PersonDedupMatch[] } } | undefined
+  )?.data;
+  if (bizData?.needConfirm && Array.isArray(bizData.matches) && bizData.matches.length > 0) {
+    dedupMatches.value = bizData.matches;
+    dedupChoice.value = 'new';
+    dedupVisible.value = true;
+  }
+  return false;
+}
+
+async function handleDedupConfirm() {
+  if (!dedupChoice.value) {
+    message.warning('请选择处理方式');
+    return;
+  }
+  const extra =
+    dedupChoice.value === 'new' ? { force_new: true } : { person_code: dedupChoice.value };
+  await doSubmitAdd(extra);
 }
 
 async function openBatchEditModal() {
@@ -875,6 +937,36 @@ onMounted(async () => {
         />
       </template>
     </WorkbenchImport>
+
+    <!-- 人员主档疑似重复确认弹窗（姓名+手机号码软命中） -->
+    <NModal
+      v-model:show="dedupVisible"
+      preset="card"
+      title="疑似重复人员"
+      class="w-160"
+      :mask-closable="false"
+    >
+      <NAlert type="warning" :show-icon="true" class="mb-12px">
+        系统中存在与本次新增人员疑似同一人的档案（姓名+手机号码匹配）。若为同一人请选择挂接既有档案；若确认不是同一人请选择新建。
+      </NAlert>
+      <NRadioGroup v-model:value="dedupChoice">
+        <NSpace vertical>
+          <NRadio v-for="m in dedupMatches" :key="m.人员编码" :value="m.人员编码">
+            {{ m.姓名 }}｜{{ m.人员编码 }}｜{{ m.手机号码 }}｜{{ m.身份证号 || '无证件号'
+            }}{{ m.属地 ? `｜${m.属地}` : '' }}
+          </NRadio>
+          <NRadio value="new">以上都不是，新建人员档案</NRadio>
+        </NSpace>
+      </NRadioGroup>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton size="small" @click="dedupVisible = false">取消</NButton>
+          <NButton type="primary" size="small" :loading="submitting" @click="handleDedupConfirm">
+            确认提交
+          </NButton>
+        </NSpace>
+      </template>
+    </NModal>
   </div>
 </template>
 

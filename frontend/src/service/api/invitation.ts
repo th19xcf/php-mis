@@ -42,6 +42,21 @@ export function fetchAddInvitation(data: Api.Invitation.InvitationAddParams) {
   });
 }
 
+/**
+ * 人员主档查重（邀约新增保存前确认 / 导入确认页共用）
+ *
+ * 入参：姓名、手机号码（必填）、身份证号（可选）
+ * 返回 level：hard（证件号精确命中）| soft（姓名+手机号疑似，需人工确认）| none（无命中）
+ */
+export function fetchInvitationDedup(data: Api.Invitation.PersonDedupParams) {
+  return request<Api.Invitation.PersonDedupResult>({
+    url: '/invitation/dedup',
+    method: 'post',
+    data,
+    skipAuthError: true
+  });
+}
+
 export function fetchUpdateInvitation(data: Api.Invitation.InvitationUpdateParams) {
   return request<null>({
     url: '/invitation/update',

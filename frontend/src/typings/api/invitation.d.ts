@@ -67,6 +67,34 @@ declare namespace Api {
       邀约人?: string;
       邀约结果?: string;
       预约面试日期?: string;
+      /** 查重确认后挂接既有人员主档的人员编码（与 force_new 二选一） */
+      person_code?: string;
+      /** 查重确认后强制新建人员主档（与 person_code 二选一） */
+      force_new?: boolean;
+    }
+
+    /** 人员主档查重入参 */
+    interface PersonDedupParams {
+      姓名: string;
+      手机号码: string;
+      身份证号?: string;
+    }
+
+    /** 人员主档查重命中的疑似档案行 */
+    interface PersonDedupMatch {
+      人员编码: string;
+      姓名: string;
+      身份证号: string | null;
+      手机号码: string;
+      性别: string | null;
+      属地: string | null;
+    }
+
+    /** 人员主档查重结果：hard=证件号精确命中；soft=姓名+手机号疑似需确认；none=无命中 */
+    interface PersonDedupResult {
+      level: 'hard' | 'soft' | 'none';
+      matches: PersonDedupMatch[];
+      person: PersonDedupMatch | null;
     }
 
     interface InvitationUpdateParams {
