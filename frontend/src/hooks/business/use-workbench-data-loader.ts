@@ -58,6 +58,19 @@ function assignRowNumbers(records: Api.Workbench.QueryRecord[], current: number,
   });
 }
 
+/**
+ * 按数据集实际偏移量分配全局序号（后台分片加载专用）
+ *
+ * 分片偏移（如首屏 200 条后的 offset=200）不是页大小的整数倍，
+ * 不能用页码换算（floor(200/5000)+1=1 会回算出 offset=0 导致序号重复），
+ * 必须直接以 offset 作为首行序号基数。
+ */
+function assignRowNumbersByOffset(records: Api.Workbench.QueryRecord[], startOffset: number) {
+  records.forEach((row, index) => {
+    row['序号'] = startOffset + index + 1;
+  });
+}
+
 export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
   const {
     workbenchStore,
@@ -253,8 +266,8 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
               }
 
               const records = result.data.records;
-              // 为后台分片数据分配全局序号
-              assignRowNumbers(records, current, PAGE_SIZE);
+              // 为后台分片数据分配全局序号（按数据集实际偏移，防与首屏序号重复）
+              assignRowNumbersByOffset(records, offset);
               loadedRows += records.length;
               loadedCount.value = firstChunkSize + loadedRows;
               const progress = ((loadedCount.value / totalRecords) * 100).toFixed(1);
