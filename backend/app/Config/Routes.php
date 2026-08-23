@@ -92,6 +92,7 @@ $routes->group('invitation', static function ($routes) {
 	$routes->get('debug-tree', 'InvitationApi::debugTree');
 	$routes->get('detail/(:segment)', 'InvitationApi::detail/$1');
 	$routes->post('add', 'InvitationApi::add');
+	$routes->post('stats', 'InvitationApi::stats');
 	$routes->post('dedup', 'InvitationApi::dedup');
 	$routes->post('update', 'InvitationApi::update');
 	$routes->post('delete', 'InvitationApi::delete');

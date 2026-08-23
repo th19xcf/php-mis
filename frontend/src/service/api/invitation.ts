@@ -57,6 +57,21 @@ export function fetchInvitationDedup(data: Api.Invitation.PersonDedupParams) {
   });
 }
 
+/**
+ * 邀约次数建议（新增表单实时提示，人工确认后填写，不自动计算）
+ *
+ * 入参：姓名、手机号码（必填）、身份证号（可选，优先精确匹配）
+ * 返回：matched / invitationCount / maxCount / suggestedNext（=maxCount+1）/ latestDate 等
+ */
+export function fetchInvitationStats(data: Api.Invitation.InvitationStatsParams) {
+  return request<Api.Invitation.InvitationStatsResult>({
+    url: '/invitation/stats',
+    method: 'post',
+    data,
+    skipAuthError: true
+  });
+}
+
 export function fetchUpdateInvitation(data: Api.Invitation.InvitationUpdateParams) {
   return request<null>({
     url: '/invitation/update',

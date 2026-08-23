@@ -80,6 +80,31 @@ declare namespace Api {
       身份证号?: string;
     }
 
+    /** 邀约次数建议入参（新增表单实时提示） */
+    interface InvitationStatsParams {
+      姓名: string;
+      手机号码: string;
+      身份证号?: string;
+    }
+
+    /** 邀约次数建议结果（人工确认后填写，不自动计算） */
+    interface InvitationStatsResult {
+      /** 是否匹配到人员主档 */
+      matched: boolean;
+      /** 匹配主档数（>1 为疑似多档，提交时需查重确认） */
+      personCount: number;
+      /** 有效邀约总行数 */
+      invitationCount: number;
+      /** 最大邀约次数 */
+      maxCount: number;
+      /** 建议填写值 = maxCount + 1（无记录时为 1） */
+      suggestedNext: number;
+      /** 最近一次邀约日期（空串表示无记录） */
+      latestDate: string;
+      /** 最近一次邀约的邀约次数 */
+      latestCount: number | null;
+    }
+
     /** 人员主档查重命中的疑似档案行 */
     interface PersonDedupMatch {
       人员编码: string;

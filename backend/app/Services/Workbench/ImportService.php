@@ -125,10 +125,13 @@ class ImportService
         $importColumns = [];
         $headerRow = 1;
         $dataRow = 2;
+        $personModule = '';
+        $personFields = [];
+        $personDateField = '';
 
         if ($importModule !== '') {
             $sql = sprintf(
-                'select 列名, 字段名, 查询名, 顺序, 字段类型, 字段长度, 校验信息, 校验类型, 对象, 导入类型, 系统变量, 匹配标识, 缺省值
+                'select 列名, 字段名, 查询名, 顺序, 字段类型, 字段长度, 校验信息, 校验类型, 对象, 导入类型, 系统变量, 匹配标识, 缺省值, 字段归属表
                 from def_import_column
                 where 导入模块=%s
                 order by 顺序',
@@ -140,7 +143,7 @@ class ImportService
             }
 
             $sql = sprintf(
-                'select 表头行, 数据行 from def_import_config where 导入模块=%s',
+                'select 表头行, 数据行, 主档模块, 业务日期字段 from def_import_config where 导入模块=%s',
                 $this->model->quote($importModule)
             );
             $query = $this->model->select($sql);
@@ -149,6 +152,18 @@ class ImportService
                 if ($row) {
                     $headerRow = (int) ($row['表头行'] ?? 1);
                     $dataRow = (int) ($row['数据行'] ?? 2);
+                    $personModule = (string) ($row['主档模块'] ?? '');
+                    $personDateField = trim((string) ($row['业务日期字段'] ?? ''));
+                }
+            }
+
+            // 主档字段清单：def_import_column.字段归属表='hr_person'（与 def_query_column.字段归属表 同语义，配置驱动）
+            foreach ($importColumns as $col) {
+                if (trim((string) ($col['字段归属表'] ?? '')) === 'hr_person') {
+                    $field = trim((string) ($col['字段名'] ?? ''));
+                    if ($field !== '' && !in_array($field, $personFields, true)) {
+                        $personFields[] = $field;
+                    }
                 }
             }
         }
@@ -197,7 +212,11 @@ class ImportService
             'fieldMap' => $fieldMap,
             'requiredColumns' => $requiredColumns,
             'headerRow' => $headerRow,
-            'dataRow' => $dataRow
+            'dataRow' => $dataRow,
+            'personModule' => $personModule,
+            'personFields' => $personFields,
+            // 主档发号业务日期字段（def_import_config.业务日期字段，缺省邀约日期向后兼容）
+            'personDateField' => $personDateField !== '' ? $personDateField : '邀约日期'
         ];
     }
 

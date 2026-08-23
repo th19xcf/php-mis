@@ -227,102 +227,120 @@ class TrainApi extends BaseApiController
         $endTime = date('Y-m-d H:i:s');
         $startTime = date('Y-m-d H:i:s');
 
-        if ($data['培训状态'] === '通过') {
-            $sql = sprintf('
-                update ee_train
-                set 培训状态="%s",培训完成日期="%s",
-                    结束操作时间="%s",操作时间="%s",操作人员="%s" 
-                where GUID in (%s)',
-                $data['培训状态'],
-                $data['培训结束日期'] ?? '',
-                $endTime,
-                $endTime,
-                $this->getUserWorkId(),
-                $guidStr
-            );
+        // 事务保护：ee_train 状态更新与 ee_onjob 转入插入必须同成败
+        // （对齐 InvitationApi::transfer 的事务写法）
+        $db = $this->model->getDb();
+        $db->transStart();
+        $num = 0;
 
-            $num = $this->model->exec($sql);
+        try {
+            if ($data['培训状态'] === '通过') {
+                $sql = sprintf('
+                    update ee_train
+                    set 培训状态="%s",培训完成日期="%s",
+                        结束操作时间="%s",操作时间="%s",操作人员="%s"
+                    where GUID in (%s)',
+                    $data['培训状态'],
+                    $data['培训结束日期'] ?? '',
+                    $endTime,
+                    $endTime,
+                    $this->getUserWorkId(),
+                    $guidStr
+                );
 
-            $sql = sprintf('
-                insert into ee_onjob (
-                    培训编码,
-                    姓名,身份证号,手机号码,属地,入职次数,
-                    招聘渠道,
-                    员工类别,
-                    实习结束日期,
-                    部门编码,部门名称,班组,
-                    岗位名称,岗位类型,
-                    结算类型,
-                    工号1,工号2,
-                    培训信息,培训开始日期,培训完成日期,
-                    一阶段日期,二阶段日期,
-                    员工阶段,员工状态,
-                    离职日期,离职原因,
-                    派遣公司,
-                    记录开始日期,记录结束日期,
-                    操作来源,操作人员,
-                    开始操作时间,结束操作时间,
-                    校验标识,删除标识,有效标识)
-                select 
-                    t1.初始编码 as 培训编码,
-                    t1.姓名,t1.身份证号,t1.手机号码,t1.属地,%d,
-                    t2.招聘渠道,
-                    if(t2.招聘渠道="校招","未毕业学生","合同制员工") as 员工类别,
-                    t2.实习结束日期,
-                    "" as 部门编码,"" as 部门名称,"" as 班组,
-                    "客服代表" as 岗位名称,"%s" as 岗位类型,
-                    "%s" as 结算类型,
-                    "" as 工号1,"" as 工号2,
-                    "有" as 培训信息,培训开始日期,培训完成日期,
-                    培训完成日期 as 一阶段日期,"" as 二阶段日期,
-                    "新人组" as 员工阶段,"在职" as 员工状态,
-                    "" as 离职日期,"" as 离职原因,
-                    "" as 派遣公司,
-                    "%s" as 记录开始日期,"" as 记录结束日期,
-                    "培训表转入" as 操作来源,"%s" as 操作人员,
-                    "%s" as 开始操作时间,"" as 结束操作时间,
-                    "0" as 校验标识,"0" as 删除标识,"1" as 有效标识
-                from
-                (
-                    select GUID,初始编码,姓名,身份证号,手机号码,属地,培训业务,培训状态,
-                        培训批次,培训老师,培训开始日期,预计完成日期,
-                        培训完成日期,培训离开日期,培训离开原因,面试信息
-                    from ee_train
-                    where GUID in (%s)
-                ) as t1
-                left join
-                (
-                    select 姓名,身份证号,招聘渠道,实习结束日期
-                    from ee_interview
-                    group by 身份证号
-                ) as t2
-                on t1.身份证号=t2.身份证号',
-                (int)($data['入职次数'] ?? 1),
-                $data['岗位类型'] ?? '',
-                $data['结算类型'] ?? '',
-                $data['培训结束日期'] ?? '',
-                $this->getUserWorkId(),
-                $startTime,
-                $guidStr
-            );
+                $num = $this->model->exec($sql);
 
-            $this->model->exec($sql);
-        } else {
-            $sql = sprintf('
-                update ee_train
-                set 培训状态="%s",培训离开日期="%s",培训离开原因="%s",
-                    结束操作时间="%s",操作时间="%s",操作人员="%s" 
-                where GUID in (%s)',
-                $data['培训状态'],
-                $data['培训结束日期'] ?? '',
-                $data['培训离开原因'] ?? '',
-                $endTime,
-                $endTime,
-                $this->getUserWorkId(),
-                $guidStr
-            );
+                // 候选人编码/人员编码 沿链路继承（原 培训编码/初始编码 列已随表结构瘦身移除）
+                $sql = sprintf('
+                    insert into ee_onjob (
+                        候选人编码,人员编码,
+                        姓名,身份证号,手机号码,属地,入职次数,
+                        招聘渠道,
+                        员工类别,
+                        实习结束日期,
+                        部门编码,部门名称,班组,
+                        岗位名称,岗位类型,
+                        结算类型,
+                        工号1,工号2,
+                        培训信息,培训开始日期,培训完成日期,
+                        一阶段日期,二阶段日期,
+                        员工阶段,员工状态,
+                        离职日期,离职原因,
+                        派遣公司,
+                        记录开始日期,记录结束日期,
+                        操作来源,操作人员,
+                        开始操作时间,结束操作时间,
+                        校验标识,删除标识,有效标识)
+                    select
+                        t1.候选人编码,t1.人员编码,
+                        t1.姓名,t1.身份证号,t1.手机号码,t1.属地,%d,
+                        t2.招聘渠道,
+                        if(t2.招聘渠道="校招","未毕业学生","合同制员工") as 员工类别,
+                        t2.实习结束日期,
+                        "" as 部门编码,"" as 部门名称,"" as 班组,
+                        "客服代表" as 岗位名称,"%s" as 岗位类型,
+                        "%s" as 结算类型,
+                        "" as 工号1,"" as 工号2,
+                        "有" as 培训信息,培训开始日期,培训完成日期,
+                        培训完成日期 as 一阶段日期,"" as 二阶段日期,
+                        "新人组" as 员工阶段,"在职" as 员工状态,
+                        "" as 离职日期,"" as 离职原因,
+                        "" as 派遣公司,
+                        "%s" as 记录开始日期,"" as 记录结束日期,
+                        "培训表转入" as 操作来源,"%s" as 操作人员,
+                        "%s" as 开始操作时间,"" as 结束操作时间,
+                        "0" as 校验标识,"0" as 删除标识,"1" as 有效标识
+                    from
+                    (
+                        select GUID,候选人编码,人员编码,姓名,身份证号,手机号码,属地,培训业务,培训状态,
+                            培训批次,培训老师,培训开始日期,预计完成日期,
+                            培训完成日期,培训离开日期,培训离开原因,面试信息
+                        from ee_train
+                        where GUID in (%s)
+                    ) as t1
+                    left join
+                    (
+                        select 姓名,身份证号,招聘渠道,实习结束日期
+                        from ee_interview
+                        group by 身份证号
+                    ) as t2
+                    on t1.身份证号=t2.身份证号',
+                    (int)($data['入职次数'] ?? 1),
+                    $data['岗位类型'] ?? '',
+                    $data['结算类型'] ?? '',
+                    $data['培训结束日期'] ?? '',
+                    $this->getUserWorkId(),
+                    $startTime,
+                    $guidStr
+                );
 
-            $num = $this->model->exec($sql);
+                $this->model->exec($sql);
+            } else {
+                $sql = sprintf('
+                    update ee_train
+                    set 培训状态="%s",培训离开日期="%s",培训离开原因="%s",
+                        结束操作时间="%s",操作时间="%s",操作人员="%s"
+                    where GUID in (%s)',
+                    $data['培训状态'],
+                    $data['培训结束日期'] ?? '',
+                    $data['培训离开原因'] ?? '',
+                    $endTime,
+                    $endTime,
+                    $this->getUserWorkId(),
+                    $guidStr
+                );
+
+                $num = $this->model->exec($sql);
+            }
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            log_message('error', '[TrainApi::transfer] 事务回滚: ' . $e->getMessage());
+            return $this->serverError('转入在职失败');
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            return $this->serverError('转入在职失败(事务已回滚)');
         }
 
         return $this->success(null, sprintf('更新培训状态成功，更新 %d 条记录', $num ?? 0));

@@ -7,6 +7,7 @@ use App\Controllers\BaseApiController;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
+use App\Services\Person\PersonImportService;
 use App\Services\Workbench\ImportService;
 
 /**
@@ -238,6 +239,77 @@ class WorkbenchImportController extends BaseApiController
                         'successCount' => 0,
                         'errorCount'   => count($importData),
                         'errors'       => $dupCheck['errors'] ?? [],
+                    ]);
+                }
+            }
+
+            // 7.5 人员主档裁决（def_import_config.主档模块='person' 时启用，两阶段无状态）
+            //     阶段一（无 decisions）：批量查重，软命中返回 needConfirm 由前端决策后重提；
+            //     阶段二（带 decisions）：按决策挂接/新建，回填临时表 人员编码 列，
+            //     importFromTempTable 检测到临时表额外列且目标表有该列时自动写入。
+            //     主档字段清单来自 def_import_column.字段归属表='hr_person'（配置驱动，非硬编码）；
+            //     发号业务日期来自 def_import_config.业务日期字段（邀约/面试/培训/在职各自配置）。
+            $personModule = (string) ($importConfig['personModule'] ?? '');
+            if ($personModule === 'person') {
+                $personFields = $importConfig['personFields'] ?? [];
+                $personDateField = (string) ($importConfig['personDateField'] ?? '邀约日期');
+                // 防呆：启用主档裁决但归属配置缺失/不含查重必需字段，直接报配置错误而非建废档
+                foreach (['姓名', '手机号码'] as $mustField) {
+                    if (!in_array($mustField, $personFields, true)) {
+                        return $this->success($this->importService->buildImportFailure(
+                            $importData,
+                            "导入配置错误：def_import_column 中字段「{$mustField}」未配置 字段归属表='hr_person'，无法进行人员主档查重"
+                        ));
+                    }
+                }
+
+                $personImportService = new PersonImportService();
+                $hasDecisions = array_key_exists('decisions', $payload) && is_array($payload['decisions']);
+
+                if (!$hasDecisions) {
+                    // 阶段一：批量查重
+                    $dedupResult = $personImportService->checkTempTableDedup($tmpTableName, $personFields, $personDateField);
+                    if ($dedupResult['hasError']) {
+                        $this->importService->dropTempTable($tmpTableName);
+                        return $this->success([
+                            'success'      => false,
+                            'message'      => $dedupResult['message'],
+                            'total'        => count($importData),
+                            'successCount' => 0,
+                            'errorCount'   => count($importData),
+                            'errors'       => [['error' => $dedupResult['message']]],
+                        ]);
+                    }
+                    if (!empty($dedupResult['softRows'])) {
+                        // 两阶段无状态：删除临时表，阶段二重建后 _seq 与数据顺序天然对齐
+                        $this->importService->dropTempTable($tmpTableName);
+                        return $this->success([
+                            'success'      => false,
+                            'needConfirm'  => true,
+                            'message'      => sprintf('存在 %d 行疑似重复人员主档，请逐行确认挂接既有档案或新建', count($dedupResult['softRows'])),
+                            'softRows'     => $dedupResult['softRows'],
+                            'total'        => count($importData),
+                            'successCount' => 0,
+                            'errorCount'   => 0,
+                            'errors'       => [],
+                        ]);
+                    }
+                    // 无软命中：硬命中自动挂档 + 无命中自动新建，直接落地
+                    $applyResult = $personImportService->applyPersonToTempTable($tmpTableName, $personFields, [], $userWorkid, $personDateField);
+                } else {
+                    // 阶段二：按前端决策落地
+                    $applyResult = $personImportService->applyPersonToTempTable($tmpTableName, $personFields, $payload['decisions'], $userWorkid, $personDateField);
+                }
+
+                if (!$applyResult['success']) {
+                    $this->importService->dropTempTable($tmpTableName);
+                    return $this->success([
+                        'success'      => false,
+                        'message'      => $applyResult['message'],
+                        'total'        => count($importData),
+                        'successCount' => 0,
+                        'errorCount'   => count($importData),
+                        'errors'       => [['error' => $applyResult['message']]],
                     ]);
                 }
             }

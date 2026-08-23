@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, toRef } from 'vue';
+import { ref, onMounted, computed, toRef, watch } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import {  } from 'naive-ui';
 import { useRoute } from 'vue-router';
@@ -11,7 +11,8 @@ import {
   fetchAddFields,
   fetchDetailFields,
   fetchBatchEditFields,
-  fetchInvitationDedup
+  fetchInvitationDedup,
+  fetchInvitationStats
 } from '@/service/api';
 import { fetchDebugTree } from '@/service/api/invitation';
 import { useInvitationStore } from '@/store/modules/invitation';
@@ -146,6 +147,7 @@ const {
   importPreviewData,
   importError,
   importSuccess,
+  importSoftRows,
   fileInputRef,
   importPreviewColumns,
   handleImport,
@@ -199,11 +201,53 @@ async function openAddModal() {
     });
     invitationStore.setAddFormDynamic(formData);
   }
+  invitationStats.value = null;
   invitationStore.setAddingMode(true);
 }
 
 function cancelAddMode() {
   invitationStore.clearAddState();
+  invitationStats.value = null;
+}
+
+/**
+ * 邀约次数人工提示：新增表单按 姓名+手机号（身份证号优先）实时查询既有邀约记录
+ *
+ * 邀约次数由人工确认填写（不自动计算）：提示既有次数与建议值，辅助人工判断
+ * 是否重复录入；建议值可一键填入，最终以人工填写为准。
+ */
+const invitationStats = ref<Api.Invitation.InvitationStatsResult | null>(null);
+let statsTimer: ReturnType<typeof setTimeout> | null = null;
+
+watch(
+  () => [addFormDynamic.value['姓名'], addFormDynamic.value['手机号码'], addFormDynamic.value['身份证号']],
+  () => {
+    if (!isAddingMode.value) return;
+    if (statsTimer) clearTimeout(statsTimer);
+    statsTimer = setTimeout(loadInvitationStats, 500);
+  }
+);
+
+async function loadInvitationStats() {
+  const name = String(addFormDynamic.value['姓名'] || '').trim();
+  const phone = String(addFormDynamic.value['手机号码'] || '').trim();
+  if (!name || !phone) {
+    invitationStats.value = null;
+    return;
+  }
+  const { data, error } = await fetchInvitationStats({
+    姓名: name,
+    手机号码: phone,
+    身份证号: String(addFormDynamic.value['身份证号'] || '').trim()
+  });
+  // 查询失败不弹提示（提示为辅助信息，不阻塞录入）
+  invitationStats.value = error ? null : data ?? null;
+}
+
+function fillSuggestedInvitationCount() {
+  if (invitationStats.value) {
+    addFormDynamic.value['邀约次数'] = String(invitationStats.value.suggestedNext);
+  }
 }
 
 // 人员主档查重确认弹窗状态
@@ -260,6 +304,7 @@ async function doSubmitAdd(extra?: { person_code?: string; force_new?: boolean }
   if (!error) {
     message.success('新增邀约信息成功');
     invitationStore.clearAddState();
+    invitationStats.value = null;
     dedupVisible.value = false;
     await loadTree();
     return true;
@@ -755,6 +800,30 @@ onMounted(async () => {
               <NButton size="small" @click="cancelAddMode">取消</NButton>
             </NSpace>
           </div>
+          <!-- 邀约次数人工提示：既有邀约记录 + 建议值（防重复录入，最终以人工填写为准） -->
+          <NAlert
+            v-if="invitationStats?.matched"
+            :type="invitationStats.invitationCount > 0 ? 'warning' : 'info'"
+            size="small"
+            class="mb-2"
+          >
+            <template v-if="invitationStats.invitationCount > 0">
+              邀约次数提示：{{
+                invitationStats.personCount > 1
+                  ? `匹配到 ${invitationStats.personCount} 个疑似人员主档（提交时请确认挂接），`
+                  : ''
+              }}该人员已有 {{ invitationStats.invitationCount }} 次有效邀约<template
+                v-if="invitationStats.latestDate"
+              >
+                ，最近一次 {{ invitationStats.latestDate }}（第 {{ invitationStats.latestCount }} 次）</template
+              >。请核对是否重复录入，本次邀约次数建议填写
+              <b>{{ invitationStats.suggestedNext }}</b>
+              <NButton size="tiny" type="primary" class="ml-2" @click="fillSuggestedInvitationCount">
+                填入 {{ invitationStats.suggestedNext }}
+              </NButton>
+            </template>
+            <template v-else> 邀约次数提示：该人员已有主档但尚无有效邀约记录，本次邀约次数建议填写 1。 </template>
+          </NAlert>
           <NTable size="small" :single-line="false">
             <thead>
               <tr>
@@ -922,6 +991,7 @@ onMounted(async () => {
       :success="importSuccess"
       :preview-columns="importPreviewColumns"
       :is-dark-mode="isDarkMode"
+      :soft-rows="importSoftRows"
       @trigger-file-input="triggerFileInput"
       @download-template="downloadImportTemplate"
       @reset="resetImportPreview"

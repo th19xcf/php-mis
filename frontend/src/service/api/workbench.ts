@@ -79,7 +79,14 @@ export function fetchImportColumns(functionCode: string) {
   });
 }
 
-export function importData(functionCode: string, data: any[], menu1: string = '', menu2: string = '') {
+export function importData(
+  functionCode: string,
+  data: any[],
+  menu1: string = '',
+  menu2: string = '',
+  /** 人员主档软命中决策 {行号: 人员编码 | '__NEW__'}，阶段二重提时携带 */
+  decisions?: Record<string, string>
+) {
   return request<Api.Workbench.ImportResult>({
     url: `/workbench/import/${encodeURIComponent(functionCode)}`,
     method: 'post',
@@ -87,7 +94,8 @@ export function importData(functionCode: string, data: any[], menu1: string = ''
       data,
       menu1,
       menu2,
-      config: {}
+      config: {},
+      ...(decisions ? { decisions } : {})
     },
     // 导入大批量数据可能耗时 2-3 分钟（1万行 × 30字段），覆盖全局 30s 超时
     timeout: 180000,

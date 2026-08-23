@@ -131,8 +131,32 @@ declare namespace Api {
       data: Record<string, any>;
     }
 
+    /** 人员主档候选档案（hr_person 行，查重命中返回） */
+    interface PersonMatch {
+      人员编码: string;
+      姓名: string;
+      身份证号?: string;
+      手机号码?: string;
+      性别?: string;
+      属地?: string;
+    }
+
+    /** 人员主档软命中行（姓名+手机匹配，需人工决策挂接/新建） */
+    interface PersonSoftRow {
+      /** 临时表行号（= 导入数据顺序索引+1） */
+      seq: number;
+      name: string;
+      mobile: string;
+      idcard: string;
+      matches: PersonMatch[];
+    }
+
     interface ImportResult {
       success: boolean;
+      /** true=存在人员主档软命中，需前端决策后带 decisions 重提 */
+      needConfirm?: boolean;
+      /** 软命中行明细（needConfirm=true 时返回） */
+      softRows?: PersonSoftRow[];
       message: string;
       total: number;
       successCount: number;

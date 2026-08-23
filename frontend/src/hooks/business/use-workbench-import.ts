@@ -26,6 +26,8 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
   const fileInputRef = ref<HTMLInputElement | null>(null);
   const headerRow = ref(1);
   const dataRow = ref(2);
+  // 人员主档软命中行（needConfirm 阶段一返回，非空时弹窗展示决策页）
+  const importSoftRows = ref<Api.Workbench.PersonSoftRow[]>([]);
   // 保存导入列配置，用于自动匹配表头行
   const importColumns = ref<Api.Workbench.ImportColumn[]>([]);
 
@@ -120,6 +122,7 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     importPreviewData.value = [];
     importError.value = '';
     importSuccess.value = null;
+    importSoftRows.value = [];
 
     const functionCode = options.getFunctionCode();
     if (functionCode) {
@@ -261,7 +264,7 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     }
   }
 
-  async function confirmImport() {
+  async function confirmImport(decisions?: Record<string, string>) {
     if (importPreviewData.value.length === 0) {
       options.notify('warning', '没有可导入的数据');
       return;
@@ -277,7 +280,13 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     importError.value = '';
 
     try {
-      const { data, error } = await importData(functionCode, importPreviewData.value, options.getMenu1(), options.getMenu2());
+      const { data, error } = await importData(
+        functionCode,
+        importPreviewData.value,
+        options.getMenu1(),
+        options.getMenu2(),
+        decisions
+      );
 
       if (error) {
         console.error('导入请求错误:', error);
@@ -305,6 +314,8 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
         }
         const msg = '导入请求失败: ' + detail;
         importError.value = msg;
+        // 决策重提失败：清空软命中状态回到预览页，避免卡在决策页
+        importSoftRows.value = [];
         return;
       }
 
@@ -314,6 +325,16 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
         importError.value = msg;
         return;
       }
+
+      // 人员主档软命中：切换到决策页，用户逐行确认后带 decisions 重提
+      if (!data.success && data.needConfirm && data.softRows && data.softRows.length > 0) {
+        importSoftRows.value = data.softRows;
+        options.notify('warning', data.message);
+        return;
+      }
+
+      // 决策已处理（或无需决策）：清空软命中状态
+      importSoftRows.value = [];
 
       if (data.success) {
         importSuccess.value = {
@@ -433,6 +454,7 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     importPreviewData.value = [];
     importError.value = '';
     importSuccess.value = null;
+    importSoftRows.value = [];
   }
 
   return {
@@ -441,6 +463,7 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     importPreviewData,
     importError,
     importSuccess,
+    importSoftRows,
     fileInputRef,
     importPreviewColumns,
     handleImport,

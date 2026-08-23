@@ -146,6 +146,7 @@ const {
   importPreviewData,
   importError,
   importSuccess,
+  importSoftRows,
   fileInputRef,
   importPreviewColumns,
   handleImport,
@@ -826,6 +827,7 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], ne
       :success="importSuccess"
       :preview-columns="importPreviewColumns"
       :is-dark-mode="isDarkMode"
+      :soft-rows="importSoftRows"
       @trigger-file-input="triggerFileInput"
       @download-template="downloadImportTemplate"
       @reset="resetImportPreview"

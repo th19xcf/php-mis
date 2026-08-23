@@ -5,6 +5,8 @@ namespace App\Controllers;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
+use App\Services\Person\CandidateCodeService;
+use App\Services\Person\PersonService;
 
 class InterviewApi extends BaseApiController
 {
@@ -142,15 +144,49 @@ class InterviewApi extends BaseApiController
         if ($error = $this->requireParam($data, '姓名')) {
             return $error;
         }
-
-        $data = $this->buildInsertData($data);
-        $num = $this->insertRecord('ee_interview', $data);
-
-        if ($num > 0) {
-            return $this->success(null, '新增面试信息成功');
+        // 手机号码为人员主档建档必填（与邀约新增一致）
+        if ($error = $this->requireParam($data, '手机号码')) {
+            return $error;
         }
 
-        return $this->serverError('新增面试信息失败');
+        $data = $this->buildInsertData($data);
+        $bizDate = (string) ($data['一次面试日期'] ?? '');
+
+        $db = $this->model->getDb();
+        $db->transStart();
+
+        try {
+            // 人员主档裁决（自动档，与邀约修改路径同语义）：证件号硬命中/唯一软命中挂既有档，
+            // 无命中新建档；多条软命中走新建（重复档由唯一索引/合并机制事后收口）。
+            // 直接面试即链路起点，需建档挂档后才能沿链路流转。
+            $data['人员编码'] = (new PersonService())->ensurePersonForStore(
+                $data, $this->getUserWorkId(), $bizDate
+            );
+
+            // 候选人编码：直接面试即链路起点，发新码（按一次面试日期分桶，空则今天）
+            $candidateCodeService = new CandidateCodeService();
+            $data['候选人编码'] = $candidateCodeService->generateOne($bizDate);
+
+            $num = $this->insertRecord('ee_interview', $data);
+            if ($num <= 0) {
+                throw new BusinessException('新增面试信息失败');
+            }
+        } catch (BusinessException $e) {
+            $db->transRollback();
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            log_message('error', '[InterviewApi::add] 事务回滚: ' . $e->getMessage());
+            return $this->serverError('新增面试信息失败');
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            // 生产环境 DBDebug=false 时 SQL 失败不抛异常，兜底检测事务状态
+            return $this->serverError('新增面试信息失败(事务已回滚)');
+        }
+
+        return $this->success(['人员编码' => $data['人员编码']], '新增面试信息成功');
     }
 
     public function update()
@@ -217,44 +253,62 @@ class InterviewApi extends BaseApiController
             $guidStr
         );
 
-        $num = $this->model->exec($sql);
+        // 事务保护：ee_interview 状态更新与 ee_train 转入插入必须同成败
+        // （对齐 InvitationApi::transfer 的事务写法）
+        $db = $this->model->getDb();
+        $db->transStart();
+        $num = 0;
 
-        if ($data['参培信息'] === '已参培') {
-            $trainStatus = '在培';
-            $startTime = date('Y-m-d H:i:s');
+        try {
+            $num = $this->model->exec($sql);
 
-            $sql = sprintf('
-                insert into ee_train (
-                    初始编码,
-                    姓名,身份证号,手机号码,属地,
-                    培训业务,培训状态,
-                    培训批次,培训老师,
-                    培训开始日期,预计完成日期,
-                    面试信息,
-                    操作记录,操作来源,操作人员,开始操作时间,
-                    有效标识,删除标识)
-                select 候选人编码 as 初始编码,
-                    姓名,身份证号,手机号码,属地,
-                    "%s" as 培训业务,"%s" as 培训状态,
-                    "%s" as 培训批次,"%s" as 培训老师,
-                    "%s" as 培训开始日期,"%s" as 预计完成日期,
-                    "有" as 面试信息,
-                    "面试表转入","页面","%s","%s",
-                    "1","0"
-                from ee_interview
-                where GUID in (%s)',
-                $data['培训业务'] ?? '',
-                $trainStatus,
-                $data['培训批次'] ?? '',
-                $data['培训老师'] ?? '',
-                $data['培训开始日期'] ?? '',
-                $data['预计完成日期'] ?? '',
-                $this->getUserWorkId(),
-                $startTime,
-                $guidStr
-            );
+            if ($data['参培信息'] === '已参培') {
+                $trainStatus = '在培';
+                $startTime = date('Y-m-d H:i:s');
 
-            $this->model->exec($sql);
+                // 候选人编码/人员编码 沿链路继承（原 初始编码 列已随表结构瘦身移除）
+                $sql = sprintf('
+                    insert into ee_train (
+                        候选人编码,人员编码,
+                        姓名,身份证号,手机号码,属地,
+                        培训业务,培训状态,
+                        培训批次,培训老师,
+                        培训开始日期,预计完成日期,
+                        面试信息,
+                        操作记录,操作来源,操作人员,开始操作时间,
+                        有效标识,删除标识)
+                    select 候选人编码,人员编码,
+                        姓名,身份证号,手机号码,属地,
+                        "%s" as 培训业务,"%s" as 培训状态,
+                        "%s" as 培训批次,"%s" as 培训老师,
+                        "%s" as 培训开始日期,"%s" as 预计完成日期,
+                        "有" as 面试信息,
+                        "面试表转入","页面","%s","%s",
+                        "1","0"
+                    from ee_interview
+                    where GUID in (%s)',
+                    $data['培训业务'] ?? '',
+                    $trainStatus,
+                    $data['培训批次'] ?? '',
+                    $data['培训老师'] ?? '',
+                    $data['培训开始日期'] ?? '',
+                    $data['预计完成日期'] ?? '',
+                    $this->getUserWorkId(),
+                    $startTime,
+                    $guidStr
+                );
+
+                $this->model->exec($sql);
+            }
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            log_message('error', '[InterviewApi::transfer] 事务回滚: ' . $e->getMessage());
+            return $this->serverError('转入培训失败');
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            return $this->serverError('转入培训失败(事务已回滚)');
         }
 
         return $this->success(null, sprintf('更新参培信息成功，更新 %d 条记录', $num));

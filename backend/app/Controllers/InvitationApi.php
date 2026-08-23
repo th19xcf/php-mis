@@ -6,6 +6,7 @@ use App\Constants\ApiCode;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
+use App\Services\Person\CandidateCodeService;
 use App\Services\Person\PersonService;
 
 class InvitationApi extends BaseApiController
@@ -231,8 +232,10 @@ class InvitationApi extends BaseApiController
 
             $storeData['人员编码'] = $personCode;
             $storeData = $this->buildInsertData($storeData);
-            // 生成候选人编码：按邀约日期分桶发号，LAST_INSERT_ID 防多人并发重号
-            $storeData['候选人编码'] = $this->generateCandidateCode(1, $storeData['邀约日期'] ?? '');
+            // 候选人编码：链路起点发码（按邀约日期分桶，LAST_INSERT_ID 防并发重号）
+            // 邀约次数：人工填写（表单必填），不自动计算；前端通过 /invitation/stats 实时提示建议值
+            $candidateCodeService = new CandidateCodeService();
+            $storeData['候选人编码'] = $candidateCodeService->generateOne((string) ($storeData['邀约日期'] ?? ''));
             $num = $this->insertRecord('ee_store', $storeData);
 
             if ($num <= 0) {
@@ -254,6 +257,77 @@ class InvitationApi extends BaseApiController
         }
 
         return $this->success(['人员编码' => $personCode], '新增邀约信息成功');
+    }
+
+    /**
+     * 邀约次数建议（新增表单实时提示，由人工确认后填写，不自动计算）
+     *
+     * 入参：姓名、手机号码（必填）、身份证号（可选，优先精确匹配）
+     * 出参：{
+     *   matched: bool,              是否匹配到人员主档
+     *   personCount: int,           匹配主档数（>1 为疑似多档，提交时需查重确认）
+     *   invitationCount: int,       有效邀约总行数
+     *   maxCount: int,              最大邀约次数
+     *   suggestedNext: int,         建议填写值 = maxCount + 1（无记录时为 1）
+     *   latestDate: string,         最近一次邀约日期（空串表示无记录）
+     *   latestCount: int|null,      最近一次邀约的邀约次数
+     * }
+     */
+    public function stats()
+    {
+        $data = $this->getJsonInput();
+
+        $name   = trim((string) ($data['姓名'] ?? ''));
+        $phone  = trim((string) ($data['手机号码'] ?? ''));
+        $idcard = trim((string) ($data['身份证号'] ?? ''));
+
+        // 未填齐姓名+手机号码时无法定位人员，直接返回无匹配（前端不弹提示）
+        $empty = ['matched' => false, 'personCount' => 0, 'invitationCount' => 0,
+                  'maxCount' => 0, 'suggestedNext' => 1, 'latestDate' => '', 'latestCount' => null];
+        if ($name === '' || $phone === '') {
+            return $this->success($empty);
+        }
+
+        // 主档匹配：证件号精确（优先）或 姓名+手机号码，与 dedup 语义一致（有效未删除未合并）
+        $conds = [sprintf('姓名=%s and 手机号码=%s', $this->model->quote($name), $this->model->quote($phone))];
+        if ($idcard !== '') {
+            $conds[] = sprintf('身份证号=%s', $this->model->quote($idcard));
+        }
+        $sql = sprintf(
+            'select 人员编码 from hr_person
+             where (%s) and 有效标识="1" and 删除标识="0"
+               and (合并至="" or 合并至 is null)',
+            implode(' or ', $conds)
+        );
+        $persons = $this->model->select($sql)->getResultArray();
+        if (empty($persons)) {
+            return $this->success($empty);
+        }
+
+        $codeStr = implode(',', array_map(fn($p) => $this->model->quote((string) $p['人员编码']), $persons));
+        $storeCond = sprintf('人员编码 in (%s) and 有效标识="1" and 删除标识="0"', $codeStr);
+
+        // 汇总：总行数 + 最大邀约次数（列类型 tinyint unsigned，MAX 为数值比较）
+        $agg = $this->model->select(sprintf(
+            'select count(*) as c, ifnull(max(邀约次数), 0) as m from ee_store where %s',
+            $storeCond
+        ))->getRowArray();
+
+        // 最近一次邀约（日期倒序，同日按 GUID 倒序，与回填重算口径一致）
+        $latest = $this->model->select(sprintf(
+            'select 邀约日期, 邀约次数 from ee_store where %s order by 邀约日期 desc, GUID desc limit 1',
+            $storeCond
+        ))->getRowArray();
+
+        return $this->success([
+            'matched'         => true,
+            'personCount'     => count($persons),
+            'invitationCount' => (int) ($agg['c'] ?? 0),
+            'maxCount'        => (int) ($agg['m'] ?? 0),
+            'suggestedNext'   => (int) ($agg['m'] ?? 0) + 1,
+            'latestDate'      => (string) ($latest['邀约日期'] ?? ''),
+            'latestCount'     => $latest !== null ? (int) ($latest['邀约次数'] ?? 0) : null,
+        ]);
     }
 
     /**
@@ -280,45 +354,6 @@ class InvitationApi extends BaseApiController
         );
 
         return $this->success($result);
-    }
-
-    /**
-     * 生成候选人编码
-     *
-     * 格式：C + YYYYMMDD + 3位顺序号，例如 C20260818001
-     * 日期来源：ee_store.邀约日期（业务日期，非录入日期）
-     *   - 历史数据录入/导入不及时时，编码日期与业务日期一致，时序正确
-     * 并发安全：通过 LAST_INSERT_ID(expr) 技巧，连接级变量天然隔离
-     *   - UPDATE 单语句原子（InnoDB 行锁串行化）
-     *   - LAST_INSERT_ID(expr) 写入当前连接变量，其他连接读不到也影响不了
-     *   - autocommit 模式也安全，多人同时新增/导入不重号
-     * Excel 导入路径不复用此方法，而是通过 def_import_config.前处理模块
-     * 配置 sp_邀约_导入前处理($源表, @out) 批量赋号，确保两条路径共用同一发号核心。
-     *
-     * @param int    $count   本次需要的编码数量（页面新增=1）
-     * @param string $bizDate 业务日期（ee_store.邀约日期），空则用今天
-     * @return string 候选人编码
-     */
-    private function generateCandidateCode(int $count = 1, string $bizDate = ''): string
-    {
-        $date = $bizDate ?: date('Y-m-d');
-        // 严格校验日期格式，防 SQL 注入（sp_生成候选人编码 的 p_date 参数）
-        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-            $date = date('Y-m-d');
-        }
-        // 初始化会话变量（防残留）
-        $this->model->select("SET @seq = 0, @prefix = ''");
-        // 调用发号存储过程（LAST_INSERT_ID 防并发，按业务日期分桶）
-        $this->model->select(sprintf(
-            "CALL sp_生成候选人编码(%d, '%s', @seq, @prefix)",
-            $count,
-            $date
-        ));
-        // 读取 OUT 参数（同一会话连接，@变量可见）
-        $row = $this->model->select('SELECT @prefix AS p, @seq AS s')->getRowArray() ?: [];
-        $prefix = $row['p'] ?? '';
-        $seq = (int) ($row['s'] ?? 0);
-        return $prefix . str_pad((string) $seq, 3, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -475,7 +510,7 @@ class InvitationApi extends BaseApiController
             if ($data['面试结果'] === '通过' || $data['面试结果'] === '未通过') {
                 $sql = sprintf('
                     insert into ee_interview (
-                        候选人编码,
+                        候选人编码,人员编码,
                         姓名,身份证号,手机号码,属地,
                         招聘渠道,渠道类型,渠道名称,
                         面试业务,面试岗位,
@@ -483,7 +518,7 @@ class InvitationApi extends BaseApiController
                         预约培训日期,邀约信息,
                         操作记录,操作来源,操作人员,开始操作时间,
                         有效标识,删除标识)
-                    select 候选人编码,
+                    select 候选人编码,人员编码,
                         姓名,身份证号,手机号码,属地,
                         招聘渠道,渠道类型,渠道名称,
                         邀约业务,邀约岗位,
