@@ -9,18 +9,20 @@ use CodeIgniter\CLI\CLI;
 /**
  * 流程实例每日对账命令
  *
- * 阶段①~③期间（存量搬迁后、双写/读切换过渡期）每日核对 ee_store ↔ ee_application 一致性：
+ * 方案C（瘦状态头）：ee_application 只存状态机+时间线+终止信息，
+ * 邀约及实例级业务字段长期保留在 ee_store（按候选人编码 1:1 关联），
+ * 本对账为常态化核验（写路径双 INSERT 落地前尤需每日执行）：
  *   1. 行覆盖：ee_store 活跃行缺失实例 / 实例无对应活跃源行（双向）
- *   2. 字段级：12 个共享字段逐一比对（NULL 与空串视为相等）
+ *   2. 字段级：共享字段（邀约日期冗余副本）比对（NULL 与空串视为相等）
  *   3. 阶段一致性：按下游表重算期望阶段，与存储的当前阶段比对
- *      （口径与 ee_application_migrate.sql 第 4/5 部分完全一致）
+ *      （口径与 ee_application_migrate.sql 第 3/4 部分完全一致）
  *   4. 下游孤儿：ee_interview/ee_train/ee_onjob 中候选人编码无对应实例的有效行
  *   5. 主档链接：实例人员编码为空（应先跑 person:migrate）
  *   6. 长期在途：邀约/面试/培训阶段且邀约日期早于 N 天（--stale-days，默认 90，仅提示不计数）
  *
  * 对账只报告不改数。差异修复方式：
  *   - 行缺失 / 字段差异：人工核对源行后修正，或重跑 ee_application_migrate.sql 对应段落（幂等）
- *   - 阶段不一致：重跑 migrate 第 4/5 部分（幂等），重跑后仍不一致的行人工核实
+ *   - 阶段不一致：重跑 migrate 第 3/4 部分（幂等），重跑后仍不一致的行人工核实
  *
  * 用法：
  *   php spark application:reconcile
@@ -48,12 +50,24 @@ class ApplicationReconcile extends BaseCommand
         '--stale-days' => '长期在途判定天数（默认 90，仅提示不计数）',
     ];
 
-    /** 与 ee_application 共享、需逐字段比对的核心列（均两表同名） */
+    /** 与 ee_application 共享、需逐字段比对的核心列（均两表同名；方案C 仅剩邀约日期冗余副本） */
     private const COMPARE_FIELDS = [
-        '姓名', '身份证号', '手机号码', '属地',
-        '招聘渠道', '渠道类型', '渠道名称',
-        '邀约业务', '邀约岗位', '邀约日期', '邀约次数', '面试信息',
+        '邀约日期',
     ];
+
+    /**
+     * 源表（VARCHAR 多格式日期）→ DATE 归一化转换链
+     * 与 ee_application_migrate.sql 第 1 部分口径完全一致：
+     * 标准格式 / 斜杠 / 美式 月-日-年 / 无分隔紧凑 / 中文年月日
+     */
+    private function dateNormExpr(string $field): string
+    {
+        $v = "NULLIF(s.`{$field}`, '')";
+
+        return "COALESCE(STR_TO_DATE({$v}, '%Y-%m-%d'), STR_TO_DATE({$v}, '%Y/%m/%d'), "
+            . "STR_TO_DATE({$v}, '%m/%d/%Y'), STR_TO_DATE({$v}, '%Y%m%d'), "
+            . "STR_TO_DATE(REPLACE(REPLACE({$v}, '年', '-'), '日', ''), '%Y-%m-%d'))";
+    }
 
     private Mcommon $model;
     private int $sampleLimit;
@@ -146,7 +160,7 @@ class ApplicationReconcile extends BaseCommand
      */
     private function checkAppOrphan(): array
     {
-        $sql = 'SELECT a.候选人编码 AS code, a.姓名 AS name
+        $sql = 'SELECT a.候选人编码 AS code
                 FROM ee_application a
                 WHERE NOT EXISTS (SELECT 1 FROM ee_store s
                                   WHERE s.候选人编码 = a.候选人编码
@@ -160,18 +174,20 @@ class ApplicationReconcile extends BaseCommand
 
     /**
      * ③ 共享字段逐一比对（NULL 与空串视为相等）
+     *    邀约日期为 DATE 列，源值经归一化转换链后比对（多格式源值不算差异）
      */
     private function checkFieldDiff(): array
     {
         $result = [];
 
         foreach (self::COMPARE_FIELDS as $field) {
+            $norm = $this->dateNormExpr($field);
             $sql = "SELECT s.候选人编码 AS code,
                            s.`{$field}` AS storeValue, a.`{$field}` AS appValue
                     FROM ee_store s
                     JOIN ee_application a ON a.候选人编码 = s.候选人编码
                     WHERE s.有效标识 = '1' AND s.删除标识 = '0' AND s.候选人编码 <> ''
-                      AND NOT (NULLIF(s.`{$field}`, '') <=> NULLIF(a.`{$field}`, ''))";
+                      AND NOT (a.`{$field}` <=> {$norm})";
 
             $count = $this->countRows($sql);
             if ($count > 0) {
@@ -195,12 +211,13 @@ class ApplicationReconcile extends BaseCommand
     {
         $expectedCase = $this->buildExpectedStageSql();
 
-        $sql = "SELECT x.code, x.stored, x.expected
+        // 注意：别名不可用 stored（MySQL 保留字，STORED 生成列关键字）
+        $sql = "SELECT x.code, x.storedStage, x.expectedStage
                 FROM (
-                    SELECT a.候选人编码 AS code, a.当前阶段 AS stored, ({$expectedCase}) AS expected
+                    SELECT a.候选人编码 AS code, a.当前阶段 AS storedStage, ({$expectedCase}) AS expectedStage
                     FROM ee_application a
                 ) x
-                WHERE x.stored <> x.expected";
+                WHERE x.storedStage <> x.expectedStage";
 
         return [
             'count'   => $this->countRows($sql),
@@ -210,6 +227,7 @@ class ApplicationReconcile extends BaseCommand
 
     /**
      * 期望阶段重算 SQL（嵌入 checkStageMismatch）
+     * 方案C：面试信息 不在 ee_application，改读 ee_store 活跃行
      */
     private function buildExpectedStageSql(): string
     {
@@ -230,6 +248,10 @@ class ApplicationReconcile extends BaseCommand
                      WHERE i2.候选人编码 = a.候选人编码
                        AND i2.有效标识 = "1" AND i2.删除标识 = "0"
                        AND IFNULL(i2.一次面试结果, "") = "未通过")';
+        $refuse  = '(SELECT 1 FROM ee_store s
+                     WHERE s.候选人编码 = a.候选人编码
+                       AND s.有效标识 = "1" AND s.删除标识 = "0"
+                       AND IFNULL(s.面试信息, "") = "拒绝")';
 
         return "CASE
                     WHEN EXISTS {$onjob} THEN '入职'
@@ -237,7 +259,7 @@ class ApplicationReconcile extends BaseCommand
                         CASE WHEN EXISTS {$trainGo} THEN '终止' ELSE '培训' END
                     WHEN EXISTS {$itv} THEN
                         CASE WHEN EXISTS {$itvFail} THEN '终止' ELSE '面试' END
-                    WHEN IFNULL(a.面试信息, '') = '拒绝' THEN '终止'
+                    WHEN EXISTS {$refuse} THEN '终止'
                     ELSE '邀约'
                 END";
     }
@@ -274,7 +296,7 @@ class ApplicationReconcile extends BaseCommand
      */
     private function checkPersonLinkMissing(): array
     {
-        $sql = 'SELECT a.候选人编码 AS code, a.姓名 AS name
+        $sql = 'SELECT a.候选人编码 AS code
                 FROM ee_application a
                 WHERE a.人员编码 = "" OR a.人员编码 IS NULL';
 
@@ -285,15 +307,15 @@ class ApplicationReconcile extends BaseCommand
     }
 
     /**
-     * ⑦ 长期在途：仍处邀约/面试/培训阶段且邀约日期早于 N 天（仅提示）
+     * ⑦ 长期在途：仍处邀约/面试/培训阶段且邀约日期早于 N 天（仅提示；
+     *    邀约日期为 DATE 列，直接比较）
      */
     private function checkStaleInProgress(int $staleDays): array
     {
-        $sql = "SELECT a.候选人编码 AS code, a.当前阶段 AS stage,
-                       a.姓名 AS name, a.邀约日期 AS inviteDate
+        $sql = "SELECT a.候选人编码 AS code, a.当前阶段 AS stage, a.邀约日期 AS inviteDate
                 FROM ee_application a
                 WHERE a.当前阶段 IN ('邀约', '面试', '培训')
-                  AND IFNULL(a.邀约日期, '') <> ''
+                  AND a.邀约日期 IS NOT NULL
                   AND a.邀约日期 < DATE_SUB(CURDATE(), INTERVAL {$staleDays} DAY)";
 
         return [
