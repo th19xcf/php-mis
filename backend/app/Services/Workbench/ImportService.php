@@ -831,6 +831,17 @@ class ImportService
             $db->transComplete();
             log_message('debug', '[ImportService] transComplete done');
 
+            // 流程实例同步（阶段②A）：邀约导入完成后批量补建 ee_application
+            // 独立于导入事务（幂等 NOT EXISTS），失败仅记日志不阻断导入结果，reconcile 兜底
+            if ($targetTable === 'ee_store' && $affectedRows > 0) {
+                try {
+                    $synced = (new \App\Services\Application\ApplicationService())->syncFromStore();
+                    log_message('debug', '[ImportService] 实例同步新建 ' . $synced . ' 条');
+                } catch (\Throwable $syncEx) {
+                    log_message('error', '[ImportService] 实例同步失败(不影响导入结果): ' . $syncEx->getMessage());
+                }
+            }
+
             if ($result === false) {
                 return [
                     'success' => false,

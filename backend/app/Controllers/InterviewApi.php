@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Services\Application\ApplicationService;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
@@ -256,6 +257,16 @@ class InterviewApi extends BaseApiController
         // 事务保护：ee_interview 状态更新与 ee_train 转入插入必须同成败
         // （对齐 InvitationApi::transfer 的事务写法）
         $db = $this->model->getDb();
+
+        // guids → 候选人编码（实例状态机定位键）
+        $codeRows = $this->model->select(
+            'SELECT DISTINCT 候选人编码 FROM ee_interview WHERE GUID IN (' . $guidStr . ')'
+        )->getResultArray();
+        $candidateCodes = array_values(array_filter(
+            array_column($codeRows, '候选人编码'),
+            fn($v) => $v !== '' && $v !== null
+        ));
+
         $db->transStart();
         $num = 0;
 
@@ -299,6 +310,18 @@ class InterviewApi extends BaseApiController
                 );
 
                 $this->model->exec($sql);
+
+                // 实例状态机（阶段②A）：与阶段表写入同事务
+                // 仅"已参培"流转到培训；其他参培信息（未参培等）实例留在面试阶段，
+                // 终止口径待业务确认后接入（问题1选B）
+                if (!empty($candidateCodes)) {
+                    (new ApplicationService())->transferStage(
+                        $candidateCodes,
+                        '培训',
+                        $this->getUserWorkId(),
+                        ['参培日期' => (string) ($data['培训开始日期'] ?? '')]
+                    );
+                }
             }
         } catch (\Throwable $e) {
             $db->transRollback();

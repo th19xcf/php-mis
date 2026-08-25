@@ -6,6 +6,7 @@ use App\Constants\ApiCode;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
+use App\Services\Application\ApplicationService;
 use App\Services\Person\CandidateCodeService;
 use App\Services\Person\PersonService;
 
@@ -241,6 +242,15 @@ class InvitationApi extends BaseApiController
             if ($num <= 0) {
                 throw new BusinessException('新增邀约信息失败');
             }
+
+            // 流程实例双 INSERT（阶段②A）：与 ee_store 同事务，失败整体回滚
+            // 幂等：实例已存在自动跳过（兼容重试）
+            (new ApplicationService())->createInstance(
+                (string) $storeData['候选人编码'],
+                $personCode,
+                (string) ($storeData['邀约日期'] ?? ''),
+                $this->getUserWorkId()
+            );
         } catch (BusinessException $e) {
             $db->transRollback();
             return $this->businessError($e->getMessage());
@@ -501,6 +511,16 @@ class InvitationApi extends BaseApiController
         // 防止更新成功、插入失败导致记录"已面试"但面试表无数据
         // （对齐 RecordEditService::updateRecord 的事务写法）
         $db = $this->model->getDb();
+
+        // guids → 候选人编码（实例状态机定位键）
+        $codeRows = $this->model->select(
+            'SELECT DISTINCT 候选人编码 FROM ee_store WHERE GUID IN (' . $guidStr . ')'
+        )->getResultArray();
+        $candidateCodes = array_values(array_filter(
+            array_column($codeRows, '候选人编码'),
+            fn($v) => $v !== '' && $v !== null
+        ));
+
         $db->transStart();
         $num = 0;
 
@@ -538,6 +558,29 @@ class InvitationApi extends BaseApiController
                 );
 
                 $this->model->exec($sql);
+            }
+
+            // 实例状态机（阶段②A）：与阶段表写入同事务
+            // - 通过/未通过 → 流转到面试（未通过者后续由面试环节终止）
+            // - 拒绝 → 终止（邀约拒绝）
+            // - 未面试/待面试 → 实例留在邀约阶段不动
+            if (!empty($candidateCodes)) {
+                $applicationService = new ApplicationService();
+                if ($data['面试结果'] === '拒绝') {
+                    $applicationService->transferStage(
+                        $candidateCodes,
+                        '终止',
+                        $this->getUserWorkId(),
+                        ['终止原因' => '邀约拒绝', '终止日期' => date('Y-m-d')]
+                    );
+                } elseif ($data['面试结果'] === '通过' || $data['面试结果'] === '未通过') {
+                    $applicationService->transferStage(
+                        $candidateCodes,
+                        '面试',
+                        $this->getUserWorkId(),
+                        ['面试日期' => (string) ($data['面试日期'] ?? '')]
+                    );
+                }
             }
         } catch (\Throwable $e) {
             $db->transRollback();

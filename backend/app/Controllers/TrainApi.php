@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Services\Application\ApplicationService;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
@@ -230,6 +231,16 @@ class TrainApi extends BaseApiController
         // 事务保护：ee_train 状态更新与 ee_onjob 转入插入必须同成败
         // （对齐 InvitationApi::transfer 的事务写法）
         $db = $this->model->getDb();
+
+        // guids → 候选人编码（实例状态机定位键）
+        $codeRows = $this->model->select(
+            'SELECT DISTINCT 候选人编码 FROM ee_train WHERE GUID IN (' . $guidStr . ')'
+        )->getResultArray();
+        $candidateCodes = array_values(array_filter(
+            array_column($codeRows, '候选人编码'),
+            fn($v) => $v !== '' && $v !== null
+        ));
+
         $db->transStart();
         $num = 0;
 
@@ -300,11 +311,11 @@ class TrainApi extends BaseApiController
                     ) as t1
                     left join
                     (
-                        select 姓名,身份证号,招聘渠道,实习结束日期
-                        from ee_interview
-                        group by 身份证号
+                        select s.候选人编码, s.招聘渠道, s.实习结束日期
+                        from ee_store s
+                        where s.有效标识 = "1" and s.删除标识 = "0"
                     ) as t2
-                    on t1.身份证号=t2.身份证号',
+                    on t1.候选人编码 = t2.候选人编码',
                     (int)($data['入职次数'] ?? 1),
                     $data['岗位类型'] ?? '',
                     $data['结算类型'] ?? '',
@@ -315,6 +326,16 @@ class TrainApi extends BaseApiController
                 );
 
                 $this->model->exec($sql);
+
+                // 实例状态机（阶段②A）：培训通过 → 入职
+                if (!empty($candidateCodes)) {
+                    (new ApplicationService())->transferStage(
+                        $candidateCodes,
+                        '入职',
+                        $this->getUserWorkId(),
+                        ['入职日期' => (string) ($data['培训结束日期'] ?? '')]
+                    );
+                }
             } else {
                 $sql = sprintf('
                     update ee_train
@@ -331,6 +352,21 @@ class TrainApi extends BaseApiController
                 );
 
                 $num = $this->model->exec($sql);
+
+                // 实例状态机（阶段②A）：培训离开/淘汰 → 终止
+                // （终止原因取培训离开原因，空则用培训状态本身，兜底"未说明"）
+                if (!empty($candidateCodes)) {
+                    $reason = trim((string) ($data['培训离开原因'] ?? ''));
+                    if ($reason === '') {
+                        $reason = '培训' . (string) $data['培训状态'];
+                    }
+                    (new ApplicationService())->transferStage(
+                        $candidateCodes,
+                        '终止',
+                        $this->getUserWorkId(),
+                        ['终止原因' => $reason, '终止日期' => (string) ($data['培训结束日期'] ?? '')]
+                    );
+                }
             }
         } catch (\Throwable $e) {
             $db->transRollback();
