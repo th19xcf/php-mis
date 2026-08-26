@@ -5,6 +5,7 @@ namespace App\Services\Workbench;
 use App\Models\Mcommon;
 use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
+use App\Services\Audit\AuditLogService;
 use App\Exceptions\BusinessException;
 
 /**
@@ -105,6 +106,7 @@ class RecordEditService
 
         $this->model->query($sql, $values);
         $affected = $this->model->affectedRows();
+        $this->logWorkbenchInsert($dataTable, $data, $affected);
         $this->invalidateConfigCache($dataTable);
         return $affected;
     }
@@ -137,6 +139,7 @@ class RecordEditService
 
         $this->model->query($sql, $values);
         $affected = $this->model->affectedRows();
+        $this->logWorkbenchInsert($dataTable, $data, $affected, $userWorkid);
         $this->invalidateConfigCache($dataTable);
         return $affected;
     }
@@ -169,8 +172,68 @@ class RecordEditService
 
         $this->model->query($sql, $values);
         $affected = $this->model->affectedRows();
+        $this->logWorkbenchInsert($dataTable, $data, $affected, $userWorkid);
         $this->invalidateConfigCache($dataTable);
         return $affected;
+    }
+
+    /**
+     * 工作台新增的 hr_audit_log 事件行（严格模式：失败抛异常，调用方感知）
+     *
+     * 记录GUID 取自增主键 insertID；UUID/定位键尝试读回新行，
+     * 表无 UUID 列或读回失败时以 0x00×16 占位/空串兜底。
+     */
+    private function logWorkbenchInsert(
+        string $dataTable,
+        array $data,
+        int $affected,
+        string $userWorkid = ''
+    ): void {
+        $audit = new AuditLogService();
+        if (!$audit->isAuditedTable($dataTable) || $affected <= 0) {
+            return;
+        }
+
+        $newGuid = (int) $this->model->getDb()->insertID();
+
+        // 动态检测定位列（对齐 BaseApiController::getTableColumns 模式）：
+        // 六表中仅 hr_person/ee_application 有 UUID 列，ee_store 等无；
+        // 仅 SELECT 实际存在的列，避免读回整行失败丢失全部定位信息
+        $newRow = [];
+        try {
+            $colRows = $this->model->select("SHOW COLUMNS FROM `{$dataTable}`")->getResultArray();
+            $columns = $colRows ? array_column($colRows, 'Field') : [];
+            $locators = array_values(array_intersect(
+                ['UUID', '人员编码', '候选人编码'],
+                $columns
+            ));
+            if (!empty($locators)) {
+                $colList = implode(',', array_merge(['GUID'], $locators));
+                $newRow = $this->model->select(
+                    sprintf('SELECT %s FROM `%s` WHERE GUID = %d', $colList, $dataTable, $newGuid)
+                )->getRowArray() ?: [];
+            }
+        } catch (\Throwable $e) {
+            log_message('error', sprintf(
+                '[RecordEditService] 审计新增行读回失败(表=%s): %s',
+                $dataTable,
+                $e->getMessage()
+            ));
+        }
+
+        $audit->logEvent([
+            '人员编码'   => (string) ($newRow['人员编码'] ?? $data['人员编码'] ?? ''),
+            '候选人编码' => (string) ($newRow['候选人编码'] ?? $data['候选人编码'] ?? ''),
+            '表名'      => $dataTable,
+            '记录GUID'  => $newGuid,
+            '记录UUID'  => $newRow['UUID'] ?? null,
+            '操作类型'  => '新增',
+            '变更字段'  => '全部',
+            '原值'      => null,
+            '新值'      => '新增记录',
+            '操作人员'  => $userWorkid,
+            '操作来源'  => '工作台',
+        ]);
     }
 
     /**
@@ -210,6 +273,23 @@ class RecordEditService
 
         switch ($dataModel) {
             case '0':
+                // 人员审计表：UPDATE 前读旧行快照（含定位键/技术列，供 diff 定位）
+                $audit = new AuditLogService();
+                $oldRows = [];
+                if ($audit->isAuditedTable($dataTable)) {
+                    try {
+                        $oldRows = $this->model->select(
+                            sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where)
+                        )->getResultArray() ?: [];
+                    } catch (\Throwable $e) {
+                        log_message('error', sprintf(
+                            '[RecordEditService] 审计旧值快照读取失败(表=%s): %s',
+                            $dataTable,
+                            $e->getMessage()
+                        ));
+                    }
+                }
+
                 $sql = sprintf(
                     'UPDATE %s SET %s WHERE %s',
                     $dataTable,
@@ -224,6 +304,12 @@ class RecordEditService
                     'note' => '直接UPDATE',
                 ]);
                 $affected = $this->model->exec($sql);
+
+                // hr_audit_log 字段级 diff（严格模式：失败抛异常，调用方感知）
+                if ($audit->isAuditedTable($dataTable) && $affected > 0 && !empty($oldRows)) {
+                    $audit->logUpdateDiff($dataTable, $oldRows, $formData, $userWorkid, '工作台');
+                }
+
                 $this->invalidateConfigCache($dataTable);
                 return $affected;
 
@@ -303,6 +389,18 @@ class RecordEditService
                         'note' => '流水插新版本',
                     ]);
                     $affected = $this->model->exec($sqlInsert);
+
+                    // hr_audit_log 字段级 diff（严格模式：同事务，失败随事务回滚）
+                    // 旧版本行快照 × 表单新值；记录GUID 定位旧版本行（变更发生地）
+                    if ((new AuditLogService())->isAuditedTable($dataTable)) {
+                        (new AuditLogService())->logUpdateDiff(
+                            $dataTable,
+                            [$originalRow],
+                            $formData,
+                            $userWorkid,
+                            '工作台'
+                        );
+                    }
                 } catch (\Throwable $e) {
                     $db->transRollback();
                     throw $e;
@@ -349,6 +447,24 @@ class RecordEditService
         $keyStr = implode(',', array_map(fn($v) => $this->model->quote((string) $v), $keyValues));
         $where = sprintf('%s in (%s)', $primaryKey, $keyStr);
 
+        // 人员审计表：删除前读行快照（定位键/技术列，供日志定位）
+        $audit = new AuditLogService();
+        $isAuditedTable = $audit->isAuditedTable($dataTable);
+        $oldRows = [];
+        if ($isAuditedTable) {
+            try {
+                $oldRows = $this->model->select(
+                    sprintf('SELECT * FROM %s WHERE %s', $dataTable, $where)
+                )->getResultArray() ?: [];
+            } catch (\Throwable $e) {
+                log_message('error', sprintf(
+                    '[RecordEditService] 审计删除快照读取失败(表=%s): %s',
+                    $dataTable,
+                    $e->getMessage()
+                ));
+            }
+        }
+
         switch ($dataModel) {
             case '0':
                 $sql = sprintf('DELETE FROM %s WHERE %s', $dataTable, $where);
@@ -359,6 +475,12 @@ class RecordEditService
                     'note' => '硬删除',
                 ]);
                 $affected = $this->model->exec($sql);
+
+                // hr_audit_log 删除事件（严格模式：失败抛异常，调用方感知）
+                if ($isAuditedTable && $affected > 0) {
+                    $this->logDeleteEvents($audit, $dataTable, $oldRows, $userWorkid);
+                }
+
                 $this->invalidateConfigCache($dataTable);
                 return $affected;
 
@@ -379,11 +501,58 @@ class RecordEditService
                     'note' => '流水软删除',
                 ]);
                 $affected = $this->model->exec($sql);
+
+                // hr_audit_log 删除事件（严格模式：失败抛异常，调用方感知）
+                if ($isAuditedTable && $affected > 0) {
+                    $this->logDeleteEvents($audit, $dataTable, $oldRows, $userWorkid);
+                }
+
                 $this->invalidateConfigCache($dataTable);
                 return $affected;
 
             default:
                 return -1;
+        }
+    }
+
+    /**
+     * 逐行写删除事件到 hr_audit_log（记录GUID/UUID/定位键自快照取值）
+     */
+    private function logDeleteEvents(
+        AuditLogService $audit,
+        string $dataTable,
+        array $oldRows,
+        string $userWorkid
+    ): void {
+        if (empty($oldRows)) {
+            // 快照缺失（读取失败/并发已删）：仍留痕一行，定位键为空
+            $audit->logEvent([
+                '表名'      => $dataTable,
+                '记录GUID'  => 0,
+                '操作类型'  => '删除',
+                '变更字段'  => '全部',
+                '原值'      => '删除前记录',
+                '新值'      => null,
+                '操作人员'  => $userWorkid,
+                '操作来源'  => '工作台',
+            ]);
+            return;
+        }
+
+        foreach ($oldRows as $oldRow) {
+            $audit->logEvent([
+                '人员编码'   => (string) ($oldRow['人员编码'] ?? ''),
+                '候选人编码' => (string) ($oldRow['候选人编码'] ?? ''),
+                '表名'      => $dataTable,
+                '记录GUID'  => (int) ($oldRow['GUID'] ?? 0),
+                '记录UUID'  => $oldRow['UUID'] ?? null,
+                '操作类型'  => '删除',
+                '变更字段'  => '全部',
+                '原值'      => '删除前记录',
+                '新值'      => null,
+                '操作人员'  => $userWorkid,
+                '操作来源'  => '工作台',
+            ]);
         }
     }
 

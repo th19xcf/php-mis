@@ -136,7 +136,7 @@ class EmployeeApi extends BaseApiController
 
         // 离职处理
         if (!empty($data['员工状态']) && $data['员工状态'] === '离职') {
-            $num = $service->processResignation($guid, $data);
+            $num = $service->processResignation($guid, $data, $this->getUserWorkId());
             return $this->success(null, sprintf('处理离职信息成功，修改 %d 条记录', $num));
         }
 

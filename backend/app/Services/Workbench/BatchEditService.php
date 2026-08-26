@@ -6,6 +6,7 @@ use App\Exceptions\BusinessException;
 use App\Models\Mcommon;
 use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
+use App\Services\Audit\AuditLogService;
 
 /**
  * 批量编辑服务类
@@ -69,6 +70,23 @@ class BatchEditService
 
         switch ($dataModel) {
             case '0':
+                // 人员审计表：UPDATE 前读旧行快照（含定位键/技术列，供 diff 定位）
+                $audit = new AuditLogService();
+                $oldRows = [];
+                if ($audit->isAuditedTable($dataTable)) {
+                    try {
+                        $oldRows = $this->model->select(
+                            sprintf('SELECT * FROM %s WHERE %s', $dataTable, $whereIn)
+                        )->getResultArray() ?: [];
+                    } catch (\Throwable $e) {
+                        log_message('error', sprintf(
+                            '[BatchEditService] 审计旧值快照读取失败(表=%s): %s',
+                            $dataTable,
+                            $e->getMessage()
+                        ));
+                    }
+                }
+
                 // 所有记录 SET 相同值，逐条 UPDATE 等价合并为一条批量 UPDATE（单条语句自带原子性）
                 $sql = sprintf(
                     'UPDATE %s SET %s WHERE %s',
@@ -85,6 +103,12 @@ class BatchEditService
                     'batch_count' => count($rawKeyValues),
                 ]);
                 $num = $this->model->exec($sql);
+
+                // hr_audit_log 字段级 diff（严格模式：每行 × 相同表单新值）
+                if ($audit->isAuditedTable($dataTable) && $num > 0 && !empty($oldRows)) {
+                    $audit->logUpdateDiff($dataTable, $oldRows, $formData, $userWorkid, '工作台');
+                }
+
                 $this->invalidateConfigCache($dataTable);
                 return $num;
 
@@ -232,6 +256,22 @@ class BatchEditService
                 'batch_count' => count($insertValuesList),
             ]);
             $num = $this->model->exec($sqlInsert);
+
+            // hr_audit_log 字段级 diff（严格模式：同事务，失败随事务回滚）
+            // 旧版本行快照（仅命中行）× 相同表单新值；记录GUID 定位旧版本行
+            if ($num > 0 && (new AuditLogService())->isAuditedTable($dataTable)) {
+                $hitOldRows = array_map(
+                    fn($raw) => $originalRows[$raw],
+                    $hitKeyValues
+                );
+                (new AuditLogService())->logUpdateDiff(
+                    $dataTable,
+                    $hitOldRows,
+                    $formData,
+                    $userWorkid,
+                    '工作台'
+                );
+            }
         } catch (\Throwable $e) {
             $db->transRollback();
             throw $e;
@@ -298,6 +338,39 @@ class BatchEditService
 
         $skipFields = ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识'];
 
+        // 人员审计表：统一预取旧行快照（按主键索引，供各分组 diff 定位）
+        $audit = new AuditLogService();
+        $isAuditedTable = $audit->isAuditedTable($dataTable);
+        $oldRowMap = [];
+        if ($isAuditedTable) {
+            try {
+                $pkVals = [];
+                foreach ($rows as $row) {
+                    $v = (string) ($row[$primaryKey] ?? '');
+                    if ($v !== '') {
+                        $pkVals[] = $this->model->quote($v);
+                    }
+                }
+                if (!empty($pkVals)) {
+                    $oldRows = $this->model->select(sprintf(
+                        'SELECT * FROM %s WHERE `%s` IN (%s)',
+                        $dataTable,
+                        $primaryKey,
+                        implode(',', array_unique($pkVals))
+                    ))->getResultArray() ?: [];
+                    foreach ($oldRows as $oldRow) {
+                        $oldRowMap[(string) $oldRow[$primaryKey]] = $oldRow;
+                    }
+                }
+            } catch (\Throwable $e) {
+                log_message('error', sprintf(
+                    '[BatchEditService] 审计旧值快照读取失败(表=%s): %s',
+                    $dataTable,
+                    $e->getMessage()
+                ));
+            }
+        }
+
         $num = 0;
         switch ($dataModel) {
             case '0':
@@ -354,7 +427,20 @@ class BatchEditService
                             )),
                             'note' => '单条UPDATE',
                         ]);
-                        $num += $this->model->exec($sql);
+                        $affectedRow = $this->model->exec($sql);
+
+                        // hr_audit_log 字段级 diff（严格模式）
+                        if ($isAuditedTable && $affectedRow > 0) {
+                            $this->logTableEditRowDiff(
+                                $audit,
+                                $dataTable,
+                                $oldRowMap,
+                                $row,
+                                $primaryKey,
+                                $userWorkid
+                            );
+                        }
+                        $num += $affectedRow;
                     } else {
                         $caseStatements = [];
                         $primaryKeyValues = [];
@@ -388,7 +474,22 @@ class BatchEditService
                             'note' => 'CASE WHEN批量UPDATE',
                             'batch_count' => count($groupRows),
                         ]);
-                        $num += $this->model->exec($sql);
+                        $affectedGroup = $this->model->exec($sql);
+
+                        // hr_audit_log 字段级 diff（严格模式：逐行 × 各自新值）
+                        if ($isAuditedTable && $affectedGroup > 0) {
+                            foreach ($groupRows as $groupRow) {
+                                $this->logTableEditRowDiff(
+                                    $audit,
+                                    $dataTable,
+                                    $oldRowMap,
+                                    $groupRow,
+                                    $primaryKey,
+                                    $userWorkid
+                                );
+                            }
+                        }
+                        $num += $affectedGroup;
                     }
                 }
                 $this->invalidateConfigCache($dataTable);
@@ -507,6 +608,21 @@ class BatchEditService
                         'batch_count' => count($insertValuesList),
                     ]);
                     $num += $this->model->exec($sqlInsert);
+
+                    // hr_audit_log 字段级 diff（严格模式）
+                    // 表级流水模式无外层事务，失败抛异常由调用方感知（旧值 diff 语义仍正确）
+                    if ($isAuditedTable && $num > 0) {
+                        foreach ($validRows as $validRow) {
+                            $this->logTableEditRowDiff(
+                                $audit,
+                                $dataTable,
+                                $originalRows,
+                                $validRow,
+                                $primaryKey,
+                                $userWorkid
+                            );
+                        }
+                    }
                 }
 
                 $this->invalidateConfigCache($dataTable);
@@ -517,6 +633,46 @@ class BatchEditService
             default:
                 return ['success' => false, 'count' => 0, 'message' => sprintf('修改失败,数据模式[-%s-]错误', $dataModel)];
         }
+    }
+
+    /**
+     * 表级编辑单行 diff 写入 hr_audit_log（严格模式）
+     *
+     * diff 字段与实际写入字段严格一致：排除主键与控制列（skipFields 同款清单）；
+     * 旧行自预取映射按主键取，主键值缺失或旧行未命中时跳过（并发已变更场景）。
+     */
+    private function logTableEditRowDiff(
+        AuditLogService $audit,
+        string $dataTable,
+        array $oldRowMap,
+        array $row,
+        string $primaryKey,
+        string $userWorkid
+    ): void {
+        $pkVal = (string) ($row[$primaryKey] ?? '');
+        if ($pkVal === '' || !isset($oldRowMap[$pkVal])) {
+            return;
+        }
+
+        $skipFields = ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识'];
+        $diffData = [];
+        foreach ($row as $key => $value) {
+            if ($key === $primaryKey || in_array($key, $skipFields, true)) {
+                continue;
+            }
+            $diffData[$key] = $value;
+        }
+        if (empty($diffData)) {
+            return;
+        }
+
+        $audit->logUpdateDiff(
+            $dataTable,
+            [$oldRowMap[$pkVal]],
+            $diffData,
+            $userWorkid,
+            '工作台'
+        );
     }
 
     /**

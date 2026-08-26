@@ -3,6 +3,7 @@
 namespace App\Services\Employee;
 
 use App\Models\Mcommon;
+use App\Services\Audit\AuditLogService;
 
 /**
  * 员工服务类
@@ -101,11 +102,12 @@ class EmployeeService
     /**
      * 处理离职（带事务保护）
      *
-     * @param string $guid 人员 GUID
-     * @param array  $data 离职数据（员工状态、离职日期、离职原因）
+     * @param string $guid     人员 GUID
+     * @param array  $data     离职数据（员工状态、离职日期、离职原因）
+     * @param string $operator 操作人工号（hr_audit_log 记录用，空则记 system）
      * @return int 影响行数
      */
-    public function processResignation(string $guid, array $data): int
+    public function processResignation(string $guid, array $data, string $operator = ''): int
     {
         $db = db_connect('btdc');
         $db->transStart();
@@ -129,6 +131,27 @@ class EmployeeService
                 return 0;
             }
 
+            // hr_audit_log 预取：UPDATE 前读受影响版本行全列快照（FOR UPDATE 防并发）
+            $auditOldData = [
+                '员工状态'   => (string) ($data['员工状态'] ?? ''),
+                '离职日期'   => (string) ($data['离职日期'] ?? ''),
+                '离职原因'   => (string) ($data['离职原因'] ?? ''),
+                '记录结束日期' => (string) ($data['离职日期'] ?? ''),
+            ];
+            $oldRows = [];
+            $audit = new AuditLogService();
+            if ($audit->isAuditedTable('ee_onjob')) {
+                $sqlOld = sprintf(
+                    'select * from ee_onjob
+                    where 身份证号=%s and 入职次数=%s and 员工状态!="离职"
+                    for update',
+                    $this->model->quote((string) ($idRow['身份证号'] ?? '')),
+                    $this->model->quote((string) ($idRow['入职次数'] ?? ''))
+                );
+                $oldResult = $db->query($sqlOld);
+                $oldRows = $oldResult ? ($oldResult->getResultArray() ?: []) : [];
+            }
+
             // 裸列等值条件可走索引，定位同"身份证号+入职次数"的全部版本记录
             $sql = sprintf(
                 'update ee_onjob
@@ -149,6 +172,18 @@ class EmployeeService
 
             $db->query($sql);
             $num = $db->affectedRows();
+
+            // hr_audit_log 字段级 diff（严格模式：同事务，失败随事务回滚）
+            // 记录结束日期为条件更新（非空保留），diff 按实际旧值比对自动跳过未变行
+            if ($num > 0 && !empty($oldRows)) {
+                $audit->logUpdateDiff(
+                    'ee_onjob',
+                    $oldRows,
+                    $auditOldData,
+                    $operator !== '' ? $operator : 'system',
+                    '离职处理'
+                );
+            }
 
             $db->transComplete();
             return $num;
@@ -184,9 +219,59 @@ class EmployeeService
         $db->transStart();
 
         try {
-            // 插入新记录（复制旧记录 + 替换审计字段）
+            // FOR UPDATE 行锁 + 全列快照：并发编辑互斥，同时为
+            // hr_audit_log 提供定位键（人员编码/候选人编码/GUID/UUID）
+            $sqlLock = sprintf(
+                'select * from ee_onjob where GUID=%s for update',
+                $this->model->quote($guid)
+            );
+            $lockResult = $db->query($sqlLock);
+            $fullOld = $lockResult ? $lockResult->getRowArray() : null;
+            if (empty($fullOld) || (string) $fullOld['有效标识'] !== '1') {
+                $db->transRollback();
+                return -1; // 旧行已失效（并发编辑），视为人员不存在
+            }
+
+            // 先软删旧记录（SCD2 正确顺序：先失效旧行，再插入新行，
+            // 避免与 uk_候选人编码_活跃 函数唯一索引冲突）
+            $sqlUpdate = sprintf(
+                'update ee_onjob
+                set 操作记录=%s,记录结束日期=%s,有效标识="0"
+                where GUID=%s and 有效标识="1" and 删除标识="0"',
+                $this->model->quote('更新,' . $updateStr),
+                $this->model->quote($effectiveDate),
+                $this->model->quote($guid)
+            );
+            $db->query($sqlUpdate);
+            if ($db->affectedRows() === 0) {
+                $db->transRollback();
+                return -1; // 旧行已失效（并发编辑），视为人员不存在
+            }
+
+            // 再插入新版本：业务字段承接表单新值（白名单内且非空——
+            // 修复原 INSERT...SELECT 整行复制旧行导致"表单修改不生效"），
+            // 其余列（流程链/未提交字段）自旧行复制
+            $bizColumns = [
+                '姓名', '身份证号', '手机号码', '属地', '入职次数', '招聘渠道',
+                '员工类别', '实习结束日期', '部门编码', '部门名称', '班组', '小组',
+                '岗位名称', '岗位类型', '结算类型',
+                '工号1', '工号2',
+                '培训信息', '培训开始日期', '培训完成日期',
+                '一阶段日期', '二阶段日期', '员工阶段', '员工状态',
+                '离职日期', '离职原因', '派遣公司',
+            ];
+            $selectParts = [];
+            foreach ($bizColumns as $col) {
+                $newVal = $data[$col] ?? null;
+                if ($newVal !== null && $newVal !== '' && $this->isValidFieldName($col)) {
+                    $selectParts[] = sprintf('%s as `%s`', $this->model->quote((string) $newVal), $col);
+                } else {
+                    $selectParts[] = $col;
+                }
+            }
+
             $sqlInsert = sprintf(
-                'insert into ee_onjob (姓名,身份证号,手机号码,属地,入职次数,招聘渠道,
+                'insert into ee_onjob (候选人编码,人员编码,姓名,身份证号,手机号码,属地,入职次数,招聘渠道,
                     员工类别,实习结束日期,部门编码,部门名称,班组,小组,
                     岗位名称,岗位类型,结算类型,
                     工号1,工号2,
@@ -195,35 +280,32 @@ class EmployeeService
                     离职日期,离职原因,派遣公司,记录开始日期,
                     操作来源,操作人员,开始操作时间,
                     校验标识,删除标识,有效标识)
-                select 姓名,身份证号,手机号码,属地,入职次数,招聘渠道,
-                    员工类别,实习结束日期,部门编码,部门名称,班组,小组,
-                    岗位名称,岗位类型,结算类型,
-                    工号1,工号2,
-                    培训信息,培训开始日期,培训完成日期,
-                    一阶段日期,二阶段日期,员工阶段,员工状态,
-                    离职日期,离职原因,派遣公司,%s,
+                select 候选人编码,人员编码,%s,
+                    %s,
                     "页面",%s,%s,
                     "0","0","1"
                 from ee_onjob
                 where GUID=%s',
+                implode(",\n                    ", $selectParts),
                 $this->model->quote($effectiveDate),
                 $this->model->quote($userWorkId),
                 $this->model->quote(date('Y-m-d H:i:s')),
                 $this->model->quote($guid)
             );
             $db->query($sqlInsert);
-
-            // 软删旧记录
-            $sqlUpdate = sprintf(
-                'update ee_onjob
-                set 操作记录=%s,记录结束日期=%s,有效标识="0"
-                where GUID=%s',
-                $this->model->quote('更新,' . $updateStr),
-                $this->model->quote($effectiveDate),
-                $this->model->quote($guid)
-            );
-            $db->query($sqlUpdate);
             $num = $db->affectedRows();
+
+            // hr_audit_log 字段级 diff（严格模式：同事务，失败随事务回滚）
+            // newData=$data：非表列（guid/操作/生效日期）与空值字段由 diff 语义自动跳过
+            if ($num > 0) {
+                (new AuditLogService())->logUpdateDiff(
+                    'ee_onjob',
+                    [$fullOld],
+                    $data,
+                    $userWorkId,
+                    '页面'
+                );
+            }
 
             $db->transComplete();
             return $num;
@@ -249,15 +331,33 @@ class EmployeeService
         ));
 
         $updateFields = [];
+        $updateData = []; // 实际写入字段（审计 diff 用，与 SET 严格一致）
         foreach ($data as $key => $value) {
             if (in_array($key, ['guids', '操作', '生效日期'])) continue;
             if (!$this->isValidFieldName($key)) continue;
             if ($value === '') continue;
             $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote((string) $value));
+            $updateData[$key] = $value;
         }
 
         if (empty($updateFields)) {
             return 0;
+        }
+
+        // hr_audit_log 预取：UPDATE 前读旧行全列快照（定位键/技术列）
+        $audit = new AuditLogService();
+        $oldRows = [];
+        if ($audit->isAuditedTable('ee_onjob')) {
+            try {
+                $oldRows = $this->model->select(
+                    sprintf('select * from ee_onjob where GUID in (%s)', $guidStr)
+                )->getResultArray() ?: [];
+            } catch (\Throwable $e) {
+                log_message('error', sprintf(
+                    '[EmployeeService] 审计旧值快照读取失败(批量修改): %s',
+                    $e->getMessage()
+                ));
+            }
         }
 
         $sql = sprintf(
@@ -270,7 +370,14 @@ class EmployeeService
             $guidStr
         );
 
-        return $this->model->exec($sql);
+        $num = $this->model->exec($sql);
+
+        // hr_audit_log 字段级 diff（严格模式：每行 × 相同批量新值）
+        if ($audit->isAuditedTable('ee_onjob') && $num > 0 && !empty($oldRows)) {
+            $audit->logUpdateDiff('ee_onjob', $oldRows, $updateData, $userWorkId, '页面');
+        }
+
+        return $num;
     }
 
     /**

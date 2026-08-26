@@ -748,9 +748,10 @@ class ImportService
      * @param string $tempTable 临时表
      * @param array $importColumns 导入列配置
      * @param string $importModule 导入模块（用于读取 def_import_config.导入条件）
+     * @param string $operator 操作人工号（透传 syncFromStore 供 ee_application.操作人员 与 hr_audit_log 记录）
      * @return array ['success' => bool, 'count' => int, 'message' => string, 'errors' => array]
      */
-    public function importFromTempTable(string $targetTable, string $tempTable, array $importColumns, string $importModule = ''): array
+    public function importFromTempTable(string $targetTable, string $tempTable, array $importColumns, string $importModule = '', string $operator = ''): array
     {
         try {
             $db = db_connect('btdc');
@@ -835,7 +836,7 @@ class ImportService
             // 独立于导入事务（幂等 NOT EXISTS），失败仅记日志不阻断导入结果，reconcile 兜底
             if ($targetTable === 'ee_store' && $affectedRows > 0) {
                 try {
-                    $synced = (new \App\Services\Application\ApplicationService())->syncFromStore();
+                    $synced = (new \App\Services\Application\ApplicationService())->syncFromStore($operator);
                     log_message('debug', '[ImportService] 实例同步新建 ' . $synced . ' 条');
                 } catch (\Throwable $syncEx) {
                     log_message('error', '[ImportService] 实例同步失败(不影响导入结果): ' . $syncEx->getMessage());

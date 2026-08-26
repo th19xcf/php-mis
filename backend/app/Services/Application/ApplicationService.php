@@ -3,6 +3,7 @@
 namespace App\Services\Application;
 
 use App\Models\Mcommon;
+use App\Services\Audit\AuditLogService;
 use RuntimeException;
 
 /**
@@ -94,7 +95,32 @@ class ApplicationService
         );
 
         $this->model->exec($sql);
-        return $db->affectedRows() > 0;
+        $inserted = $db->affectedRows() > 0;
+
+        // hr_audit_log 事件行（严格模式：同事务，失败由调用方回滚）
+        if ($inserted) {
+            $newRow = $this->model->select(
+                sprintf(
+                    'SELECT GUID, UUID FROM ee_application WHERE 候选人编码 = %s LIMIT 1',
+                    $db->escape($candidateCode)
+                )
+            )->getRowArray() ?: [];
+            (new AuditLogService())->logEvent([
+                '候选人编码' => $candidateCode,
+                '人员编码'   => $personCode,
+                '表名'      => 'ee_application',
+                '记录GUID'  => (int) ($newRow['GUID'] ?? 0),
+                '记录UUID'  => $newRow['UUID'] ?? null,
+                '操作类型'  => '新增',
+                '变更字段'  => '全部',
+                '原值'      => null,
+                '新值'      => '新建实例',
+                '操作人员'  => $operator,
+                '操作来源'  => '页面',
+            ]);
+        }
+
+        return $inserted;
     }
 
     /**
@@ -103,12 +129,14 @@ class ApplicationService
      * 与 ee_application_migrate.sql 第 1 部分同构：源活跃行 NOT EXISTS 幂等插入。
      * 独立短事务（调用方事务外执行），失败记日志不阻断导入结果返回，reconcile 兜底。
      *
+     * @param string $operator 操作人工号（导入场景由 ImportService 透传，空则记 system）
      * @return int 新建实例行数
      */
-    public function syncFromStore(): int
+    public function syncFromStore(string $operator = ''): int
     {
         $db = $this->model->getDb();
         $now = date('Y-m-d H:i:s');
+        $op = $operator !== '' ? $operator : 'system';
 
         $sql = sprintf(
             'INSERT INTO ee_application (
@@ -118,7 +146,7 @@ class ApplicationService
             )
             SELECT s.候选人编码, s.人员编码, "邀约",
                 NULLIF(s.邀约日期, ""),
-                "新增,实例", "导入", "%s", "%s", "%s",
+                "新增,实例", "导入", %s, %s, %s,
                 "1", "0"
             FROM ee_store s
             WHERE s.有效标识 = "1" AND s.删除标识 = "0"
@@ -126,13 +154,26 @@ class ApplicationService
                 AND NOT EXISTS (
                     SELECT 1 FROM ee_application a WHERE a.候选人编码 = s.候选人编码
                 )',
-            $now,
-            $now,
-            $now
+            $db->escape($op),
+            $db->escape($now),
+            $db->escape($now)
         );
 
         $this->model->exec($sql);
-        return $db->affectedRows();
+        $count = $db->affectedRows();
+
+        // hr_audit_log 批量汇总行（宽松模式：失败仅记日志不阻断，导入主流程外）
+        if ($count > 0) {
+            (new AuditLogService())->logBatchSummary(
+                'ee_application',
+                $op,
+                '导入',
+                $count,
+                '批量补建实例'
+            );
+        }
+
+        return $count;
     }
 
     /**
@@ -178,13 +219,13 @@ class ApplicationService
         // 1. 实例缺失的编码自动补建（源=ee_store，幂等）
         $this->backfillMissing($candidateCodes, $operator);
 
-        // 2. 查询实例当前阶段，校验状态机
+        // 2. 查询实例当前阶段，校验状态机（含审计定位列：GUID/UUID/人员编码）
         $quoted = implode(',', array_map(
             fn($v) => $db->escape($v),
             $candidateCodes
         ));
         $rows = $this->model->select(
-            "SELECT 候选人编码, 当前阶段 FROM ee_application
+            "SELECT 候选人编码, 人员编码, 当前阶段, GUID, UUID FROM ee_application
              WHERE 候选人编码 IN ({$quoted})"
         )->getResultArray();
 
@@ -264,7 +305,30 @@ class ApplicationService
             $quotedFrom
         );
 
-        return $this->model->exec($sql);
+        $affected = $this->model->exec($sql);
+
+        // hr_audit_log 流转事件行（严格模式：同事务，失败由调用方回滚）
+        // 逐实例记一行：变更字段=当前阶段，原值/新值=from→to（DDL 附注写入时机约定）
+        if ($affected > 0) {
+            $audit = new AuditLogService();
+            foreach ($rows as $row) {
+                $audit->logEvent([
+                    '候选人编码' => (string) $row['候选人编码'],
+                    '人员编码'   => (string) ($row['人员编码'] ?? ''),
+                    '表名'      => 'ee_application',
+                    '记录GUID'  => (int) ($row['GUID'] ?? 0),
+                    '记录UUID'  => $row['UUID'] ?? null,
+                    '操作类型'  => '流转',
+                    '变更字段'  => '当前阶段',
+                    '原值'      => (string) $row['当前阶段'],
+                    '新值'      => $toStage,
+                    '操作人员'  => $operator,
+                    '操作来源'  => '流转',
+                ]);
+            }
+        }
+
+        return $affected;
     }
 
     /**
@@ -272,6 +336,9 @@ class ApplicationService
      *
      * transfer 遇到无实例的候选人编码（历史数据/搬迁前新增）时自动补，
      * 补建为"邀约"阶段，随后正常走状态机流转。
+     *
+     * hr_audit_log 批量汇总行（宽松模式）：流转自愈属系统批量路径，
+     * 一行汇总留痕，失败仅记日志不阻断流转事务。
      */
     private function backfillMissing(array $candidateCodes, string $operator): void
     {
@@ -304,5 +371,16 @@ class ApplicationService
         );
 
         $this->model->exec($sql);
+        $count = $db->affectedRows();
+
+        if ($count > 0) {
+            (new AuditLogService())->logBatchSummary(
+                'ee_application',
+                $operator,
+                '流转',
+                $count,
+                '流转自愈补建'
+            );
+        }
     }
 }

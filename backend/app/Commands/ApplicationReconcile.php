@@ -16,7 +16,11 @@ use CodeIgniter\CLI\CLI;
  *   2. 字段级：共享字段（邀约日期冗余副本）比对（NULL 与空串视为相等）
  *   3. 阶段一致性：按下游表重算期望阶段，与存储的当前阶段比对
  *      （口径与 ee_application_migrate.sql 第 3/4 部分完全一致）
- *   4. 下游孤儿：ee_interview/ee_train/ee_onjob 中候选人编码无对应实例的有效行
+ *   4. 下游孤儿（两分口径）：
+ *      ⑤a 链断（计入差异）：下游有效行的候选人编码在 ee_store 存在（任意状态）
+ *          但无对应实例 → 可修复（重跑 migrate 第 1 部分）
+ *      ⑤b 历史归档（仅提示不计差异）：码不在 ee_store → 前架构时期直导下游的
+ *          归档数据（2021~2026 批次，源头从未建邀约行），非链路故障
  *   5. 主档链接：实例人员编码为空（应先跑 person:migrate）
  *   6. 长期在途：邀约/面试/培训阶段且邀约日期早于 N 天（--stale-days，默认 90，仅提示不计数）
  *
@@ -103,13 +107,14 @@ class ApplicationReconcile extends BaseCommand
             return EXIT_ERROR;
         }
 
-        // 差异合计（长期在途不计入）
+        // 差异合计（长期在途、历史归档不计入）
+        $orphanChain = array_sum(array_column($report['checks']['downstreamOrphan']['chain'] ?: [], 'count'));
         $report['diffCount'] =
             $report['checks']['storeMissing']['count']
             + $report['checks']['appOrphan']['count']
             + array_sum(array_column($report['checks']['fieldDiff'], 'count'))
             + $report['checks']['stageMismatch']['count']
-            + array_sum(array_column($report['checks']['downstreamOrphan'], 'count'))
+            + $orphanChain
             + $report['checks']['personLinkMissing']['count'];
         $report['durationMs'] = (int) round((microtime(true) - $startedAt) * 1000);
 
@@ -120,7 +125,19 @@ class ApplicationReconcile extends BaseCommand
             '（阶段④写切换后新实例不再镜像 ee_store，>0 属预期）');
         $this->writeCheckLine('③ 字段差异', $report['checks']['fieldDiff']);
         $this->writeCheckLine('④ 阶段不一致', $report['checks']['stageMismatch']['count']);
-        $this->writeCheckLine('⑤ 下游孤儿码', $report['checks']['downstreamOrphan']);
+
+        // ⑤ 两分口径：链断计入差异；历史归档仅提示
+        $orphan      = $report['checks']['downstreamOrphan'];
+        $archiveSum  = array_sum(array_column($orphan['archive'] ?: [], 'count'));
+        CLI::write(
+            sprintf(
+                '⑤ 下游孤儿码: %d（历史归档 %d 行不计入差异）',
+                $orphanChain,
+                $archiveSum
+            ),
+            $orphanChain > 0 ? 'light_red' : 'light_green'
+        );
+
         $this->writeCheckLine('⑥ 主档链接缺失', $report['checks']['personLinkMissing']['count']);
         CLI::write(sprintf('⑦ 长期在途（>%d天，仅提示）: %d', $staleDays, $report['checks']['staleInProgress']['count']), 'light_blue');
         CLI::newLine();
@@ -266,24 +283,48 @@ class ApplicationReconcile extends BaseCommand
 
     /**
      * ⑤ 下游孤儿码：下游有效行的候选人编码无对应实例
+     *    两分口径：
+     *    ⑤a chain（计入差异）——码在 ee_store 存在（任意状态）→ 链路真实断点，可修复
+     *    ⑤b archive（仅提示）——码不在 ee_store → 前架构时期直导下游的归档数据
+     *    依赖 ee_store.idx_候选人编码（ee_interview_emptycode_repair.sql 0.2 节建）
      */
     private function checkDownstreamOrphan(): array
     {
-        $tables  = ['ee_interview', 'ee_train', 'ee_onjob'];
-        $result  = [];
+        $tables = ['ee_interview', 'ee_train', 'ee_onjob'];
+        $result = ['chain' => [], 'archive' => []];
 
         foreach ($tables as $table) {
-            $sql = "SELECT t.候选人编码 AS code
+            // ⑤a 链断：码在 ee_store（任意状态）
+            $sqlChain = "SELECT t.候选人编码 AS code
                     FROM {$table} t
                     WHERE t.有效标识 = '1' AND t.删除标识 = '0' AND IFNULL(t.候选人编码, '') <> ''
                       AND NOT EXISTS (SELECT 1 FROM ee_application a
-                                      WHERE a.候选人编码 = t.候选人编码)";
+                                      WHERE a.候选人编码 = t.候选人编码)
+                      AND EXISTS (SELECT 1 FROM ee_store s
+                                  WHERE s.候选人编码 = t.候选人编码)";
 
-            $count = $this->countRows($sql);
+            $count = $this->countRows($sqlChain);
             if ($count > 0) {
-                $result[$table] = [
+                $result['chain'][$table] = [
                     'count'   => $count,
-                    'samples' => $this->sampleRows($sql . ' LIMIT ' . $this->sampleLimit),
+                    'samples' => $this->sampleRows($sqlChain . ' LIMIT ' . $this->sampleLimit),
+                ];
+            }
+
+            // ⑤b 历史归档：码不在 ee_store
+            $sqlArchive = "SELECT t.候选人编码 AS code
+                    FROM {$table} t
+                    WHERE t.有效标识 = '1' AND t.删除标识 = '0' AND IFNULL(t.候选人编码, '') <> ''
+                      AND NOT EXISTS (SELECT 1 FROM ee_application a
+                                      WHERE a.候选人编码 = t.候选人编码)
+                      AND NOT EXISTS (SELECT 1 FROM ee_store s
+                                      WHERE s.候选人编码 = t.候选人编码)";
+
+            $count = $this->countRows($sqlArchive);
+            if ($count > 0) {
+                $result['archive'][$table] = [
+                    'count'   => $count,
+                    'samples' => $this->sampleRows($sqlArchive . ' LIMIT ' . $this->sampleLimit),
                 ];
             }
         }

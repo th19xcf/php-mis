@@ -4,6 +4,7 @@ namespace App\Services\Person;
 
 use App\Exceptions\BusinessException;
 use App\Models\Mcommon;
+use App\Services\Audit\AuditLogService;
 
 /**
  * 人员主档服务（hr_person）
@@ -148,6 +149,24 @@ class PersonService
         if ($affected <= 0) {
             throw new BusinessException('人员主档创建失败');
         }
+
+        // hr_audit_log（严格模式：同事务，失败由调用方回滚）
+        $newRow = $this->model->select(
+            sprintf('SELECT GUID, UUID FROM hr_person WHERE 人员编码=%s LIMIT 1', $this->model->quote($code))
+        )->getRowArray() ?: [];
+        (new AuditLogService())->logEvent([
+            '人员编码'   => $code,
+            '表名'      => 'hr_person',
+            '记录GUID'  => (int) ($newRow['GUID'] ?? 0),
+            '记录UUID'  => $newRow['UUID'] ?? null,
+            '操作类型'  => '新增',
+            '变更字段'  => '全部',
+            '原值'      => null,
+            '新值'      => '新增主档',
+            '操作人员'  => $operator,
+            '操作来源'  => '页面新增',
+        ]);
+
         return $code;
     }
 
@@ -161,6 +180,9 @@ class PersonService
      */
     public function updatePersonFields(string $personCode, array $fields, string $operator): int
     {
+        // 旧行快照（审计 diff + 定位键；须在 UPDATE 前读）
+        $oldRow = $this->findPersonByCode($personCode);
+
         $sets = [
             sprintf('`操作记录`=%s', $this->model->quote('修改')),
             sprintf('`操作来源`=%s', $this->model->quote('页面修改')),
@@ -168,6 +190,7 @@ class PersonService
             sprintf('`操作时间`=%s', $this->model->quote(date('Y-m-d H:i:s'))),
         ];
 
+        $updateData = []; // 实际写入字段（审计 diff 用，与 SET 严格一致）
         foreach ($fields as $key => $value) {
             if (in_array($key, ['人员编码', '合并至', 'GUID'], true)) {
                 continue; // 关键列不允许通过页面修改
@@ -176,6 +199,7 @@ class PersonService
                 continue; // 空值跳过，防误清空
             }
             $sets[] = sprintf('`%s`=%s', $key, $this->buildValue($key, $value));
+            $updateData[$key] = $value;
         }
 
         $sql = sprintf(
@@ -183,7 +207,20 @@ class PersonService
             implode(',', $sets),
             $this->model->quote($personCode)
         );
-        return $this->model->exec($sql);
+        $affected = $this->model->exec($sql);
+
+        // hr_audit_log（严格模式：同事务，失败由调用方回滚）
+        if ($affected > 0 && $oldRow !== null) {
+            (new AuditLogService())->logUpdateDiff(
+                'hr_person',
+                [$oldRow],
+                $updateData,
+                $operator,
+                '页面修改'
+            );
+        }
+
+        return $affected;
     }
 
     /**

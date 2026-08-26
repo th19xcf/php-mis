@@ -10,6 +10,7 @@ use App\Libraries\AuthorizationService;
 use App\Libraries\MetadataCache;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
+use App\Services\Audit\AuditLogService;
 use App\Services\Workbench\ContextService;
 use App\Traits\AuditFieldsTrait;
 use CodeIgniter\HTTP\RequestInterface;
@@ -424,21 +425,40 @@ class BaseApiController extends BaseController
 
         // 写入审计日志
         if ($affected > 0) {
-            try {
-                $db = $this->model->getDb();
-                $newGuid = (string) $db->insertID();
+            $db = $this->model->getDb();
+            $newGuid = (string) $db->insertID();
 
-                $this->writeAuditLog(
-                    $table,
-                    $newGuid,
-                    $autoUuid,
-                    '新增',
-                    '全部',
-                    null,
-                    '新增记录'
-                );
-            } catch (\Throwable $e) {
-                $this->logTrace('error', "审计日志写入失败(insert) table={$table}: " . $e->getMessage());
+            $auditLog = new AuditLogService();
+            if ($auditLog->isAuditedTable($table)) {
+                // 人员审计（严格模式：失败抛异常，调用方事务回滚；
+                // 人员六表不再写 def_audit_log，由 hr_audit_log 承载合规轨迹）
+                $auditLog->logEvent([
+                    '人员编码'   => (string) ($data['人员编码'] ?? ''),
+                    '候选人编码' => (string) ($data['候选人编码'] ?? ''),
+                    '表名'      => $table,
+                    '记录GUID'  => (int) $newGuid,
+                    '记录UUID'  => $autoUuid,
+                    '操作类型'  => '新增',
+                    '变更字段'  => '全部',
+                    '原值'      => null,
+                    '新值'      => '新增记录',
+                    '操作人员'  => $this->getUserWorkId() ?: 'system',
+                    '操作来源'  => '页面',
+                ]);
+            } else {
+                try {
+                    $this->writeAuditLog(
+                        $table,
+                        $newGuid,
+                        $autoUuid,
+                        '新增',
+                        '全部',
+                        null,
+                        '新增记录'
+                    );
+                } catch (\Throwable $e) {
+                    $this->logTrace('error', "审计日志写入失败(insert) table={$table}: " . $e->getMessage());
+                }
             }
         }
 
@@ -468,11 +488,20 @@ class BaseApiController extends BaseController
         }
 
         // === 写入前：读取旧值快照（GUID/UUID/受影响字段） ===
+        $isAuditedTable = (new AuditLogService())->isAuditedTable($table);
         $oldRows = [];
         try {
             $selectCols = ['GUID'];
             if (in_array('UUID', $columns, true)) {
                 $selectCols[] = 'UUID';
+            }
+            // 人员审计表：定位键（人员编码/候选人编码）始终入快照（diff 定位用）
+            if ($isAuditedTable) {
+                foreach (['人员编码', '候选人编码'] as $locator) {
+                    if (in_array($locator, $columns, true) && !in_array($locator, $selectCols, true)) {
+                        $selectCols[] = $locator;
+                    }
+                }
             }
             foreach ($effectiveUpdateKeys as $k) {
                 if (!in_array($k, $selectCols, true)) {
@@ -502,31 +531,43 @@ class BaseApiController extends BaseController
 
         // === 写入后：按字段对比，写审计日志 ===
         if ($affected > 0 && !empty($oldRows)) {
-            try {
-                foreach ($oldRows as $oldRow) {
-                    $rowGuid = (string)($oldRow['GUID'] ?? '');
-                    $rowUuid = $oldRow['UUID'] ?? null;
+            if ($isAuditedTable) {
+                // 人员审计（严格模式：失败抛异常，调用方事务回滚；
+                // 人员六表不再写 def_audit_log，由 hr_audit_log 承载合规轨迹）
+                (new AuditLogService())->logUpdateDiff(
+                    $table,
+                    $oldRows,
+                    $data,
+                    $this->getUserWorkId() ?: 'system',
+                    '页面'
+                );
+            } else {
+                try {
+                    foreach ($oldRows as $oldRow) {
+                        $rowGuid = (string)($oldRow['GUID'] ?? '');
+                        $rowUuid = $oldRow['UUID'] ?? null;
 
-                    foreach ($effectiveUpdateKeys as $field) {
-                        $oldVal = $oldRow[$field] ?? null;
-                        $newVal = $data[$field] ?? null;
+                        foreach ($effectiveUpdateKeys as $field) {
+                            $oldVal = $oldRow[$field] ?? null;
+                            $newVal = $data[$field] ?? null;
 
-                        // 值未变化则跳过（NULL 与空串视为相同）
-                        if ((string)$oldVal === (string)$newVal) continue;
+                            // 值未变化则跳过（NULL 与空串视为相同）
+                            if ((string)$oldVal === (string)$newVal) continue;
 
-                        $this->writeAuditLog(
-                            $table,
-                            $rowGuid,
-                            $rowUuid,
-                            '更新',
-                            $field,
-                            $oldVal !== null ? (string)$oldVal : null,
-                            $newVal !== null ? (string)$newVal : null
-                        );
+                            $this->writeAuditLog(
+                                $table,
+                                $rowGuid,
+                                $rowUuid,
+                                '更新',
+                                $field,
+                                $oldVal !== null ? (string)$oldVal : null,
+                                $newVal !== null ? (string)$newVal : null
+                            );
+                        }
                     }
+                } catch (\Throwable $e) {
+                    $this->logTrace('error', "审计日志写入失败(update) table={$table}: " . $e->getMessage());
                 }
-            } catch (\Throwable $e) {
-                $this->logTrace('error', "审计日志写入失败(update) table={$table}: " . $e->getMessage());
             }
         }
 
@@ -541,12 +582,20 @@ class BaseApiController extends BaseController
 
         $columns = $this->getTableColumns($table);
 
-        // === 删除前：读取整行快照（GUID/UUID） ===
+        // === 删除前：读取整行快照（GUID/UUID；人员审计表含定位键） ===
+        $isAuditedTable = (new AuditLogService())->isAuditedTable($table);
         $oldRows = [];
         try {
             $selectCols = ['GUID'];
             if (in_array('UUID', $columns, true)) {
                 $selectCols[] = 'UUID';
+            }
+            if ($isAuditedTable) {
+                foreach (['人员编码', '候选人编码'] as $locator) {
+                    if (in_array($locator, $columns, true) && !in_array($locator, $selectCols, true)) {
+                        $selectCols[] = $locator;
+                    }
+                }
             }
             $colList = implode(',', array_map(fn($c) => "`{$c}`", $selectCols));
             $oldRows = $this->model->select("SELECT {$colList} FROM `{$table}` WHERE {$where}")->getResultArray() ?: [];
@@ -582,23 +631,44 @@ class BaseApiController extends BaseController
 
         // === 写入审计日志 ===
         if ($affected > 0 && !empty($oldRows)) {
-            try {
+            if ($isAuditedTable) {
+                // 人员审计（严格模式：失败抛异常，调用方事务回滚；
+                // 人员六表不再写 def_audit_log，由 hr_audit_log 承载合规轨迹）
+                $auditLog = new AuditLogService();
                 foreach ($oldRows as $oldRow) {
-                    $rowGuid = (string)($oldRow['GUID'] ?? '');
-                    $rowUuid = $oldRow['UUID'] ?? null;
-
-                    $this->writeAuditLog(
-                        $table,
-                        $rowGuid,
-                        $rowUuid,
-                        '删除',
-                        '全部',
-                        '删除前记录',
-                        null
-                    );
+                    $auditLog->logEvent([
+                        '人员编码'   => (string) ($oldRow['人员编码'] ?? ''),
+                        '候选人编码' => (string) ($oldRow['候选人编码'] ?? ''),
+                        '表名'      => $table,
+                        '记录GUID'  => (int) ($oldRow['GUID'] ?? 0),
+                        '记录UUID'  => $oldRow['UUID'] ?? null,
+                        '操作类型'  => '删除',
+                        '变更字段'  => '全部',
+                        '原值'      => '删除前记录',
+                        '新值'      => null,
+                        '操作人员'  => $this->getUserWorkId() ?: 'system',
+                        '操作来源'  => '页面',
+                    ]);
                 }
-            } catch (\Throwable $e) {
-                $this->logTrace('error', "审计日志写入失败(delete) table={$table}: " . $e->getMessage());
+            } else {
+                try {
+                    foreach ($oldRows as $oldRow) {
+                        $rowGuid = (string)($oldRow['GUID'] ?? '');
+                        $rowUuid = $oldRow['UUID'] ?? null;
+
+                        $this->writeAuditLog(
+                            $table,
+                            $rowGuid,
+                            $rowUuid,
+                            '删除',
+                            '全部',
+                            '删除前记录',
+                            null
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    $this->logTrace('error', "审计日志写入失败(delete) table={$table}: " . $e->getMessage());
+                }
             }
         }
 
