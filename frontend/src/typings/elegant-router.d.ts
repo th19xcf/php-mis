@@ -33,6 +33,7 @@ declare module "@elegant-router/types" {
     "personnel_employee": "/personnel/employee";
     "personnel_interview": "/personnel/interview";
     "personnel_invitation": "/personnel/invitation";
+    "personnel_person": "/personnel/person";
     "personnel_train": "/personnel/train";
     "room-status": "/room-status";
     "system": "/system";
@@ -118,6 +119,7 @@ declare module "@elegant-router/types" {
     | "personnel_employee"
     | "personnel_interview"
     | "personnel_invitation"
+    | "personnel_person"
     | "personnel_train"
     | "room-status"
     | "system_dept"
