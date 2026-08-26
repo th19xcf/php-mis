@@ -295,6 +295,162 @@ class PersonService
     }
 
     /**
+     * 从阶段表编辑同步身份字段到 hr_person 主档（非空覆盖策略）
+     *
+     * 当用户在工作台编辑 ee_store/ee_interview/ee_train/ee_onjob 时，
+     * 表单中属于 PERSON_FIELDS 的字段需同步回写 hr_person。
+     * 空值跳过（不覆盖主档已有值），非空值覆盖（保持主档为最新）。
+     *
+     * @param string $personCode 人员编码（须非空）
+     * @param array  $formData   表单数据（全量，方法内部按 PERSON_FIELDS 过滤）
+     * @param string $operator   操作人工号
+     * @return int 影响行数（0=无身份字段需同步或主档不存在）
+     */
+    public function syncPersonFromEdit(string $personCode, array $formData, string $operator): int
+    {
+        if ($personCode === '') {
+            return 0;
+        }
+
+        // 过滤出属于 hr_person 的身份字段
+        $personData = [];
+        foreach (self::PERSON_FIELDS as $field) {
+            if (array_key_exists($field, $formData) && $formData[$field] !== '') {
+                $personData[$field] = $formData[$field];
+            }
+        }
+
+        if (empty($personData)) {
+            return 0;
+        }
+
+        // 确认主档存在（防止对已删除/已失效的主档执行更新）
+        if ($this->findPersonByCode($personCode) === null) {
+            return 0;
+        }
+
+        return $this->updatePersonFields($personCode, $personData, $operator);
+    }
+
+    /**
+     * 重档合并：将源主档合并到目标主档
+     *
+     * 操作步骤（同一事务内）：
+     * 1. 源主档有效行置无效：有效标识=0, 合并至=目标编码
+     * 2. 下游四表（ee_store/ee_interview/ee_train/ee_onjob）有效行
+     *    人员编码从源编码改为目标编码
+     * 3. 记录审计日志
+     *
+     * @param string $sourceCode 源人员编码（被合并方）
+     * @param string $targetCode 目标人员编码（合并保留方）
+     * @param string $operator   操作人工号
+     * @return int 受影响行数（下游四表更新总数）
+     * @throws BusinessException 源/目标不存在、编码相同、目标已合并
+     */
+    public function mergePerson(string $sourceCode, string $targetCode, string $operator): int
+    {
+        if ($sourceCode === $targetCode) {
+            throw new BusinessException('源人员编码与目标人员编码不能相同');
+        }
+
+        $source = $this->findPersonByCode($sourceCode);
+        if ($source === null) {
+            throw new BusinessException(sprintf('源人员主档不存在或已失效: %s', $sourceCode));
+        }
+        $target = $this->findPersonByCode($targetCode);
+        if ($target === null) {
+            throw new BusinessException(sprintf('目标人员主档不存在或已失效: %s', $targetCode));
+        }
+
+        $db = $this->model->getDb();
+        $db->transStart();
+
+        try {
+            $now = date('Y-m-d H:i:s');
+
+            // 1. 源主档置无效 + 标记合并至
+            $this->model->exec(sprintf(
+                'UPDATE hr_person SET 有效标识="0", 合并至=%s, 操作记录="合并", 操作来源="主档合并",
+                 操作人员=%s, 操作时间=%s, 结束操作时间=%s
+                 WHERE 人员编码=%s AND 有效标识="1" AND 删除标识="0"',
+                $this->model->quote($targetCode),
+                $this->model->quote($operator),
+                $this->model->quote($now),
+                $this->model->quote($now),
+                $this->model->quote($sourceCode)
+            ));
+
+            // 审计：源主档合并事件
+            (new AuditLogService())->logEvent([
+                '人员编码'   => $sourceCode,
+                '表名'      => 'hr_person',
+                '记录GUID'  => (int) ($source['GUID'] ?? 0),
+                '记录UUID'  => $source['UUID'] ?? null,
+                '操作类型'  => '合并',
+                '变更字段'  => '有效标识,合并至',
+                '原值'      => '1,',
+                '新值'      => sprintf('0,%s', $targetCode),
+                '操作人员'  => $operator,
+                '操作来源'  => '主档合并',
+            ]);
+
+            // 2. 下游四表：有效行人员编码从源改为目标
+            $stageTables = ['ee_store', 'ee_interview', 'ee_train', 'ee_onjob'];
+            $totalAffected = 0;
+            foreach ($stageTables as $table) {
+                $sql = sprintf(
+                    'UPDATE `%s` SET 人员编码=%s
+                     WHERE 人员编码=%s AND 有效标识="1" AND 删除标识="0"',
+                    $table,
+                    $this->model->quote($targetCode),
+                    $this->model->quote($sourceCode)
+                );
+                $affected = $this->model->exec($sql);
+                $totalAffected += $affected;
+
+                if ($affected > 0) {
+                    // 审计：下游表人员编码变更
+                    (new AuditLogService())->logEvent([
+                        '人员编码'   => $targetCode,
+                        '候选人编码' => '',
+                        '表名'      => $table,
+                        '记录GUID'  => 0,
+                        '操作类型'  => '合并联动',
+                        '变更字段'  => '人员编码',
+                        '原值'      => $sourceCode,
+                        '新值'      => $targetCode,
+                        '操作人员'  => $operator,
+                        '操作来源'  => '主档合并',
+                    ]);
+                }
+            }
+
+            // 3. 目标主档：非空字段补齐（从源主档取值，空值跳过）
+            $personData = [];
+            foreach (self::PERSON_FIELDS as $field) {
+                $sourceVal = trim((string) ($source[$field] ?? ''));
+                $targetVal = trim((string) ($target[$field] ?? ''));
+                if ($sourceVal !== '' && $targetVal === '') {
+                    $personData[$field] = $sourceVal;
+                }
+            }
+            if (!empty($personData)) {
+                $this->updatePersonFields($targetCode, $personData, $operator);
+            }
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            throw $e;
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            throw new BusinessException('重档合并失败:事务提交已回滚');
+        }
+
+        return $totalAffected;
+    }
+
+    /**
      * 构建列值：身份证号空值写 NULL（唯一索引语义：NULL 不判重，空串判重）
      */
     private function buildValue(string $key, mixed $value): string

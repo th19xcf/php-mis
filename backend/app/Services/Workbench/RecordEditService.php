@@ -6,6 +6,7 @@ use App\Models\Mcommon;
 use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Person\PersonService;
 use App\Exceptions\BusinessException;
 
 /**
@@ -310,6 +311,9 @@ class RecordEditService
                     $audit->logUpdateDiff($dataTable, $oldRows, $formData, $userWorkid, '工作台');
                 }
 
+                // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
+                $this->syncPersonFromStageEdit($dataTable, $oldRows, $formData, $userWorkid);
+
                 $this->invalidateConfigCache($dataTable);
                 return $affected;
 
@@ -401,6 +405,9 @@ class RecordEditService
                             '工作台'
                         );
                     }
+
+                    // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person（同事务）
+                    $this->syncPersonFromStageEdit($dataTable, [$originalRow], $formData, $userWorkid);
                 } catch (\Throwable $e) {
                     $db->transRollback();
                     throw $e;
@@ -588,6 +595,46 @@ class RecordEditService
                 $tableName,
                 $e->getMessage()
             ));
+        }
+    }
+
+    /**
+     * 阶段表编辑后同步身份字段到 hr_person 主档
+     *
+     * 仅对 ee_store/ee_interview/ee_train/ee_onjob 四张阶段表生效。
+     * 从旧行快照取人员编码，按 PERSON_FIELDS 过滤表单数据，
+     * 调用 PersonService::syncPersonFromEdit 回写主档（非空覆盖）。
+     * 同事务内调用时，同步失败随事务回滚；事务外调用时仅记日志不中断。
+     */
+    private function syncPersonFromStageEdit(
+        string $dataTable,
+        array $oldRows,
+        array $formData,
+        string $userWorkid
+    ): void {
+        $stageTables = ['ee_store', 'ee_interview', 'ee_train', 'ee_onjob'];
+        if (!in_array($dataTable, $stageTables, true)) {
+            return;
+        }
+
+        $personService = new PersonService();
+        $synced = [];
+        foreach ($oldRows as $oldRow) {
+            $personCode = trim((string) ($oldRow['人员编码'] ?? ''));
+            if ($personCode === '' || isset($synced[$personCode])) {
+                continue;
+            }
+            $synced[$personCode] = true;
+            try {
+                $personService->syncPersonFromEdit($personCode, $formData, $userWorkid);
+            } catch (\Throwable $e) {
+                log_message('error', sprintf(
+                    '[RecordEditService] hr_person 同步失败(person=%s, table=%s): %s',
+                    $personCode,
+                    $dataTable,
+                    $e->getMessage()
+                ));
+            }
         }
     }
 }

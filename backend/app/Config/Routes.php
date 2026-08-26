@@ -87,6 +87,14 @@ $routes->group('dept', static function ($routes) {
 	$routes->get('options', 'DeptApi::options');
 });
 
+$routes->group('person', static function ($routes) {
+	$routes->get('tree', 'PersonApi::tree');
+	$routes->get('detail/(:segment)', 'PersonApi::detail/$1');
+	$routes->post('update', 'PersonApi::update');
+	$routes->post('merge', 'PersonApi::merge');
+	$routes->post('dedup', 'PersonApi::dedup');
+});
+
 $routes->group('invitation', static function ($routes) {
 	$routes->get('tree', 'InvitationApi::tree');
 	$routes->get('debug-tree', 'InvitationApi::debugTree');

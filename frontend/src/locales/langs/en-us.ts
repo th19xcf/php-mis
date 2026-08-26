@@ -253,6 +253,7 @@ const local: App.I18n.Schema = {
     personnel_interview: 'Interview Personnel',
     personnel_train: 'Training Personnel',
     personnel_employee: 'Employee Management',
+    personnel_person: 'Person Archive Management',
     contract: 'Contract Management',
     'contract-v2': 'Contract Management V2',
     'workflow-manage': 'Workflow Management',

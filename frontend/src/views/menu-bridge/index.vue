@@ -66,6 +66,7 @@ const nativeComponentMap: Record<string, any> = {
   personnel_interview: defineAsyncComponent(() => import('@/views/personnel/interview/index.vue')),
   personnel_train: defineAsyncComponent(() => import('@/views/personnel/train/index.vue')),
   personnel_employee: defineAsyncComponent(() => import('@/views/personnel/employee/index.vue')),
+  personnel_person: defineAsyncComponent(() => import('@/views/personnel/person/index.vue')),
   contract: defineAsyncComponent(() => import('@/views/contract/index.vue')),
   'contract-v2': defineAsyncComponent(() => import('@/views/contract-v2/index.vue')),
   'match-data': defineAsyncComponent(() => import('@/views/match-data/index.vue')),

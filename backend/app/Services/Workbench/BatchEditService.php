@@ -7,6 +7,7 @@ use App\Models\Mcommon;
 use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
 use App\Services\Audit\AuditLogService;
+use App\Services\Person\PersonService;
 
 /**
  * 批量编辑服务类
@@ -108,6 +109,9 @@ class BatchEditService
                 if ($audit->isAuditedTable($dataTable) && $num > 0 && !empty($oldRows)) {
                     $audit->logUpdateDiff($dataTable, $oldRows, $formData, $userWorkid, '工作台');
                 }
+
+                // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
+                $this->syncPersonFromStageEdit($dataTable, $oldRows, $formData, $userWorkid);
 
                 $this->invalidateConfigCache($dataTable);
                 return $num;
@@ -271,6 +275,9 @@ class BatchEditService
                     $userWorkid,
                     '工作台'
                 );
+
+                // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person（同事务）
+                $this->syncPersonFromStageEdit($dataTable, $hitOldRows, $formData, $userWorkid);
             }
         } catch (\Throwable $e) {
             $db->transRollback();
@@ -440,6 +447,10 @@ class BatchEditService
                                 $userWorkid
                             );
                         }
+
+                        // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
+                        $this->syncPersonFromStageEditForRow($dataTable, $oldRowMap, $row, $primaryKey, $userWorkid);
+
                         $num += $affectedRow;
                     } else {
                         $caseStatements = [];
@@ -489,6 +500,12 @@ class BatchEditService
                                 );
                             }
                         }
+
+                        // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
+                        foreach ($groupRows as $groupRow) {
+                            $this->syncPersonFromStageEditForRow($dataTable, $oldRowMap, $groupRow, $primaryKey, $userWorkid);
+                        }
+
                         $num += $affectedGroup;
                     }
                 }
@@ -623,6 +640,11 @@ class BatchEditService
                             );
                         }
                     }
+
+                    // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
+                    foreach ($validRows as $validRow) {
+                        $this->syncPersonFromStageEditForRow($dataTable, $originalRows, $validRow, $primaryKey, $userWorkid);
+                    }
                 }
 
                 $this->invalidateConfigCache($dataTable);
@@ -730,5 +752,61 @@ class BatchEditService
                 $e->getMessage()
             ));
         }
+    }
+
+    /**
+     * 阶段表编辑后同步身份字段到 hr_person 主档
+     *
+     * 仅对 ee_store/ee_interview/ee_train/ee_onjob 四张阶段表生效。
+     * 从旧行快照取人员编码，按 PERSON_FIELDS 过滤表单数据，
+     * 调用 PersonService::syncPersonFromEdit 回写主档（非空覆盖）。
+     */
+    private function syncPersonFromStageEdit(
+        string $dataTable,
+        array $oldRows,
+        array $formData,
+        string $userWorkid
+    ): void {
+        $stageTables = ['ee_store', 'ee_interview', 'ee_train', 'ee_onjob'];
+        if (!in_array($dataTable, $stageTables, true)) {
+            return;
+        }
+
+        $personService = new PersonService();
+        $synced = [];
+        foreach ($oldRows as $oldRow) {
+            $personCode = trim((string) ($oldRow['人员编码'] ?? ''));
+            if ($personCode === '' || isset($synced[$personCode])) {
+                continue;
+            }
+            $synced[$personCode] = true;
+            try {
+                $personService->syncPersonFromEdit($personCode, $formData, $userWorkid);
+            } catch (\Throwable $e) {
+                log_message('error', sprintf(
+                    '[BatchEditService] hr_person 同步失败(person=%s, table=%s): %s',
+                    $personCode,
+                    $dataTable,
+                    $e->getMessage()
+                ));
+            }
+        }
+    }
+
+    /**
+     * 表级编辑逐行同步身份字段到 hr_person（按主键从 oldRowMap 取旧行）
+     */
+    private function syncPersonFromStageEditForRow(
+        string $dataTable,
+        array $oldRowMap,
+        array $row,
+        string $primaryKey,
+        string $userWorkid
+    ): void {
+        $pkVal = (string) ($row[$primaryKey] ?? '');
+        if ($pkVal === '' || !isset($oldRowMap[$pkVal])) {
+            return;
+        }
+        $this->syncPersonFromStageEdit($dataTable, [$oldRowMap[$pkVal]], $row, $userWorkid);
     }
 }
