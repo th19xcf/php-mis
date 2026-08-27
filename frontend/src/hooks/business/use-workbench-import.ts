@@ -46,20 +46,32 @@ export function useWorkbenchImport(options: UseWorkbenchImportOptions) {
     const previewLines = Math.min(scanRows, jsonData.length);
     const expectedHeaders = importColumns.value.map(c => c.columnName).filter(Boolean);
 
-    // 策略1：严格全匹配——所有列名都必须在该行出现
+    // 策略1：列名匹配——过半列名出现在该行即认定为表头
+    // （允许 Excel 缺少部分列，如查询名为常量字面量或由存储过程填充的列不在 Excel 中）
     if (expectedHeaders.length > 0) {
+      const threshold = Math.ceil(expectedHeaders.length / 2);
+      let bestMatch = null as { row: number; matched: number } | null;
       for (let i = 0; i < previewLines; i++) {
         const row = jsonData[i] || [];
         const rowStrSet = new Set(row.filter(c => c !== undefined && c !== '').map(c => String(c).trim()));
-        // 所有列名都必须出现在该行
-        const allMatched = expectedHeaders.every(h => rowStrSet.has(h));
-        if (allMatched) {
+        const matched = expectedHeaders.filter(h => rowStrSet.has(h)).length;
+        if (matched === expectedHeaders.length) {
           return {
             headerRow: i + 1,
             dataRow: i + 2,
-            reason: `严格全匹配 ${expectedHeaders.length}/${expectedHeaders.length} 列`
+            reason: `严格全匹配 ${matched}/${expectedHeaders.length} 列`
           };
         }
+        if (matched >= threshold && (!bestMatch || matched > bestMatch.matched)) {
+          bestMatch = { row: i, matched };
+        }
+      }
+      if (bestMatch) {
+        return {
+          headerRow: bestMatch.row + 1,
+          dataRow: bestMatch.row + 2,
+          reason: `列名匹配 ${bestMatch.matched}/${expectedHeaders.length} 列（过半阈值 ${threshold}）`
+        };
       }
     }
 

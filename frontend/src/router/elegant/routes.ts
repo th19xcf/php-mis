@@ -160,15 +160,6 @@ export const generatedRoutes: GeneratedRoute[] = [
         }
       },
       {
-        name: 'personnel_person',
-        path: '/personnel/person',
-        component: 'view.personnel_person',
-        meta: {
-          title: 'personnel_person',
-          i18nKey: 'route.personnel_person'
-        }
-      },
-      {
         name: 'personnel_invitation',
         path: '/personnel/invitation',
         component: 'view.personnel_invitation',
