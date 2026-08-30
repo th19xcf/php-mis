@@ -172,8 +172,23 @@ export const request = createFlatRequest(
       // when the request is fail, you can show error message
 
       // HTTP 401 表示后端 ApiExceptionHandler 捕获到 AuthException（如 SessionUserContext
-      // 取不到登录态），登录态已失效，直接登出跳登录页，与业务码 8888 行为一致
-      if (error.response?.status === 401) {
+      // 取不到登录态），登录态已失效，直接登出跳登录页，与业务码 8888 行为一致。
+      //
+      // 注意：仅当 401 是"后端业务鉴权 401"（响应体为 JSON 且 code 为 8888/8889，或
+      // request method 不是浏览器自动发出的 OPTIONS 预检请求）时才做 resetStore。
+      // 否则可能是：
+      //   - 本地 vite proxy-default 转发失败，后端没处理返回空响应的 401；
+      //   - /person/options 等预加载请求在配置未就位时被老代码抛出伪 401；
+      // 这两种情况一旦误 resetStore，后续并发请求会立即出现一串 8888 未登录。
+      const skipAuthError =
+        (error.config as unknown as { skipAuthError?: boolean } | undefined)?.skipAuthError === true;
+      const method = String((error.config as any)?.method || '').toUpperCase();
+      const respCodeRaw = error.response?.data?.code;
+      const respCode = respCodeRaw === undefined ? '' : String(respCodeRaw);
+      const isBusinessAuth401 =
+        SERVICE_CODE_CONFIG.logoutCodes.includes(respCode) ||
+        (respCode === '' && error.response?.status === 401 && method !== 'OPTIONS');
+      if (error.response?.status === 401 && isBusinessAuth401 && !skipAuthError) {
         const authStore = useAuthStore();
         authStore.resetStore();
         return;
@@ -184,6 +199,12 @@ export const request = createFlatRequest(
 
       // 获取 traceId：优先从请求 config 取，其次从响应头取
       const traceId = (error.config as any)?.__traceId || error.response?.headers?.['x-request-id'] || 'unknown';
+
+      // 单请求级配置：部分初始化 / 预加载请求失败不会影响用户核心路径
+      // （例：工作台字段预加载 / 2060 页面 fetchWorkbenchPage 配置尚未落地等），
+      // 此时设置 skipErrorToast=true 后，错误仍会在 dev 控制台输出，
+      // 但不会弹 naive-ui toast，避免红弹刷屏干扰。
+      const skipToast = (error.config as unknown as { skipErrorToast?: boolean } | undefined)?.skipErrorToast === true;
 
       // get backend error message and code
       if (error.code === BACKEND_ERROR_CODE) {
@@ -206,12 +227,16 @@ export const request = createFlatRequest(
           url: reqUrl,
           method: reqMethod,
           backendCode: backendErrorCode,
-          backendMsg: message
+          backendMsg: message,
+          skipErrorToast: skipToast,
+          httpStatus: error.response?.status
         });
       }
 
-      // 所有用户都能在 toast 中看到 traceId，便于上报给后端定位问题
-      showErrorMsg(request.state, message, traceId);
+      if (!skipToast) {
+        // 所有用户都能在 toast 中看到 traceId，便于上报给后端定位问题
+        showErrorMsg(request.state, message, traceId);
+      }
     }
   }
 );

@@ -4,8 +4,11 @@ import { request } from '../request';
 // config 上设置 `skipAuthError: true`，避免后端把业务校验错误复用到
 // logout 业务码时误触发 authStore.resetStore() → 跳登录页。详见
 // service/request/index.ts 的 onBackendFail 实现。
-export function fetchWorkbenchPage(functionCode: string) {
-  return request<{ meta: Api.Workbench.PageMeta }>({ url: `/workbench/page/${encodeURIComponent(functionCode)}` });
+export function fetchWorkbenchPage(functionCode: string, extra: Partial<Record<string, any>> = {}) {
+  return request<{ meta: Api.Workbench.PageMeta }>({
+    url: `/workbench/page/${encodeURIComponent(functionCode)}`,
+    ...extra
+  });
 }
 
 export function fetchWorkbenchPageWithData(
@@ -116,21 +119,24 @@ export function fetchImportDebug(functionCode: string, payload: Record<string, a
   });
 }
 
-export function fetchAddFields(functionCode: string) {
+export function fetchAddFields(functionCode: string, extra: Partial<Record<string, any>> = {}) {
   return request<Api.Workbench.AddFieldsData>({
-    url: `/workbench/add-fields/${encodeURIComponent(functionCode)}`
+    url: `/workbench/add-fields/${encodeURIComponent(functionCode)}`,
+    ...extra
   });
 }
 
-export function fetchDetailFields(functionCode: string) {
+export function fetchDetailFields(functionCode: string, extra: Partial<Record<string, any>> = {}) {
   return request<Api.Workbench.DetailFieldsData>({
-    url: `/workbench/detail-fields/${encodeURIComponent(functionCode)}`
+    url: `/workbench/detail-fields/${encodeURIComponent(functionCode)}`,
+    ...extra
   });
 }
 
-export function fetchBatchEditFields(functionCode: string) {
+export function fetchBatchEditFields(functionCode: string, extra: Partial<Record<string, any>> = {}) {
   return request<Api.Workbench.AddFieldsData>({
-    url: `/workbench/batch-edit-fields/${encodeURIComponent(functionCode)}`
+    url: `/workbench/batch-edit-fields/${encodeURIComponent(functionCode)}`,
+    ...extra
   });
 }
 

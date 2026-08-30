@@ -64,9 +64,16 @@ export function usePersonnelTreeStore<TNode extends { id: string; value: string;
   async function loadOptions() {
     if (options.value) return options.value;
 
-    const { data } = await fetchOptions();
-    if (data) {
-      options.value = data;
+    try {
+      const { data } = await fetchOptions();
+      if (data) {
+        options.value = data;
+      }
+    } catch (e) {
+      // options 404 / 配置问题不应阻塞页面加载；
+      // 各模块具体字段会由后端 add-fields / detail-fields 返回各自的 objectOptions 补齐。
+      // eslint-disable-next-line no-console
+      console.warn('[usePersonnelTreeStore] loadOptions failed, continue without options.', e);
     }
     return options.value;
   }

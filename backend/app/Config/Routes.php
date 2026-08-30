@@ -90,9 +90,12 @@ $routes->group('dept', static function ($routes) {
 $routes->group('person', static function ($routes) {
 	$routes->get('tree', 'PersonApi::tree');
 	$routes->get('detail/(:segment)', 'PersonApi::detail/$1');
+	$routes->post('add', 'PersonApi::add');
 	$routes->post('update', 'PersonApi::update');
+	$routes->post('delete', 'PersonApi::delete');
 	$routes->post('merge', 'PersonApi::merge');
 	$routes->post('dedup', 'PersonApi::dedup');
+	$routes->get('options', 'PersonApi::options');
 });
 
 $routes->group('invitation', static function ($routes) {
