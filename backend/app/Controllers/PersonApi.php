@@ -11,14 +11,17 @@ use App\Services\Person\PersonService;
  * 前端页面改为与 2015 邀约页一致的"左树分组+右详情/新增/编辑"布局。
  *
  * 接口清单：
- *   GET  /person/tree           — 左树（属地 → 渠道类型 → 招聘渠道 → 人员）
+ *   GET  /person/tree           — 左树（属地 → 发码年 → 发码月 → 人员）
  *   GET  /person/detail/{guid}  — 详情（按 GUID，与工作台按钮定位键一致）
  *   POST /person/add            — 新增（姓名/手机必填；查重+发人员编码+建档）
  *   POST /person/update         — 修改（按 GUID，走 BaseApiController::updateRecord 审计）
  *   POST /person/delete         — 删除（按 GUIDs 批量，软删除标识）
- *   GET  /person/options        — 下拉选项（属地/招聘渠道/渠道类型/性别/学历）
+ *   GET  /person/options        — 下拉选项（属地/性别/学历）
  *   POST /person/merge          — 重档合并（原功能不变）
  *   POST /person/dedup          — 人员查重（原功能不变，新增时也复用）
+ *
+ * 注：招聘渠道/渠道类型/渠道名称属于"招聘事件"属性（每次邀约可不同），
+ * 已从 hr_person 物理移除，权威数据在阶段表（ee_store/ee_interview 等）行上。
  */
 class PersonApi extends BaseApiController
 {
@@ -30,7 +33,8 @@ class PersonApi extends BaseApiController
     }
 
     // ============================================================
-    // 左树：属地 → 渠道类型 → 招聘渠道 → 人员叶子
+    // 左树：属地 → 发码年 → 发码月 → 人员叶子
+    // 年/月取自 人员编码（PK+YYYYMMDD+3位序号）第 3-6 位（YYYY）与第 7-8 位（MM）
     // 对齐 usePersonnelTreeStore 约定的 {id, value, items} 节点结构
     // ============================================================
     public function tree()
@@ -48,13 +52,12 @@ class PersonApi extends BaseApiController
             $sql = sprintf(
                 'SELECT GUID, 人员编码, 姓名, 手机号码, 身份证号, 性别, 年龄,
                         学校, 专业, 学历, 现住址, 工作履历, 属地,
-                        招聘渠道, 渠道类型, 渠道名称,
                         合并至, 操作时间
                  FROM hr_person
                  WHERE 有效标识="1" AND 删除标识="0"
                    AND (合并至 IS NULL OR 合并至="")
                    AND %s
-                 ORDER BY 属地, 渠道类型, 招聘渠道, convert(姓名 using gbk)',
+                 ORDER BY 属地, 人员编码',
                 $locationAuthzCond
             );
 
@@ -112,35 +115,37 @@ class PersonApi extends BaseApiController
     }
 
     /**
-     * 分组聚合树：属地 → 渠道类型 → 招聘渠道 → 人员叶子
+     * 分组聚合树：属地 → 发码年 → 发码月 → 人员叶子
      *
+     * 年取自 人员编码（PK+YYYYMMDD+3位序号）第 3-6 位、月取第 7-8 位；
+     * 编码格式异常（非 PK 前缀/长度不足）归入"未知年份/未知"组。
      * 与 InvitationApi::buildGroupedInvitationTree 同模式，
      * 节点带 type 标签，供 usePersonnelTreeIcon 显示图标。
      */
     private function buildGroupedPersonTree(array $data): array
     {
-        // 人员叶子 → 招聘渠道组
-        $up1 = [];
-        // 招聘渠道 → 渠道类型
-        $up2 = [];
-        // 渠道类型 → 属地
-        $up3 = [];
         // 属地 → 根
         $root = [];
 
         foreach ($data as $row) {
             $region = $row['属地'] ?: '未分配';
-            $chType = $row['渠道类型'] ?: '未分类';
-            $ch = $row['招聘渠道'] ?: '未分配渠道';
+            $code = (string) $row['人员编码'];
+            if (preg_match('/^PK(\d{4})(\d{2})\d{5}$/', $code, $m) === 1) {
+                $year = $m[1];
+                $month = $m[2];
+            } else {
+                $year = '未知年份';
+                $month = '未知';
+            }
 
             // 人员叶子
             $personNode = [
-                'id'    => sprintf('person^%s^%s', $row['GUID'], $row['人员编码']),
+                'id'    => sprintf('person^%s^%s', $row['GUID'], $code),
                 'guid'  => (string) $row['GUID'],
-                'value' => sprintf('%s [%s]', $row['姓名'], $row['人员编码']),
+                'value' => sprintf('%s [%s]', $row['姓名'], $code),
                 'type'  => 'person',
                 'data'  => [
-                    '人员编码' => $row['人员编码'],
+                    '人员编码' => $code,
                     '姓名'     => $row['姓名'],
                     '手机号码' => $row['手机号码'] ?? '',
                     '身份证号' => $row['身份证号'] ?? '',
@@ -152,72 +157,87 @@ class PersonApi extends BaseApiController
                     '现住址'   => $row['现住址'] ?? '',
                     '工作履历' => $row['工作履历'] ?? '',
                     '属地'     => $row['属地'] ?? '',
-                    '招聘渠道' => $row['招聘渠道'] ?? '',
-                    '渠道类型' => $row['渠道类型'] ?? '',
-                    '渠道名称' => $row['渠道名称'] ?? '',
                     '操作时间' => $row['操作时间'] ?? '',
                 ],
             ];
 
-            // Lv1：招聘渠道 → 人员
-            $k1 = sprintf('channel^%s^%s^%s', $region, $chType, $ch);
-            if (!isset($up1[$k1])) {
-                $up1[$k1] = [
-                    'id'    => $k1,
-                    'value' => $ch,
-                    'type'  => 'channel',
-                    'num'   => 0,
-                    'items' => [],
-                ];
-            }
-            $up1[$k1]['items'][] = $personNode;
-            $up1[$k1]['num'] = count($up1[$k1]['items']);
-            $up1[$k1]['value'] = sprintf('%s (%d人)', $ch, $up1[$k1]['num']);
-        }
-
-        // Lv2：渠道类型 → 招聘渠道
-        foreach ($up1 as $node) {
-            [, $region, $chType, $ch] = explode('^', $node['id']);
-            $k2 = sprintf('chtype^%s^%s', $region, $chType);
-            if (!isset($up2[$k2])) {
-                $up2[$k2] = [
-                    'id'    => $k2,
-                    'value' => $chType,
-                    'type'  => 'result',
-                    'num'   => 0,
-                    'items' => [],
-                ];
-            }
-            $up2[$k2]['items'][] = $node;
-            $up2[$k2]['num'] += $node['num'];
-            $up2[$k2]['value'] = sprintf('%s (%d人)', $chType, $up2[$k2]['num']);
-        }
-
-        // Lv3：属地 → 渠道类型
-        foreach ($up2 as $node) {
-            [, $region, $chType] = explode('^', $node['id']);
-            $k3 = sprintf('region^%s', $region);
-            if (!isset($up3[$k3])) {
-                $up3[$k3] = [
-                    'id'    => $k3,
+            $k = sprintf('region^%s', $region);
+            if (!isset($root[$k])) {
+                $root[$k] = [
+                    'id'    => $k,
                     'value' => $region,
                     'type'  => 'region',
                     'num'   => 0,
                     'items' => [],
                 ];
             }
-            $up3[$k3]['items'][] = $node;
-            $up3[$k3]['num'] += $node['num'];
-            $up3[$k3]['value'] = sprintf('%s (%d人)', $region, $up3[$k3]['num']);
+            $root[$k]['num']++;
+
+            // 发码年层
+            $ky = sprintf('year^%s^%s', $region, $year);
+            if (!isset($root[$k]['items'][$ky])) {
+                $root[$k]['items'][$ky] = [
+                    'id'    => $ky,
+                    'value' => $year,
+                    'type'  => 'year',
+                    'num'   => 0,
+                    'items' => [],
+                ];
+            }
+            $root[$k]['items'][$ky]['num']++;
+
+            // 发码月层
+            $km = sprintf('month^%s^%s^%s', $region, $year, $month);
+            if (!isset($root[$k]['items'][$ky]['items'][$km])) {
+                $root[$k]['items'][$ky]['items'][$km] = [
+                    'id'    => $km,
+                    'value' => $month,
+                    'type'  => 'month',
+                    'num'   => 0,
+                    'items' => [],
+                ];
+            }
+            $root[$k]['items'][$ky]['items'][$km]['items'][] = $personNode;
+            $root[$k]['items'][$ky]['items'][$km]['num']++;
+            $monthLabel = ($month === '未知') ? '未知' : sprintf('%d月', (int) $month);
+            $root[$k]['items'][$ky]['items'][$km]['value'] = sprintf('%s (%d人)', $monthLabel, $root[$k]['items'][$ky]['items'][$km]['num']);
+        }
+
+        // 属地 → 年 → 月 三层计数、展示名与排序
+        $nodes = [];
+        foreach ($root as $k => $node) {
+            $years = [];
+            foreach ($node['items'] as $yearNode) {
+                // 月组排序：未知排最后，其余按月升序（value 已带人数后缀，用 id 尾段判断）
+                $months = array_values($yearNode['items']);
+                usort($months, static function ($a, $b) {
+                    $ma = explode('^', $a['id'])[3];
+                    $mb = explode('^', $b['id'])[3];
+                    if ($ma === '未知' && $mb !== '未知') return 1;
+                    if ($mb === '未知' && $ma !== '未知') return -1;
+                    return strcmp($ma, $mb);
+                });
+                $yearNode['items'] = $months;
+                $yearNode['value'] = sprintf('%s (%d人)', $yearNode['value'], $yearNode['num']);
+                $years[] = $yearNode;
+            }
+            // 年组排序：未知年份排最后，其余按年升序（用 id 尾段判断）
+            usort($years, static function ($a, $b) {
+                $ya = explode('^', $a['id'])[2];
+                $yb = explode('^', $b['id'])[2];
+                if ($ya === '未知年份' && $yb !== '未知年份') return 1;
+                if ($yb === '未知年份' && $ya !== '未知年份') return -1;
+                return strcmp($ya, $yb);
+            });
+            $node['items'] = $years;
+            $node['value'] = sprintf('%s (%d人)', explode('^', $k)[1], $node['num']);
+            $nodes[] = $node;
         }
 
         // 根：保持属地顺序（字母序）
-        foreach ($up3 as $node) {
-            $root[] = $node;
-        }
-        usort($root, fn($a, $b) => strcmp($a['id'], $b['id']));
+        usort($nodes, fn($a, $b) => strcmp($a['id'], $b['id']));
 
-        return $root;
+        return $nodes;
     }
 
     // ============================================================
@@ -314,7 +334,7 @@ class PersonApi extends BaseApiController
         if ($personCode !== '') {
             // 非空字段同步（空值不覆盖）
             $sync = [];
-            foreach (['姓名','身份证号','手机号码','性别','年龄','学校','专业','学历','现住址','工作履历','属地','招聘渠道','渠道类型','渠道名称'] as $f) {
+            foreach (['姓名','身份证号','手机号码','性别','年龄','学校','专业','学历','现住址','工作履历','属地'] as $f) {
                 if (isset($data[$f]) && $data[$f] !== '') {
                     $sync[$f] = (string) $data[$f];
                 }
@@ -469,8 +489,9 @@ class PersonApi extends BaseApiController
     }
 
     // ============================================================
-    // 下拉选项：属地 / 招聘渠道 / 渠道类型 / 性别 / 学历
+    // 下拉选项：属地 / 性别 / 学历
     // 与 invitation/options 同模式，用员工属地单值过滤
+    // （渠道下拉已移除：hr_person 不再承载渠道字段）
     // ============================================================
     public function options()
     {
@@ -481,24 +502,6 @@ class PersonApi extends BaseApiController
                 select distinct 对象值 as value, 对象值 as label
                 from def_object
                 where 对象名称="属地" and 有效标识="1"
-                    and (属地="" or locate(属地,"%s"))
-                order by convert(对象值 using gbk)',
-                $userLocation
-            );
-
-            $channelSql = sprintf('
-                select distinct 对象值 as value, 对象值 as label
-                from def_object
-                where 对象名称="招聘渠道" and 有效标识="1"
-                    and (属地="" or locate(属地,"%s"))
-                order by convert(对象值 using gbk)',
-                $userLocation
-            );
-
-            $chTypeSql = sprintf('
-                select distinct 对象值 as value, 对象值 as label
-                from def_object
-                where 对象名称="渠道类型" and 有效标识="1"
                     and (属地="" or locate(属地,"%s"))
                 order by convert(对象值 using gbk)',
                 $userLocation
@@ -517,11 +520,9 @@ class PersonApi extends BaseApiController
                 order by convert(对象值 using gbk)';
 
             return $this->success([
-                'region'      => $this->model->select($regionSql)->getResultArray(),
-                'channel'     => $this->model->select($channelSql)->getResultArray(),
-                'channelType' => $this->model->select($chTypeSql)->getResultArray(),
-                'gender'      => $this->model->select($genderSql)->getResultArray(),
-                'education'   => $this->model->select($eduSql)->getResultArray(),
+                'region'    => $this->model->select($regionSql)->getResultArray(),
+                'gender'    => $this->model->select($genderSql)->getResultArray(),
+                'education' => $this->model->select($eduSql)->getResultArray(),
             ]);
         } catch (\Throwable $e) {
             // 下拉失败不应导致整个 2060 页右侧"新增/编辑"表单项全部崩掉。
@@ -533,8 +534,7 @@ class PersonApi extends BaseApiController
                 $e->getLine()
             ));
             return $this->success([
-                'region' => [], 'channel' => [], 'channelType' => [],
-                'gender' => [], 'education' => [],
+                'region' => [], 'gender' => [], 'education' => [],
             ]);
         }
     }

@@ -99,10 +99,8 @@ const { filteredTreeData, handleSearch, clearSearch, handleExpandedKeysChange } 
 const renderPrefix = usePersonnelTreeIcon({
   root: '👥',
   region: '🏢',
-  result: '📋',
-  interview: '📅',
-  date: '📆',
-  channel: '📢',
+  year: '📆',
+  month: '📅',
   person: '👤'
 });
 

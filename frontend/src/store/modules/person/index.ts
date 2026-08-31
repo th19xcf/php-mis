@@ -6,8 +6,9 @@ import { usePersonnelTreeStore } from '@/hooks/business/use-personnel-tree-store
 /**
  * 人员主档 (2060) 状态管理。
  *
- * 布局与邀约 (2015) 完全一致：左树（属地 → 渠道类型 → 招聘渠道 → 人员叶子）
+ * 布局与邀约 (2015) 一致：左树（属地 → 发码年 → 发码月 → 人员叶子，年月取自人员编码）
  * + 右详情 / 新增 / 多条修改。合并 / 查重作为详情按钮区的动作保留。
+ * 渠道层级已取消：渠道是招聘事件属性，主档不承载（权威数据在阶段表）。
  */
 export const usePersonStore = defineStore('person-store', () => {
   // 2060 首次加载：工作台 meta / 字段配置 / 下拉 / 树 任何一项可能暂时未就绪，

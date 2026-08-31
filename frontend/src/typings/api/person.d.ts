@@ -5,13 +5,13 @@ declare namespace Api {
       id: string;
       guid?: string;
       value: string;
-      type: 'region' | 'result' | 'channel' | 'person' | string;
+      type: 'region' | 'year' | 'month' | 'person' | string;
       num?: number;
       items?: PersonTreeNode[];
       data?: Record<string, unknown>;
     }
 
-    /** 主档详情（含 GUID 定位键） */
+    /** 主档详情（含 GUID 定位键；渠道字段为招聘事件属性，归阶段表） */
     interface PersonDetail {
       GUID: number;
       人员编码: string;
@@ -26,9 +26,6 @@ declare namespace Api {
       学历: string;
       工作履历: string;
       属地: string;
-      招聘渠道?: string;
-      渠道类型?: string;
-      渠道名称?: string;
       合并至: string;
       操作记录?: string;
       操作来源?: string;
@@ -51,9 +48,6 @@ declare namespace Api {
       现住址?: string;
       工作履历?: string;
       属地?: string;
-      招聘渠道?: string;
-      渠道类型?: string;
-      渠道名称?: string;
       /** 查重确认后挂接既有人员主档的人员编码（与 force_new 二选一） */
       person_code?: string;
       /** 查重确认后强制新建人员主档（与 person_code 二选一） */
@@ -104,8 +98,6 @@ declare namespace Api {
     /** 下拉选项 */
     interface PersonOptions {
       region: Array<{ value: string; label: string }>;
-      channel: Array<{ value: string; label: string }>;
-      channelType: Array<{ value: string; label: string }>;
       gender: Array<{ value: string; label: string }>;
       education: Array<{ value: string; label: string }>;
     }
