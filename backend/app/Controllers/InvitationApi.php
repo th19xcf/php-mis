@@ -306,7 +306,7 @@ class InvitationApi extends BaseApiController
         $sql = sprintf(
             'select 人员编码 from hr_person
              where (%s) and 有效标识="1" and 删除标识="0"
-               and (合并至="" or 合并至 is null)',
+               and 合并至GUID is null',
             implode(' or ', $conds)
         );
         $persons = $this->model->select($sql)->getResultArray();

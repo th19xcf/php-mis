@@ -51,7 +51,7 @@ class PersonService
                 'select 人员编码,姓名,身份证号,手机号码,性别,属地
                  from hr_person
                  where 身份证号=%s and 有效标识="1" and 删除标识="0"
-                   and (合并至="" or 合并至 is null)
+                   and 合并至GUID is null
                  limit 1',
                 $this->model->quote($idcard)
             );
@@ -67,7 +67,7 @@ class PersonService
                 'select 人员编码,姓名,身份证号,手机号码,性别,属地
                  from hr_person
                  where 姓名=%s and 手机号码=%s and 有效标识="1" and 删除标识="0"
-                   and (合并至="" or 合并至 is null)
+                   and 合并至GUID is null
                  limit 5',
                 $this->model->quote($name),
                 $this->model->quote($mobile)
@@ -204,7 +204,7 @@ class PersonService
 
         $updateData = []; // 实际写入字段（审计 diff 用，与 SET 严格一致）
         foreach ($fields as $key => $value) {
-            if (in_array($key, ['人员编码', '合并至', 'GUID'], true)) {
+            if (in_array($key, ['人员编码', '合并至GUID', 'GUID'], true)) {
                 continue; // 关键列不允许通过页面修改
             }
             if ($value === '') {
@@ -372,7 +372,7 @@ class PersonService
      * 重档合并：将源主档合并到目标主档
      *
      * 操作步骤（同一事务内）：
-     * 1. 源主档有效行置无效：有效标识=0, 合并至=目标编码
+     * 1. 源主档有效行置无效：有效标识=0, 合并至GUID=目标档GUID
      * 2. 下游四表（ee_store/ee_interview/ee_train/ee_onjob）有效行
      *    人员编码从源编码改为目标编码
      * 3. 记录审计日志
@@ -404,28 +404,29 @@ class PersonService
         try {
             $now = date('Y-m-d H:i:s');
 
-            // 1. 源主档置无效 + 标记合并至
+            // 1. 源主档置无效 + 标记合并至GUID（指向目标档 GUID，代理键永不因改码悬空）
+            $targetGuid = (int) ($target['GUID'] ?? 0);
             $this->model->exec(sprintf(
-                'UPDATE hr_person SET 有效标识="0", 合并至=%s, 操作记录="合并", 操作来源="主档合并",
+                'UPDATE hr_person SET 有效标识="0", 合并至GUID=%d, 操作记录="合并", 操作来源="主档合并",
                  操作人员=%s, 操作时间=%s, 结束操作时间=%s
                  WHERE 人员编码=%s AND 有效标识="1" AND 删除标识="0"',
-                $this->model->quote($targetCode),
+                $targetGuid,
                 $this->model->quote($operator),
                 $this->model->quote($now),
                 $this->model->quote($now),
                 $this->model->quote($sourceCode)
             ));
 
-            // 审计：源主档合并事件
+            // 审计：源主档合并事件（新值带目标编码便于人工读日志，权威留痕在 合并至GUID）
             (new AuditLogService())->logEvent([
                 '人员编码'   => $sourceCode,
                 '表名'      => 'hr_person',
                 '记录GUID'  => (int) ($source['GUID'] ?? 0),
                 '记录UUID'  => $source['UUID'] ?? null,
                 '操作类型'  => '合并',
-                '变更字段'  => '有效标识,合并至',
+                '变更字段'  => '有效标识,合并至GUID',
                 '原值'      => '1,',
-                '新值'      => sprintf('0,%s', $targetCode),
+                '新值'      => sprintf('0,%d(%s)', $targetGuid, $targetCode),
                 '操作人员'  => $operator,
                 '操作来源'  => '主档合并',
             ]);

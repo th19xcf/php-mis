@@ -54,10 +54,10 @@ class PersonApi extends BaseApiController
                         TIMESTAMPDIFF(YEAR, 出生日期, CURDATE()) AS 年龄,
                         出生日期,
                         学校, 专业, 学历, 现住址, 工作履历, 属地,
-                        合并至, 操作时间
+                        合并至GUID, 操作时间
                  FROM hr_person
                  WHERE 有效标识="1" AND 删除标识="0"
-                   AND (合并至 IS NULL OR 合并至="")
+                   AND 合并至GUID IS NULL
                    AND %s
                  ORDER BY 属地, 人员编码',
                 $locationAuthzCond
