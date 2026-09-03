@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Services\Application\ApplicationService;
 use App\Services\Application\StageTransferService;
+use App\Services\Audit\AuditLogService;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
@@ -242,11 +243,95 @@ class TrainApi extends BaseApiController
             fn($v) => $v !== '' && $v !== null
         ));
 
+        // ============================================================
+        // 报到合规校验（设计约束：报到/建雇佣记录时必须校验证件号非空）
+        // 培训通过 = 报到建雇佣记录，逐行校验证件号可用性：
+        //   - 行快照（ee_train.身份证号）与主档（hr_person.身份证号，
+        //     按 人员编码 关联）两者均空 → 拒绝流转，提示先补采证件号
+        //   - 仅行快照为空、主档已有 → 事务内回填行快照（入阶快照口径：
+        //     报到时点主档权威值），保证写入 ee_onjob 的证件号非空
+        // ============================================================
+        $idCheckRows = [];
+        if ($data['培训状态'] === '通过') {
+            $idCheckRows = $this->model->select('
+                select t.GUID, t.姓名, t.候选人编码, t.人员编码,
+                    nullif(t.身份证号, "") as 行证件号,
+                    nullif(p.身份证号, "") as 档证件号
+                from ee_train t
+                left join hr_person p
+                    on p.人员编码 = t.人员编码
+                   and p.有效标识 = "1" and p.删除标识 = "0"
+                where t.GUID in (' . $guidStr . ')
+            ')->getResultArray();
+
+            $missing = [];
+            foreach ($idCheckRows as $row) {
+                if ($row['行证件号'] === null && $row['档证件号'] === null) {
+                    $missing[] = sprintf(
+                        '%s(%s)',
+                        $row['姓名'],
+                        !empty($row['候选人编码']) ? $row['候选人编码'] : ('GUID:' . $row['GUID'])
+                    );
+                }
+            }
+            if (!empty($missing)) {
+                return $this->businessError(sprintf(
+                    '以下 %d 人未采集证件号，不能转入在职（用工合规要求），请先在人员主档补采证件号：%s%s',
+                    count($missing),
+                    implode('、', array_slice($missing, 0, 10)),
+                    count($missing) > 10 ? ' 等' : ''
+                ));
+            }
+        }
+
         $db->transStart();
         $num = 0;
 
         try {
             if ($data['培训状态'] === '通过') {
+                // 行快照为空但主档已有证件号 → 回填入阶快照（同一事务，
+                // 使下方配置化 INSERT...SELECT 写入 ee_onjob 的证件号非空）
+                $backfillGuids = [];
+                foreach ($idCheckRows as $row) {
+                    if ($row['行证件号'] === null && $row['档证件号'] !== null) {
+                        $backfillGuids[] = (int) $row['GUID'];
+                    }
+                }
+                if (!empty($backfillGuids)) {
+                    $backfillStr = implode(',', $backfillGuids);
+                    $this->model->exec('
+                        update ee_train t
+                        join hr_person p
+                            on p.人员编码 = t.人员编码
+                           and p.有效标识 = "1" and p.删除标识 = "0"
+                        set t.身份证号 = p.身份证号
+                        where t.GUID in (' . $backfillStr . ')');
+
+                    // 审计：快照回填事件（证件号脱敏写入，口径同 hr_audit_log 约定）
+                    $audit = new AuditLogService();
+                    $maskId = static fn(string $id): string
+                        => mb_strlen($id) > 10
+                            ? mb_substr($id, 0, 6) . '********' . mb_substr($id, -4)
+                            : '****';
+                    foreach ($idCheckRows as $row) {
+                        if ($row['行证件号'] === null && $row['档证件号'] !== null) {
+                            $audit->logEvent([
+                                '人员编码'   => (string) ($row['人员编码'] ?? ''),
+                                '候选人编码' => (string) ($row['候选人编码'] ?? ''),
+                                '表名'      => 'ee_train',
+                                '记录GUID'  => (int) $row['GUID'],
+                                '记录UUID'  => null,
+                                '操作类型'  => '修改',
+                                '变更字段'  => '身份证号',
+                                '原值'      => null,
+                                '新值'      => $maskId((string) $row['档证件号']),
+                                '操作人员'  => $this->getUserWorkId(),
+                                '操作来源'  => '转入在职补快照',
+                            ]);
+                        }
+                    }
+                }
+
                 $sql = sprintf('
                     update ee_train
                     set 培训状态="%s",培训完成日期="%s",
