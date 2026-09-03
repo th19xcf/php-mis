@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, computed } from 'vue';
 import { NButton, NInput, NTag, NCard, NDropdown } from 'naive-ui';
 import SvgIcon from '@/components/custom/svg-icon.vue';
@@ -136,11 +136,7 @@ defineExpose({ checkScrollPosition });
           class="toolbar-scroll flex items-center gap-8px flex-nowrap overflow-x-hidden"
           @scroll="checkScrollPosition"
         >
-          <NButton
-            v-if="pageMeta?.toolbar.cacheRefresh"
-            :loading="cacheRefreshing"
-            @click="handleRefreshCache"
-          >
+          <NButton :loading="cacheRefreshing" @click="handleRefreshCache">
             刷新缓存
           </NButton>
           <NButton @click="emit('refresh')">刷新</NButton>
