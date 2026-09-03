@@ -244,6 +244,58 @@ class BaseApiController extends BaseController
     }
 
     /**
+     * 构建 detail() 的多表 JOIN SELECT 字段列表（配置驱动）
+     *
+     * buildDetailSelectFields 的多表版本（阶段③读切换：主表窄化后
+     * 个人信息列在 JOIN 表，如 ee_employment + hr_person）：
+     * 1. 配置字段按「别名 → 表实际列」逐一定位归属，加别名前缀
+     * 2. 不在任何表的配置字段（已裁剪列）以空串占位，保持 API 出参形状
+     * 3. 配置为空时抛 BusinessException
+     *
+     * @param string $functionCode 功能编码
+     * @param array  $tables       [别名 => 表名]，如 ['e' => 'ee_employment', 'p' => 'hr_person']
+     * @return string 逗号分隔的带别名前缀字段列表
+     * @throws BusinessException 配置为空时
+     */
+    protected function buildDetailSelectFieldsMulti(string $functionCode, array $tables): string
+    {
+        $columns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
+
+        $tableColMap = [];
+        foreach ($tables as $alias => $table) {
+            $cols = $this->getTableColumns($table);
+            $tableColMap[$alias] = $cols ? array_flip($cols) : [];
+        }
+
+        $parts = [];
+        foreach ($columns as $col) {
+            $fieldName = (string) ($col['字段名'] ?? '');
+            if ($fieldName === '') {
+                continue;
+            }
+            $queryName = (string) ($col['查询名'] ?? '');
+            $output = ($queryName !== '' && $queryName !== $fieldName) ? $queryName : $fieldName;
+
+            foreach ($tableColMap as $alias => $colSet) {
+                if (isset($colSet[$fieldName])) {
+                    $parts[] = "{$alias}.`{$fieldName}` as `{$output}`";
+                    continue 2;
+                }
+            }
+            // 配置字段不在任何表（如 ee_onjob 裁剪列）：空串占位保持出参形状
+            $parts[] = sprintf("'' as `%s`", $output);
+        }
+
+        if (empty($parts)) {
+            throw new BusinessException(
+                "功能编码 {$functionCode} 的 view_function 配置为空，请检查 def_query_column 配置并刷新缓存"
+            );
+        }
+
+        return implode(',', $parts);
+    }
+
+    /**
      * 调试 SQL 权限判定
      *
      * 与 ContextService::loadUserAuthorization 中 debugAuth 的判定完全一致：

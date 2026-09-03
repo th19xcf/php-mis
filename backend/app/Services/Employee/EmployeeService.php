@@ -3,6 +3,7 @@
 namespace App\Services\Employee;
 
 use App\Models\Mcommon;
+use App\Services\Application\ApplicationService;
 use App\Services\Audit\AuditLogService;
 
 /**
@@ -47,8 +48,12 @@ class EmployeeService
     }
 
     /**
-     * 构建 ee_onjob 人员列表 SQL（带属地权限过滤）
+     * 构建 员工列表 SQL（带属地权限过滤）
      *
+     * 阶段③读切换：自 ee_onjob 切至 ee_employment（权威表），
+     * 姓名 JOIN hr_person 主档（ee_employment 按设计不含个人信息列）。
+     * 属地权限条件在派生表内先行过滤（单表环境，避免 JOIN 后裸列歧义）。
+     * GUID 语义随之切换为 ee_employment.GUID（后续 update/delete 同步切换定位）。
      * 抽取出来供 EmployeeApi::debugTree 复用，确保调试输出与 tree() 完全一致。
      *
      * @param string $locationAuthzCond 属地权限 WHERE 条件
@@ -61,16 +66,21 @@ class EmployeeService
         }
 
         return sprintf('
-            select GUID,姓名,工号1 as 工号,属地,员工状态,
-                部门名称,if(班组="","未分班组",班组) as 班组,
-                岗位名称,岗位类型,结算类型,培训完成日期,
-                floor(datediff(if(离职日期="",curdate(),离职日期),一阶段日期)/30) as 在岗月数
-            from ee_onjob
-            where %s and 有效标识="1" and 删除标识="0"
-            order by 属地,员工状态,
-                convert(部门名称 using gbk),
-                convert(班组 using gbk),
-                convert(姓名 using gbk)',
+            select e.GUID, p.姓名 as 姓名, e.工号1 as 工号, e.属地, e.员工状态,
+                e.部门名称, if(e.班组="","未分班组",e.班组) as 班组,
+                e.岗位名称, e.岗位类型, e.结算类型, e.培训完成日期,
+                floor(datediff(if(e.离职日期 is null, curdate(), e.离职日期), e.一阶段日期)/30) as 在岗月数
+            from (
+                select * from ee_employment
+                where %s and 有效标识="1" and 删除标识="0"
+            ) e
+            left join hr_person p
+                on p.人员编码 = e.人员编码
+               and p.有效标识 = "1" and p.删除标识 = "0"
+            order by e.属地, e.员工状态,
+                convert(e.部门名称 using gbk),
+                convert(e.班组 using gbk),
+                convert(p.姓名 using gbk)',
             $locationAuthzCond
         );
     }
@@ -78,20 +88,26 @@ class EmployeeService
     /**
      * 查询人员详情
      *
-     * @param string $guid 人员 GUID
+     * 阶段③读切换：ee_employment 权威行 + hr_person 主档个人信息。
+     * guid 为 ee_employment.GUID。
+     *
+     * @param string $guid ee_employment GUID
      * @return array 人员详情数据，不存在返回空数组
      */
     public function getEmployeeDetail(string $guid): array
     {
         $sql = sprintf(
-            'select GUID,姓名,身份证号,属地,员工状态,
-                培训开始日期,培训完成日期,
-                一阶段日期,二阶段日期,
-                岗位名称,岗位类型,结算类型,
-                部门名称,班组,工号1,
-                离职日期,离职原因
-            from ee_onjob
-            where GUID=%s and 有效标识="1" and 删除标识="0"',
+            'select e.GUID, p.姓名 as 姓名, p.身份证号 as 身份证号, e.属地, e.员工状态,
+                e.培训开始日期, e.培训完成日期,
+                e.一阶段日期, e.二阶段日期,
+                e.岗位名称, e.岗位类型, e.结算类型,
+                e.部门名称, e.班组, e.工号1,
+                e.离职日期, e.离职原因
+            from ee_employment e
+            left join hr_person p
+                on p.人员编码 = e.人员编码
+               and p.有效标识 = "1" and p.删除标识 = "0"
+            where e.GUID=%s and e.有效标识="1" and e.删除标识="0"',
             $this->model->quote($guid)
         );
 
@@ -113,10 +129,22 @@ class EmployeeService
         $db->transStart();
 
         try {
-            // 先按 GUID（唯一）精确查出身份证号+入职次数，
-            // 避免 concat(身份证号,入职次数) 包裹列导致索引失效全表扫描
+            // 先按 ee_employment.GUID（唯一，阶段③读切换后页面 GUID 语义）
+            // 精确查出身份证号+入职次数（+人员编码/候选人编码定位键），
+            // 避免 concat(身份证号,入职次数) 包裹列导致索引失效全表扫描。
+            // 身份证号：优先取 ee_onjob 活跃镜像行操作值（ee_onjob UPDATE 定位用），
+            // 缺失时回退 hr_person 主档权威值
             $sqlFind = sprintf(
-                'select 身份证号, 入职次数 from ee_onjob where GUID=%s',
+                'select e.入职次数, e.人员编码, e.候选人编码,
+                    ifnull(nullif(o.身份证号,""), nullif(p.身份证号,"")) as 身份证号
+                from ee_employment e
+                left join ee_onjob o
+                    on o.候选人编码 = e.候选人编码
+                   and o.有效标识 = "1" and o.删除标识 = "0"
+                left join hr_person p
+                    on p.人员编码 = e.人员编码
+                   and p.有效标识 = "1" and p.删除标识 = "0"
+                where e.GUID=%s and e.有效标识="1" and e.删除标识="0"',
                 $this->model->quote($guid)
             );
             $result = $this->model->select($sqlFind);
@@ -185,6 +213,87 @@ class EmployeeService
                 );
             }
 
+            // ============================================================
+            // 阶段③②：ee_employment 双关（权威雇佣记录同步关闭）
+            // 定位键 人员编码+入职次数（对应 ee_onjob 的身份证号+入职次数），
+            // 仅关活跃行；记录结束/离职日期为 DATE 列，空值经 NULLIF 落 NULL；
+            // SCD2 版本行不关（版本失效≠雇佣结束，DDL 约定）。
+            // ============================================================
+            $personCode = trim((string) ($idRow['人员编码'] ?? ''));
+            if ($personCode !== '') {
+                $empOldRows = [];
+                if ($audit->isAuditedTable('ee_employment')) {
+                    $sqlEmpOld = sprintf(
+                        'select * from ee_employment
+                        where 人员编码=%s and 入职次数=%s and 员工状态!="离职"
+                          and 有效标识="1" and 删除标识="0"
+                        for update',
+                        $this->model->quote($personCode),
+                        $this->model->quote((string) ($idRow['入职次数'] ?? ''))
+                    );
+                    $empOldResult = $db->query($sqlEmpOld);
+                    $empOldRows = $empOldResult ? ($empOldResult->getResultArray() ?: []) : [];
+                }
+
+                $sqlEmp = sprintf(
+                    'update ee_employment
+                    set 员工状态=%s,
+                        离职日期=nullif(%s,""),
+                        离职原因=%s,
+                        记录结束日期=coalesce(记录结束日期, nullif(%s,"")),
+                        操作记录="离职,关雇佣记录",
+                        操作人员=%s,
+                        操作时间=%s
+                    where 人员编码=%s
+                        and 入职次数=%s
+                        and 员工状态!="离职"
+                        and 有效标识="1" and 删除标识="0"',
+                    $this->model->quote($data['员工状态'] ?? ''),
+                    $this->model->quote($data['离职日期'] ?? ''),
+                    $this->model->quote($data['离职原因'] ?? ''),
+                    $this->model->quote($data['离职日期'] ?? ''),
+                    $this->model->quote($operator !== '' ? $operator : 'system'),
+                    $this->model->quote(date('Y-m-d H:i:s')),
+                    $this->model->quote($personCode),
+                    $this->model->quote((string) ($idRow['入职次数'] ?? ''))
+                );
+
+                $db->query($sqlEmp);
+                $empNum = $db->affectedRows();
+
+                if ($empNum > 0 && !empty($empOldRows)) {
+                    $audit->logUpdateDiff(
+                        'ee_employment',
+                        $empOldRows,
+                        $auditOldData,
+                        $operator !== '' ? $operator : 'system',
+                        '离职处理'
+                    );
+                }
+
+                // 实例状态机（阶段③启用，此前不可达路径）：入职 → 终止(离职)。
+                // 预检当前阶段=入职 才流转（已终止/无实例的历史行不阻断离职记账）
+                $candCode = trim((string) ($idRow['候选人编码'] ?? ''));
+                if ($candCode !== '') {
+                    $appRow = $db->query(sprintf(
+                        'select 当前阶段 from ee_application where 候选人编码=%s',
+                        $this->model->quote($candCode)
+                    ))->getRowArray();
+                    if ($appRow && (string) $appRow['当前阶段'] === '入职') {
+                        $reason = trim((string) ($data['离职原因'] ?? ''));
+                        (new ApplicationService())->transferStage(
+                            [$candCode],
+                            '终止',
+                            $operator !== '' ? $operator : 'system',
+                            [
+                                '终止原因' => $reason !== '' ? $reason : '离职',
+                                '终止日期' => (string) ($data['离职日期'] ?? ''),
+                            ]
+                        );
+                    }
+                }
+            }
+
             $db->transComplete();
             return $num;
         } catch (\Throwable $e) {
@@ -219,18 +328,45 @@ class EmployeeService
         $db->transStart();
 
         try {
-            // FOR UPDATE 行锁 + 全列快照：并发编辑互斥，同时为
-            // hr_audit_log 提供定位键（人员编码/候选人编码/GUID/UUID）
-            $sqlLock = sprintf(
-                'select * from ee_onjob where GUID=%s for update',
+            // 阶段③读切换：guid 为 ee_employment.GUID（页面 GUID 语义）。
+            // 先取权威行定位键，再锁定 ee_onjob 活跃镜像行做 SCD2
+            $sqlEmp = sprintf(
+                'select 候选人编码, 人员编码, 入职次数 from ee_employment
+                 where GUID=%s and 有效标识="1" and 删除标识="0"',
                 $this->model->quote($guid)
             );
+            $empResult = $db->query($sqlEmp);
+            $empRow = $empResult ? $empResult->getRowArray() : null;
+            if (empty($empRow)) {
+                $db->transRollback();
+                return -1; // 权威行不存在（或已失效），视为人员不存在
+            }
+
+            // ee_onjob 活跃镜像行定位：候选人编码优先（双写期两表同键），
+            // 空值兜底人员编码+入职次数；FOR UPDATE 行锁 + 全列快照：
+            // 并发编辑互斥，同时为 hr_audit_log 提供定位键
+            $candCode = trim((string) ($empRow['候选人编码'] ?? ''));
+            if ($candCode !== '') {
+                $sqlLock = sprintf(
+                    'select * from ee_onjob
+                     where 候选人编码=%s and 有效标识="1" and 删除标识="0" for update',
+                    $this->model->quote($candCode)
+                );
+            } else {
+                $sqlLock = sprintf(
+                    'select * from ee_onjob
+                     where 人员编码=%s and 入职次数=%s and 有效标识="1" and 删除标识="0" for update',
+                    $this->model->quote((string) ($empRow['人员编码'] ?? '')),
+                    $this->model->quote((string) ($empRow['入职次数'] ?? ''))
+                );
+            }
             $lockResult = $db->query($sqlLock);
             $fullOld = $lockResult ? $lockResult->getRowArray() : null;
-            if (empty($fullOld) || (string) $fullOld['有效标识'] !== '1') {
+            if (empty($fullOld)) {
                 $db->transRollback();
-                return -1; // 旧行已失效（并发编辑），视为人员不存在
+                return -1; // 镜像行缺失（迁移遗漏，交对账报告），视为人员不存在
             }
+            $onjobGuid = (string) $fullOld['GUID'];
 
             // 先软删旧记录（SCD2 正确顺序：先失效旧行，再插入新行，
             // 避免与 uk_候选人编码_活跃 函数唯一索引冲突）
@@ -240,7 +376,7 @@ class EmployeeService
                 where GUID=%s and 有效标识="1" and 删除标识="0"',
                 $this->model->quote('更新,' . $updateStr),
                 $this->model->quote($effectiveDate),
-                $this->model->quote($guid)
+                $this->model->quote($onjobGuid)
             );
             $db->query($sqlUpdate);
             if ($db->affectedRows() === 0) {
@@ -290,7 +426,7 @@ class EmployeeService
                 $this->model->quote($effectiveDate),
                 $this->model->quote($userWorkId),
                 $this->model->quote(date('Y-m-d H:i:s')),
-                $this->model->quote($guid)
+                $this->model->quote($onjobGuid)
             );
             $db->query($sqlInsert);
             $num = $db->affectedRows();
@@ -300,6 +436,18 @@ class EmployeeService
             if ($num > 0) {
                 (new AuditLogService())->logUpdateDiff(
                     'ee_onjob',
+                    [$fullOld],
+                    $data,
+                    $userWorkId,
+                    '页面'
+                );
+            }
+
+            // 阶段③②：ee_employment 活跃行镜像同步（同事务，共享连接）。
+            // 权威表就地更新不做 SCD2；记录开始日期不随"生效日期"漂移
+            // （雇佣开始仅入职时确定，ee_employment DDL 约定）
+            if ($num > 0) {
+                (new EmploymentMirrorService())->mirrorUpdate(
                     [$fullOld],
                     $data,
                     $userWorkId,
@@ -325,9 +473,31 @@ class EmployeeService
      */
     public function batchUpdateEmployees(array $guids, array $data, string $userWorkId): int
     {
+        // 阶段③读切换：guids 为 ee_employment.GUID（页面 GUID 语义），
+        // 翻译为候选人编码后定位 ee_onjob 活跃镜像行
         $guidStr = implode(',', array_map(
             fn($v) => $this->model->quote((string) $v),
             $guids
+        ));
+        $empResult = $this->model->select(sprintf(
+            'select 候选人编码 from ee_employment
+             where GUID in (%s) and 有效标识="1" and 删除标识="0"',
+            $guidStr
+        ));
+        $empRows = $empResult ? $empResult->getResultArray() : [];
+        $cands = [];
+        foreach ($empRows as $empRow) {
+            $cand = trim((string) ($empRow['候选人编码'] ?? ''));
+            if ($cand !== '') {
+                $cands[$cand] = true;
+            }
+        }
+        if ($cands === []) {
+            return 0; // 无有效权威行
+        }
+        $candStr = implode(',', array_map(
+            fn($c) => $this->model->quote($c),
+            array_keys($cands)
         ));
 
         $updateFields = [];
@@ -350,7 +520,10 @@ class EmployeeService
         if ($audit->isAuditedTable('ee_onjob')) {
             try {
                 $oldRows = $this->model->select(
-                    sprintf('select * from ee_onjob where GUID in (%s)', $guidStr)
+                    sprintf(
+                        'select * from ee_onjob where 候选人编码 in (%s) and 有效标识="1" and 删除标识="0"',
+                        $candStr
+                    )
                 )->getResultArray() ?: [];
             } catch (\Throwable $e) {
                 log_message('error', sprintf(
@@ -360,21 +533,46 @@ class EmployeeService
             }
         }
 
-        $sql = sprintf(
-            'update ee_onjob
-            set %s,操作人员=%s,操作时间=%s
-            where GUID in (%s)',
-            implode(',', $updateFields),
-            $this->model->quote($userWorkId),
-            $this->model->quote(date('Y-m-d H:i:s')),
-            $guidStr
-        );
+        // 事务保护：ee_onjob 批量更新与 ee_employment 镜像同步同成败（阶段③②）
+        $db = db_connect('btdc');
+        $db->transStart();
 
-        $num = $this->model->exec($sql);
+        try {
+            $sql = sprintf(
+                'update ee_onjob
+                set %s,操作人员=%s,操作时间=%s
+                where 候选人编码 in (%s) and 有效标识="1" and 删除标识="0"',
+                implode(',', $updateFields),
+                $this->model->quote($userWorkId),
+                $this->model->quote(date('Y-m-d H:i:s')),
+                $candStr
+            );
 
-        // hr_audit_log 字段级 diff（严格模式：每行 × 相同批量新值）
-        if ($audit->isAuditedTable('ee_onjob') && $num > 0 && !empty($oldRows)) {
-            $audit->logUpdateDiff('ee_onjob', $oldRows, $updateData, $userWorkId, '页面');
+            $num = $this->model->exec($sql);
+
+            // hr_audit_log 字段级 diff（严格模式：每行 × 相同批量新值）
+            if ($audit->isAuditedTable('ee_onjob') && $num > 0 && !empty($oldRows)) {
+                $audit->logUpdateDiff('ee_onjob', $oldRows, $updateData, $userWorkId, '页面');
+            }
+
+            // 阶段③②：ee_employment 活跃行镜像同步（同事务，共享连接）
+            if ($num > 0) {
+                (new EmploymentMirrorService())->mirrorUpdate(
+                    $oldRows,
+                    $updateData,
+                    $userWorkId,
+                    '页面'
+                );
+            }
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            throw $e;
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            // 生产环境 DBDebug=false 时 SQL 失败不抛异常，此处兜底检测事务状态
+            throw new RuntimeException('批量修改失败:事务已回滚(ee_onjob)');
         }
 
         return $num;

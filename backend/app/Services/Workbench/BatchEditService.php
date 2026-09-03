@@ -8,6 +8,7 @@ use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
 use App\Services\Audit\AuditLogService;
 use App\Services\Person\PersonService;
+use App\Services\Employee\EmploymentMirrorService;
 
 /**
  * 批量编辑服务类
@@ -112,6 +113,17 @@ class BatchEditService
 
                 // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
                 $this->syncPersonFromStageEdit($dataTable, $oldRows, $formData, $userWorkid);
+
+                // 阶段③②：ee_onjob 编辑镜像同步 ee_employment（无外层事务，
+                // 镜像语句自身原子；当前 def 配置 ee_onjob 可修改=0，防御性预留）
+                if ($dataTable === 'ee_onjob' && $num > 0) {
+                    (new EmploymentMirrorService())->mirrorUpdate(
+                        $oldRows,
+                        $formData,
+                        $userWorkid,
+                        '工作台'
+                    );
+                }
 
                 $this->invalidateConfigCache($dataTable);
                 return $num;
@@ -278,6 +290,17 @@ class BatchEditService
 
                 // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person（同事务）
                 $this->syncPersonFromStageEdit($dataTable, $hitOldRows, $formData, $userWorkid);
+
+                // 阶段③②：ee_onjob 批量编辑镜像同步 ee_employment（同事务，共享连接；
+                // 当前 def 配置 ee_onjob 可修改=0，防御性预留）
+                if ($dataTable === 'ee_onjob') {
+                    (new EmploymentMirrorService())->mirrorUpdate(
+                        $hitOldRows,
+                        $formData,
+                        $userWorkid,
+                        '工作台'
+                    );
+                }
             }
         } catch (\Throwable $e) {
             $db->transRollback();
@@ -451,6 +474,17 @@ class BatchEditService
                         // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
                         $this->syncPersonFromStageEditForRow($dataTable, $oldRowMap, $row, $primaryKey, $userWorkid);
 
+                        // 阶段③②：ee_onjob 编辑镜像同步 ee_employment（防御性预留）
+                        if ($dataTable === 'ee_onjob' && $affectedRow > 0) {
+                            $pkVal = (string) ($row[$primaryKey] ?? '');
+                            (new EmploymentMirrorService())->mirrorUpdate(
+                                isset($oldRowMap[$pkVal]) ? [$oldRowMap[$pkVal]] : [],
+                                $row,
+                                $userWorkid,
+                                '工作台'
+                            );
+                        }
+
                         $num += $affectedRow;
                     } else {
                         $caseStatements = [];
@@ -504,6 +538,19 @@ class BatchEditService
                         // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
                         foreach ($groupRows as $groupRow) {
                             $this->syncPersonFromStageEditForRow($dataTable, $oldRowMap, $groupRow, $primaryKey, $userWorkid);
+                        }
+
+                        // 阶段③②：ee_onjob 编辑镜像同步 ee_employment（逐行各自新值，防御性预留）
+                        if ($dataTable === 'ee_onjob' && $affectedGroup > 0) {
+                            foreach ($groupRows as $groupRow) {
+                                $pkVal = (string) ($groupRow[$primaryKey] ?? '');
+                                (new EmploymentMirrorService())->mirrorUpdate(
+                                    isset($oldRowMap[$pkVal]) ? [$oldRowMap[$pkVal]] : [],
+                                    $groupRow,
+                                    $userWorkid,
+                                    '工作台'
+                                );
+                            }
                         }
 
                         $num += $affectedGroup;
@@ -644,6 +691,20 @@ class BatchEditService
                     // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
                     foreach ($validRows as $validRow) {
                         $this->syncPersonFromStageEditForRow($dataTable, $originalRows, $validRow, $primaryKey, $userWorkid);
+                    }
+
+                    // 阶段③②：ee_onjob 表级流水编辑镜像同步 ee_employment
+                    // （逐行各自新值；本路径无外层事务，镜像语句自身原子，防御性预留）
+                    if ($dataTable === 'ee_onjob') {
+                        foreach ($validRows as $validRow) {
+                            $pkVal = (string) ($validRow[$primaryKey] ?? '');
+                            (new EmploymentMirrorService())->mirrorUpdate(
+                                isset($originalRows[$pkVal]) ? [$originalRows[$pkVal]] : [],
+                                $validRow,
+                                $userWorkid,
+                                '工作台'
+                            );
+                        }
                     }
                 }
 

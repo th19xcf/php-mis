@@ -30,6 +30,7 @@ class AuditLogService
     public const AUDITED_TABLES = [
         'hr_person', 'ee_application',
         'ee_store', 'ee_interview', 'ee_train', 'ee_onjob',
+        'ee_employment',
     ];
 
     /** 定位键/技术列：参与日志定位，不作为 diff 字段 */

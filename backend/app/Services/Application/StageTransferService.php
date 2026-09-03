@@ -39,8 +39,8 @@ use App\Models\Mcommon;
  */
 class StageTransferService
 {
-    /** 允许的流转表（源表/目标表白名单） */
-    private const ALLOWED_TABLES = ['ee_store', 'ee_interview', 'ee_train', 'ee_onjob'];
+    /** 允许的流转表（源表/目标表白名单；ee_employment=阶段③双写新增） */
+    private const ALLOWED_TABLES = ['ee_store', 'ee_interview', 'ee_train', 'ee_onjob', 'ee_employment'];
 
     /** 列名合法字符：中文/字母/数字/下划线 */
     private const COL_NAME_PATTERN = '/^[A-Za-z0-9_\x{4e00}-\x{9fa5}]+$/u';

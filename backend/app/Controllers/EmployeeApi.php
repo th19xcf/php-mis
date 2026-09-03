@@ -6,6 +6,7 @@ use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
 use App\Services\Employee\EmployeeService;
+use App\Services\Employee\EmploymentMirrorService;
 
 class EmployeeApi extends BaseApiController
 {
@@ -103,12 +104,19 @@ class EmployeeApi extends BaseApiController
             return $this->paramError('人员GUID不能为空');
         }
 
-        $selectFields = $this->buildDetailSelectFields('2045', 'ee_onjob');
+        // 阶段③读切换：ee_employment 权威行 + hr_person 主档个人信息（姓名/身份证号/手机号码）
+        $selectFields = $this->buildDetailSelectFieldsMulti('2045', [
+            'e' => 'ee_employment',
+            'p' => 'hr_person',
+        ]);
 
         $sql = sprintf('
             select %s
-            from ee_onjob
-            where GUID="%s" and 有效标识="1" and 删除标识="0"',
+            from ee_employment e
+            left join hr_person p
+                on p.人员编码 = e.人员编码
+               and p.有效标识 = "1" and p.删除标识 = "0"
+            where e.GUID="%s" and e.有效标识="1" and e.删除标识="0"',
             $selectFields,
             $guid);
 
@@ -183,11 +191,66 @@ class EmployeeApi extends BaseApiController
             return $this->paramError('请选择要删除的人员');
         }
 
+        // 阶段③读切换：guids 为 ee_employment.GUID，翻译为候选人编码后定位 ee_onjob 镜像行
         $guidStr = implode(',', array_map(
             fn($v) => $this->model->quote((string) $v),
             $data['guids']
         ));
-        $num = $this->deleteRecord('ee_onjob', sprintf('GUID in (%s)', $guidStr));
+        $empRows = $this->model->select(sprintf(
+            'select 候选人编码 from ee_employment
+             where GUID in (%s) and 有效标识="1" and 删除标识="0"',
+            $guidStr
+        ))->getResultArray();
+        $cands = [];
+        foreach ($empRows as $empRow) {
+            $cand = trim((string) ($empRow['候选人编码'] ?? ''));
+            if ($cand !== '') {
+                $cands[$cand] = true;
+            }
+        }
+        if ($cands === []) {
+            return $this->serverError('删除失败(无有效权威行)');
+        }
+        $candStr = implode(',', array_map(
+            fn($c) => $this->model->quote($c),
+            array_keys($cands)
+        ));
+
+        // 删除前快照定位键（ee_employment 镜像软删用）
+        $locatorRows = $this->model->select(sprintf(
+            'select 候选人编码 from ee_onjob
+             where 候选人编码 in (%s) and 有效标识="1" and 删除标识="0"',
+            $candStr
+        ))->getResultArray();
+
+        // 事务保护：ee_onjob 软删与 ee_employment 镜像软删同成败
+        $db = $this->model->getDb();
+        $db->transStart();
+
+        try {
+            $num = $this->deleteRecord('ee_onjob', sprintf(
+                '候选人编码 in (%s) and 有效标识="1" and 删除标识="0"',
+                $candStr
+            ));
+
+            // 阶段③②：ee_employment 活跃行镜像软删（同事务，共享连接）
+            if ($num > 0) {
+                (new EmploymentMirrorService())->mirrorDelete(
+                    $locatorRows,
+                    $this->getUserWorkId(),
+                    '页面'
+                );
+            }
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            log_message('error', '[EmployeeApi::delete] 事务回滚: ' . $e->getMessage());
+            return $this->serverError('删除失败');
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            return $this->serverError('删除失败(事务已回滚)');
+        }
 
         if ($num > 0) {
             return $this->success(null, sprintf('删除成功，共删除 %d 条记录', $num));

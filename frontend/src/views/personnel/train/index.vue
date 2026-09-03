@@ -56,8 +56,7 @@ const transferForm = ref({
   岗位类型: '',
   结算类型: '',
   培训结束日期: undefined,
-  培训离开原因: '',
-  入职次数: 1
+  培训离开原因: ''
 });
 
 const { addFields, detailFields, loadFields } = useWorkbenchFields();
@@ -226,8 +225,7 @@ function openTransferModal() {
     岗位类型: '',
     结算类型: '',
     培训结束日期: undefined,
-    培训离开原因: '',
-    入职次数: 1
+    培训离开原因: ''
   };
   isTransferMode.value = true;
 }
@@ -521,12 +519,6 @@ onMounted(async () => {
                 <td>培训离开原因</td>
                 <td>
                   <NInput v-model:value="transferForm.培训离开原因" placeholder="请输入培训离开原因" size="small" />
-                </td>
-              </tr>
-              <tr>
-                <td>入职次数</td>
-                <td>
-                  <NInputNumber v-model:value="transferForm.入职次数" :min="1" class="w-full" />
                 </td>
               </tr>
             </tbody>

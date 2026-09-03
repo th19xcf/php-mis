@@ -46,7 +46,6 @@ declare namespace Api {
       结算类型?: string;
       培训结束日期?: string;
       培训离开原因?: string;
-      入职次数?: number;
     }
 
     interface TrainOptions {

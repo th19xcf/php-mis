@@ -469,21 +469,24 @@ class PersonApi extends BaseApiController
 
         $guidStr = implode(',', array_map('intval', $guidInts));
 
-        // 先检查这些 GUID 是否有下游四表（ee_store/ee_interview/ee_train/ee_onjob）
+        // 先检查这些 GUID 是否有下游五表（ee_store/ee_interview/ee_train/ee_onjob/ee_employment）
         // 仍然挂着的有效记录，防误删后下游变成孤儿
+        // （ee_employment 为雇佣记录权威表：阶段④写切换后 ee_onjob 不再更新，
+        //   此检查保证主档删除保护在切换后依然有效）
         $downstreamCheck = $this->model->select(sprintf('
             SELECT SUM(n) AS total FROM (
                 SELECT COUNT(*) AS n FROM ee_store  WHERE 人员编码 IN (SELECT 人员编码 FROM hr_person WHERE GUID IN (%s)) AND 有效标识="1" AND 删除标识="0"
                 UNION ALL SELECT COUNT(*) FROM ee_interview WHERE 人员编码 IN (SELECT 人员编码 FROM hr_person WHERE GUID IN (%s)) AND 有效标识="1" AND 删除标识="0"
                 UNION ALL SELECT COUNT(*) FROM ee_train     WHERE 人员编码 IN (SELECT 人员编码 FROM hr_person WHERE GUID IN (%s)) AND 有效标识="1" AND 删除标识="0"
                 UNION ALL SELECT COUNT(*) FROM ee_onjob     WHERE 人员编码 IN (SELECT 人员编码 FROM hr_person WHERE GUID IN (%s)) AND 有效标识="1" AND 删除标识="0"
+                UNION ALL SELECT COUNT(*) FROM ee_employment WHERE 人员编码 IN (SELECT 人员编码 FROM hr_person WHERE GUID IN (%s)) AND 有效标识="1" AND 删除标识="0"
             ) t',
-            $guidStr, $guidStr, $guidStr, $guidStr
+            $guidStr, $guidStr, $guidStr, $guidStr, $guidStr
         ))->getRowArray();
         $downstreamCount = (int) ($downstreamCheck['total'] ?? 0);
         if ($downstreamCount > 0) {
             return $this->businessError(sprintf(
-                '选中主档仍关联下游 %d 条业务记录（邀约/面试/培训/在职），请先处理下游数据或使用"合并"将其挂接至其他主档',
+                '选中主档仍关联下游 %d 条业务记录（邀约/面试/培训/在职/雇佣），请先处理下游数据或使用"合并"将其挂接至其他主档',
                 $downstreamCount
             ));
         }

@@ -245,8 +245,10 @@ class TrainApi extends BaseApiController
 
         // ============================================================
         // 报到合规校验（设计约束：报到/建雇佣记录时必须校验证件号非空）
-        // 培训通过 = 报到建雇佣记录，逐行校验证件号可用性：
-        //   - 行快照（ee_train.身份证号）与主档（hr_person.身份证号，
+        // 培训通过 = 报到建雇佣记录，逐行校验：
+        //   - 主档挂接：人员编码为空 → 拒绝流转（雇佣记录以 人员编码 为锚点，
+        //     阶段③ ee_employment 落地后为硬性前提），提示先补挂主档
+        //   - 证件号：行快照（ee_train.身份证号）与主档（hr_person.身份证号，
         //     按 人员编码 关联）两者均空 → 拒绝流转，提示先补采证件号
         //   - 仅行快照为空、主档已有 → 事务内回填行快照（入阶快照口径：
         //     报到时点主档权威值），保证写入 ee_onjob 的证件号非空
@@ -264,15 +266,28 @@ class TrainApi extends BaseApiController
                 where t.GUID in (' . $guidStr . ')
             ')->getResultArray();
 
-            $missing = [];
+            $missing  = [];
+            $noPerson = [];
             foreach ($idCheckRows as $row) {
-                if ($row['行证件号'] === null && $row['档证件号'] === null) {
-                    $missing[] = sprintf(
-                        '%s(%s)',
-                        $row['姓名'],
-                        !empty($row['候选人编码']) ? $row['候选人编码'] : ('GUID:' . $row['GUID'])
-                    );
+                $label = sprintf(
+                    '%s(%s)',
+                    $row['姓名'],
+                    !empty($row['候选人编码']) ? $row['候选人编码'] : ('GUID:' . $row['GUID'])
+                );
+                if (trim((string) ($row['人员编码'] ?? '')) === '') {
+                    $noPerson[] = $label;
                 }
+                if ($row['行证件号'] === null && $row['档证件号'] === null) {
+                    $missing[] = $label;
+                }
+            }
+            if (!empty($noPerson)) {
+                return $this->businessError(sprintf(
+                    '以下 %d 人未挂接人员主档（人员编码为空），不能转入在职，请先在人员主档完成建档/补挂：%s%s',
+                    count($noPerson),
+                    implode('、', array_slice($noPerson, 0, 10)),
+                    count($noPerson) > 10 ? ' 等' : ''
+                ));
             }
             if (!empty($missing)) {
                 return $this->businessError(sprintf(
@@ -281,6 +296,12 @@ class TrainApi extends BaseApiController
                     implode('、', array_slice($missing, 0, 10)),
                     count($missing) > 10 ? ' 等' : ''
                 ));
+            }
+
+            // ee_employment.记录开始日期 为 DATE 列（不接受空串）：
+            // 培训结束日期缺省时以当日兜底（同时作用于 ee_train 完成日期快照）
+            if (trim((string) ($data['培训结束日期'] ?? '')) === '') {
+                $data['培训结束日期'] = date('Y-m-d');
             }
         }
 
@@ -355,10 +376,11 @@ class TrainApi extends BaseApiController
                 // - 员工类别为配置 expr 派生：IF(t2.招聘渠道="校招","未毕业学生","合同制员工")
                 // - 记录开始日期 ← @培训结束日期（表单参数）
                 // 候选人编码/人员编码 沿链路继承（原 培训编码/初始编码 列已随表结构瘦身移除）
-                $sql = (new StageTransferService())->buildInsertSelect(
-                    'ee_train',
-                    'ee_onjob',
-                    'ee_train as t1
+                //
+                // 阶段③②双写：ee_onjob 降级为镜像表，入职次数不再走配置行
+                // （配置行已下线），改以 systemColumns 注入派生表达式 —— 与
+                // ee_employment 权威行同一口径：COUNT(该人既有雇佣记录) + 1
+                $transferFromClause = 'ee_train as t1
                      left join
                      (
                          select s.候选人编码, s.招聘渠道
@@ -372,10 +394,16 @@ class TrainApi extends BaseApiController
                          from ee_interview i
                          where i.有效标识 = "1" and i.删除标识 = "0"
                      ) as t3
-                     on t1.候选人编码 = t3.候选人编码',
+                     on t1.候选人编码 = t3.候选人编码';
+
+                $sql = (new StageTransferService())->buildInsertSelect(
+                    'ee_train',
+                    'ee_onjob',
+                    $transferFromClause,
                     't1.GUID in (' . $guidStr . ')',
                     $data,
                     [
+                        '入职次数'   => '(select count(*) from ee_employment e where e.人员编码 = t1.人员编码) + 1',
                         '操作来源'   => '"培训表转入"',
                         '操作人员'   => $this->model->quote($this->getUserWorkId()),
                         '开始操作时间' => $this->model->quote($startTime),
@@ -387,6 +415,44 @@ class TrainApi extends BaseApiController
                 );
 
                 $this->model->exec($sql);
+
+                // ============================================================
+                // 阶段③②：ee_employment 权威行写入（双写过渡期主表）
+                // 与 ee_onjob 同事务同源数据；入职次数同一派生表达式，
+                // 两表值一致。幂等硬兜底：uk_候选人编码_活跃 唯一索引
+                // （重复提交 1062 → 整事务回滚）。
+                // 生命周期日期列（记录结束/离职）不入 INSERT，由 DDL
+                // 默认值 NULL 承担（NULL=在职，目标规格）。
+                // ============================================================
+                $sql = (new StageTransferService())->buildInsertSelect(
+                    'ee_train',
+                    'ee_employment',
+                    $transferFromClause,
+                    't1.GUID in (' . $guidStr . ')',
+                    $data,
+                    [
+                        '入职次数'   => '(select count(*) from ee_employment e where e.人员编码 = t1.人员编码) + 1',
+                        '操作记录'   => '"流转,建雇佣记录"',
+                        '操作来源'   => '"培训表转入"',
+                        '操作人员'   => $this->model->quote($this->getUserWorkId()),
+                        '开始操作时间' => $this->model->quote($startTime),
+                        '操作时间'   => $this->model->quote($endTime),
+                        '校验标识'   => '"0"',
+                        '删除标识'   => '"0"',
+                        '有效标识'   => '"1"',
+                    ]
+                );
+
+                $this->model->exec($sql);
+
+                // hr_audit_log 批量汇总行（宽松模式：批量建雇佣记录留痕）
+                (new AuditLogService())->logBatchSummary(
+                    'ee_employment',
+                    $this->getUserWorkId(),
+                    '流转',
+                    count($data['guids']),
+                    '培训转入建雇佣记录'
+                );
 
                 // 实例状态机（阶段②A）：培训通过 → 入职
                 if (!empty($candidateCodes)) {

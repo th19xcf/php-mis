@@ -7,6 +7,7 @@ use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
 use App\Services\Audit\AuditLogService;
 use App\Services\Person\PersonService;
+use App\Services\Employee\EmploymentMirrorService;
 use App\Exceptions\BusinessException;
 
 /**
@@ -314,6 +315,18 @@ class RecordEditService
                 // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person
                 $this->syncPersonFromStageEdit($dataTable, $oldRows, $formData, $userWorkid);
 
+                // 阶段③②：ee_onjob 编辑镜像同步 ee_employment（无外层事务，
+                // 镜像语句自身原子，极端间隙不一致由对账兜底；当前 def 配置
+                // ee_onjob 可修改=0，本挂点为防御性预留）
+                if ($dataTable === 'ee_onjob' && $affected > 0) {
+                    (new EmploymentMirrorService())->mirrorUpdate(
+                        $oldRows,
+                        $formData,
+                        $userWorkid,
+                        '工作台'
+                    );
+                }
+
                 $this->invalidateConfigCache($dataTable);
                 return $affected;
 
@@ -408,6 +421,17 @@ class RecordEditService
 
                     // 渐进式信息收集：阶段表编辑后同步身份字段到 hr_person（同事务）
                     $this->syncPersonFromStageEdit($dataTable, [$originalRow], $formData, $userWorkid);
+
+                    // 阶段③②：ee_onjob 编辑镜像同步 ee_employment（同事务，共享连接；
+                    // 当前 def 配置 ee_onjob 可修改=0，本挂点为防御性预留）
+                    if ($dataTable === 'ee_onjob' && $affected > 0) {
+                        (new EmploymentMirrorService())->mirrorUpdate(
+                            [$originalRow],
+                            $formData,
+                            $userWorkid,
+                            '工作台'
+                        );
+                    }
                 } catch (\Throwable $e) {
                     $db->transRollback();
                     throw $e;
@@ -488,6 +512,16 @@ class RecordEditService
                     $this->logDeleteEvents($audit, $dataTable, $oldRows, $userWorkid);
                 }
 
+                // 阶段③②：ee_onjob 删除镜像软删 ee_employment（无外层事务，
+                // 镜像语句自身原子；当前 def 配置不可达，防御性预留）
+                if ($dataTable === 'ee_onjob' && $affected > 0) {
+                    (new EmploymentMirrorService())->mirrorDelete(
+                        $oldRows,
+                        $userWorkid,
+                        '工作台'
+                    );
+                }
+
                 $this->invalidateConfigCache($dataTable);
                 return $affected;
 
@@ -512,6 +546,16 @@ class RecordEditService
                 // hr_audit_log 删除事件（严格模式：失败抛异常，调用方感知）
                 if ($isAuditedTable && $affected > 0) {
                     $this->logDeleteEvents($audit, $dataTable, $oldRows, $userWorkid);
+                }
+
+                // 阶段③②：ee_onjob 删除镜像软删 ee_employment（无外层事务，
+                // 镜像语句自身原子；当前 def 配置不可达，防御性预留）
+                if ($dataTable === 'ee_onjob' && $affected > 0) {
+                    (new EmploymentMirrorService())->mirrorDelete(
+                        $oldRows,
+                        $userWorkid,
+                        '工作台'
+                    );
                 }
 
                 $this->invalidateConfigCache($dataTable);

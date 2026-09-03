@@ -20,7 +20,7 @@ use RuntimeException;
  *   邀约 → 面试 | 终止(邀约拒绝)
  *   面试 → 培训 | 终止(面试未通过)
  *   培训 → 入职 | 终止(培训离开)
- *   入职 → 终止(离职)          ← 阶段③ ee_employment 落地后启用
+ *   入职 → 终止(离职)          ← 阶段③② 已启用（EmployeeService::processResignation 双关内调用）
  *   终态实例仅允许管理端复活，不走本服务
  *
  * 幂等与安全：
