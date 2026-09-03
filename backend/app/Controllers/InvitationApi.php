@@ -7,6 +7,7 @@ use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
 use App\Services\Application\ApplicationService;
+use App\Services\Application\StageTransferService;
 use App\Services\Person\CandidateCodeService;
 use App\Services\Person\PersonService;
 
@@ -528,33 +529,22 @@ class InvitationApi extends BaseApiController
             $num = $this->model->exec($sql);
 
             if ($data['面试结果'] === '通过' || $data['面试结果'] === '未通过') {
-                $sql = sprintf('
-                    insert into ee_interview (
-                        候选人编码,人员编码,
-                        姓名,身份证号,手机号码,属地,
-                        招聘渠道,渠道类型,渠道名称,
-                        面试业务,面试岗位,
-                        一次面试日期,一次面试人,一次面试结果,
-                        预约培训日期,邀约信息,
-                        操作记录,操作来源,操作人员,开始操作时间,
-                        有效标识,删除标识)
-                    select 候选人编码,人员编码,
-                        姓名,身份证号,手机号码,属地,
-                        招聘渠道,渠道类型,渠道名称,
-                        邀约业务,邀约岗位,
-                        "%s","%s","%s",
-                        "%s","通过",
-                        "邀约表转入","页面","%s","%s",
-                        "1","0"
-                    from ee_store
-                    where GUID in (%s)',
-                    $data['面试日期'] ?? '',
-                    $data['面试人'] ?? '',
-                    $data['面试结果'],
-                    $data['预约培训日期'] ?? '',
-                    $this->getUserWorkId(),
-                    date('Y-m-d H:i:s'),
-                    $guidStr
+                // 业务字段映射走 def_stage_transfer 配置（StageTransferService 动态拼列），
+                // 系统审计列（操作记录/来源/人员/时间/有效删除标识）为流转固定口径，代码侧追加
+                $sql = (new StageTransferService())->buildInsertSelect(
+                    'ee_store',
+                    'ee_interview',
+                    'ee_store as t1',
+                    't1.GUID in (' . $guidStr . ')',
+                    $data,
+                    [
+                        '操作记录'   => '"邀约表转入"',
+                        '操作来源'   => '"页面"',
+                        '操作人员'   => $this->model->quote($this->getUserWorkId()),
+                        '开始操作时间' => $this->model->quote(date('Y-m-d H:i:s')),
+                        '有效标识'   => '"1"',
+                        '删除标识'   => '"0"',
+                    ]
                 );
 
                 $this->model->exec($sql);

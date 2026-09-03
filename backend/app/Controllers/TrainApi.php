@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Services\Application\ApplicationService;
+use App\Services\Application\StageTransferService;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
@@ -261,68 +262,43 @@ class TrainApi extends BaseApiController
 
                 $num = $this->model->exec($sql);
 
+                // 业务字段映射走 def_stage_transfer 配置：
+                // - t1 = ee_train（源表），t2 = ee_store LEFT JOIN（招聘渠道，邀约阶段采集）
+                // - t3 = ee_interview LEFT JOIN（实习结束日期，面试阶段采集的学籍属性）
+                //   注:原硬编码从 ee_store 取实习结束日期系既有缺陷（ee_store 无此列，
+                //   该路径此前从未成功执行），配置化时一并修正为权威源 ee_interview
+                // - 员工类别为配置 expr 派生：IF(t2.招聘渠道="校招","未毕业学生","合同制员工")
+                // - 记录开始日期 ← @培训结束日期（表单参数）
                 // 候选人编码/人员编码 沿链路继承（原 培训编码/初始编码 列已随表结构瘦身移除）
-                $sql = sprintf('
-                    insert into ee_onjob (
-                        候选人编码,人员编码,
-                        姓名,身份证号,手机号码,属地,入职次数,
-                        招聘渠道,
-                        员工类别,
-                        实习结束日期,
-                        部门编码,部门名称,班组,
-                        岗位名称,岗位类型,
-                        结算类型,
-                        工号1,工号2,
-                        培训信息,培训开始日期,培训完成日期,
-                        一阶段日期,二阶段日期,
-                        员工阶段,员工状态,
-                        离职日期,离职原因,
-                        派遣公司,
-                        记录开始日期,记录结束日期,
-                        操作来源,操作人员,
-                        开始操作时间,结束操作时间,
-                        校验标识,删除标识,有效标识)
-                    select
-                        t1.候选人编码,t1.人员编码,
-                        t1.姓名,t1.身份证号,t1.手机号码,t1.属地,%d,
-                        t2.招聘渠道,
-                        if(t2.招聘渠道="校招","未毕业学生","合同制员工") as 员工类别,
-                        t2.实习结束日期,
-                        "" as 部门编码,"" as 部门名称,"" as 班组,
-                        "客服代表" as 岗位名称,"%s" as 岗位类型,
-                        "%s" as 结算类型,
-                        "" as 工号1,"" as 工号2,
-                        "有" as 培训信息,培训开始日期,培训完成日期,
-                        培训完成日期 as 一阶段日期,"" as 二阶段日期,
-                        "新人组" as 员工阶段,"在职" as 员工状态,
-                        "" as 离职日期,"" as 离职原因,
-                        "" as 派遣公司,
-                        "%s" as 记录开始日期,"" as 记录结束日期,
-                        "培训表转入" as 操作来源,"%s" as 操作人员,
-                        "%s" as 开始操作时间,"" as 结束操作时间,
-                        "0" as 校验标识,"0" as 删除标识,"1" as 有效标识
-                    from
-                    (
-                        select GUID,候选人编码,人员编码,姓名,身份证号,手机号码,属地,培训业务,培训状态,
-                            培训批次,培训老师,培训开始日期,预计完成日期,
-                            培训完成日期,培训离开日期,培训离开原因,面试信息
-                        from ee_train
-                        where GUID in (%s)
-                    ) as t1
-                    left join
-                    (
-                        select s.候选人编码, s.招聘渠道, s.实习结束日期
-                        from ee_store s
-                        where s.有效标识 = "1" and s.删除标识 = "0"
-                    ) as t2
-                    on t1.候选人编码 = t2.候选人编码',
-                    (int)($data['入职次数'] ?? 1),
-                    $data['岗位类型'] ?? '',
-                    $data['结算类型'] ?? '',
-                    $data['培训结束日期'] ?? '',
-                    $this->getUserWorkId(),
-                    $startTime,
-                    $guidStr
+                $sql = (new StageTransferService())->buildInsertSelect(
+                    'ee_train',
+                    'ee_onjob',
+                    'ee_train as t1
+                     left join
+                     (
+                         select s.候选人编码, s.招聘渠道
+                         from ee_store s
+                         where s.有效标识 = "1" and s.删除标识 = "0"
+                     ) as t2
+                     on t1.候选人编码 = t2.候选人编码
+                     left join
+                     (
+                         select i.候选人编码, i.实习结束日期
+                         from ee_interview i
+                         where i.有效标识 = "1" and i.删除标识 = "0"
+                     ) as t3
+                     on t1.候选人编码 = t3.候选人编码',
+                    't1.GUID in (' . $guidStr . ')',
+                    $data,
+                    [
+                        '操作来源'   => '"培训表转入"',
+                        '操作人员'   => $this->model->quote($this->getUserWorkId()),
+                        '开始操作时间' => $this->model->quote($startTime),
+                        '结束操作时间' => '""',
+                        '校验标识'   => '"0"',
+                        '删除标识'   => '"0"',
+                        '有效标识'   => '"1"',
+                    ]
                 );
 
                 $this->model->exec($sql);

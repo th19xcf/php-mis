@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Services\Application\ApplicationService;
+use App\Services\Application\StageTransferService;
 use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
@@ -274,39 +275,25 @@ class InterviewApi extends BaseApiController
             $num = $this->model->exec($sql);
 
             if ($data['参培信息'] === '已参培') {
-                $trainStatus = '在培';
                 $startTime = date('Y-m-d H:i:s');
 
+                // 业务字段映射走 def_stage_transfer 配置（培训状态"在培"为配置固定值），
+                // 系统审计列代码侧追加
                 // 候选人编码/人员编码 沿链路继承（原 初始编码 列已随表结构瘦身移除）
-                $sql = sprintf('
-                    insert into ee_train (
-                        候选人编码,人员编码,
-                        姓名,身份证号,手机号码,属地,
-                        培训业务,培训状态,
-                        培训批次,培训老师,
-                        培训开始日期,预计完成日期,
-                        面试信息,
-                        操作记录,操作来源,操作人员,开始操作时间,
-                        有效标识,删除标识)
-                    select 候选人编码,人员编码,
-                        姓名,身份证号,手机号码,属地,
-                        "%s" as 培训业务,"%s" as 培训状态,
-                        "%s" as 培训批次,"%s" as 培训老师,
-                        "%s" as 培训开始日期,"%s" as 预计完成日期,
-                        "有" as 面试信息,
-                        "面试表转入","页面","%s","%s",
-                        "1","0"
-                    from ee_interview
-                    where GUID in (%s)',
-                    $data['培训业务'] ?? '',
-                    $trainStatus,
-                    $data['培训批次'] ?? '',
-                    $data['培训老师'] ?? '',
-                    $data['培训开始日期'] ?? '',
-                    $data['预计完成日期'] ?? '',
-                    $this->getUserWorkId(),
-                    $startTime,
-                    $guidStr
+                $sql = (new StageTransferService())->buildInsertSelect(
+                    'ee_interview',
+                    'ee_train',
+                    'ee_interview as t1',
+                    't1.GUID in (' . $guidStr . ')',
+                    $data,
+                    [
+                        '操作记录'   => '"面试表转入"',
+                        '操作来源'   => '"页面"',
+                        '操作人员'   => $this->model->quote($this->getUserWorkId()),
+                        '开始操作时间' => $this->model->quote($startTime),
+                        '有效标识'   => '"1"',
+                        '删除标识'   => '"0"',
+                    ]
                 );
 
                 $this->model->exec($sql);
