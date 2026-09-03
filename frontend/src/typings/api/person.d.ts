@@ -20,6 +20,7 @@ declare namespace Api {
       身份证号: string;
       性别: string;
       年龄: number | string;
+      出生日期?: string;
       现住址: string;
       学校: string;
       专业: string;
@@ -42,6 +43,7 @@ declare namespace Api {
       身份证号?: string;
       性别?: string;
       年龄?: string | number;
+      出生日期?: string;
       学校?: string;
       专业?: string;
       学历?: string;

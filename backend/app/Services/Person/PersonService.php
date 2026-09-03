@@ -28,7 +28,7 @@ class PersonService
 
     /** hr_person 的身份字段清单（用于从存量业务行提取建档数据） */
     private const PERSON_FIELDS = [
-        '姓名', '身份证号', '手机号码', '性别', '年龄',
+        '姓名', '身份证号', '手机号码', '性别', '年龄', '出生日期',
         '学校', '专业', '学历', '现住址', '工作履历', '属地',
     ];
 
@@ -124,6 +124,18 @@ class PersonService
         $code = $this->generatePersonCode($bizDate);
 
         $row = $personData;
+        // 证件号派生性别：未提供或非法时自动补齐，避免新档继续留空
+        $gender = $this->deriveGenderFromIdCard((string) ($row['身份证号'] ?? ''));
+        if ($gender !== null && !in_array($row['性别'] ?? '', ['男', '女'], true)) {
+            $row['性别'] = $gender;
+        }
+        // 证件号派生出生日期：未提供时自动补齐（权威值，覆盖收集阶段的自报年龄口径）
+        if (empty($row['出生日期'])) {
+            $birth = $this->deriveBirthFromIdCard((string) ($row['身份证号'] ?? ''));
+            if ($birth !== null) {
+                $row['出生日期'] = $birth;
+            }
+        }
         $row['人员编码'] = $code;
         $row['操作记录'] = '新增';
         $row['操作来源'] = '页面新增';
@@ -200,6 +212,30 @@ class PersonService
             }
             $sets[] = sprintf('`%s`=%s', $key, $this->buildValue($key, $value));
             $updateData[$key] = $value;
+        }
+
+        // 证件号派生性别：表单未显式提供性别、主档性别为空或非法时，
+        // 从本次写入的证件号派生补齐（不覆盖人工录入的合法男/女值）
+        if (isset($updateData['身份证号']) && !isset($updateData['性别'])) {
+            $oldGender = trim((string) ($oldRow['性别'] ?? ''));
+            $gender = $this->deriveGenderFromIdCard((string) $updateData['身份证号']);
+            if ($gender !== null && ($oldGender === '' || !in_array($oldGender, ['男', '女'], true))) {
+                $sets[] = sprintf('`性别`=%s', $this->model->quote($gender));
+                $updateData['性别'] = $gender;
+            }
+        }
+
+        // 证件号派生出生日期：表单未显式提供、主档出生日期为空时，
+        // 从本次写入的证件号派生补齐（证件号为权威来源，优先于自报值口径）
+        if (isset($updateData['身份证号']) && !isset($updateData['出生日期'])) {
+            $oldBirth = trim((string) ($oldRow['出生日期'] ?? ''));
+            if ($oldBirth === '') {
+                $birth = $this->deriveBirthFromIdCard((string) $updateData['身份证号']);
+                if ($birth !== null) {
+                    $sets[] = sprintf('`出生日期`=%s', $this->model->quote($birth));
+                    $updateData['出生日期'] = $birth;
+                }
+            }
         }
 
         $sql = sprintf(
@@ -459,5 +495,42 @@ class PersonService
             return 'NULL';
         }
         return $this->model->quote((string) $value);
+    }
+
+    /**
+     * 从身份证号派生性别（18 位第 17 位：奇=男，偶=女）
+     *
+     * 与 2026-09 存量回填口径一致；格式不合法（非 18 位或含异常字符）返回 null。
+     */
+    private function deriveGenderFromIdCard(string $idcard): ?string
+    {
+        $idcard = trim($idcard);
+        if (!preg_match('/^\d{17}[\dXx]$/', $idcard)) {
+            return null;
+        }
+        return (((int) substr($idcard, 16, 1)) % 2 === 1) ? '男' : '女';
+    }
+
+    /**
+     * 从身份证号派生出生日期（第 7-14 位：YYYYMMDD）
+     *
+     * 日期需真实存在（checkdate 校验，月 01-12、日符合该月天数），
+     * 与 2026-09 存量回填口径一致（含 1900-2099 年份段约束）；
+     * 格式不合法或非真实日期（如 0651）返回 null。
+     */
+    private function deriveBirthFromIdCard(string $idcard): ?string
+    {
+        $idcard = trim($idcard);
+        // 6位地址码 + 出生日期8位(年份限19xx/20xx、月01-12、日01-31) + 顺序码3位 + 校验位1位
+        if (!preg_match('/^\d{6}(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])\d{3}[\dXx]$/', $idcard)) {
+            return null;
+        }
+        $y = (int) substr($idcard, 6, 4);
+        $m = (int) substr($idcard, 10, 2);
+        $d = (int) substr($idcard, 12, 2);
+        if (!checkdate($m, $d, $y)) {
+            return null;
+        }
+        return sprintf('%04d-%02d-%02d', $y, $m, $d);
     }
 }

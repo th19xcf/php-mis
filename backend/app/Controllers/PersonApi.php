@@ -50,7 +50,9 @@ class PersonApi extends BaseApiController
             }
 
             $sql = sprintf(
-                'SELECT GUID, 人员编码, 姓名, 手机号码, 身份证号, 性别, 年龄,
+                'SELECT GUID, 人员编码, 姓名, 手机号码, 身份证号, 性别,
+                        TIMESTAMPDIFF(YEAR, 出生日期, CURDATE()) AS 年龄,
+                        出生日期,
                         学校, 专业, 学历, 现住址, 工作履历, 属地,
                         合并至, 操作时间
                  FROM hr_person
@@ -150,7 +152,9 @@ class PersonApi extends BaseApiController
                     '手机号码' => $row['手机号码'] ?? '',
                     '身份证号' => $row['身份证号'] ?? '',
                     '性别'     => $row['性别'] ?? '',
+                    // 年龄为查询时实时计算值（出生日期为 NULL 时 TIMESTAMPDIFF 返回 NULL → 空串）
                     '年龄'     => $row['年龄'] ?? '',
+                    '出生日期' => $row['出生日期'] ?? '',
                     '学校'     => $row['学校'] ?? '',
                     '专业'     => $row['专业'] ?? '',
                     '学历'     => $row['学历'] ?? '',
@@ -279,6 +283,12 @@ class PersonApi extends BaseApiController
                 unset($person[$key]);
             }
         }
+
+        // 年龄不落库（静态列已冻结写入），查询时按出生日期实时计算覆盖
+        $birth = trim((string) ($person['出生日期'] ?? ''));
+        $person['年龄'] = ($birth !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $birth) === 1)
+            ? (string) ((int) date('Y') - (int) substr($birth, 0, 4) - ((date('md') < substr($birth, 5, 5)) ? 1 : 0))
+            : '';
 
         return $this->success($person);
     }
