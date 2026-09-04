@@ -9,19 +9,26 @@ use Config\Services;
 /**
  * 配置表指纹服务（方案 C：惰性校验）
  *
- * 通过 information_schema.TABLES.UPDATE_TIME 生成表指纹，
- * 用于缓存读取时判断底层表是否已被修改（含绕过应用层的直接 SQL 修改）。
+ * 表指纹由两部分组成："{UPDATE_TIME}:{CHECKSUM}"
+ *  - UPDATE_TIME（information_schema.TABLES）：只随 DDL 变化，捕获结构变更
+ *  - CHECKSUM（CHECKSUM TABLE 语句）：随数据内容变化，捕获 DML 修改
+ *
+ * 必须组合 CHECKSUM 的原因：本库（MySQL 8）的 UPDATE_TIME 不随 DML 更新，
+ * 仅靠 UPDATE_TIME 无法感知配置数据的增删改（含绕过应用层的直接 SQL 修改）。
+ *
+ * 视图（如 view_function）的 UPDATE_TIME 恒为 NULL、CHECKSUM 返回 NULL，
+ * 无法直接指纹，调用方应改为指纹其基表。
  *
  * 工作流程：
- *  1. 缓存写入时：调用 getFingerprint(tableName) 获取当前指纹，随数据一起存入缓存
+ *  1. 缓存写入时：调用 getFingerprint(s) 获取当前指纹，随数据一起存入缓存
  *  2. 缓存读取时：再查一次当前指纹，与缓存中的指纹比对
  *     - 相同 → 返回缓存（省去完整 SQL 查询）
  *     - 不同 → 失效缓存，查 DB 重建
  *
  * 性能特征：
- *  - 指纹查询走 information_schema 元数据表（不扫业务表数据），约 1-2ms
- *  - 指纹查询结果在进程内缓存 10 秒，同一请求内多次读同一表只查一次
- *  - 净收益：用 1-2ms 换取 50-500ms 的完整 SQL 查询
+ *  - 批量指纹 = 1 次 information_schema 查询 + 1 次多表 CHECKSUM 语句（全表扫描）
+ *  - 配置表均为小表（最大 def_query_column 约 3 千行，CHECKSUM 约 24ms）
+ *  - 指纹结果在进程内缓存 10 秒 + 缓存驱动缓存 10 秒，摊薄扫描成本
  */
 class ConfigTableFingerprint
 {
@@ -207,7 +214,7 @@ class ConfigTableFingerprint
     }
 
     /**
-     * 批量获取多张表的指纹（一次 SQL 查询）
+     * 批量获取多张表的指纹（一次 information_schema 查询 + 一次多表 CHECKSUM 语句）
      *
      * @param array $tableNames 表名列表
      * @return array [tableName => fingerprint] 映射
@@ -254,19 +261,36 @@ class ConfigTableFingerprint
     }
 
     /**
-     * 校验缓存中的指纹是否与当前表指纹一致
+     * 校验缓存中的多表指纹是否与当前表指纹全部一致
      *
-     * @param string $tableName    表名
-     * @param string $cachedFingerprint 缓存中存储的指纹
-     * @return bool true=一致（缓存有效），false=不一致（需重建）
+     * 缓存项依赖多张配置表时（如 user_auth 缓存 JOIN 了 def_user + def_role_group），
+     * 任一依赖表指纹缺失或与当前值不一致即视为缓存失效。
+     *
+     * @param array $tableNames        依赖表名列表
+     * @param array $cachedFingerprints 缓存中存储的指纹映射 [tableName => fingerprint]
+     * @return bool true=全部一致（缓存有效），false=任一不一致或缺失（需重建）
      */
-    public function isValid(string $tableName, string $cachedFingerprint): bool
+    public function isValidMultiple(array $tableNames, array $cachedFingerprints): bool
     {
-        if ($cachedFingerprint === '') {
-            // 缓存无指纹（可能是旧版本写入的），保守视为无效，触发重建
+        if (empty($tableNames) || empty($cachedFingerprints)) {
+            // 无依赖表或缓存无指纹（可能是旧版本写入的），保守视为无效，触发重建
             return false;
         }
-        return $this->getFingerprint($tableName) === $cachedFingerprint;
+
+        $currentFingerprints = $this->getFingerprints($tableNames);
+
+        foreach ($tableNames as $tableName) {
+            $tableName = strtolower(trim($tableName));
+            $cached = (string) ($cachedFingerprints[$tableName] ?? '');
+            if ($cached === '') {
+                return false;
+            }
+            if ($cached !== (string) ($currentFingerprints[$tableName] ?? '')) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -295,36 +319,20 @@ class ConfigTableFingerprint
     }
 
     /**
-     * 查询 information_schema 获取单表指纹
+     * 查询单表指纹（UPDATE_TIME + CHECKSUM）
      */
     private function queryFingerprintFromDB(string $tableName): string
     {
-        $dbName = $this->getDatabaseName();
-        if ($dbName === '') {
-            return '';
-        }
-
-        $sql = sprintf(
-            'SELECT UPDATE_TIME FROM information_schema.TABLES
-             WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s LIMIT 1',
-            $this->model->quote($dbName),
-            $this->model->quote($tableName)
-        );
-
-        $result = $this->model->select($sql);
-        if ($result === false) {
-            return '';
-        }
-
-        $row = $result->getRowArray();
-        $updateTime = $row['UPDATE_TIME'] ?? null;
-
-        // UPDATE_TIME 可能为 NULL（如刚创建未更新的表），用表名+当前时间戳兜底
-        return $updateTime !== null ? (string) $updateTime : '';
+        $fps = $this->queryFingerprintsFromDB([$tableName]);
+        return $fps[$tableName] ?? '';
     }
 
     /**
-     * 批量查询 information_schema 获取多表指纹
+     * 批量查询多表指纹（UPDATE_TIME + CHECKSUM）
+     *
+     * 指纹格式："{UPDATE_TIME}:{CHECKSUM}"
+     *  - 一次 information_schema 查询获取全部表的 UPDATE_TIME 和 TABLE_TYPE
+     *  - 一次多表 CHECKSUM 语句获取基表的校验和（视图返回 NULL，跳过）
      *
      * @param array $tableNames 表名列表
      * @return array [tableName => fingerprint]
@@ -343,7 +351,7 @@ class ConfigTableFingerprint
         $nameList = implode(',', $quotedNames);
 
         $sql = sprintf(
-            'SELECT TABLE_NAME, UPDATE_TIME FROM information_schema.TABLES
+            'SELECT TABLE_NAME, TABLE_TYPE, UPDATE_TIME FROM information_schema.TABLES
              WHERE TABLE_SCHEMA = %s AND TABLE_NAME IN (%s)',
             $this->model->quote($dbName),
             $nameList
@@ -355,13 +363,73 @@ class ConfigTableFingerprint
         }
 
         $fps = [];
+        $baseTables = [];
         foreach ($result->getResultArray() as $row) {
             $name = strtolower((string) ($row['TABLE_NAME'] ?? ''));
             $updateTime = $row['UPDATE_TIME'] ?? null;
             $fps[$name] = $updateTime !== null ? (string) $updateTime : '';
+            if (strpos((string) ($row['TABLE_TYPE'] ?? ''), 'VIEW') === false) {
+                $baseTables[] = $name;
+            }
+        }
+
+        // 基表批量计算 CHECKSUM（一条语句，全表扫描小表）
+        $checksums = $this->queryTableChecksums($baseTables);
+        foreach ($checksums as $name => $checksum) {
+            $fps[$name] = ($fps[$name] ?? '') . ':' . $checksum;
         }
 
         return $fps;
+    }
+
+    /**
+     * 批量计算基表校验和（一条多表 CHECKSUM 语句）
+     *
+     * @param array $tableNames 基表名列表（视图不支持，调用方已过滤）
+     * @return array [tableName => checksum]，查询失败返回空数组
+     */
+    private function queryTableChecksums(array $tableNames): array
+    {
+        if (empty($tableNames)) {
+            return [];
+        }
+
+        // 表名白名单校验（仅允许标识符字符，防注入）
+        $quotedNames = [];
+        foreach ($tableNames as $name) {
+            if (!preg_match('/^[a-z0-9_]+$/', $name)) {
+                log_message('warning', '[ConfigTableFingerprint] 非法表名，跳过 CHECKSUM: ' . $name);
+                continue;
+            }
+            $quotedNames[] = '`' . $name . '`';
+        }
+        if (empty($quotedNames)) {
+            return [];
+        }
+
+        try {
+            $sql = 'CHECKSUM TABLE ' . implode(', ', $quotedNames);
+            $result = $this->model->select($sql);
+            if ($result === false) {
+                log_message('warning', '[ConfigTableFingerprint] CHECKSUM 语句执行失败');
+                return [];
+            }
+
+            $checksums = [];
+            foreach ($result->getResultArray() as $row) {
+                // Table 列格式为 "dbname.tablename"
+                $fullName = (string) ($row['Table'] ?? '');
+                $name = strtolower(substr($fullName, (int) strrpos($fullName, '.') + 1));
+                $checksum = $row['Checksum'] ?? null;
+                if ($name !== '' && $checksum !== null) {
+                    $checksums[$name] = (string) $checksum;
+                }
+            }
+            return $checksums;
+        } catch (\Throwable $e) {
+            log_message('error', '[ConfigTableFingerprint] CHECKSUM 执行异常: ' . $e->getMessage());
+            return [];
+        }
     }
 
     /**

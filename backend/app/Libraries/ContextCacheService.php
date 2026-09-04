@@ -33,18 +33,25 @@ class ContextCacheService
      *
      * 工作台上下文由以下表的查询结果组合而成，任一表变更都应使上下文缓存失效：
      *  - def_user + def_role_group：用户授权信息
-     *  - def_function：功能授权
+     *  - def_role + def_function_group + def_function：角色级赋权（view_role 的全部基表）
      *  - def_query_config：查询配置
-     *  - view_function：列定义（依赖 def_query_column + def_function）
-     *  - def_role：角色级赋权
+     *  - def_query_column + def_grid_style + def_drill_config + def_import_config：
+     *    列定义（view_function 的基表，视图自身 UPDATE_TIME/CHECKSUM 恒为 NULL 无法直接指纹）
+     *
+     * 指纹值 = UPDATE_TIME（DDL 敏感）+ CHECKSUM（DML 敏感），
+     * 任何一张表的数据修改都会在指纹缓存过期（10 秒）后触发上下文重建。
      */
     private const FP_TABLES = [
         'def_user',
         'def_role_group',
         'def_role',
         'def_function',
+        'def_function_group',
         'def_query_config',
-        'view_function',
+        'def_query_column',
+        'def_grid_style',
+        'def_drill_config',
+        'def_import_config',
     ];
 
     private CacheInterface $cache;

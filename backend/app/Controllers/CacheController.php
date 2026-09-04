@@ -108,13 +108,14 @@ class CacheController extends Controller
 
             $status = [
                 'cachePrefix' => 'metadata_',
-                'supportedTables' => ['def_query_column', 'def_chart_drill_config', 'def_query_config', 'def_user', 'def_function'],
+                'supportedTables' => ['def_query_column', 'def_chart_drill_config', 'def_query_config', 'def_user', 'def_function', 'def_role_group'],
                 'ttlSeconds' => [
                     'def_query_column' => 3600,
                     'def_chart_drill_config' => 3600,
                     'def_query_config' => 7200,
                     'def_user' => 1800,
                     'def_function' => 7200,
+                    'def_role_group' => 1800,
                 ],
                 'timestamp' => date('Y-m-d H:i:s')
             ];
