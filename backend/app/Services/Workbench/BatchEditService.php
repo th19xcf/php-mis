@@ -225,42 +225,46 @@ class BatchEditService
             $this->model->exec($sqlUpdateOld);
 
             // 3. PHP 内存中合并旧值 + 表单新值，一条多值 INSERT 插入全部新版本
-            $allFields = [];
+            // 用关联数组保证每列只出现一次：原行打底（跳过自增主键）-> formData
+            // 覆盖业务字段 -> 系统审计字段强制覆盖。避免原行已含审计列时与追加的
+            // 审计列重复触发 MySQL "Column 'xxx' specified twice" 错误，以及
+            // 沿用原行自增主键导致的新版本主键冲突
+            // （对齐 RecordEditService::updateRowByModel 的同款修复）。
+            $rowTemplate = null;
             $insertValuesList = [];
             foreach ($hitKeyValues as $raw) {
                 $originalRow = $originalRows[$raw];
 
-                if (empty($allFields)) {
-                    foreach ($originalRow as $key => $val) {
-                        $allFields[] = sprintf('`%s`', $key);
-                    }
-                    $allFields = array_merge($allFields, [
-                        '`操作记录`', '`操作来源`', '`操作人员`', '`操作时间`',
-                        '`结束操作时间`', '`删除标识`', '`有效标识`',
-                    ]);
-                }
-
-                $values = [];
+                $newRow = [];
                 foreach ($originalRow as $key => $val) {
-                    $values[] = array_key_exists($key, $formData)
-                        ? $this->model->quote((string) $formData[$key])
-                        : $this->model->quote((string) $val);
+                    if ($key === $primaryKey) {
+                        continue; // 主键为自增列，由数据库生成新值
+                    }
+                    $newRow[$key] = array_key_exists($key, $formData)
+                        ? (string) $formData[$key]
+                        : (string) $val;
                 }
-                $values[] = '"新增"';
-                $values[] = '"工作台"';
-                $values[] = sprintf('"%s"', $userWorkid);
-                $values[] = sprintf('"%s"', $now);
-                $values[] = '""'; // 有效记录留空，置失效时才写操作时间
-                $values[] = '"0"';
-                $values[] = '"1"';
+                $newRow['操作记录'] = '新增';
+                $newRow['操作来源'] = '工作台';
+                $newRow['操作人员'] = $userWorkid;
+                $newRow['操作时间'] = $now;
+                $newRow['结束操作时间'] = ''; // 有效记录留空，置失效时才写操作时间
+                $newRow['删除标识'] = '0';
+                $newRow['有效标识'] = '1';
 
-                $insertValuesList[] = '(' . implode(', ', $values) . ')';
+                if ($rowTemplate === null) {
+                    $rowTemplate = array_keys($newRow);
+                }
+                $insertValuesList[] = '(' . implode(', ', array_map(
+                    fn($v) => $this->model->quote((string) $v),
+                    array_values($newRow)
+                )) . ')';
             }
 
             $sqlInsert = sprintf(
                 'INSERT INTO %s (%s) VALUES %s',
                 $dataTable,
-                implode(', ', $allFields),
+                implode(', ', array_map(fn($k) => sprintf('`%s`', $k), $rowTemplate)),
                 implode(', ', $insertValuesList)
             );
             $this->model->sql_log('批量修改[1-新]', $functionCode, [
@@ -606,6 +610,7 @@ class BatchEditService
                 $this->model->exec($sqlUpdateOld);
 
                 $insertValuesList = [];
+                $rowTemplate = null;
                 foreach ($validRows as $row) {
                     $pkValue = $row[$primaryKey];
                     if (!isset($originalRows[$pkValue])) {
@@ -613,50 +618,38 @@ class BatchEditService
                     }
 
                     $originalRow = $originalRows[$pkValue];
-                    $fields = [];
-                    $values = [];
 
+                    // 用关联数组保证每列只出现一次：原行打底（跳过自增主键与
+                    // 审计列）-> 提交行覆盖 -> 审计字段强制覆盖。修复原行已含
+                    // 审计列时与追加列重复触发的 MySQL "Column 'xxx' specified
+                    // twice" 错误，以及沿用原行自增主键导致的主键冲突
+                    // （对齐 batchUpdateFlowVersioned / RecordEditService 修复）。
+                    $newRow = [];
                     foreach ($originalRow as $key => $val) {
-                        if (isset($row[$key]) && !in_array($key, $skipFields, true)) {
-                            $fields[] = sprintf('`%s`', $key);
-                            $values[] = $this->model->quote((string) $row[$key]);
-                        } elseif (!in_array($key, $skipFields, true)) {
-                            $fields[] = sprintf('`%s`', $key);
-                            $values[] = $this->model->quote((string) $val);
+                        if ($key === $primaryKey || in_array($key, $skipFields, true)) {
+                            continue;
                         }
+                        $newRow[$key] = isset($row[$key]) ? (string) $row[$key] : (string) $val;
                     }
+                    $newRow['操作记录'] = '新增';
+                    $newRow['操作来源'] = '工作台';
+                    $newRow['操作人员'] = $userWorkid;
+                    $newRow['操作时间'] = date('Y-m-d H:i:s');
+                    $newRow['结束操作时间'] = ''; // 有效记录留空，置失效时才写操作时间
+                    $newRow['删除标识'] = '0';
+                    $newRow['有效标识'] = '1';
 
-                    $fields[] = '`操作记录`';
-                    $values[] = '"新增"';
-                    $fields[] = '`操作来源`';
-                    $values[] = '"工作台"';
-                    $fields[] = '`操作人员`';
-                    $values[] = sprintf('"%s"', $userWorkid);
-                    $fields[] = '`操作时间`';
-                    $values[] = sprintf('"%s"', date('Y-m-d H:i:s'));
-                    $fields[] = '`结束操作时间`';
-                    $values[] = '""'; // 有效记录留空，置失效时才写操作时间
-                    $fields[] = '`删除标识`';
-                    $values[] = '"0"';
-                    $fields[] = '`有效标识`';
-                    $values[] = '"1"';
-
-                    $insertValuesList[] = '(' . implode(', ', $values) . ')';
+                    if ($rowTemplate === null) {
+                        $rowTemplate = array_keys($newRow);
+                    }
+                    $insertValuesList[] = '(' . implode(', ', array_map(
+                        fn($v) => $this->model->quote((string) $v),
+                        array_values($newRow)
+                    )) . ')';
                 }
 
                 if (!empty($insertValuesList)) {
-                    $allFields = [];
-                    if (!empty($validRows)) {
-                        $firstPk = $validRows[0][$primaryKey];
-                        if (isset($originalRows[$firstPk])) {
-                            foreach ($originalRows[$firstPk] as $key => $val) {
-                                if (!in_array($key, $skipFields, true)) {
-                                    $allFields[] = sprintf('`%s`', $key);
-                                }
-                            }
-                        }
-                    }
-                    $allFields = array_merge($allFields, ['`操作记录`', '`操作来源`', '`操作人员`', '`操作时间`', '`结束操作时间`', '`删除标识`', '`有效标识`']);
+                    $allFields = array_map(fn($k) => sprintf('`%s`', $k), $rowTemplate);
 
                     $sqlInsert = sprintf(
                         'INSERT INTO %s (%s) VALUES %s',
