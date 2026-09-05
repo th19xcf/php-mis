@@ -12,6 +12,7 @@ import { themeAlpine, type GridApi } from 'ag-grid-community';
 import { NSpin, NAlert } from 'naive-ui';
 import { AgGridVue } from 'ag-grid-vue3';
 
+import AgGridEmptyOverlay from '@/components/common/ag-grid-empty-overlay.vue';
 import { useColorMark } from '@/hooks/business/use-color-mark';
 import { useWorkbenchColumnSettings } from '@/hooks/business/use-workbench-column-settings';
 import { useWorkbenchDelete } from '@/hooks/business/use-workbench-delete';
@@ -78,6 +79,9 @@ const activeGridTheme = computed(() => (isDarkMode.value ? darkGridTheme : light
 
 const paginationPageSizeSelector = [...PAGINATION.PAGE_SIZE_OPTIONS];
 
+// AG Grid 无数据覆盖层参数：业务化空状态（含快速筛选无匹配场景）
+const noRowsOverlayParams = { status: 'empty' as const };
+
 const useLegacyTabHint = ref(false);
 const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
 
@@ -108,6 +112,8 @@ const total = ref(0);
 const totalCount = ref(0);
 const loadedCount = ref(0);
 const loading = ref(false);
+// 加载失败状态（null=正常 / 'loadFailed' 可重试 / 'noPermission' 无权限），驱动表格覆盖层
+const loadErrorStatus = ref<'loadFailed' | 'noPermission' | null>(null);
 const isInitialChunkLoaded = ref(false);
 const isChunkLoading = ref(false);
 const isInitialLoading = ref(true);
@@ -459,6 +465,7 @@ const {
   totalCount,
   loadedCount,
   loading,
+  loadErrorStatus,
   isInitialChunkLoaded,
   isChunkLoading,
   isInitialLoading,
@@ -1259,6 +1266,10 @@ function onGridReady(event: any) {
               <NSpin size="large" />
               <span class="loading-text">正在加载数据，请稍候...</span>
             </div>
+            <!-- 加载失败 / 无权限：覆盖表格，loadFailed 态内置重试按钮 -->
+            <div v-else-if="loadErrorStatus" class="grid-loading">
+              <AgGridEmptyOverlay :status="loadErrorStatus" @retry="loadPage" />
+            </div>
             <AgGridVue
               :theme="activeGridTheme"
               :column-defs="gridColumns"
@@ -1285,7 +1296,8 @@ function onGridReady(event: any) {
               :suppress-column-virtualisation="false"
               :animate-rows="false"
               :enable-cell-text-selection="true"
-              overlay-no-rows-template="<span style='padding: 20px; display: block; text-align: center;'>无数据</span>"
+              :no-rows-overlay-component="AgGridEmptyOverlay"
+              :no-rows-overlay-component-params="noRowsOverlayParams"
               overlay-loading-template="<span style='padding: 20px; display: block; text-align: center;'>正在加载数据，请稍候...</span>"
               class="query-grid"
               @grid-ready="onGridReady"

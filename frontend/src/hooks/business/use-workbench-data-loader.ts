@@ -23,6 +23,8 @@ interface UseWorkbenchDataLoaderOptions {
   totalCount: Ref<number>;
   loadedCount: Ref<number>;
   loading: Ref<boolean>;
+  /** 加载失败状态：null=正常；'loadFailed'=加载失败（可重试）；'noPermission'=无权限（403） */
+  loadErrorStatus: Ref<'loadFailed' | 'noPermission' | null>;
   isInitialChunkLoaded: Ref<boolean>;
   isChunkLoading: Ref<boolean>;
   isInitialLoading: Ref<boolean>;
@@ -336,6 +338,9 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
     log('info', `params: "${params}"`);
     log('info', `当前时间戳: ${performance.now().toFixed(1)}ms`);
 
+    // 重置加载失败状态（重试入口即 loadPage 自身）
+    options.loadErrorStatus.value = null;
+
     if (!functionCode) {
       log('warn', 'functionCode 为空，跳过加载');
       pageMeta.value = null;
@@ -516,6 +521,12 @@ export function useWorkbenchDataLoader(options: UseWorkbenchDataLoaderOptions) {
       if (error.response?.data) {
         log('error', `后端响应: ${JSON.stringify(error.response.data)}`);
       }
+      // 记录失败状态供表格覆盖层展示（403 区分无权限，其余视为加载失败）
+      const err = pageWithDataResult.error as any;
+      const httpStatus = err?.response?.status;
+      const backendCode = String(err?.response?.data?.code ?? '');
+      options.loadErrorStatus.value =
+        httpStatus === 403 || backendCode === '403' ? 'noPermission' : 'loadFailed';
       options.notify('error', errorMsg);
       loading.value = false;
       log('info', `========== loadPage 结束（获取失败）==========`);

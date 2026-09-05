@@ -5,12 +5,22 @@ import type { EmptyStatus } from './empty-state.vue';
 
 defineOptions({ name: 'AgGridEmptyOverlay' });
 
+/**
+ * AG Grid 注册为 noRowsOverlayComponent 时，wrapper 会把
+ * noRowsOverlayComponentParams 冻结后作为 params 属性注入；
+ * 直接作为普通组件使用时，可不经 params 直接传 status / showRetry
+ */
 interface Props {
+  params?: {
+    status?: EmptyStatus;
+    showRetry?: boolean;
+  };
   status?: EmptyStatus;
   showRetry?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  params: undefined,
   status: 'empty',
   showRetry: false
 });
@@ -19,21 +29,24 @@ const emit = defineEmits<{
   (e: 'retry'): void;
 }>();
 
+const finalStatus = computed<EmptyStatus>(() => props.params?.status ?? props.status ?? 'empty');
+const finalShowRetry = computed(() => props.params?.showRetry ?? props.showRetry ?? false);
+
 const icon = computed(() => {
-  if (props.status === 'noPermission') return '🔒';
-  if (props.status === 'loadFailed') return '⚠';
+  if (finalStatus.value === 'noPermission') return '🔒';
+  if (finalStatus.value === 'loadFailed') return '⚠';
   return '📭';
 });
 
 const title = computed(() => {
-  if (props.status === 'noPermission') return $t('common.empty.noPermission');
-  if (props.status === 'loadFailed') return $t('common.empty.loadFailed');
+  if (finalStatus.value === 'noPermission') return $t('common.empty.noPermission');
+  if (finalStatus.value === 'loadFailed') return $t('common.empty.loadFailed');
   return $t('common.empty.title');
 });
 
 const description = computed(() => {
-  if (props.status === 'noPermission') return $t('common.empty.noPermissionDesc');
-  if (props.status === 'loadFailed') return $t('common.empty.loadFailedDesc');
+  if (finalStatus.value === 'noPermission') return $t('common.empty.noPermissionDesc');
+  if (finalStatus.value === 'loadFailed') return $t('common.empty.loadFailedDesc');
   return $t('common.empty.description');
 });
 </script>
@@ -43,7 +56,7 @@ const description = computed(() => {
     <div class="ag-empty-overlay-icon">{{ icon }}</div>
     <div class="ag-empty-overlay-title">{{ title }}</div>
     <div class="ag-empty-overlay-desc">{{ description }}</div>
-    <NButton v-if="showRetry || status === 'loadFailed'" type="primary" size="small" @click="emit('retry')">
+    <NButton v-if="finalShowRetry || finalStatus === 'loadFailed'" type="primary" size="small" @click="emit('retry')">
       {{ $t('common.empty.retry') }}
     </NButton>
   </div>
