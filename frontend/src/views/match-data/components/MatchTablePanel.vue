@@ -8,6 +8,7 @@ import { AgGridVue } from 'ag-grid-vue3';
 import { NButton, NInput, NCheckbox, NCheckboxGroup, NSpace, NDatePicker, NSpin, NModal, NSelect } from 'naive-ui';
 import { useThemeStore } from '@/store/modules/theme';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
+import AgGridEmptyOverlay from '@/components/common/ag-grid-empty-overlay.vue';
 import WorkbenchSelectAllHeader from '@/views/menu-bridge/modules/components/WorkbenchSelectAllHeader.vue';
 import type { MatchModuleData } from '@/hooks/business/use-match-store';
 
@@ -41,6 +42,8 @@ const gridApi = ref<GridApi<any> | null>(null);
 const loading = computed(() => props.data.loading);
 
 const fieldSelectorVisible = ref(false);
+// AG Grid 无数据覆盖层参数：业务化空状态（与工作台同款）
+const noRowsOverlayParams = { status: 'empty' as const };
 const pinColumnVisible = ref(false);
 const conditionWarningVisible = ref(false);
 const selectedVisibleFields = ref<string[]>([]);
@@ -425,8 +428,9 @@ watch([() => props.displayFilter, () => props.quickKeyword], () => {
         :row-height="35"
         :header-height="40"
         :animate-rows="false"
-        overlay-no-rows-template="<span style='padding: 20px; display: block; text-align: center;'>无数据</span>"
-        overlay-loading-template="<span style='padding: 20px; display: block; text-align: center;'>正在加载数据，请稍候...</span>"
+        :no-rows-overlay-component="AgGridEmptyOverlay"
+        :no-rows-overlay-component-params="noRowsOverlayParams"
+        overlay-loading-template="<span style='padding: 20px; display: block; text-align: center;'>正在加载数据而请稍候...</span>"
         @grid-ready="onGridReady"
         @selection-changed="onSelectionChanged"
         @cell-value-changed="onCellValueChanged"
