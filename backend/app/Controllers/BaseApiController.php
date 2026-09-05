@@ -7,7 +7,11 @@ use App\Exceptions\AuthException;
 use App\Exceptions\BusinessException;
 use App\Exceptions\ValidationException;
 use App\Libraries\AuthorizationService;
+use App\Libraries\DetailSelectFieldBuilder;
+use App\Libraries\FieldOwnerRouter;
 use App\Libraries\MetadataCache;
+use App\Libraries\PerformanceTableFormatter;
+use App\Libraries\RecordSqlBuilder;
 use App\Libraries\SessionUserContext;
 use App\Models\Mcommon;
 use App\Services\Audit\AuditLogService;
@@ -205,9 +209,8 @@ class BaseApiController extends BaseController
     /**
      * 构建 detail() 的 SELECT 字段列表（配置驱动，无兜底）
      *
-     * 1. 从 MetadataCache::getViewFunctionColumns() 读取功能编码对应的列配置
-     * 2. 提取「字段名」，与目标表实际列交叉验证（防配置错误导致 SQL 报错）
-     * 3. 配置为空或全部不匹配时抛 BusinessException，直接暴露配置问题
+     * 读配置 + 读表列后委托 DetailSelectFieldBuilder::buildSelectFields；
+     * 字段构造逻辑与异常文案见该类（Phase 2 机械抽取，行为零变更）。
      *
      * @param string $functionCode 功能编码（如 '2015'）
      * @param string $table        目标表名（如 'ee_store'）
@@ -216,41 +219,19 @@ class BaseApiController extends BaseController
      */
     protected function buildDetailSelectFields(string $functionCode, string $table): string
     {
-        $columns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
-        $tableCols = $this->getTableColumns($table);
-        $tableColSet = $tableCols ? array_flip($tableCols) : [];
-
-        $parts = [];
-        foreach ($columns as $col) {
-            $fieldName = (string) ($col['字段名'] ?? '');
-            if ($fieldName === '' || !isset($tableColSet[$fieldName])) {
-                continue;
-            }
-            $queryName = (string) ($col['查询名'] ?? '');
-            if ($queryName !== '' && $queryName !== $fieldName) {
-                $parts[] = "`{$fieldName}` as `{$queryName}`";
-            } else {
-                $parts[] = "`{$fieldName}`";
-            }
-        }
-
-        if (empty($parts)) {
-            throw new BusinessException(
-                "功能编码 {$functionCode} 的 view_function 配置为空或字段均不匹配表 {$table}，请检查 def_query_column 配置并刷新缓存"
-            );
-        }
-
-        return implode(',', $parts);
+        return DetailSelectFieldBuilder::buildSelectFields(
+            $functionCode,
+            $table,
+            $this->getMetadataCache()->getViewFunctionColumns($functionCode),
+            $this->getTableColumns($table)
+        );
     }
 
     /**
      * 构建 detail() 的多表 JOIN SELECT 字段列表（配置驱动）
      *
-     * buildDetailSelectFields 的多表版本（阶段③读切换：主表窄化后
-     * 个人信息列在 JOIN 表，如 ee_employment + hr_person）：
-     * 1. 配置字段按「别名 → 表实际列」逐一定位归属，加别名前缀
-     * 2. 不在任何表的配置字段（已裁剪列）以空串占位，保持 API 出参形状
-     * 3. 配置为空时抛 BusinessException
+     * 读配置 + 逐别名读表列后委托 DetailSelectFieldBuilder::buildSelectFieldsMulti；
+     * 字段构造逻辑与异常文案见该类（Phase 2 机械抽取，行为零变更）。
      *
      * @param string $functionCode 功能编码
      * @param array  $tables       [别名 => 表名]，如 ['e' => 'ee_employment', 'p' => 'hr_person']
@@ -259,40 +240,16 @@ class BaseApiController extends BaseController
      */
     protected function buildDetailSelectFieldsMulti(string $functionCode, array $tables): string
     {
-        $columns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
-
-        $tableColMap = [];
+        $tableCols = [];
         foreach ($tables as $alias => $table) {
-            $cols = $this->getTableColumns($table);
-            $tableColMap[$alias] = $cols ? array_flip($cols) : [];
+            $tableCols[$alias] = $this->getTableColumns($table);
         }
 
-        $parts = [];
-        foreach ($columns as $col) {
-            $fieldName = (string) ($col['字段名'] ?? '');
-            if ($fieldName === '') {
-                continue;
-            }
-            $queryName = (string) ($col['查询名'] ?? '');
-            $output = ($queryName !== '' && $queryName !== $fieldName) ? $queryName : $fieldName;
-
-            foreach ($tableColMap as $alias => $colSet) {
-                if (isset($colSet[$fieldName])) {
-                    $parts[] = "{$alias}.`{$fieldName}` as `{$output}`";
-                    continue 2;
-                }
-            }
-            // 配置字段不在任何表（如 ee_onjob 裁剪列）：空串占位保持出参形状
-            $parts[] = sprintf("'' as `%s`", $output);
-        }
-
-        if (empty($parts)) {
-            throw new BusinessException(
-                "功能编码 {$functionCode} 的 view_function 配置为空，请检查 def_query_column 配置并刷新缓存"
-            );
-        }
-
-        return implode(',', $parts);
+        return DetailSelectFieldBuilder::buildSelectFieldsMulti(
+            $functionCode,
+            $this->getMetadataCache()->getViewFunctionColumns($functionCode),
+            $tableCols
+        );
     }
 
     /**
@@ -370,108 +327,27 @@ class BaseApiController extends BaseController
      */
     protected function buildPerformanceTable(string $tag, string $status, string $info, array $steps, float|int $t0): string
     {
-        $total = (end($steps) - $t0) / 1e6;
-        if ($total < 0.001) $total = 0.001;
-
-        $rows = [];
-        $prevTime = $t0;
-        $index = 0;
-
-        foreach ($steps as $stepName => $currTime) {
-            $duration = ($currTime - $prevTime) / 1e6;
-            $timestamp = sprintf('%.1f', ($currTime - $t0) / 1e6);
-            $pct = $total > 0 ? ($duration / $total) * 100 : 0;
-
-            $rows[] = [
-                'index' => $index,
-                'step' => $stepName,
-                'timestamp' => $timestamp,
-                'duration' => sprintf('%.1fms', $duration),
-                'pct' => sprintf('%.1f%%', $pct),
-                'raw_duration' => $duration
-            ];
-            $prevTime = $currTime;
-            $index++;
-        }
-
-        $logLines = [];
-        $logLines[] = sprintf('%s %s %s 总耗时: %.2fms', $tag, $info, $status, $total);
-        $logLines[] = sprintf('%-8s | %-20s | %-10s | %-10s | %-6s', '(索引)', 'step', 'timestamp', 'duration', 'pct');
-        $logLines[] = str_repeat('-', 60);
-
-        foreach ($rows as $row) {
-            $logLines[] = sprintf('%-8s | %-20s | %-10s | %-10s | %-6s',
-                $row['index'],
-                $row['step'],
-                $row['timestamp'],
-                $row['duration'],
-                $row['pct']
-            );
-        }
-
-        usort($rows, function ($a, $b) {
-            return $b['raw_duration'] <=> $a['raw_duration'];
-        });
-
-        $maxDuration = $rows[0]['raw_duration'] ?? 0;
-
-        $logLines[] = '';
-        $logLines[] = '耗时排行（从慢到快）';
-        $maxBar = 50;
-        $rank = 1;
-        foreach ($rows as $row) {
-            if ($row['raw_duration'] < 0.001) continue;
-            $barLen = $maxDuration > 0 ? (int) ($row['raw_duration'] / $maxDuration * $maxBar) : 0;
-            $barLen = max($barLen, 1);
-            $bar = str_repeat('█', $barLen);
-            $logLines[] = sprintf(' %d. %-20s %9.1fms %s', $rank, $row['step'], $row['raw_duration'], $bar);
-            $rank++;
-        }
-
-        return implode("\n", $logLines);
+        return PerformanceTableFormatter::format($tag, $status, $info, $steps, $t0);
     }
 
     protected function insertRecord(string $table, array $data): int
     {
-        if (!$this->isValidIdentifier($table)) {
+        if (!RecordSqlBuilder::isValidIdentifier($table)) {
             throw new \InvalidArgumentException("非法表名: {$table}");
         }
 
         $columns = $this->getTableColumns($table);
-        $fields = [];
-        $values = [];
 
         // 当表存在 UUID 列且调用方未提供 UUID 时，自动生成 UUIDv7
-        $autoUuid = null;
-        if (!empty($columns) && in_array('UUID', $columns, true) && !isset($data['UUID'])) {
-            $autoUuid = $this->generateUuidv7Binary();
-        }
+        $autoUuid = RecordSqlBuilder::shouldAutoGenerateUuid($columns, $data)
+            ? RecordSqlBuilder::generateUuidv7Binary()
+            : null;
 
-        foreach ($data as $key => $value) {
-            if ($key === '操作') continue;
-            if (!$this->isValidIdentifier($key)) continue;
-            // 过滤掉表中不存在的字段（如老表无"操作时间"列）
-            if (!empty($columns) && !in_array($key, $columns, true)) continue;
-            $fields[] = sprintf('`%s`', $key);
-            $values[] = $this->model->quote((string)$value);
-        }
-
-        // 追加自动生成的 UUID（binary(16) 用 0x 十六进制格式写入）
-        if ($autoUuid !== null) {
-            $fields[] = '`UUID`';
-            $values[] = '0x' . bin2hex($autoUuid);
-        }
-
-        if (empty($fields)) {
+        // 校验→构造→执行（SQL 构造逻辑见 RecordSqlBuilder）
+        $sql = RecordSqlBuilder::buildInsertSql($table, $data, $columns, $autoUuid, fn (string $v) => $this->model->quote($v));
+        if ($sql === null) {
             return 0;
         }
-
-        $sql = sprintf(
-            'INSERT INTO `%s` (%s) VALUES (%s)',
-            $table,
-            implode(',', $fields),
-            implode(',', $values)
-        );
 
         $affected = $this->model->exec($sql);
 
@@ -519,66 +395,32 @@ class BaseApiController extends BaseController
 
     protected function updateRecord(string $table, array $data, string $where): int
     {
-        if (!$this->isValidIdentifier($table)) {
+        if (!RecordSqlBuilder::isValidIdentifier($table)) {
             throw new \InvalidArgumentException("非法表名: {$table}");
         }
 
         $columns = $this->getTableColumns($table);
-
-        // 计算 effectiveUpdateKeys（实际会写入数据库的字段，与下方 updateFields 逻辑保持一致）
-        $effectiveUpdateKeys = [];
-        foreach ($data as $key => $value) {
-            if (in_array($key, ['guid', '操作', '人员'])) continue;
-            if (!$this->isValidIdentifier($key)) continue;
-            if ($value === '') continue;
-            if (!empty($columns) && !in_array($key, $columns, true)) continue;
-            $effectiveUpdateKeys[] = $key;
-        }
+        $effectiveUpdateKeys = RecordSqlBuilder::computeEffectiveUpdateKeys($data, $columns);
 
         if (empty($effectiveUpdateKeys)) {
             return 0;
         }
 
-        // === 写入前：读取旧值快照（GUID/UUID/受影响字段） ===
+        $quote = fn (string $v) => $this->model->quote($v);
+
+        // === 写入前：读取旧值快照（GUID/UUID/受影响字段；人员审计表含定位键） ===
         $isAuditedTable = (new AuditLogService())->isAuditedTable($table);
         $oldRows = [];
         try {
-            $selectCols = ['GUID'];
-            if (in_array('UUID', $columns, true)) {
-                $selectCols[] = 'UUID';
-            }
-            // 人员审计表：定位键（人员编码/候选人编码）始终入快照（diff 定位用）
-            if ($isAuditedTable) {
-                foreach (['人员编码', '候选人编码'] as $locator) {
-                    if (in_array($locator, $columns, true) && !in_array($locator, $selectCols, true)) {
-                        $selectCols[] = $locator;
-                    }
-                }
-            }
-            foreach ($effectiveUpdateKeys as $k) {
-                if (!in_array($k, $selectCols, true)) {
-                    $selectCols[] = $k;
-                }
-            }
-            $colList = implode(',', array_map(fn($c) => "`{$c}`", $selectCols));
-            $oldRows = $this->model->select("SELECT {$colList} FROM `{$table}` WHERE {$where}")->getResultArray() ?: [];
+            $locatorCols = $isAuditedTable ? ['人员编码', '候选人编码'] : [];
+            $snapshotSql = RecordSqlBuilder::buildSnapshotSelectSql($table, $where, $columns, $effectiveUpdateKeys, $locatorCols);
+            $oldRows = $this->model->select($snapshotSql)->getResultArray() ?: [];
         } catch (\Throwable $e) {
             $this->logTrace('error', "审计日志读取旧值失败(update) table={$table}: " . $e->getMessage());
         }
 
         // === 执行原 update ===
-        $updateFields = [];
-        foreach ($effectiveUpdateKeys as $key) {
-            $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote((string)$data[$key]));
-        }
-
-        $sql = sprintf(
-            'UPDATE `%s` SET %s WHERE %s',
-            $table,
-            implode(',', $updateFields),
-            $where
-        );
-
+        $sql = RecordSqlBuilder::buildUpdateSql($table, $data, $effectiveUpdateKeys, $where, $quote);
         $affected = $this->model->exec($sql);
 
         // === 写入后：按字段对比，写审计日志 ===
@@ -595,27 +437,16 @@ class BaseApiController extends BaseController
                 );
             } else {
                 try {
-                    foreach ($oldRows as $oldRow) {
-                        $rowGuid = (string)($oldRow['GUID'] ?? '');
-                        $rowUuid = $oldRow['UUID'] ?? null;
-
-                        foreach ($effectiveUpdateKeys as $field) {
-                            $oldVal = $oldRow[$field] ?? null;
-                            $newVal = $data[$field] ?? null;
-
-                            // 值未变化则跳过（NULL 与空串视为相同）
-                            if ((string)$oldVal === (string)$newVal) continue;
-
-                            $this->writeAuditLog(
-                                $table,
-                                $rowGuid,
-                                $rowUuid,
-                                '更新',
-                                $field,
-                                $oldVal !== null ? (string)$oldVal : null,
-                                $newVal !== null ? (string)$newVal : null
-                            );
-                        }
+                    foreach (RecordSqlBuilder::collectUpdateAuditEntries($oldRows, $data, $effectiveUpdateKeys) as $entry) {
+                        $this->writeAuditLog(
+                            $table,
+                            $entry['guid'],
+                            $entry['uuid'],
+                            '更新',
+                            $entry['field'],
+                            $entry['old'],
+                            $entry['new']
+                        );
                     }
                 } catch (\Throwable $e) {
                     $this->logTrace('error', "审计日志写入失败(update) table={$table}: " . $e->getMessage());
@@ -628,7 +459,7 @@ class BaseApiController extends BaseController
 
     protected function deleteRecord(string $table, string $where): int
     {
-        if (!$this->isValidIdentifier($table)) {
+        if (!RecordSqlBuilder::isValidIdentifier($table)) {
             throw new \InvalidArgumentException("非法表名: {$table}");
         }
 
@@ -638,46 +469,24 @@ class BaseApiController extends BaseController
         $isAuditedTable = (new AuditLogService())->isAuditedTable($table);
         $oldRows = [];
         try {
-            $selectCols = ['GUID'];
-            if (in_array('UUID', $columns, true)) {
-                $selectCols[] = 'UUID';
-            }
-            if ($isAuditedTable) {
-                foreach (['人员编码', '候选人编码'] as $locator) {
-                    if (in_array($locator, $columns, true) && !in_array($locator, $selectCols, true)) {
-                        $selectCols[] = $locator;
-                    }
-                }
-            }
-            $colList = implode(',', array_map(fn($c) => "`{$c}`", $selectCols));
-            $oldRows = $this->model->select("SELECT {$colList} FROM `{$table}` WHERE {$where}")->getResultArray() ?: [];
+            $locatorCols = $isAuditedTable ? ['人员编码', '候选人编码'] : [];
+            $snapshotSql = RecordSqlBuilder::buildSnapshotSelectSql($table, $where, $columns, [], $locatorCols);
+            $oldRows = $this->model->select($snapshotSql)->getResultArray() ?: [];
         } catch (\Throwable $e) {
             $this->logTrace('error', "审计日志读取旧值失败(delete) table={$table}: " . $e->getMessage());
         }
 
-        $deleteData = $this->buildDeleteData();
-        $updateFields = [];
-
-        foreach ($deleteData as $key => $value) {
-            if (!empty($columns) && !in_array($key, $columns, true)) continue;
-            $updateFields[] = sprintf('`%s`=%s', $key, $this->model->quote($value));
-        }
-
-        // 记录结束日期：仅当表存在该列时才写入
-        if (empty($columns) || in_array('记录结束日期', $columns, true)) {
-            $updateFields[] = sprintf('`记录结束日期`=%s', $this->model->quote(date('Y-m-d')));
-        }
-
-        if (empty($updateFields)) {
+        // 软删 UPDATE（审计字段过滤与记录结束日期逻辑见 RecordSqlBuilder）
+        $sql = RecordSqlBuilder::buildSoftDeleteUpdateSql(
+            $table,
+            $where,
+            $this->buildDeleteData(),
+            $columns,
+            fn (string $v) => $this->model->quote($v)
+        );
+        if ($sql === null) {
             return 0;
         }
-
-        $sql = sprintf(
-            'UPDATE `%s` SET %s WHERE %s',
-            $table,
-            implode(',', $updateFields),
-            $where
-        );
 
         $affected = $this->model->exec($sql);
 
@@ -705,13 +514,10 @@ class BaseApiController extends BaseController
             } else {
                 try {
                     foreach ($oldRows as $oldRow) {
-                        $rowGuid = (string)($oldRow['GUID'] ?? '');
-                        $rowUuid = $oldRow['UUID'] ?? null;
-
                         $this->writeAuditLog(
                             $table,
-                            $rowGuid,
-                            $rowUuid,
+                            (string)($oldRow['GUID'] ?? ''),
+                            $oldRow['UUID'] ?? null,
                             '删除',
                             '全部',
                             '删除前记录',
@@ -732,8 +538,7 @@ class BaseApiController extends BaseController
      *
      * 设计原则：
      *  - 失败时只记 log，不抛异常（避免审计拖垮主业务）
-     *  - 记录UUID 为 NULL 时用 0x00...00 占位（满足 NOT NULL 约束）
-     *  - 原值/新值截断到 200 字符（匹配 varchar(200) 列定义）
+     *  - SQL 构造（UUID 占位 / 值截断 / NULL 字面量）见 RecordSqlBuilder::buildAuditInsertSql
      *
      * @param string       $table    业务表名
      * @param string       $pkGuid   业务记录 GUID（字符串形式）
@@ -759,30 +564,17 @@ class BaseApiController extends BaseController
             $operator = 'system';
         }
 
-        // UUID 兜底：NULL 时用 16 字节 0x00 占位（满足 binary(16) NOT NULL 约束）
-        $uuidBin = $pkUuid ?? str_repeat("\x00", 16);
-
-        // 原值/新值截断到 200 字符，NULL 保持 NULL 以写入 NULL（而非字符串 'NULL'）
-        $oldValTrimmed = $oldValue !== null ? mb_substr((string)$oldValue, 0, 200) : null;
-        $newValTrimmed = $newValue !== null ? mb_substr((string)$newValue, 0, 200) : null;
-
-        // 拼接 SQL：CI4 MySQLi 的 $db->query(sql, binds) 会走 Query Builder 预处理，
-        // 对原生 INSERT 抛 "You must set the database table to be used with your query" 错误。
-        // 故改用 quote() + 0x 十六进制格式内联写入，兼容 binary(16) UUID。
-        $sql = sprintf(
-            "INSERT INTO def_audit_log (表名, 记录GUID, 记录UUID, 操作类型, 变更字段, 原值, 新值, 操作人员) "
-          . "VALUES (%s, %s, 0x%s, %s, %s, %s, %s, %s)",
-            $this->model->quote($table),
-            $this->model->quote($pkGuid),
-            bin2hex($uuidBin),
-            $this->model->quote($opType),
-            $this->model->quote($field),
-            $oldValTrimmed !== null ? $this->model->quote($oldValTrimmed) : 'NULL',
-            $newValTrimmed !== null ? $this->model->quote($newValTrimmed) : 'NULL',
-            $this->model->quote($operator)
-        );
-
-        $this->model->exec($sql);
+        $this->model->exec(RecordSqlBuilder::buildAuditInsertSql(
+            $table,
+            $pkGuid,
+            $pkUuid,
+            $opType,
+            $field,
+            $oldValue,
+            $newValue,
+            $operator,
+            fn (string $v) => $this->model->quote($v)
+        ));
     }
 
     /**
@@ -812,14 +604,8 @@ class BaseApiController extends BaseController
     /**
      * 按字段归属表拆分输入数据（写入路由）
      *
-     * 依据 def_query_column.字段归属表 配置（经 view_function 视图读取）：
-     * - 字段归属表为空 → 归主表（兼容存量配置，零迁移）
-     * - 字段归属表=表名（如 hr_person）→ 归该表
-     * - 输入字段未出现在配置中 → 归主表
-     * - 配置值含逗号 → 视为脏配置，按主表处理并记日志（不支持多值）
-     *
-     * 兼容双写：归属非主表的字段，若主表存在同名列，同时写入主表分组，
-     * 保证存量单表查询（如 ee_store 列表/树查询）在主档过渡期继续可用。
+     * 读配置（异常吞噬 + warning 留痕）+ 读主表列后委托 FieldOwnerRouter::split；
+     * 分组与双写兼容逻辑见该类（Phase 2 机械抽取，行为零变更）。
      *
      * @param string $functionCode 功能编码（如 2015）
      * @param string $mainTable    主表名（如 ee_store）
@@ -828,101 +614,20 @@ class BaseApiController extends BaseController
      */
     protected function splitDataByFieldOwner(string $functionCode, string $mainTable, array $data): array
     {
-        $groups = [$mainTable => []];
-        $ownerMap = [];
-
         try {
-            $columns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
-            foreach ($columns as $col) {
-                $owner = trim((string) ($col['字段归属表'] ?? ''));
-                if ($owner === '') {
-                    continue; // 空配置归主表，不进映射
-                }
-                if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $owner)) {
-                    // 逗号多值等脏配置：按主表处理并留痕
-                    $this->logTrace('warning', "[splitDataByFieldOwner] 非法字段归属表配置: {$owner}");
-                    continue;
-                }
-                // 查询名与字段名都建立映射，兼容前端两种字段名
-                $queryName = (string) ($col['查询名'] ?? '');
-                $fieldName = (string) ($col['字段名'] ?? '');
-                if ($queryName !== '') {
-                    $ownerMap[$queryName] = $owner;
-                }
-                if ($fieldName !== '') {
-                    $ownerMap[$fieldName] = $owner;
-                }
-            }
+            $viewColumns = $this->getMetadataCache()->getViewFunctionColumns($functionCode);
         } catch (\Throwable $e) {
             $this->logTrace('warning', '[splitDataByFieldOwner] 字段归属配置读取失败，全部按主表处理: ' . $e->getMessage());
+            $viewColumns = [];
         }
 
-        $mainCols = $this->getTableColumns($mainTable);
-
-        foreach ($data as $key => $value) {
-            if ($key === 'guid' || $key === '操作') {
-                continue;
-            }
-            $owner = $ownerMap[$key] ?? $mainTable;
-            $groups[$owner][$key] = $value;
-            // 兼容双写：主表有同名列时同步写入（过渡期存量查询依赖）
-            if ($owner !== $mainTable && in_array($key, $mainCols, true)) {
-                $groups[$mainTable][$key] = $value;
-            }
-        }
-
-        return $groups;
+        return FieldOwnerRouter::split(
+            $viewColumns,
+            $mainTable,
+            $this->getTableColumns($mainTable),
+            $data,
+            fn (string $message) => $this->logTrace('warning', $message)
+        );
     }
 
-    /**
-     * 生成 UUIDv7（RFC 4122，16 字节二进制）
-     *
-     * UUIDv7 布局：
-     *  - bytes[0-5]  (48 bit): Unix 时间戳（毫秒，big-endian）
-     *  - bytes[6]    ( 4 bit): 版本 = 0111（7）
-     *  - bytes[6-7]  (12 bit): 随机
-     *  - bytes[8]    ( 2 bit): 变体 = 10
-     *  - bytes[8-15] (62 bit): 随机
-     *
-     * @return string 16 字节二进制字符串（可直接写入 binary(16) 列）
-     */
-    private function generateUuidv7Binary(): string
-    {
-        $tsMs = (int) (microtime(true) * 1000);
-
-        // 48 bit 时间戳 → 6 字节 big-endian
-        $timeBytes = '';
-        for ($i = 5; $i >= 0; $i--) {
-            $timeBytes .= chr(($tsMs >> ($i * 8)) & 0xFF);
-        }
-
-        // 10 字节随机数
-        $randBytes = random_bytes(10);
-
-        // byte[6] 高 4 位设为 0111（版本 7）
-        $randBytes[0] = chr((ord($randBytes[0]) & 0x0F) | 0x70);
-
-        // byte[8] 高 2 位设为 10（RFC 4122 变体）
-        $randBytes[2] = chr((ord($randBytes[2]) & 0x3F) | 0x80);
-
-        return $timeBytes . $randBytes;
-    }
-
-    /**
-     * 校验 SQL 标识符（表名/字段名）合法性
-     *
-     * 允许：中文、英文字母、数字、下划线，首字符不能为数字
-     * 阻止：SQL 注入特殊字符（引号、分号、空格、注释符等）
-     *
-     * @param string $identifier 待校验的表名或字段名
-     * @return bool 合法返回 true
-     */
-    private function isValidIdentifier(string $identifier): bool
-    {
-        if ($identifier === '') {
-            return false;
-        }
-        // 允许中文(\p{Han})、字母、数字、下划线，首字符不能为数字
-        return preg_match('/^[\p{Han}a-zA-Z_][\p{Han}a-zA-Z0-9_]*$/u', $identifier) === 1;
-    }
 }
