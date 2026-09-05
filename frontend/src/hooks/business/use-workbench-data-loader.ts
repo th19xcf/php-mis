@@ -53,7 +53,7 @@ interface QueryFilter {
 /**
  * 为查询结果分配全局序号（替代后端 SQL 中的 @i:=@i+1）
  */
-function assignRowNumbers(records: Api.Workbench.QueryRecord[], current: number, size: number) {
+export function assignRowNumbers(records: Api.Workbench.QueryRecord[], current: number, size: number) {
   const offset = (current - 1) * size;
   records.forEach((row, index) => {
     row['序号'] = offset + index + 1;
@@ -67,7 +67,7 @@ function assignRowNumbers(records: Api.Workbench.QueryRecord[], current: number,
  * 不能用页码换算（floor(200/5000)+1=1 会回算出 offset=0 导致序号重复），
  * 必须直接以 offset 作为首行序号基数。
  */
-function assignRowNumbersByOffset(records: Api.Workbench.QueryRecord[], startOffset: number) {
+export function assignRowNumbersByOffset(records: Api.Workbench.QueryRecord[], startOffset: number) {
   records.forEach((row, index) => {
     row['序号'] = startOffset + index + 1;
   });

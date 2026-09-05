@@ -267,6 +267,46 @@ export function collectMergeColumns(gridApi: GridApi<Api.Workbench.QueryRecord> 
   return result;
 }
 
+/**
+ * 组合导出筛选条件（与页面显示对齐）：
+ *   1. ag-grid 列筛选（每列 floating filter/menu filter）
+ *   2. 条件面板筛选（fieldKey / operator / value 结构化筛选）
+ *   3. 工具栏快速检索（跨所有文本列）
+ */
+export function buildExportFilters(options: {
+  gridApi: GridApi<Api.Workbench.QueryRecord> | null;
+  selectedField: string;
+  selectedOperator: string;
+  selectedValue: string;
+  quickKeyword: string;
+}): any[] {
+  const { gridApi, selectedField, selectedOperator, selectedValue, quickKeyword } = options;
+  const filters: any[] = [];
+
+  // 1. ag-grid 列筛选（最高优先级，先收集）
+  if (gridApi && !gridApi.isDestroyed()) {
+    filters.push(...collectColumnFilters(gridApi));
+  }
+
+  // 2. 条件面板筛选
+  if (selectedField && selectedValue.trim()) {
+    filters.push({
+      fieldKey: selectedField,
+      operator: selectedOperator,
+      value: selectedValue.trim()
+    });
+  }
+
+  // 3. 工具栏快速检索
+  if (quickKeyword && quickKeyword.trim()) {
+    filters.push({
+      globalSearch: quickKeyword.trim()
+    });
+  }
+
+  return filters;
+}
+
 export interface ExportOptions {
   format?: 'xlsx' | 'csv';
   /** 是否导出全部数据（忽略筛选条件），默认 true */

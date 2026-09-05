@@ -25,7 +25,7 @@ import { useWorkbenchChart } from '@/hooks/business/use-workbench-chart';
 import { useWorkbenchChartDrill } from '@/hooks/business/use-workbench-chart-drill';
 import { useWorkbenchTableEdit } from '@/hooks/business/use-workbench-table-edit';
 import { useWorkbenchDataLoader } from '@/hooks/business/use-workbench-data-loader';
-import { collectColumnFilters, useWorkbenchExport } from '@/hooks/business/use-workbench-export';
+import { useWorkbenchExport, buildExportFilters } from '@/hooks/business/use-workbench-export';
 import { useWorkbenchDrillDialog } from '@/hooks/business/use-workbench-drill-dialog';
 import { useWorkbenchPageDebug } from '@/hooks/business/use-workbench-page-debug';
 import { useWorkbenchChartDebug } from '@/hooks/business/use-workbench-chart-debug';
@@ -36,9 +36,11 @@ import { useWorkbenchUpkeep } from '@/hooks/business/use-workbench-upkeep';
 import { useWorkbenchDataFetchAll } from '@/hooks/business/use-workbench-data-fetch-all';
 import { useWorkbenchGridReady } from '@/hooks/business/use-workbench-grid-ready';
 import { useWorkbenchNotify } from '@/hooks/business/use-workbench-notify';
+import { useWorkbenchRightPanel } from '@/hooks/business/use-workbench-right-panel';
+import { useWorkbenchPageMetaFlags } from '@/hooks/business/use-workbench-page-meta-flags';
 import { useThemeStore } from '@/store/modules/theme';
-import { useWorkbenchRightPanelStore } from '@/store/modules/workbench-right-panel';
 import { WORKBENCH_CONFIG } from '@/config/workbench';
+import { hasSuspiciousNarrowColumnState } from '@/utils/workbench-column-state';
 import { logger } from '@/utils/logger';
 import { markTrace } from '@/utils/performance-trace';
 import { isGuidColumn } from '@/utils/menu-bridge';
@@ -85,11 +87,7 @@ const noRowsOverlayParams = { status: 'empty' as const };
 const useLegacyTabHint = ref(false);
 const gridApi = ref<GridApi<Api.Workbench.QueryRecord> | null>(null);
 
-// 右侧面板模式：null / 'chart' / 'add' / 'update' / 'batch' / 'comment'
-// 用于协调 chart 与 新增/单条修改/多条修改/添加批注/查看批注 互斥占据右侧分栏
-type RightPanelMode = 'chart' | 'add' | 'update' | 'batch' | 'comment' | null;
-const rightPanelMode = ref<RightPanelMode>(null);
-const rightPanelVisible = computed(() => rightPanelMode.value !== null);
+// rightPanelMode / rightPanelVisible 由 useWorkbenchRightPanel 统一管理（见下方集成处）
 
 // 防止筛选恢复期间 filterChanged 覆盖筛选
 const isRestoringFilter = ref(false);
@@ -202,53 +200,9 @@ function isGridShellVisible() {
   return gridShellRef.value.offsetWidth > 0 && gridShellRef.value.offsetHeight > 0;
 }
 
-function hasSuspiciousNarrowColumnState(columnState: any[]) {
-  if (!Array.isArray(columnState) || columnState.length === 0) return false;
-
-  const { COLUMN_IDS } = WORKBENCH_CONFIG;
-  const dataColumns = columnState.filter((col: any) => {
-    const colId = String(col?.colId || '');
-    return colId && colId !== COLUMN_IDS.SELECTION && !colId.startsWith(COLUMN_IDS.PREFIX);
-  });
-
-  if (dataColumns.length === 0) return false;
-
-  const narrowCount = dataColumns.filter((col: any) => {
-    const width = Number(col?.width || 0);
-    return Number.isFinite(width) && width > 0 && width <= 80;
-  }).length;
-
-  return narrowCount / dataColumns.length >= 0.7;
-}
-
-// 是否有整表修改权限
-const hasTableEditAuth = computed(() => pageMeta.value?.toolbar.tableEdit === true);
-
-// 可颜色标注的列
-const colorMarkEnabledColumns = computed(() => {
-  return (pageMeta.value?.columns || [])
-    .filter(column => column.colorMarkEnabled)
-    .map(column => ({ label: column.title || column.field, value: column.field }));
-});
-
-// 是否有可颜色标注的列
-const hasColorMarkEnabledColumns = computed(() => colorMarkEnabledColumns.value.length > 0);
-
-// 是否存在可行合并列：决定是否启用 ag-grid cellSpan（initial property，创建后不可变更）
-const hasMergeableColumns = computed(() => {
-  const columns = pageMeta.value?.columns || [];
-  return columns.some(column => column.canMerge === true);
-});
-
-// grid 是否就绪（pageMeta 已加载），用于确保 initial properties 在创建时就正确
-const gridReady = computed(() => {
-  const ready = !!pageMeta.value;
-  console.log('[gridReady] 计算:', ready, 'pageMeta:', !!pageMeta.value);
-  return ready;
-});
-
-// 是否有图形模块配置
-const hasChartEnabled = computed(() => !!pageMeta.value?.chartModule && pageMeta.value.chartModule !== '');
+// pageMeta 派生标记（权限/颜色标注/合并列/图形模块等）
+const { hasTableEditAuth, colorMarkEnabledColumns, hasColorMarkEnabledColumns, hasMergeableColumns, gridReady, hasChartEnabled } =
+  useWorkbenchPageMetaFlags({ pageMeta });
 
 // 图表区图表自适应
 const workbenchContentRef = ref<HTMLDivElement | null>(null);
@@ -542,91 +496,11 @@ function handleBatchFormUpdate(val: Record<string, any>) {
   markBatchDirty();
 }
 
-// 当前右侧表单有未保存修改时，弹确认框；返回是否可继续（true=可离开/切换，false=取消）
-async function confirmDiscardIfDirty(): Promise<boolean> {
-  const mode = rightPanelMode.value;
-  const dirty =
-    (mode === 'add' && addDirty.value) ||
-    (mode === 'update' && updateDirty.value) ||
-    (mode === 'batch' && batchUpdateDirty.value);
-  if (!dirty) return true;
-  return new Promise<boolean>(resolve => {
-    window.$dialog?.warning({
-      title: '未保存的修改',
-      content: '当前表单有未保存的修改，是否确认离开？',
-      positiveText: '离开',
-      negativeText: '取消',
-      onPositiveClick: () => resolve(true),
-      onNegativeClick: () => resolve(false),
-      onMaskClick: () => resolve(false),
-      onClose: () => resolve(false)
-    });
-  });
-}
-
-// —— 右栏状态持久化：组件 mount / activate 时从 store 读回，watch 实时写回 ——
-const rightPanelStore = useWorkbenchRightPanelStore();
-
-/**
- * 从 store 读回右栏状态，覆盖本地 ref 的初始默认值
- * - 用于：组件被 KeepAlive 卸载后重新 mount（setup 中 composables 已用默认值初始化）
- * - 仅在 store 中存在该 functionCode::params 的缓存时才覆盖，避免污染首次进入的场景
- */
-function restoreRightPanelStateFromStore() {
-  const saved = rightPanelStore.getState(functionCode.value, params.value);
-  if (!saved) return;
-
-  // 用 store 中的状态覆盖 composables 初始化出来的默认值
-  if (saved.rightPanelMode !== undefined) rightPanelMode.value = saved.rightPanelMode;
-  if (saved.addVisible !== undefined) addVisible.value = saved.addVisible;
-  if (saved.addFormData !== undefined) addFormData.value = { ...saved.addFormData };
-  if (saved.addFormFields !== undefined) addFormFields.value = [...saved.addFormFields];
-  if (saved.updateVisible !== undefined) updateVisible.value = saved.updateVisible;
-  if (saved.updateFormData !== undefined) updateFormData.value = { ...saved.updateFormData };
-  if (saved.updateFormFields !== undefined) updateFormFields.value = [...saved.updateFormFields];
-  if (saved.batchUpdateVisible !== undefined) batchUpdateVisible.value = saved.batchUpdateVisible;
-  if (saved.batchUpdateFormData !== undefined) batchUpdateFormData.value = { ...saved.batchUpdateFormData };
-  if (saved.batchUpdateFormFields !== undefined) batchUpdateFormFields.value = [...saved.batchUpdateFormFields];
-  if (saved.addCommentVisible !== undefined) addCommentVisible.value = saved.addCommentVisible;
-  if (saved.viewCommentVisible !== undefined) viewCommentVisible.value = saved.viewCommentVisible;
-  if (saved.commentFormData !== undefined) commentFormData.value = { ...saved.commentFormData };
-  if (saved.commentRemark !== undefined) commentRemark.value = saved.commentRemark;
-  if (saved.commentFields !== undefined) commentFields.value = [...saved.commentFields];
-  if (saved.commentList !== undefined) commentList.value = [...saved.commentList];
-}
-
-/**
- * 把当前右栏状态写回 store
- * - 监听任何相关 ref 变化都会调用本函数
- */
-function persistRightPanelStateToStore() {
-  rightPanelStore.setState(functionCode.value, params.value, {
-    rightPanelMode: rightPanelMode.value,
-    addVisible: addVisible.value,
-    addFormData: addFormData.value,
-    addFormFields: addFormFields.value,
-    updateVisible: updateVisible.value,
-    updateFormData: updateFormData.value,
-    updateFormFields: updateFormFields.value,
-    batchUpdateVisible: batchUpdateVisible.value,
-    batchUpdateFormData: batchUpdateFormData.value,
-    batchUpdateFormFields: batchUpdateFormFields.value,
-    addCommentVisible: addCommentVisible.value,
-    viewCommentVisible: viewCommentVisible.value,
-    commentFormData: commentFormData.value,
-    commentRemark: commentRemark.value,
-    commentFields: commentFields.value,
-    commentList: commentList.value
-  });
-}
-
-// 首次 setup：从 store 恢复（如果之前切走标签页保存过）
-restoreRightPanelStateFromStore();
-
-// 实时监听所有右栏相关 ref 变化，写回 store
-watch(
-  [
-    rightPanelMode,
+// 右栏状态机：面板模式互斥协调 + 未保存修改确认 + 状态持久化（mount/activate 时从 store 读回，watch 实时写回）
+const { rightPanelMode, rightPanelVisible, confirmDiscardIfDirty, restoreRightPanelStateFromStore } =
+  useWorkbenchRightPanel({
+    functionCode,
+    params,
     addVisible,
     addFormData,
     addFormFields,
@@ -636,20 +510,16 @@ watch(
     batchUpdateVisible,
     batchUpdateFormData,
     batchUpdateFormFields,
+    addDirty,
+    updateDirty,
+    batchUpdateDirty,
     addCommentVisible,
     viewCommentVisible,
     commentFormData,
     commentRemark,
     commentFields,
     commentList
-  ],
-  () => {
-    // functionCode / params 尚未就绪时不写入（极端情况）
-    if (!functionCode.value) return;
-    persistRightPanelStateToStore();
-  },
-  { deep: true }
-);
+  });
 
 // 兜底：mount / activate 钩子再尝试恢复一次（覆盖 cache key 在 setup 之后才稳定的情况）
 onMounted(() => {
@@ -996,37 +866,15 @@ const { handleExport } = useWorkbenchExport({
   gridApi,
   getFunctionCode,
   notify,
-  getFilters: () => {
-    // 组合：ag-grid 列筛选 + 条件面板筛选 + 工具栏快速检索
-    // 让"导出筛选"与页面显示完全对齐：
-    //   - 列筛选（每列 floating filter/menu filter）
-    //   - 条件面板（fieldKey / operator / value 结构化筛选）
-    //   - 工具栏快速检索（跨所有文本列）
-    const filters: any[] = [];
-
-    // 1. ag-grid 列筛选（最高优先级，先收集）
-    if (gridApi.value && !gridApi.value.isDestroyed()) {
-      filters.push(...collectColumnFilters(gridApi.value));
-    }
-
-    // 2. 条件面板筛选
-    if (selectedField.value && selectedValue.value.trim()) {
-      filters.push({
-        fieldKey: selectedField.value,
-        operator: selectedOperator.value,
-        value: selectedValue.value.trim()
-      });
-    }
-
-    // 3. 工具栏快速检索
-    if (quickKeyword.value && quickKeyword.value.trim()) {
-      filters.push({
-        globalSearch: quickKeyword.value.trim()
-      });
-    }
-
-    return filters;
-  }
+  // 导出筛选与页面显示完全对齐：ag-grid 列筛选 + 条件面板筛选 + 工具栏快速检索
+  getFilters: () =>
+    buildExportFilters({
+      gridApi: gridApi.value,
+      selectedField: selectedField.value,
+      selectedOperator: selectedOperator.value,
+      selectedValue: selectedValue.value,
+      quickKeyword: quickKeyword.value
+    })
 });
 
 // 钻取选项对话框（数据行 → 跳转新功能页）
