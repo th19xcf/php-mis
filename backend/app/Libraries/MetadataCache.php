@@ -710,8 +710,13 @@ class MetadataCache
         );
 
         $result = $this->model->select($sql);
-        $rows = ($result !== false) ? $result->getResultArray() : [];
+        if ($result === false) {
+            // SQL 瞬时失败：返回空数组但不写缓存，避免空结果连同有效指纹被缓存 3600s 污染后续请求
+            log_message('error', '[MetadataCache] getViewFunctionColumns 查询失败，跳过缓存写入: ' . $functionCode);
+            return [];
+        }
 
+        $rows = $result->getResultArray();
         $this->saveWithFingerprint($cacheKey, $rows, $fpTables, self::TTL_VIEW_FUNCTION);
         log_message('debug', '[MetadataCache] getViewFunctionColumns 缓存写入: ' . $functionCode . ' (' . count($rows) . ' rows)');
 

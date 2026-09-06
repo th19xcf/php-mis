@@ -35,12 +35,18 @@ class FakeMcommon extends Mcommon
     /** @var array<string, \Throwable> select SQL 精确匹配 => 抛出的异常 */
     private array $selectErrors = [];
 
+    /** select() 强制返回值：false = 模拟 SQL 失败；FakeResult = 固定行集；null = 正常查预置结果 */
+    public mixed $forceSelectReturn = null;
+
     public function select(string $sql)
     {
         if (isset($this->selectErrors[$sql])) {
             throw $this->selectErrors[$sql];
         }
         $this->selectSqlLog[] = $sql;
+        if ($this->forceSelectReturn !== null) {
+            return $this->forceSelectReturn;
+        }
         return new FakeResult($this->selectResults[$sql] ?? []);
     }
 
