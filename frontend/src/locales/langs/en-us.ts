@@ -257,6 +257,7 @@ const local: App.I18n.Schema = {
     contract: 'Contract Management',
     'contract-v2': 'Contract Management V2',
     'workflow-manage': 'Workflow Management',
+    'oa-todo-center': 'Todo Center',
     'room-status': 'Room Status'
   },
   page: {

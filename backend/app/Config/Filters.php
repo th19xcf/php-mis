@@ -122,6 +122,7 @@ class Filters extends BaseFilters
                 'contract/*',
                 'contractV2/*',
                 'workflow/*',
+                'todo/*',
                 'cache/*',
             ],
         ],

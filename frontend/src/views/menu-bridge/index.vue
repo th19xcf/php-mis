@@ -70,7 +70,8 @@ const nativeComponentMap: Record<string, any> = {
   contract: defineAsyncComponent(() => import('@/views/contract/index.vue')),
   'contract-v2': defineAsyncComponent(() => import('@/views/contract-v2/index.vue')),
   'match-data': defineAsyncComponent(() => import('@/views/match-data/index.vue')),
-  'workflow-manage': defineAsyncComponent(() => import('@/views/workflow-manage/index.vue'))
+  'workflow-manage': defineAsyncComponent(() => import('@/views/workflow-manage/index.vue')),
+  'oa-todo-center': defineAsyncComponent(() => import('@/views/oa-todo-center/index.vue'))
 };
 
 // 静态 HTML 页面映射：frontendRoute -> public 下的相对路径

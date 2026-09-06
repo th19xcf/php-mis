@@ -231,6 +231,22 @@ $routes->group('workflow', static function ($routes) {
 	$routes->post('template/delete', 'WorkflowApi::templateDelete');
 });
 
+$routes->group('todo', static function ($routes) {
+	$routes->get('center', 'TodoApi::center');
+	$routes->post('center', 'TodoApi::center');
+	$routes->get('stats', 'TodoApi::stats');
+	$routes->post('stats', 'TodoApi::stats');
+	$routes->post('create', 'TodoApi::create');
+	$routes->post('update', 'TodoApi::update');
+	$routes->post('complete', 'TodoApi::complete');
+	$routes->post('reassign', 'TodoApi::reassign');
+	$routes->post('delete', 'TodoApi::delete');
+	$routes->get('detail', 'TodoApi::detail');
+	$routes->post('detail', 'TodoApi::detail');
+	$routes->get('options', 'TodoApi::options');
+	$routes->post('options', 'TodoApi::options');
+});
+
 $routes->group('onlyoffice', static function ($routes) {
 	$routes->post('callback', 'OnlyOfficeCallback::index');
 	$routes->get('callback', 'OnlyOfficeCallback::index');

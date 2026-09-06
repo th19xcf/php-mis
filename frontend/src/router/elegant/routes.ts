@@ -124,6 +124,15 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
+    name: 'oa-todo-center',
+    path: '/oa-todo-center',
+    component: 'layout.base$view.oa-todo-center',
+    meta: {
+      title: 'oa-todo-center',
+      i18nKey: 'route.oa-todo-center'
+    }
+  },
+  {
     name: 'permission-demo',
     path: '/permission-demo',
     component: 'layout.base$view.permission-demo',

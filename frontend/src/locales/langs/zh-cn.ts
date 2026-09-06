@@ -253,6 +253,7 @@ const local: App.I18n.Schema = {
     contract: '合同管理',
     'contract-v2': '合同管理 V2',
     'workflow-manage': '工作流管理',
+    'oa-todo-center': '待办中心',
     'room-status': '房态图'
   },
   page: {
