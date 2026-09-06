@@ -141,10 +141,14 @@ class FakeResult
 }
 
 /**
- * 连接替身：仅暴露 insertID/affectedRows 两个消费面
+ * 连接替身：暴露 insertID/affectedRows 两个消费面 + 事务控制面（流水模式批量编辑用）
  */
 class FakeConnection
 {
+    public bool $transStatusReturn = true;
+
+    public bool $rolledBack = false;
+
     public function __construct(
         private readonly int $insertId,
         private readonly int $affectedRows
@@ -159,5 +163,23 @@ class FakeConnection
     public function affectedRows(): int
     {
         return $this->affectedRows;
+    }
+
+    public function transStart(): void
+    {
+    }
+
+    public function transComplete(): void
+    {
+    }
+
+    public function transRollback(): void
+    {
+        $this->rolledBack = true;
+    }
+
+    public function transStatus(): bool
+    {
+        return $this->transStatusReturn;
     }
 }

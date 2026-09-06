@@ -4,6 +4,7 @@ namespace App\Services\Workbench;
 
 use App\Exceptions\BusinessException;
 use App\Models\Mcommon;
+use App\Libraries\BatchEditSqlBuilder;
 use App\Libraries\MetadataCache;
 use App\Services\Workbench\ContextService;
 use App\Services\Audit\AuditLogService;
@@ -13,9 +14,9 @@ use App\Services\Employee\EmploymentMirrorService;
 /**
  * 批量编辑服务类
  *
- * 负责工作台批量修改、表级编辑等批量操作，
- * 支持多种数据模式（直接update/CASE WHEN批量/软删+流水）。
- * 从 EditService 中拆分而来。
+ * 负责工作台批量修改、表级编辑等批量操作的编排：
+ * 模式分发、事务、审计日志、人员/镜像同步、缓存失效。
+ * SQL 构造与行合并纯逻辑已抽取至 BatchEditSqlBuilder（特征测试锁定）。
  */
 class BatchEditService
 {
@@ -24,6 +25,12 @@ class BatchEditService
     public function __construct()
     {
         $this->model = new Mcommon();
+    }
+
+    /** quote callable（注入 BatchEditSqlBuilder，保持纯函数可测试性） */
+    private function quote(): callable
+    {
+        return [$this->model, 'quote'];
     }
 
     /**
@@ -47,28 +54,17 @@ class BatchEditService
         string $userWorkid,
         string $functionCode
     ): int {
-        $updates = [];
-        foreach ($formData as $key => $value) {
-            if ($key !== $primaryKey) {
-                $updates[] = sprintf('`%s` = %s', $key, $this->model->quote((string) $value));
-            }
-        }
+        $quote = $this->quote();
+        $updates = BatchEditSqlBuilder::buildSetClauses($formData, $primaryKey, [], $quote);
 
         if (empty($updates)) {
             return 0;
         }
 
         // 主键值去重并转义，构建批量 IN 条件（本方法仅支持单字段主键，与原实现一致）
-        $rawKeyValues = [];
-        $quotedKeyValues = [];
-        foreach ($keyValues as $keyVal) {
-            $raw = (string) $keyVal;
-            if (!in_array($raw, $rawKeyValues, true)) {
-                $rawKeyValues[] = $raw;
-                $quotedKeyValues[] = $this->model->quote($raw);
-            }
-        }
-        $whereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $quotedKeyValues));
+        $dedup = BatchEditSqlBuilder::dedupeKeyValues($keyValues, $quote);
+        $rawKeyValues = $dedup['raw'];
+        $whereIn = BatchEditSqlBuilder::buildWhereIn($primaryKey, $dedup['quoted']);
 
         switch ($dataModel) {
             case '0':
@@ -174,6 +170,7 @@ class BatchEditService
         string $userWorkid,
         string $functionCode
     ): int {
+        $quote = $this->quote();
         $db = $this->model->getDb();
         $db->transStart();
 
@@ -191,27 +188,22 @@ class BatchEditService
             }
 
             // 只处理实际命中的主键，未命中的跳过（与原逐条实现行为一致）
-            $hitKeyValues = [];
-            foreach ($rawKeyValues as $raw) {
-                if (isset($originalRows[$raw])) {
-                    $hitKeyValues[] = $raw;
-                }
-            }
+            $hitKeyValues = BatchEditSqlBuilder::filterHitKeyValues($rawKeyValues, $originalRows);
             if (empty($hitKeyValues)) {
                 $db->transComplete();
                 return 0;
             }
 
-            $hitQuoted = array_map(fn($v) => $this->model->quote($v), $hitKeyValues);
-            $hitWhereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $hitQuoted));
+            $hitWhereIn = BatchEditSqlBuilder::buildWhereIn(
+                $primaryKey,
+                array_map($quote, $hitKeyValues)
+            );
 
             // 2. 一条批量置无效（仅命中记录）
             $now = date('Y-m-d H:i:s');
-            $sqlUpdateOld = sprintf(
-                'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
+            $sqlUpdateOld = BatchEditSqlBuilder::buildFlowInvalidationUpdateSql(
                 $dataTable,
                 $userWorkid,
-                $now,
                 $now,
                 $hitWhereIn
             );
@@ -225,55 +217,25 @@ class BatchEditService
             $this->model->exec($sqlUpdateOld);
 
             // 3. PHP 内存中合并旧值 + 表单新值，一条多值 INSERT 插入全部新版本
-            // 用关联数组保证每列只出现一次：原行打底（跳过自增主键）-> formData
-            // 覆盖业务字段 -> 系统审计字段强制覆盖。避免原行已含审计列时与追加的
-            // 审计列重复触发 MySQL "Column 'xxx' specified twice" 错误，以及
-            // 沿用原行自增主键导致的新版本主键冲突
-            // （对齐 RecordEditService::updateRowByModel 的同款修复）。
-            $rowTemplate = null;
-            $insertValuesList = [];
+            //    （行合并语义见 BatchEditSqlBuilder::buildFlowVersionedRow 注释）
+            $newRows = [];
             foreach ($hitKeyValues as $raw) {
-                $originalRow = $originalRows[$raw];
-
-                $newRow = [];
-                foreach ($originalRow as $key => $val) {
-                    if ($key === $primaryKey) {
-                        continue; // 主键为自增列，由数据库生成新值
-                    }
-                    $newRow[$key] = array_key_exists($key, $formData)
-                        ? (string) $formData[$key]
-                        : (string) $val;
-                }
-                $newRow['操作记录'] = '新增';
-                $newRow['操作来源'] = '工作台';
-                $newRow['操作人员'] = $userWorkid;
-                $newRow['操作时间'] = $now;
-                $newRow['结束操作时间'] = ''; // 有效记录留空，置失效时才写操作时间
-                $newRow['删除标识'] = '0';
-                $newRow['有效标识'] = '1';
-
-                if ($rowTemplate === null) {
-                    $rowTemplate = array_keys($newRow);
-                }
-                $insertValuesList[] = '(' . implode(', ', array_map(
-                    fn($v) => $this->model->quote((string) $v),
-                    array_values($newRow)
-                )) . ')';
+                $newRows[] = BatchEditSqlBuilder::buildFlowVersionedRow(
+                    $originalRows[$raw],
+                    $formData,
+                    $userWorkid,
+                    $now,
+                    $primaryKey
+                );
             }
-
-            $sqlInsert = sprintf(
-                'INSERT INTO %s (%s) VALUES %s',
-                $dataTable,
-                implode(', ', array_map(fn($k) => sprintf('`%s`', $k), $rowTemplate)),
-                implode(', ', $insertValuesList)
-            );
+            $sqlInsert = BatchEditSqlBuilder::buildMultiRowInsertSql($dataTable, $newRows, $quote);
             $this->model->sql_log('批量修改[1-新]', $functionCode, [
                 'table' => $dataTable,
                 'pk' => $primaryKey,
                 'pk_values' => $hitKeyValues,
                 'fields' => $formData,
                 'note' => '流水批量插新版本',
-                'batch_count' => count($insertValuesList),
+                'batch_count' => count($newRows),
             ]);
             $num = $this->model->exec($sqlInsert);
 
@@ -348,20 +310,8 @@ class BatchEditService
             return ['success' => false, 'count' => 0, 'message' => '没有要提交的修改数据'];
         }
 
-        $primaryKeyFields = array_map('trim', explode(';', $primaryKey));
-        $missingKeys = [];
-        foreach ($primaryKeyFields as $pk) {
-            $has = false;
-            foreach ($rows as $row) {
-                if (array_key_exists($pk, $row) && $row[$pk] !== '' && $row[$pk] !== null) {
-                    $has = true;
-                    break;
-                }
-            }
-            if (!$has) {
-                $missingKeys[] = $pk;
-            }
-        }
+        $quote = $this->quote();
+        $missingKeys = BatchEditSqlBuilder::findMissingPrimaryKeyFields($rows, $primaryKey);
         if (!empty($missingKeys)) {
             return [
                 'success' => false,
@@ -370,7 +320,7 @@ class BatchEditService
             ];
         }
 
-        $skipFields = ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识'];
+        $skipFields = BatchEditSqlBuilder::SKIP_FIELDS;
 
         // 人员审计表：统一预取旧行快照（按主键索引，供各分组 diff 定位）
         $audit = new AuditLogService();
@@ -408,28 +358,7 @@ class BatchEditService
         $num = 0;
         switch ($dataModel) {
             case '0':
-                $updateGroups = [];
-                foreach ($rows as $row) {
-                    $updateFields = [];
-                    foreach ($row as $key => $value) {
-                        if ($key !== $primaryKey && !in_array($key, $skipFields, true)) {
-                            $updateFields[] = $key;
-                        }
-                    }
-                    if (empty($updateFields)) {
-                        continue;
-                    }
-                    sort($updateFields);
-                    $groupKey = implode('|', $updateFields);
-
-                    if (!isset($updateGroups[$groupKey])) {
-                        $updateGroups[$groupKey] = [
-                            'fields' => $updateFields,
-                            'rows'   => [],
-                        ];
-                    }
-                    $updateGroups[$groupKey]['rows'][] = $row;
-                }
+                $updateGroups = BatchEditSqlBuilder::groupRowsByUpdateFields($rows, $primaryKey, $skipFields);
 
                 foreach ($updateGroups as $group) {
                     $updateFields = $group['fields'];
@@ -437,28 +366,19 @@ class BatchEditService
 
                     if (count($groupRows) === 1) {
                         $row = $groupRows[0];
-                        $where = $this->buildWhereFromPrimaryKey($row, $primaryKey);
+                        $where = BatchEditSqlBuilder::buildWhereFromPrimaryKey($row, $primaryKey, $quote);
                         if (empty($where)) {
                             continue;
                         }
 
-                        $updates = [];
-                        foreach ($row as $key => $value) {
-                            if ($key !== $primaryKey && !in_array($key, $skipFields, true)) {
-                                $updates[] = sprintf('`%s` = %s', $key, $this->model->quote((string) $value));
-                            }
-                        }
+                        $updates = BatchEditSqlBuilder::buildSetClauses($row, $primaryKey, $skipFields, $quote);
 
                         $sql = sprintf('UPDATE %s SET %s WHERE %s', $dataTable, implode(', ', $updates), $where);
                         $this->model->sql_log('表级修改[0]', $functionCode, [
                             'table' => $dataTable,
                             'pk' => $primaryKey,
                             'pk_values' => [$row[$primaryKey] ?? null],
-                            'fields' => array_keys(array_filter(
-                                $row,
-                                fn($k) => $k !== $primaryKey && !in_array($k, $skipFields, true),
-                                ARRAY_FILTER_USE_KEY
-                            )),
+                            'fields' => BatchEditSqlBuilder::updateFieldNames($row, $primaryKey, $skipFields),
                             'note' => '单条UPDATE',
                         ]);
                         $affectedRow = $this->model->exec($sql);
@@ -491,28 +411,12 @@ class BatchEditService
 
                         $num += $affectedRow;
                     } else {
-                        $caseStatements = [];
-                        $primaryKeyValues = [];
-
-                        foreach ($updateFields as $field) {
-                            $caseParts = [];
-                            foreach ($groupRows as $row) {
-                                $pkValue = $this->model->quote((string) ($row[$primaryKey] ?? ''));
-                                $fieldValue = $this->model->quote((string) ($row[$field] ?? ''));
-                                $caseParts[] = sprintf('WHEN `%s` = %s THEN %s', $primaryKey, $pkValue, $fieldValue);
-                                $primaryKeyValues[] = $pkValue;
-                            }
-                            $caseStatements[] = sprintf('`%s` = CASE %s ELSE `%s` END', $field, implode(' ', $caseParts), $field);
-                        }
-
-                        $primaryKeyValues = array_unique($primaryKeyValues);
-                        $whereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $primaryKeyValues));
-
-                        $sql = sprintf(
-                            'UPDATE %s SET %s WHERE %s',
+                        $sql = BatchEditSqlBuilder::buildCaseWhenUpdateSql(
                             $dataTable,
-                            implode(', ', $caseStatements),
-                            $whereIn
+                            $groupRows,
+                            $updateFields,
+                            $primaryKey,
+                            $quote
                         );
 
                         $this->model->sql_log('表级修改[0]', $functionCode, [
@@ -568,7 +472,7 @@ class BatchEditService
                 $primaryKeyValues = [];
                 $validRows = [];
                 foreach ($rows as $row) {
-                    $where = $this->buildWhereFromPrimaryKey($row, $primaryKey);
+                    $where = BatchEditSqlBuilder::buildWhereFromPrimaryKey($row, $primaryKey, $quote);
                     if (empty($where)) {
                         continue;
                     }
@@ -580,7 +484,7 @@ class BatchEditService
                     return ['success' => false, 'count' => 0, 'message' => '表级修改失败:payload 中缺少有效的主键值,无法定位待修改记录'];
                 }
 
-                $whereIn = sprintf('`%s` IN (%s)', $primaryKey, implode(',', $primaryKeyValues));
+                $whereIn = BatchEditSqlBuilder::buildWhereIn($primaryKey, $primaryKeyValues);
                 $sqlSelect = sprintf('SELECT * FROM %s WHERE %s', $dataTable, $whereIn);
                 $result = $this->model->select($sqlSelect);
                 if ($result === false) {
@@ -592,11 +496,9 @@ class BatchEditService
                     $originalRows[$row[$primaryKey]] = $row;
                 }
 
-                $sqlUpdateOld = sprintf(
-                    'UPDATE %s SET 操作记录="修改",操作来源="工作台",操作人员="%s",操作时间="%s",结束操作时间="%s",删除标识="1",有效标识="0" WHERE %s',
+                $sqlUpdateOld = BatchEditSqlBuilder::buildFlowInvalidationUpdateSql(
                     $dataTable,
                     $userWorkid,
-                    date('Y-m-d H:i:s'),
                     date('Y-m-d H:i:s'),
                     $whereIn
                 );
@@ -609,60 +511,33 @@ class BatchEditService
                 ]);
                 $this->model->exec($sqlUpdateOld);
 
-                $insertValuesList = [];
-                $rowTemplate = null;
+                $newRows = [];
                 foreach ($validRows as $row) {
                     $pkValue = $row[$primaryKey];
                     if (!isset($originalRows[$pkValue])) {
                         continue;
                     }
 
-                    $originalRow = $originalRows[$pkValue];
-
-                    // 用关联数组保证每列只出现一次：原行打底（跳过自增主键与
-                    // 审计列）-> 提交行覆盖 -> 审计字段强制覆盖。修复原行已含
-                    // 审计列时与追加列重复触发的 MySQL "Column 'xxx' specified
-                    // twice" 错误，以及沿用原行自增主键导致的主键冲突
-                    // （对齐 batchUpdateFlowVersioned / RecordEditService 修复）。
-                    $newRow = [];
-                    foreach ($originalRow as $key => $val) {
-                        if ($key === $primaryKey || in_array($key, $skipFields, true)) {
-                            continue;
-                        }
-                        $newRow[$key] = isset($row[$key]) ? (string) $row[$key] : (string) $val;
-                    }
-                    $newRow['操作记录'] = '新增';
-                    $newRow['操作来源'] = '工作台';
-                    $newRow['操作人员'] = $userWorkid;
-                    $newRow['操作时间'] = date('Y-m-d H:i:s');
-                    $newRow['结束操作时间'] = ''; // 有效记录留空，置失效时才写操作时间
-                    $newRow['删除标识'] = '0';
-                    $newRow['有效标识'] = '1';
-
-                    if ($rowTemplate === null) {
-                        $rowTemplate = array_keys($newRow);
-                    }
-                    $insertValuesList[] = '(' . implode(', ', array_map(
-                        fn($v) => $this->model->quote((string) $v),
-                        array_values($newRow)
-                    )) . ')';
+                    // 行合并语义见 BatchEditSqlBuilder::buildTableVersionedRow 注释
+                    //（操作时间为逐行取值，与原实现一致）
+                    $newRows[] = BatchEditSqlBuilder::buildTableVersionedRow(
+                        $originalRows[$pkValue],
+                        $row,
+                        $userWorkid,
+                        date('Y-m-d H:i:s'),
+                        $primaryKey,
+                        $skipFields
+                    );
                 }
 
-                if (!empty($insertValuesList)) {
-                    $allFields = array_map(fn($k) => sprintf('`%s`', $k), $rowTemplate);
-
-                    $sqlInsert = sprintf(
-                        'INSERT INTO %s (%s) VALUES %s',
-                        $dataTable,
-                        implode(', ', $allFields),
-                        implode(', ', $insertValuesList)
-                    );
+                if (!empty($newRows)) {
+                    $sqlInsert = BatchEditSqlBuilder::buildMultiRowInsertSql($dataTable, $newRows, $quote);
                     $this->model->sql_log('表级修改[1-新]', $functionCode, [
                         'table' => $dataTable,
                         'pk' => $primaryKey,
                         'pk_values' => array_map(fn($r) => $r[$primaryKey] ?? null, $validRows),
                         'note' => '流水批量插新',
-                        'batch_count' => count($insertValuesList),
+                        'batch_count' => count($newRows),
                     ]);
                     $num += $this->model->exec($sqlInsert);
 
@@ -714,7 +589,7 @@ class BatchEditService
     /**
      * 表级编辑单行 diff 写入 hr_audit_log（严格模式）
      *
-     * diff 字段与实际写入字段严格一致：排除主键与控制列（skipFields 同款清单）；
+     * diff 字段与实际写入字段严格一致：排除主键与控制列（SKIP_FIELDS 同款清单）；
      * 旧行自预取映射按主键取，主键值缺失或旧行未命中时跳过（并发已变更场景）。
      */
     private function logTableEditRowDiff(
@@ -730,14 +605,7 @@ class BatchEditService
             return;
         }
 
-        $skipFields = ['操作记录', '操作来源', '操作人员', '操作时间', '结束操作时间', '删除标识'];
-        $diffData = [];
-        foreach ($row as $key => $value) {
-            if ($key === $primaryKey || in_array($key, $skipFields, true)) {
-                continue;
-            }
-            $diffData[$key] = $value;
-        }
+        $diffData = BatchEditSqlBuilder::extractDiffData($row, $primaryKey, BatchEditSqlBuilder::SKIP_FIELDS);
         if (empty($diffData)) {
             return;
         }
@@ -749,28 +617,6 @@ class BatchEditService
             $userWorkid,
             '工作台'
         );
-    }
-
-    /**
-     * 根据数据行与主键构建 WHERE 条件（分号分隔的复合主键）
-     *
-     * @param array $data
-     * @param string $primaryKey
-     * @return string
-     */
-    private function buildWhereFromPrimaryKey(array $data, string $primaryKey): string
-    {
-        $keys = explode(';', $primaryKey);
-        $conditions = [];
-
-        foreach ($keys as $key) {
-            $key = trim($key);
-            if (isset($data[$key])) {
-                $conditions[] = sprintf('%s=%s', $key, $this->model->quote((string) $data[$key]));
-            }
-        }
-
-        return implode(' and ', $conditions);
     }
 
     private function invalidateConfigCache(string $dataTable): void
