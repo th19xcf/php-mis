@@ -4,6 +4,9 @@ namespace App\Controllers;
 
 use CodeIgniter\HTTP\ResponseInterface;
 use App\Controllers\BaseApiController;
+use App\Libraries\MatchColumnBuilder;
+use App\Libraries\MatchConfigParser;
+use App\Libraries\MatchRelationProcessor;
 use App\Libraries\MetadataCache;
 
 class MatchApi extends BaseApiController
@@ -137,88 +140,22 @@ class MatchApi extends BaseApiController
     private function applyMatchedFlag(array &$aRows, array &$bRows, array $matchWrites, string $aTable, string $bTable, array $matchKeyFields): void
     {
         $db = \Config\Database::connect('btdc');
-        $bToAWrites = $matchWrites['bToA'] ?? [];
-        $aToBWrites = $matchWrites['aToB'] ?? [];
 
-        $aNeededFields = [];
-        $bNeededFields = [];
-        foreach ($bToAWrites as $w) {
-            $aNeededFields[] = $w['targetField'];
-        }
-        foreach ($aToBWrites as $w) {
-            if ($w['sourceType'] === 'field' && $w['sourceTable'] === 'A') {
-                $aNeededFields[] = $w['sourceField'];
-            }
-            if ($w['sourceType'] === 'field' && $w['sourceTable'] === 'B') {
-                $bNeededFields[] = $w['sourceField'];
-            }
-            $bNeededFields[] = $w['targetField'];
-        }
+        $needed = MatchRelationProcessor::collectNeededFields($matchWrites);
 
         $aFirstRow = $aRows[0] ?? [];
-        $aMissingFields = array_unique(array_filter($aNeededFields, fn($f) => !array_key_exists($f, $aFirstRow)));
+        $aMissingFields = MatchRelationProcessor::computeMissingFields($needed['a'], $aFirstRow);
         if (!empty($aMissingFields) && !empty($aRows)) {
             $this->supplementFieldsFromTable($db, $aRows, $aTable, $aMissingFields, $matchKeyFields['aKey'] ?? null);
         }
 
         $bFirstRow = $bRows[0] ?? [];
-        $bMissingFields = array_unique(array_filter($bNeededFields, fn($f) => !array_key_exists($f, $bFirstRow)));
+        $bMissingFields = MatchRelationProcessor::computeMissingFields($needed['b'], $bFirstRow);
         if (!empty($bMissingFields) && !empty($bRows)) {
             $this->supplementFieldsFromTable($db, $bRows, $bTable, $bMissingFields, $matchKeyFields['bKey'] ?? null);
         }
 
-        // A 侧标记：bToA 的 targetField 非空 → 已匹配
-        $aMarkerField = null;
-        if (!empty($bToAWrites)) {
-            $aMarkerField = $bToAWrites[0]['targetField'];
-        }
-
-        if ($aMarkerField) {
-            foreach ($aRows as &$row) {
-                $row['__matched'] = !empty($row[$aMarkerField]);
-            }
-            unset($row);
-        } else {
-            foreach ($aRows as &$row) {
-                $row['__matched'] = false;
-            }
-            unset($row);
-        }
-
-        // B 侧标记：通过 aToB 写入指令的源/目标字段交叉引用
-        $aToBLink = null;
-        foreach ($aToBWrites as $write) {
-            if ($write['sourceType'] === 'field' && $write['sourceTable'] === 'A') {
-                $aToBLink = $write;
-                break;
-            }
-        }
-
-        if ($aToBLink) {
-            $aSourceField = $aToBLink['sourceField'];
-            $bTargetField = $aToBLink['targetField'];
-
-            $matchedAValues = [];
-            foreach ($aRows as $aRow) {
-                if (!empty($aRow['__matched'])) {
-                    $val = (string) ($aRow[$aSourceField] ?? '');
-                    if ($val !== '') {
-                        $matchedAValues[$val] = true;
-                    }
-                }
-            }
-
-            foreach ($bRows as &$row) {
-                $bTargetValue = (string) ($row[$bTargetField] ?? '');
-                $row['__matched'] = $bTargetValue !== '' && isset($matchedAValues[$bTargetValue]);
-            }
-            unset($row);
-        } else {
-            foreach ($bRows as &$row) {
-                $row['__matched'] = false;
-            }
-            unset($row);
-        }
+        MatchRelationProcessor::markMatchedFlags($aRows, $bRows, $matchWrites);
     }
 
     /**
@@ -532,28 +469,7 @@ class MatchApi extends BaseApiController
             return [];
         }
 
-        $rawConditions = trim((string) ($row['匹配条件'] ?? ''));
-        if ($rawConditions === '') {
-            return [];
-        }
-
-        $parts = array_map('trim', explode(';', $rawConditions));
-        $result = [];
-        foreach ($parts as $part) {
-            if ($part === '') {
-                continue;
-            }
-            // 解析 A.<aField>=B.<bField>
-            if (preg_match('/^A\.(.+?)=B\.(.+)$/', $part, $m)) {
-                $result[] = [
-                    'aField' => trim($m[1]),
-                    'bField' => trim($m[2]),
-                    'text' => $part,
-                ];
-            }
-        }
-
-        return $result;
+        return MatchConfigParser::parseMatchConditions(trim((string) ($row['匹配条件'] ?? '')));
     }
 
     /**
@@ -619,101 +535,9 @@ class MatchApi extends BaseApiController
         $bToARaw = trim((string) ($row['B表写入A表'] ?? ''));
 
         return [
-            'aToB' => $this->parseWriteInstructions($aToBRaw, 'B'),
-            'bToA' => $this->parseWriteInstructions($bToARaw, 'A'),
+            'aToB' => MatchConfigParser::parseWriteInstructions($aToBRaw, 'B'),
+            'bToA' => MatchConfigParser::parseWriteInstructions($bToARaw, 'A'),
         ];
-    }
-
-    /**
-     * 解析写入指令字符串
-     *
-     * @param string $raw 原始字符串
-     * @param string $targetPrefix 目标表前缀（A 或 B）
-     * @return array 解析后的写入指令数组
-     */
-    private function parseWriteInstructions(string $raw, string $targetPrefix): array
-    {
-        if ($raw === '') {
-            return [];
-        }
-
-        $parts = array_map('trim', explode(';', $raw));
-        $result = [];
-        foreach ($parts as $part) {
-            if ($part === '') {
-                continue;
-            }
-            // 格式：<targetPrefix>.<targetField>=<source>
-            if (preg_match('/^' . preg_quote($targetPrefix, '/') . '\.(.+?)=(.+)$/', $part, $m)) {
-                $targetField = trim($m[1]);
-                $source = trim($m[2]);
-
-                $sourceType = 'literal';
-                $sourceTable = '';
-                $sourceField = '';
-
-                if (preg_match('/^A\.(.+)$/', $source, $sm)) {
-                    $sourceType = 'field';
-                    $sourceTable = 'A';
-                    $sourceField = trim($sm[1]);
-                } elseif (preg_match('/^B\.(.+)$/', $source, $sm)) {
-                    $sourceType = 'field';
-                    $sourceTable = 'B';
-                    $sourceField = trim($sm[1]);
-                } elseif (strtolower($source) === 'uuid') {
-                    $sourceType = 'uuid';
-                } else {
-                    $sourceType = 'literal';
-                    $sourceField = $source;
-                }
-
-                $result[] = [
-                    'targetField' => $targetField,
-                    'sourceType' => $sourceType,
-                    'sourceTable' => $sourceTable,
-                    'sourceField' => $sourceField,
-                    'text' => $part,
-                ];
-            }
-        }
-
-        return $result;
-    }
-
-    /**
-     * 生成 UUID v4
-     */
-    private function generateUuid(): string
-    {
-        $data = random_bytes(16);
-        $data[6] = chr(ord($data[6]) & 0x0f | 0x40);
-        $data[8] = chr(ord($data[8]) & 0x3f | 0x80);
-        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
-    }
-
-    /**
-     * 根据写入指令解析源值
-     *
-     * @param array $write 写入指令
-     * @param array $aRecord A 表记录
-     * @param array $bRecord B 表记录
-     * @return string 源值
-     */
-    private function resolveWriteSourceValue(array $write, array $aRecord, array $bRecord): string
-    {
-        if ($write['sourceType'] === 'uuid') {
-            return $this->generateUuid();
-        }
-        if ($write['sourceType'] === 'field') {
-            if ($write['sourceTable'] === 'A') {
-                return (string) ($aRecord[$write['sourceField']] ?? '');
-            }
-            if ($write['sourceTable'] === 'B') {
-                return (string) ($bRecord[$write['sourceField']] ?? '');
-            }
-        }
-        // literal
-        return $write['sourceField'];
     }
 
     private function getModuleColumns(string $moduleName): array
@@ -730,31 +554,7 @@ class MatchApi extends BaseApiController
         $metadataCache = new MetadataCache();
         $rows = $metadataCache->getViewFunctionColumns($functionCode);
 
-        $columns = [[
-            'field' => '序号',
-            'title' => '序号',
-            'type' => '数值',
-            'width' => 90,
-            'hidden' => false,
-            'editable' => false,
-            'sortable' => true,
-            'original' => []
-        ]];
-        foreach ($rows as $row) {
-            $title = (string) ($row['列名'] ?? '');
-            $columns[] = [
-                'field' => $title !== '' ? $title : (string) ($row['字段名'] ?? ''),
-                'title' => (string) ($row['查询名'] ?? '') !== '' ? (string) $row['查询名'] : ($title !== '' ? $title : (string) ($row['字段名'] ?? '')),
-                'type' => $row['列类型'] ?? '',
-                'width' => intval($row['列宽度'] ?? 0),
-                'hidden' => false,
-                'editable' => false,
-                'sortable' => true,
-                'original' => $row
-            ];
-        }
-
-        return $columns;
+        return MatchColumnBuilder::buildModuleColumns($rows);
     }
 
     private function getMatchColumns(string $moduleName): array
@@ -769,31 +569,7 @@ class MatchApi extends BaseApiController
         $metadataCache = new MetadataCache();
         $rows = $metadataCache->getViewFunctionColumns($functionCode);
 
-        $result = ['key' => '', 'label' => '', 'amount' => '', 'target' => ''];
-
-        foreach ($rows as $col) {
-            $matchType = (string) ($col['可匹配'] ?? '');
-            $fieldName = (string) ($col['字段名'] ?? '');
-            if ($fieldName === '') {
-                continue;
-            }
-            switch ($matchType) {
-                case '1':
-                    $result['key'] = $fieldName;
-                    break;
-                case '2':
-                    $result['label'] = $fieldName;
-                    break;
-                case '3':
-                    $result['amount'] = $fieldName;
-                    break;
-                case '4':
-                    $result['target'] = $fieldName;
-                    break;
-            }
-        }
-
-        return $result;
+        return MatchColumnBuilder::extractMatchColumns($rows);
     }
 
     /**
@@ -836,18 +612,9 @@ class MatchApi extends BaseApiController
         $aRaw = trim((string) ($row['A表计算字段'] ?? ''));
         $bRaw = trim((string) ($row['B表计算字段'] ?? ''));
 
-        $parse = static function (string $raw): array {
-            if ($raw === '') {
-                return [];
-            }
-            $parts = array_map('trim', explode(',', $raw));
-            $parts = array_filter($parts, static fn($v) => $v !== '');
-            return array_values($parts);
-        };
-
         return [
-            'aCalcFields' => $parse($aRaw),
-            'bCalcFields' => $parse($bRaw),
+            'aCalcFields' => MatchConfigParser::parseCalcFields($aRaw),
+            'bCalcFields' => MatchConfigParser::parseCalcFields($bRaw),
         ];
     }
 
@@ -938,18 +705,8 @@ class MatchApi extends BaseApiController
             $bTable = $ctx['bTable'];
 
             // 检查 target 字段是否已被写入指令覆盖
-            $aTargetCovered = false;
-            $bTargetCovered = false;
-            foreach ($writes['bToA'] as $write) {
-                if ($write['targetField'] === $aCols['target']) {
-                    $aTargetCovered = true;
-                }
-            }
-            foreach ($writes['aToB'] as $write) {
-                if ($write['targetField'] === $bCols['target']) {
-                    $bTargetCovered = true;
-                }
-            }
+            $aTargetCovered = MatchRelationProcessor::isTargetCovered($writes['bToA'], $aCols['target']);
+            $bTargetCovered = MatchRelationProcessor::isTargetCovered($writes['aToB'], $bCols['target']);
 
             $db = \Config\Database::connect('btdc');
             $db->transStart();
@@ -987,28 +744,7 @@ class MatchApi extends BaseApiController
 
             // 执行 aToB 写入：将 A 的字段值写入 B 记录
             foreach ($bKeys as $bKey) {
-                $updateData = [];
-                $bRecord = $bRecords[$bKey] ?? [];
-                foreach ($writes['aToB'] as $write) {
-                    if ($write['sourceType'] === 'field' && $write['sourceTable'] === 'A') {
-                        // 收集所有 A 记录的源字段值，用英文分号拼接
-                        $values = [];
-                        foreach ($aKeys as $aKey) {
-                            $aRecord = $aRecords[$aKey] ?? [];
-                            $val = (string) ($aRecord[$write['sourceField']] ?? '');
-                            if ($val !== '') {
-                                $values[] = $val;
-                            }
-                        }
-                        $value = implode(';', $values);
-                    } else {
-                        // uuid / literal / B 字段：单值
-                        $firstAKey = $aKeys[0] ?? '';
-                        $firstARecord = $aRecords[$firstAKey] ?? [];
-                        $value = $this->resolveWriteSourceValue($write, $firstARecord, $bRecord);
-                    }
-                    $updateData[$write['targetField']] = $value;
-                }
+                $updateData = MatchRelationProcessor::buildAToBUpdateData($writes['aToB'], $aKeys, $aRecords, $bRecords, $bKey);
                 if (!empty($updateData)) {
                     $db->table($bTable)
                         ->where($bCols['key'], $bKey)
@@ -1022,32 +758,7 @@ class MatchApi extends BaseApiController
 
             // 执行 bToA 写入：将 B 的字段值或 uuid 写入 A 记录
             foreach ($aKeys as $aKey) {
-                $updateData = [];
-                $aRecord = $aRecords[$aKey] ?? [];
-                foreach ($writes['bToA'] as $write) {
-                    if ($write['sourceType'] === 'field' && $write['sourceTable'] === 'B') {
-                        $values = [];
-                        foreach ($bKeys as $bKey) {
-                            $bRecord = $bRecords[$bKey] ?? [];
-                            $val = (string) ($bRecord[$write['sourceField']] ?? '');
-                            if ($val !== '') {
-                                $values[] = $val;
-                            }
-                        }
-                        $value = implode(';', $values);
-                    } elseif ($write['sourceType'] === 'uuid') {
-                        $values = [];
-                        foreach ($bKeys as $_) {
-                            $values[] = $this->generateUuid();
-                        }
-                        $value = implode(';', $values);
-                    } else {
-                        $firstBKey = $bKeys[0] ?? '';
-                        $firstBRecord = $bRecords[$firstBKey] ?? [];
-                        $value = $this->resolveWriteSourceValue($write, $aRecord, $firstBRecord);
-                    }
-                    $updateData[$write['targetField']] = $value;
-                }
+                $updateData = MatchRelationProcessor::buildBToAUpdateData($writes['bToA'], $bKeys, $bRecords, $aRecords, $aKey);
                 if (!empty($updateData)) {
                     $db->table($aTable)
                         ->where($aCols['key'], $aKey)
@@ -1068,10 +779,7 @@ class MatchApi extends BaseApiController
                         ->get()
                         ->getRowArray();
 
-                    $currentTargets = $existing[$aCols['target']] ?? '';
-                    $targetArray = $currentTargets ? explode(',', $currentTargets) : [];
-                    $newTargets = array_unique(array_merge($targetArray, $bKeys));
-                    $newTargetStr = implode(',', $newTargets);
+                    $newTargetStr = MatchRelationProcessor::mergeTargetKeys((string) ($existing[$aCols['target']] ?? ''), $bKeys);
 
                     $db->table($aTable)
                         ->set($aCols['target'], $newTargetStr)
@@ -1088,10 +796,7 @@ class MatchApi extends BaseApiController
                         ->get()
                         ->getRowArray();
 
-                    $currentTargets = $existing[$bCols['target']] ?? '';
-                    $targetArray = $currentTargets ? explode(',', $currentTargets) : [];
-                    $newTargets = array_unique(array_merge($targetArray, $aKeys));
-                    $newTargetStr = implode(',', $newTargets);
+                    $newTargetStr = MatchRelationProcessor::mergeTargetKeys((string) ($existing[$bCols['target']] ?? ''), $aKeys);
 
                     $db->table($bTable)
                         ->set($bCols['target'], $newTargetStr)
@@ -1152,15 +857,9 @@ class MatchApi extends BaseApiController
             $bTable = $ctx['bTable'];
 
             // 收集需要清空的 B 表字段（aToB 的 targetField）
-            $bClearFields = [];
-            foreach ($writes['aToB'] as $write) {
-                $bClearFields[$write['targetField']] = true;
-            }
+            $bClearFields = MatchRelationProcessor::collectTargetFields($writes['aToB']);
             // 收集需要清空的 A 表字段（bToA 的 targetField）
-            $aClearFields = [];
-            foreach ($writes['bToA'] as $write) {
-                $aClearFields[$write['targetField']] = true;
-            }
+            $aClearFields = MatchRelationProcessor::collectTargetFields($writes['bToA']);
 
             $db = \Config\Database::connect('btdc');
             $db->transStart();
@@ -1178,7 +877,7 @@ class MatchApi extends BaseApiController
                 }
                 if (!empty($bKeys)) {
                     $updateData = [$bCols['target'] => ''];
-                    foreach (array_keys($bClearFields) as $field) {
+                    foreach ($bClearFields as $field) {
                         $updateData[$field] = '';
                     }
                     $db->table($bTable)
@@ -1219,11 +918,7 @@ class MatchApi extends BaseApiController
                             ->get()
                             ->getRowArray();
 
-                        $currentTargets = $existing[$bCols['target']] ?? '';
-                        $targetArray = $currentTargets ? preg_split('/[;,]/', $currentTargets) : [];
-                        $targetArray = array_map('trim', $targetArray);
-                        $newTargets = array_diff($targetArray, $aKeys);
-                        $newTargetStr = implode(';', array_filter($newTargets, fn($v) => $v !== ''));
+                        $newTargetStr = MatchRelationProcessor::removeTargetKeys((string) ($existing[$bCols['target']] ?? ''), $aKeys);
 
                         $db->table($bTable)
                             ->set($bCols['target'], $newTargetStr)
