@@ -118,6 +118,16 @@ class FakeResult
         return $this->rows;
     }
 
+    /**
+     * 对象数组消费面（如 ImportService 日期校验分支的 $date->字段值）
+     *
+     * @return array<int, object>
+     */
+    public function getResult(): array
+    {
+        return array_map(static fn (array $row) => (object) $row, $this->rows);
+    }
+
     public function getRowArray(): array
     {
         return $this->rows[0] ?? [];

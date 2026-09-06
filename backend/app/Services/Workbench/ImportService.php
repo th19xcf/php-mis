@@ -3,6 +3,7 @@
 namespace App\Services\Workbench;
 
 use App\Models\Mcommon;
+use App\Libraries\ImportSqlBuilder;
 use App\Libraries\MetadataCache;
 
 /**
@@ -391,37 +392,15 @@ class ImportService
         $this->dropTempTable($tableName);
 
         if (empty($columns)) {
-            $sql = sprintf('CREATE TABLE `%s` (id int auto_increment primary key, data varchar(255))', $tableName);
-            $result = $this->model->exec($sql);
+            $result = $this->model->exec(ImportSqlBuilder::buildSimpleCreateTableSql($tableName));
             return $result !== false;
         }
 
-        $fieldDefs = [];
-        $fieldNamesForLog = [];
-        foreach ($columns as $col) {
-            // 字段名优先，为空字符串时 fallback 到列名，都空则跳过（防 Incorrect column name ''）
-            $fieldName = (string)($col['字段名'] ?? '');
-            if ($fieldName === '') {
-                $fieldName = (string)($col['列名'] ?? '');
-            }
-            if ($fieldName === '') {
-                continue;
-            }
-            $fieldNamesForLog[] = $fieldName;
-            $fieldLength = $col['字段长度'] ?? 255;
-            $defaultValue = (string) ($col['缺省值'] ?? '');
-            if ($defaultValue !== '') {
-                $fieldDefs[] = sprintf('`%s` varchar(%s) not null default %s', $fieldName, $fieldLength, $this->model->quote($defaultValue));
-            } else {
-                $fieldDefs[] = sprintf('`%s` varchar(%s) not null default ""', $fieldName, $fieldLength);
-            }
-        }
+        $built = ImportSqlBuilder::buildCreateTableSql($tableName, $columns, fn (string $v) => $this->model->quote($v));
+        log_message('debug', '[ImportService] createTempTable 字段名列表: ' . json_encode($built['fieldNames'], JSON_UNESCAPED_UNICODE));
+        log_message('debug', '[ImportService] createTempTable SQL: ' . $built['sql']);
 
-        $sql = sprintf('CREATE TABLE `%s` (%s)', $tableName, implode(',', $fieldDefs));
-        log_message('debug', '[ImportService] createTempTable 字段名列表: ' . json_encode($fieldNamesForLog, JSON_UNESCAPED_UNICODE));
-        log_message('debug', '[ImportService] createTempTable SQL: ' . $sql);
-
-        $result = $this->model->exec($sql);
+        $result = $this->model->exec($built['sql']);
         log_message('debug', '[ImportService] createTempTable 结果: ' . var_export($result, true));
 
         return $result !== false;
@@ -461,37 +440,13 @@ class ImportService
         log_message('debug', '[ImportService] validData 字段名: ' . json_encode(array_keys($data[0]), JSON_UNESCAPED_UNICODE));
         log_message('debug', '[ImportService] validData 第一行数据: ' . json_encode($data[0], JSON_UNESCAPED_UNICODE));
 
-        $defaultValueMap = [];
-        foreach ($importColumns as $col) {
-            $fieldName = $col['字段名'] ?? '';
-            $defaultValue = (string) ($col['缺省值'] ?? '');
-            if ($fieldName !== '' && $defaultValue !== '') {
-                $defaultValueMap[$fieldName] = $defaultValue;
-            }
-        }
-
-        $fields = array_filter(array_keys($data[0]), static fn($f) => $f !== '');
-        $values = [];
-
-        foreach ($data as $row) {
-            $rowValues = [];
-            foreach ($fields as $field) {
-                $value = $row[$field] ?? '';
-                if (($value === '' || $value === null) && isset($defaultValueMap[$field])) {
-                    $value = $defaultValueMap[$field];
-                }
-                $rowValues[] = $this->model->quote((string) $value);
-            }
-            $values[] = '(' . implode(',', $rowValues) . ')';
-        }
-
-        $quotedFields = array_map(static fn($f) => '`' . $f . '`', $fields);
-
-        $sql = sprintf(
-            'INSERT INTO `%s` (%s) VALUES %s',
+        $fields = ImportSqlBuilder::deriveInsertFields($data[0]);
+        $sql = ImportSqlBuilder::buildInsertRowsSql(
             $tableName,
-            implode(', ', $quotedFields),
-            implode(', ', $values)
+            $fields,
+            $data,
+            ImportSqlBuilder::buildDefaultValueMap($importColumns),
+            fn (string $v) => $this->model->quote($v)
         );
 
         log_message('debug', '[ImportService] insertToTempTable SQL: ' . substr($sql, 0, 500));
@@ -526,28 +481,7 @@ class ImportService
 
             // 固定值校验
             if (strpos($checkType, '固定值') !== false && $object !== '') {
-                $sql = sprintf('
-                    select
-                        t1.字段名 as 字段名,
-                        t1.字段值 as 字段值,
-                        ifnull(t2.对象值,"") as 对象值
-                    from
-                    (
-                        select "%s" as 字段名, `%s` as 字段值
-                        from `%s`
-                        group by 字段值
-                    ) as t1
-                    left join
-                    (
-                        select 对象名称,对象值
-                        from def_object
-                        where 对象名称="%s"
-                            and (属地="" or locate(属地,"%s"))
-                    ) as t2 on t1.字段值=t2.对象值
-                    where t2.对象值 is null and t1.字段值 != ""
-                ',
-                    $fieldName, $fieldName, $tmpTableName,
-                    $object, $userLocationAuthz);
+                $sql = ImportSqlBuilder::buildFixedValueCheckSql($fieldName, $tmpTableName, $object, $userLocationAuthz);
 
                 $result = $this->model->select($sql);
                 if ($result !== false) {
@@ -568,10 +502,7 @@ class ImportService
 
             // 条件校验
             if (strpos($checkType, '条件') !== false && $checkInfo !== '') {
-                $sql = sprintf(
-                    'select "%s" as 字段名, `%s` as 字段值 from `%s` where %s',
-                    $columnName, $fieldName, $tmpTableName, $checkInfo
-                );
+                $sql = ImportSqlBuilder::buildConditionCheckSql($columnName, $fieldName, $tmpTableName, $checkInfo);
 
                 $result = $this->model->select($sql);
                 if ($result !== false) {
@@ -592,10 +523,7 @@ class ImportService
 
             // 日期格式校验
             if (strpos($checkType, '日期') !== false) {
-                $sql = sprintf(
-                    'select "%s" as 字段名, `%s` as 字段值 from `%s`',
-                    $columnName, $fieldName, $tmpTableName
-                );
+                $sql = ImportSqlBuilder::buildDateFetchSql($columnName, $fieldName, $tmpTableName);
 
                 $result = $this->model->select($sql);
                 if ($result !== false) {
@@ -661,38 +589,24 @@ class ImportService
             $duplicateFields = $row['滤重字段'];
 
             // 解析滤重字段（配置值以 "`,`" 分隔多字段，如 "身份证号`,`姓名"）
-            $fieldList = array_map('trim', explode('`,`', $duplicateFields));
-            $fieldList = array_values(array_filter($fieldList, fn($f) => $f !== ''));
+            $fieldList = ImportSqlBuilder::parseDuplicateFields($duplicateFields);
             if (empty($fieldList)) {
                 return ['hasError' => false, 'message' => '', 'errors' => []];
             }
-            $quotedFieldList = implode(', ', array_map(fn($f) => sprintf('`%s`', $f), $fieldList));
+            $quotedFieldList = ImportSqlBuilder::quoteFieldList($fieldList);
 
             // 先读临时表（仅本次导入批次，数据量小），PHP 端构造行构造子元组
-            $sqlTmp = sprintf('select %s from `%s`', $quotedFieldList, $tmpTableName);
+            $sqlTmp = ImportSqlBuilder::buildTempFetchSql($quotedFieldList, $tmpTableName);
             $tmpResult = $this->model->select($sqlTmp);
             if ($tmpResult === false) {
                 return ['hasError' => false, 'message' => '', 'errors' => []];
             }
 
-            $tuples = [];
-            foreach ($tmpResult->getResultArray() as $tmpRow) {
-                $tupleParts = [];
-                $hasNull = false;
-                foreach ($fieldList as $f) {
-                    $val = $tmpRow[$f] ?? null;
-                    if ($val === null) {
-                        // 与原 concat 语义一致：任一字段为 NULL 则该行不参与匹配
-                        $hasNull = true;
-                        break;
-                    }
-                    $tupleParts[] = $this->model->quote((string) $val);
-                }
-                if ($hasNull) {
-                    continue;
-                }
-                $tuples[] = '(' . implode(',', $tupleParts) . ')';
-            }
+            $tuples = ImportSqlBuilder::buildTuples(
+                $tmpResult->getResultArray(),
+                $fieldList,
+                fn (string $v) => $this->model->quote($v)
+            );
 
             if (empty($tuples)) {
                 return ['hasError' => false, 'message' => '', 'errors' => []];
@@ -700,13 +614,7 @@ class ImportService
 
             // 行构造子 IN：裸列逐字段比较可利用复合索引，
             // 替代原 concat(`字段`) in (select concat(...) ) 对业务主表的全表扫描
-            $sql = sprintf(
-                'select `%s` from `%s` where (%s) in (%s)',
-                $duplicateFields,
-                $dataTable,
-                $quotedFieldList,
-                implode(',', $tuples)
-            );
+            $sql = ImportSqlBuilder::buildDuplicateCheckSql($duplicateFields, $dataTable, $quotedFieldList, $tuples);
 
             $result = $this->model->select($sql);
             if ($result === false) {
@@ -757,25 +665,9 @@ class ImportService
             $db = db_connect('btdc');
             $db->transStart();
 
-            $fieldNames = [];
-            $selectParts = [];
-
-            foreach ($importColumns as $col) {
-                $fieldName = $col['字段名'] ?? $col['列名'] ?? '';
-                $queryName = $col['查询名'] ?? '';
-
-                if ($fieldName === '') {
-                    continue;
-                }
-
-                $fieldNames[] = sprintf('`%s`', $fieldName);
-
-                if ($queryName !== '' && $queryName !== $fieldName) {
-                    $selectParts[] = sprintf('%s as `%s`', $queryName, $fieldName);
-                } else {
-                    $selectParts[] = sprintf('`%s`', $fieldName);
-                }
-            }
+            $mapping = ImportSqlBuilder::buildImportFieldMapping($importColumns);
+            $fieldNames = $mapping['fieldNames'];
+            $selectParts = $mapping['selectParts'];
 
             if (empty($fieldNames)) {
                 return [
@@ -810,16 +702,8 @@ class ImportService
 
             // 读取导入条件（SQL 片段，引用临时表字段，由管理员在 def_import_config 中维护）
             $whereClause = $this->getImportCondition($importModule);
-            $whereSql = $whereClause !== '' ? ' WHERE ' . $whereClause : '';
 
-            $sql = sprintf(
-                'INSERT INTO `%s` (%s) SELECT %s FROM `%s`%s',
-                $targetTable,
-                implode(', ', $fieldNames),
-                implode(', ', $selectParts),
-                $tempTable,
-                $whereSql
-            );
+            $sql = ImportSqlBuilder::buildImportFromTempSql($targetTable, $tempTable, $fieldNames, $selectParts, $whereClause);
 
             log_message('debug', '[ImportService] 导入SQL: ' . $sql);
 
@@ -1016,14 +900,36 @@ class ImportService
             $importColumns = $importConfig['importColumns'];
             $tmpTableName = $importConfig['tmpTableName'];
 
-            $createTempTableSql = $this->buildCreateTempTableSql($tmpTableName, $importColumns);
+            // 调试 SQL 与执行路径共用 ImportSqlBuilder（历史上双份实现已发生漂移）
+            $createTempTableSql = empty($importColumns)
+                ? ImportSqlBuilder::buildSimpleCreateTableSql($tmpTableName)
+                : ImportSqlBuilder::buildCreateTableSql(
+                    $tmpTableName,
+                    $importColumns,
+                    fn (string $v) => $this->model->quote($v)
+                )['sql'];
 
             $insertToTempTableSql = '';
             if (!empty($sampleData)) {
-                $insertToTempTableSql = $this->buildInsertToTempTableSql($tmpTableName, $sampleData, $importColumns);
+                $insertToTempTableSql = ImportSqlBuilder::buildInsertRowsSql(
+                    $tmpTableName,
+                    ImportSqlBuilder::deriveInsertFields($sampleData[0]),
+                    $sampleData,
+                    ImportSqlBuilder::buildDefaultValueMap($importColumns),
+                    fn (string $v) => $this->model->quote($v)
+                );
             }
 
-            $importFromTempTableSql = $this->buildImportFromTempTableSql($dataTable, $tmpTableName, $importColumns, $importModule);
+            $debugMapping = ImportSqlBuilder::buildImportFieldMapping($importColumns);
+            $importFromTempTableSql = empty($debugMapping['fieldNames'])
+                ? '-- 没有可导入的字段'
+                : ImportSqlBuilder::buildImportFromTempSql(
+                    $dataTable,
+                    $tmpTableName,
+                    $debugMapping['fieldNames'],
+                    $debugMapping['selectParts'],
+                    $this->getImportCondition($importModule)
+                );
 
             return [
                 'success'               => true,
@@ -1044,134 +950,6 @@ class ImportService
                 'message' => '构建导入调试 SQL 失败: ' . $e->getMessage(),
             ];
         }
-    }
-
-    /**
-     * 构建创建临时表 SQL
-     *
-     * @param string $tableName 表名
-     * @param array $columns 列配置
-     * @return string
-     */
-    private function buildCreateTempTableSql(string $tableName, array $columns): string
-    {
-        if (empty($columns)) {
-            return sprintf('CREATE TABLE `%s` (id int auto_increment primary key, data varchar(255))', $tableName);
-        }
-
-        $fieldDefs = [];
-        foreach ($columns as $col) {
-            $fieldName = $col['字段名'] ?? $col['列名'];
-            $fieldLength = $col['字段长度'] ?? 255;
-            $defaultValue = (string) ($col['缺省值'] ?? '');
-            if ($defaultValue !== '') {
-                $fieldDefs[] = sprintf('`%s` varchar(%s) not null default %s', $fieldName, $fieldLength, $this->model->quote($defaultValue));
-            } else {
-                $fieldDefs[] = sprintf('`%s` varchar(%s) not null default ""', $fieldName, $fieldLength);
-            }
-        }
-
-        return sprintf('CREATE TABLE `%s` (%s)', $tableName, implode(',', $fieldDefs));
-    }
-
-    /**
-     * 构建插入临时表 SQL
-     *
-     * @param string $tableName 表名
-     * @param array $data 数据
-     * @param array $importColumns 导入列配置
-     * @return string
-     */
-    private function buildInsertToTempTableSql(string $tableName, array $data, array $importColumns): string
-    {
-        $fields = [];
-        foreach ($importColumns as $col) {
-            $fieldName = $col['字段名'] ?? $col['列名'] ?? '';
-            if ($fieldName !== '') {
-                $fields[] = sprintf('`%s`', $fieldName);
-            }
-        }
-
-        if (empty($fields)) {
-            return '';
-        }
-
-        $defaultValueMap = [];
-        foreach ($importColumns as $col) {
-            $fieldName = $col['字段名'] ?? '';
-            $defaultValue = (string) ($col['缺省值'] ?? '');
-            if ($fieldName !== '' && $defaultValue !== '') {
-                $defaultValueMap[$fieldName] = $defaultValue;
-            }
-        }
-
-        $values = [];
-        foreach ($data as $row) {
-            $rowValues = [];
-            foreach ($fields as $field) {
-                $fieldName = trim($field, '`');
-                $value = $row[$fieldName] ?? '';
-                if (($value === '' || $value === null) && isset($defaultValueMap[$fieldName])) {
-                    $value = $defaultValueMap[$fieldName];
-                }
-                $rowValues[] = $this->model->quote((string) $value);
-            }
-            $values[] = '(' . implode(',', $rowValues) . ')';
-        }
-
-        if (empty($values)) {
-            return '';
-        }
-
-        return sprintf('INSERT INTO `%s` (%s) VALUES %s', $tableName, implode(',', $fields), implode(',', $values));
-    }
-
-    /**
-     * 构建从临时表导入正式表的 SQL
-     *
-     * @param string $targetTable 目标表
-     * @param string $tempTable 临时表
-     * @param array $importColumns 导入列配置
-     * @param string $importModule 导入模块（用于读取 def_import_config.导入条件）
-     * @return string
-     */
-    private function buildImportFromTempTableSql(string $targetTable, string $tempTable, array $importColumns, string $importModule = ''): string
-    {
-        $fieldNames = [];
-        $selectParts = [];
-
-        foreach ($importColumns as $col) {
-            $fieldName = $col['字段名'] ?? $col['列名'] ?? '';
-            $queryName = $col['查询名'] ?? '';
-
-            if ($fieldName === '') {
-                continue;
-            }
-
-            $fieldNames[] = sprintf('`%s`', $fieldName);
-
-            if ($queryName !== '' && $queryName !== $fieldName) {
-                $selectParts[] = sprintf('%s as `%s`', $queryName, $fieldName);
-            } else {
-                $selectParts[] = sprintf('`%s`', $fieldName);
-            }
-        }
-
-        if (empty($fieldNames)) {
-            return '-- 没有可导入的字段';
-        }
-
-        // 读取导入条件（与 importFromTempTable 保持一致，便于调试预览真实 SQL）
-        $whereClause = $this->getImportCondition($importModule);
-        $whereSql = $whereClause !== '' ? ' WHERE ' . $whereClause : '';
-
-        return sprintf('INSERT INTO `%s` (%s) SELECT %s FROM `%s`%s',
-            $targetTable,
-            implode(', ', $fieldNames),
-            implode(', ', $selectParts),
-            $tempTable,
-            $whereSql
-        );
     }
 
     /**
