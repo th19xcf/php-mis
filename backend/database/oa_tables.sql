@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS `oa_todo` (
   `来源摘要` VARCHAR(200) DEFAULT NULL COMMENT '来源摘要(列表免JOIN)',
   `来源GUID` INT DEFAULT NULL COMMENT '来源GUID(关联会议/流程实例)',
   `指派人` VARCHAR(50) DEFAULT NULL COMMENT '指派人(工号)',
-  `负责人` VARCHAR(50) NOT NULL COMMENT '负责人(工号)',
+  `负责人` VARCHAR(500) NOT NULL COMMENT '负责人(工号,多个以逗号分隔)',
   `截止日期` DATE DEFAULT NULL COMMENT '截止日期',
   `提醒时间` DATETIME DEFAULT NULL COMMENT '提醒时间',
   `优先级` VARCHAR(10) DEFAULT '中' COMMENT '优先级(高/中/低)',

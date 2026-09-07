@@ -403,7 +403,7 @@ function renderDeptLabel({ option }: { option: DeptTreeNode }) {
 
 .picker-count {
   font-size: 12px;
-  color: #9ca3af;
+  color: rgb(var(--base-text-color) / 0.55);
   white-space: nowrap;
 }
 
@@ -411,7 +411,7 @@ function renderDeptLabel({ option }: { option: DeptTreeNode }) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  border: 1px solid var(--divider-color, #e5e7eb);
+  border: 1px solid rgb(var(--base-text-color) / 0.15);
   border-radius: 6px;
 }
 
@@ -424,7 +424,7 @@ function renderDeptLabel({ option }: { option: DeptTreeNode }) {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #9ca3af;
+  color: rgb(var(--base-text-color) / 0.55);
   font-size: 13px;
 }
 
@@ -439,15 +439,15 @@ function renderDeptLabel({ option }: { option: DeptTreeNode }) {
 }
 
 .user-item:hover {
-  background: var(--item-color-hover, #f3f4f6);
+  background: rgb(var(--primary-color) / 0.08);
 }
 
 .user-item.checked {
-  background: #e6f4ff;
+  background: rgb(var(--primary-color) / 0.16);
 }
 
 .user-item.all-item {
-  border-bottom: 1px solid var(--divider-color, #e5e7eb);
+  border-bottom: 1px solid rgb(var(--base-text-color) / 0.15);
   margin-bottom: 4px;
   font-weight: 600;
 }
@@ -464,12 +464,12 @@ function renderDeptLabel({ option }: { option: DeptTreeNode }) {
 .user-name {
   font-size: 13px;
   font-weight: 500;
-  color: #1f2937;
+  color: rgb(var(--base-text-color));
 }
 
 .user-dept {
   font-size: 11px;
-  color: #9ca3af;
+  color: rgb(var(--base-text-color) / 0.55);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -478,7 +478,7 @@ function renderDeptLabel({ option }: { option: DeptTreeNode }) {
 .selected-bar {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid var(--divider-color, #e5e7eb);
+  border-top: 1px solid rgb(var(--base-text-color) / 0.15);
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -488,7 +488,7 @@ function renderDeptLabel({ option }: { option: DeptTreeNode }) {
 
 .selected-label {
   font-size: 13px;
-  color: #6b7280;
+  color: rgb(var(--base-text-color) / 0.55);
   white-space: nowrap;
   padding-top: 2px;
 }

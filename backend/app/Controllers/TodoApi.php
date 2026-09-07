@@ -175,7 +175,10 @@ class TodoApi extends BaseApiController
             }
 
             $guid = (string) $data['guid'];
-            $newAssignee = (string) $data['新负责人'];
+            // 新负责人支持数组（多选）或逗号分隔字符串
+            $newAssignee = is_array($data['新负责人'])
+                ? implode(',', $data['新负责人'])
+                : (string) $data['新负责人'];
             $operator = $this->getUserWorkId();
             $affected = $this->todoService->reassign($guid, $newAssignee, $operator);
 

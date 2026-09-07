@@ -51,9 +51,9 @@ class TodoService
         $priorityFilter = trim((string) ($params['priority'] ?? ''));
         $keyword = trim((string) ($params['keyword'] ?? ''));
 
-        // 1. 任务待办（oa_todo）——负责人或指派人=我
+        // 1. 任务待办（oa_todo）——负责人（支持多个，逗号分隔）或指派人=我
         $taskWhere = ['有效标识="1"', '删除标识="0"'];
-        $taskWhere[] = sprintf('(负责人=%s or 指派人=%s)', $this->model->quote($workId), $this->model->quote($workId));
+        $taskWhere[] = sprintf('(FIND_IN_SET(%s, 负责人)>0 or 指派人=%s)', $this->model->quote($workId), $this->model->quote($workId));
 
         if ($keyword !== '') {
             $kw = $this->model->quote('%' . $keyword . '%');
@@ -137,7 +137,7 @@ class TodoService
     public function getStats(string $workId): array
     {
         $today = date('Y-m-d');
-        $w = sprintf('有效标识="1" and 删除标识="0" and (负责人=%s or 指派人=%s)', $this->model->quote($workId), $this->model->quote($workId));
+        $w = sprintf('有效标识="1" and 删除标识="0" and (FIND_IN_SET(%s, 负责人)>0 or 指派人=%s)', $this->model->quote($workId), $this->model->quote($workId));
 
         $sql = sprintf(
             'select
@@ -178,9 +178,23 @@ class TodoService
     // ============================================================
 
     /**
-     * 新建待办
+     * 规范化负责人字段（支持多个工号，逗号分隔存储）
      *
-     * @param array  $data 待办字段：待办标题(必填)/负责人(必填)/截止日期/优先级/待办描述/来源类型/指派人
+     * @param string|array $value 单个工号 / 工号数组 / 逗号分隔字符串
+     * @return string 去重后的逗号分隔工号串（为空时返回 ''）
+     */
+    private function normalizeAssignees($value): string
+    {
+        $ids = is_array($value) ? $value : explode(',', (string) $value);
+        $ids = array_map(static fn($v) => trim((string) $v), $ids ?: []);
+        $ids = array_values(array_unique(array_filter($ids, static fn($v) => $v !== '')));
+        return implode(',', $ids);
+    }
+
+    /**
+     * 创建待办
+     *
+     * @param array  $data 待办字段：待办标题(必填)/负责人(必填,支持多个)/截止日期/优先级/待办描述/来源类型/指派人
      * @param string $operator 操作人工号
      * @return int 新待办 GUID
      * @throws BusinessException 校验失败
@@ -195,7 +209,7 @@ class TodoService
             throw new BusinessException('待办标题不能超过 200 字');
         }
 
-        $assignee = trim((string) ($data['负责人'] ?? ''));
+        $assignee = $this->normalizeAssignees($data['负责人'] ?? '');
         if ($assignee === '') {
             throw new BusinessException('负责人不能为空');
         }
@@ -307,7 +321,13 @@ class TodoService
             '来源类型' => fn($v) => $this->model->quote($this->assertOption((string) $v, self::SOURCE_TYPES, '来源类型')),
             '来源摘要' => fn($v) => $this->model->quote(trim((string) $v)),
             '指派人' => fn($v) => $this->model->quote(trim((string) $v)),
-            '负责人' => fn($v) => $this->model->quote(trim((string) $v)),
+            '负责人' => function ($v) {
+                $ids = $this->normalizeAssignees($v);
+                if ($ids === '') {
+                    throw new BusinessException('负责人不能为空');
+                }
+                return $this->model->quote($ids);
+            },
             '截止日期' => fn($v) => $this->valOrNull($v),
             '优先级' => fn($v) => $this->model->quote($this->assertOption((string) $v, self::PRIORITY_LEVELS, '优先级')),
             '待办状态' => fn($v) => $this->model->quote($this->assertOption((string) $v, self::TODO_STATUSES, '待办状态')),
@@ -377,20 +397,20 @@ class TodoService
     }
 
     /**
-     * 转办（修改负责人）
+     * 转办（修改负责人，支持多个）
      *
-     * @param string $guid 待办GUID
-     * @param string $newAssignee 新负责人工号
-     * @param string $operator 操作人工号
+     * @param string       $guid 待办GUID
+     * @param string|array $newAssignee 新负责人工号（单个/数组/逗号分隔）
+     * @param string       $operator 操作人工号
      * @return int 影响行数（-1=不存在）
      */
-    public function reassign(string $guid, string $newAssignee, string $operator): int
+    public function reassign(string $guid, string|array $newAssignee, string $operator): int
     {
         $guid = trim($guid);
         if ($guid === '' || !ctype_digit($guid)) {
             throw new BusinessException('待办GUID无效');
         }
-        $newAssignee = trim($newAssignee);
+        $newAssignee = $this->normalizeAssignees($newAssignee);
         if ($newAssignee === '') {
             throw new BusinessException('新负责人不能为空');
         }

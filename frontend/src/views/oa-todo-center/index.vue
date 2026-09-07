@@ -12,6 +12,7 @@ import {
   fetchTodoReassign,
   fetchTodoDetail,
   fetchTodoOptions,
+  fetchTodoUserOptions,
   type TodoCenterItem,
   type TodoStats,
   type TodoUserOption
@@ -65,36 +66,41 @@ const selectedUserMap = ref<Map<string, TodoUserOption>>(new Map());
 
 function openUserPicker(target: 'create' | 'reassign') {
   userPickerTarget.value = target;
+  userPickerMultiple.value = true;
   if (target === 'create') {
-    userPickerMultiple.value = false;
     userPickerTitle.value = '选择负责人';
-    userPickerValue.value = createForm.value.负责人 ? [createForm.value.负责人] : [];
+    userPickerValue.value = createForm.value.负责人 ? createForm.value.负责人.split(',') : [];
   } else {
-    userPickerMultiple.value = false;
     userPickerTitle.value = '选择新负责人';
-    userPickerValue.value = reassignForm.value.新负责人 ? [reassignForm.value.新负责人] : [];
+    userPickerValue.value = reassignForm.value.新负责人 ? reassignForm.value.新负责人.split(',') : [];
   }
   showUserPicker.value = true;
 }
 
 function handleUserPickerConfirm(users: TodoUserOption[]) {
-  if (users.length === 0) return;
-  const user = users[0];
-  // 缓存用户信息
-  selectedUserMap.value.set(user.工号, user);
+  // 缓存用户信息（用于显示姓名）
+  users.forEach(u => selectedUserMap.value.set(u.工号, u));
   selectedUserMap.value = new Map(selectedUserMap.value);
 
+  const ids = users.map(u => u.工号).join(',');
   if (userPickerTarget.value === 'create') {
-    createForm.value.负责人 = user.工号;
+    createForm.value.负责人 = ids;
   } else {
-    reassignForm.value.新负责人 = user.工号;
+    reassignForm.value.新负责人 = ids;
   }
 }
 
-// 显示负责人名称（工号 -> 姓名）
-function getUserName(workId: string): string {
-  const user = selectedUserMap.value.get(workId);
-  return user ? `${user.姓名}（${user.工号}）` : workId;
+// 显示负责人名称（支持逗号分隔的多个工号 -> 姓名）
+function getUserName(workIds: string): string {
+  if (!workIds) return '';
+  return workIds
+    .split(',')
+    .filter(Boolean)
+    .map(id => {
+      const user = selectedUserMap.value.get(id);
+      return user ? `${user.姓名}（${id}）` : id;
+    })
+    .join('、');
 }
 
 // ============ 计算属性 ============
@@ -417,7 +423,11 @@ const columns = computed<DataTableColumns<TodoCenterItem>>(() => [
   {
     title: '负责人',
     key: 'assignee',
-    width: 90
+    width: 130,
+    render(row) {
+      if (!row.assignee) return '-';
+      return getUserName(row.assignee);
+    }
   },
   {
     title: '优先级',
@@ -465,7 +475,7 @@ const columns = computed<DataTableColumns<TodoCenterItem>>(() => [
           { default: () => row.sourceTitle || row.sourceType }
         );
       }
-      return row.sourceTitle || '-';
+      return row.sourceTitle || row.sourceType || '-';
     }
   },
   {
@@ -518,8 +528,22 @@ const columns = computed<DataTableColumns<TodoCenterItem>>(() => [
   }
 ]);
 
+// 预载人员映射（表格/详情负责人显示姓名）
+async function loadUserMap() {
+  try {
+    const res = await fetchTodoUserOptions('', '');
+    if (res.data) {
+      res.data.forEach(u => selectedUserMap.value.set(u.工号, u));
+      selectedUserMap.value = new Map(selectedUserMap.value);
+    }
+  } catch {
+    /* 加载失败时显示工号 */
+  }
+}
+
 onMounted(() => {
   loadOptions();
+  loadUserMap();
   loadData();
 });
 
@@ -680,12 +704,12 @@ watch(keyword, (val) => {
           {{ detailData.todoType === 'workflow' ? '审批待办' : '任务待办' }}
         </NDescriptionsItem>
         <NDescriptionsItem label="状态">{{ detailData.status }}</NDescriptionsItem>
-        <NDescriptionsItem label="负责人">{{ detailData.assignee }}</NDescriptionsItem>
-        <NDescriptionsItem label="指派人">{{ detailData.assigner || '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="负责人">{{ detailData.assignee ? getUserName(detailData.assignee) : '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="指派人">{{ detailData.assigner ? getUserName(detailData.assigner) : '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="优先级">{{ detailData.priority }}</NDescriptionsItem>
         <NDescriptionsItem label="截止日期">{{ detailData.dueDate || '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="来源类型">{{ detailData.sourceType }}</NDescriptionsItem>
-        <NDescriptionsItem label="来源摘要">{{ detailData.sourceTitle || '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="来源摘要">{{ detailData.sourceTitle || detailData.sourceType || '-' }}</NDescriptionsItem>
         <NDescriptionsItem label="创建时间">{{ detailData.createdAt }}</NDescriptionsItem>
         <NDescriptionsItem label="更新时间">{{ detailData.updatedAt }}</NDescriptionsItem>
         <NDescriptionsItem v-if="detailData.completedAt" label="完成时间" :span="2">{{ detailData.completedAt }}</NDescriptionsItem>
@@ -739,35 +763,35 @@ watch(keyword, (val) => {
   flex: 1;
   padding: 16px;
   border-radius: 8px;
-  background: var(--card-color, #f9fafb);
-  border: 1px solid var(--divider-color, #e5e7eb);
+  background: rgb(var(--container-bg-color));
+  border: 1px solid rgb(var(--base-text-color) / 0.15);
   cursor: pointer;
   transition: all 0.2s;
   text-align: center;
 }
 
 .stat-card:hover {
-  border-color: #1677ff;
+  border-color: rgb(var(--primary-color));
 }
 
 .stat-card.active {
-  border-color: #1677ff;
-  background: #e6f4ff;
+  border-color: rgb(var(--primary-color));
+  background: rgb(var(--primary-color) / 0.12);
 }
 
 .stat-value {
   font-size: 28px;
   font-weight: bold;
-  color: #1f2937;
+  color: rgb(var(--base-text-color));
 }
 
 .stat-value.overdue {
-  color: #ef4444;
+  color: rgb(var(--error-color));
 }
 
 .stat-label {
   font-size: 13px;
-  color: #6b7280;
+  color: rgb(var(--base-text-color) / 0.55);
   margin-top: 4px;
 }
 
@@ -780,21 +804,21 @@ watch(keyword, (val) => {
 
 /* 行样式 */
 :deep(.todo-row-overdue) {
-  background: #fef2f2;
+  background: rgb(var(--error-color) / 0.08);
 }
 
 :deep(.todo-row-overdue:hover) {
-  background: #fee2e2;
+  background: rgb(var(--error-color) / 0.14);
 }
 
 :deep(.todo-row-done) {
-  background: #f9fafb;
+  background: rgb(var(--base-text-color) / 0.04);
   opacity: 0.6;
 }
 
 :deep(.todo-row-done .todo-title-text) {
   text-decoration: line-through;
-  color: #9ca3af;
+  color: rgb(var(--base-text-color) / 0.45);
 }
 
 /* 来源标签 */
@@ -809,7 +833,7 @@ watch(keyword, (val) => {
 }
 
 :deep(.todo-overdue-date) {
-  color: #ef4444;
+  color: rgb(var(--error-color));
   font-weight: bold;
 }
 </style>
