@@ -306,6 +306,7 @@ class RouteService
             '收入成本' => 'mdi:cash',
             '经营分析' => 'mdi:chart-line',
             '合同管理' => 'mdi:file-sign',
+            '任务管理' => 'mdi:calendar-check-outline',
             '房产租赁' => 'mdi:home-variant-outline',
             '财务管理' => 'mdi:wallet'
         ];

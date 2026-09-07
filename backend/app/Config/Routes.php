@@ -239,6 +239,20 @@ $routes->group('todo', static function ($routes) {
 	$routes->post('create', 'TodoApi::create');
 	$routes->post('update', 'TodoApi::update');
 	$routes->post('complete', 'TodoApi::complete');
+	$routes->post('start', 'TodoApi::start');
+	$routes->post('cancel', 'TodoApi::cancel');
+	$routes->post('reopen', 'TodoApi::reopen');
+	$routes->post('urge', 'TodoApi::urge');
+	$routes->post('toggle-pin', 'TodoApi::togglePin');
+	$routes->get('subtasks', 'TodoApi::subtasks');
+	$routes->get('comments', 'TodoApi::comments');
+	$routes->post('comment', 'TodoApi::comment');
+	$routes->post('upload', 'TodoApi::upload');
+	$routes->get('download', 'TodoApi::download');
+	$routes->get('messages', 'TodoApi::messages');
+	$routes->get('messages-count', 'TodoApi::messagesCount');
+	$routes->post('messages-read', 'TodoApi::messagesRead');
+	$routes->post('remind-cron', 'TodoApi::remindCron');
 	$routes->post('reassign', 'TodoApi::reassign');
 	$routes->post('delete', 'TodoApi::delete');
 	$routes->get('detail', 'TodoApi::detail');
@@ -246,8 +260,9 @@ $routes->group('todo', static function ($routes) {
 	$routes->get('options', 'TodoApi::options');
 	$routes->post('options', 'TodoApi::options');
 	$routes->get('user-options', 'TodoApi::userOptions');
-	$routes->get('dept-tree', 'TodoApi::deptTree');
-});
+        $routes->get('dept-tree', 'TodoApi::deptTree');
+        $routes->get('logs', 'TodoApi::logs');
+    });
 
 $routes->group('onlyoffice', static function ($routes) {
 	$routes->post('callback', 'OnlyOfficeCallback::index');

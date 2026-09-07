@@ -23,7 +23,8 @@ const backendDrivenRouteNames = new Set<string>([
   'contract-v2',
   'match-data',
   'workflow-manage',
-  'personnel'
+  'personnel',
+  'oa-todo-center'
 ]);
 
 /** create routes when the auth route mode is static */

@@ -18,6 +18,7 @@ use App\Models\Mcommon;
 class TodoService
 {
     private Mcommon $model;
+    private MessageService $messageService;
 
     /** 优先级选项 */
     public const PRIORITY_LEVELS = ['高', '中', '低'];
@@ -28,9 +29,13 @@ class TodoService
     /** 来源类型选项 */
     public const SOURCE_TYPES = ['手动', '会议', '工作流', '合同'];
 
+    /** 重复规则选项 */
+    public const REPEAT_RULES = ['每天', '每周', '每月'];
+
     public function __construct()
     {
         $this->model = new Mcommon();
+        $this->messageService = new MessageService();
     }
 
     // ============================================================
@@ -51,8 +56,8 @@ class TodoService
         $priorityFilter = trim((string) ($params['priority'] ?? ''));
         $keyword = trim((string) ($params['keyword'] ?? ''));
 
-        // 1. 任务待办（oa_todo）——负责人（支持多个，逗号分隔）或指派人=我
-        $taskWhere = ['有效标识="1"', '删除标识="0"'];
+        // 1. 任务待办（oa_todo）——负责人（支持多个，逗号分隔）或指派人=我；子任务不在中心列表显示
+        $taskWhere = ['有效标识="1"', '删除标识="0"', '(父GUID is null or 父GUID=0)'];
         $taskWhere[] = sprintf('(FIND_IN_SET(%s, 负责人)>0 or 指派人=%s)', $this->model->quote($workId), $this->model->quote($workId));
 
         if ($keyword !== '') {
@@ -77,6 +82,7 @@ class TodoService
                     来源类型 as sourceType, 来源摘要 as sourceTitle, 来源GUID as sourceGuid,
                     完成时间 as completedAt, 完成说明 as completedNote,
                     关联人员编码 as personCode,
+                    置顶标识 as pinned, 重复规则 as repeatRule, 附件 as attachments,
                     开始操作时间 as createdAt, 操作时间 as updatedAt,
                     "" as bizType, "" as bizId, "" as instanceId, "" as nodeCode
              from oa_todo
@@ -111,6 +117,7 @@ class TodoService
                     "工作流" as sourceType, d.流程名称 as sourceTitle, t.实例ID as sourceGuid,
                     null as completedAt, "" as completedNote,
                     "" as personCode,
+                    "0" as pinned, null as repeatRule, null as attachments,
                     t.创建时间 as createdAt, t.更新时间 as updatedAt,
                     i.业务类型 as bizType, i.业务ID as bizId, i.GUID as instanceId, t.节点编码 as nodeCode
              from def_workflow_task t
@@ -120,8 +127,8 @@ class TodoService
             $wfWhereSql
         );
 
-        // 3. UNION ALL 合并查询
-        $unionSql = sprintf('(%s) union all (%s) order by createdAt desc', $taskSql, $wfSql);
+        // 3. UNION ALL 合并查询（置顶优先，其次创建时间倒序）
+        $unionSql = sprintf('(%s) union all (%s) order by pinned desc, createdAt desc', $taskSql, $wfSql);
         $result = $this->model->select($unionSql);
         $list = $result ? $result->getResultArray() : [];
 
@@ -137,7 +144,7 @@ class TodoService
     public function getStats(string $workId): array
     {
         $today = date('Y-m-d');
-        $w = sprintf('有效标识="1" and 删除标识="0" and (FIND_IN_SET(%s, 负责人)>0 or 指派人=%s)', $this->model->quote($workId), $this->model->quote($workId));
+        $w = sprintf('有效标识="1" and 删除标识="0" and (父GUID is null or 父GUID=0) and (FIND_IN_SET(%s, 负责人)>0 or 指派人=%s)', $this->model->quote($workId), $this->model->quote($workId));
 
         $sql = sprintf(
             'select
@@ -176,6 +183,80 @@ class TodoService
     // ============================================================
     // 手动 CRUD
     // ============================================================
+
+    // ============================================================
+    // 操作流水（oa_todo_log）
+    // ============================================================
+
+    /**
+     * 写入操作流水
+     *
+     * @param int    $todoGuid 待办GUID
+     * @param string $action   动作：新增/修改/完成/转办/删除/催办
+     * @param string $operator 操作人工号
+     * @param array  $changes  变更明细（字段名 => [前值, 后值]）
+     * @param string $note     备注（完成说明/转办去向等）
+     */
+    private function insertLog(int $todoGuid, string $action, string $operator, array $changes = [], string $note = ''): void
+    {
+        try {
+            $detail = $changes === [] ? null : json_encode(
+                array_map(
+                    static fn($c) => ['field' => $c[0], 'from' => $c[1], 'to' => $c[2]],
+                    array_values($changes)
+                ),
+                JSON_UNESCAPED_UNICODE
+            );
+            $this->insertRow('oa_todo_log', [
+                '待办GUID' => $todoGuid,
+                '动作' => $action,
+                '操作人' => $operator,
+                '操作人姓名' => $this->fetchUserName($operator),
+                '变更明细' => $detail,
+                '备注' => $note !== '' ? $note : null,
+                '操作时间' => date('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            // 流水写入失败不阻断主流程
+            log_message('error', '[TodoService::insertLog] ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 查询工号对应姓名（def_user）
+     */
+    private function fetchUserName(string $workId): ?string
+    {
+        $row = $this->model->select(sprintf(
+            'select 姓名 from def_user where 工号=%s and 有效标识="1" limit 1',
+            $this->model->quote($workId)
+        ))->getRowArray();
+        return $row ? (string) $row['姓名'] : null;
+    }
+
+    /**
+     * 待办操作流水查询（详情时间线用）
+     *
+     * @param string $guid 待办GUID
+     * @return array 流水列表（时间正序）
+     */
+    public function getLogs(string $guid): array
+    {
+        $guid = trim($guid);
+        if ($guid === '' || !ctype_digit($guid)) {
+            throw new BusinessException('待办GUID无效');
+        }
+        $rows = $this->model->select(sprintf(
+            'select GUID, 动作 as action, 操作人 as operator, 操作人姓名 as operatorName,
+                    变更明细 as changes, 备注 as note, 操作时间 as operatedAt
+             from oa_todo_log where 待办GUID=%s order by GUID desc limit 200',
+            $this->model->quote($guid)
+        ))->getResultArray();
+        foreach ($rows as &$r) {
+            $r['changes'] = $r['changes'] ? json_decode((string) $r['changes'], true) : null;
+        }
+        return $rows;
+    }
 
     /**
      * 规范化负责人字段（支持多个工号，逗号分隔存储）
@@ -248,6 +329,23 @@ class TodoService
             throw new BusinessException('截止日期格式无效，应为 YYYY-MM-DD');
         }
 
+        $repeatRule = trim((string) ($data['重复规则'] ?? ''));
+        if ($repeatRule !== '' && !in_array($repeatRule, self::REPEAT_RULES, true)) {
+            throw new BusinessException('重复规则无效，可选：' . implode('/', self::REPEAT_RULES));
+        }
+
+        $parentGuid = trim((string) ($data['父GUID'] ?? ''));
+        if ($parentGuid !== '' && !ctype_digit($parentGuid)) {
+            throw new BusinessException('父待办GUID无效');
+        }
+
+        $attachments = $data['附件'] ?? null;
+        if (is_array($attachments)) {
+            $attachments = json_encode($attachments, JSON_UNESCAPED_UNICODE);
+        } else {
+            $attachments = trim((string) $attachments);
+        }
+
         $now = date('Y-m-d H:i:s');
         $row = [
             '待办标题' => $title,
@@ -258,6 +356,8 @@ class TodoService
             '负责人' => $assignee,
             '截止日期' => $dueDate !== '' ? $dueDate : null,
             '优先级' => $priority,
+            '重复规则' => $repeatRule !== '' ? $repeatRule : null,
+            '附件' => $attachments !== '' ? $attachments : null,
             '待办状态' => $status,
             '关联人员编码' => trim((string) ($data['关联人员编码'] ?? '')),
             '开始操作时间' => $now,
@@ -274,6 +374,11 @@ class TodoService
             $row['来源GUID'] = (int) $data['来源GUID'];
         }
 
+        // 父GUID（子任务挂靠）
+        if ($parentGuid !== '') {
+            $row['父GUID'] = (int) $parentGuid;
+        }
+
         $this->insertRow('oa_todo', $row);
 
         $db = $this->model->getDb();
@@ -281,6 +386,20 @@ class TodoService
         if ($guid <= 0) {
             throw new BusinessException('待办创建失败');
         }
+        $this->insertLog($guid, '新增', $operator, [], sprintf('负责人: %s', $assignee));
+
+        // 通知负责人（排除操作人自己；子任务不重复通知）
+        if ($parentGuid === '') {
+            $receivers = array_diff(explode(',', $assignee), [$operator]);
+            $this->messageService->sendBatch(
+                $receivers,
+                '新待办',
+                sprintf('您有一个新待办：%s', $title),
+                sprintf('优先级：%s%s，指派人：%s', $priority, $dueDate !== '' ? '，截止：' . $dueDate : '', $this->fetchUserName($assigner) ?? $assigner),
+                $guid
+            );
+        }
+
         return $guid;
     }
 
@@ -300,7 +419,7 @@ class TodoService
         }
 
         $old = $this->model->select(sprintf(
-            'select GUID,待办标题,待办状态 from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
+            'select * from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
             $this->model->quote($guid)
         ))->getRowArray();
         if (!$old) {
@@ -330,9 +449,26 @@ class TodoService
             },
             '截止日期' => fn($v) => $this->valOrNull($v),
             '优先级' => fn($v) => $this->model->quote($this->assertOption((string) $v, self::PRIORITY_LEVELS, '优先级')),
+            '重复规则' => function ($v) {
+                $v = trim((string) $v);
+                if ($v !== '' && !in_array($v, self::REPEAT_RULES, true)) {
+                    throw new BusinessException('重复规则无效');
+                }
+                return $this->valOrNull($v);
+            },
             '待办状态' => fn($v) => $this->model->quote($this->assertOption((string) $v, self::TODO_STATUSES, '待办状态')),
             '关联人员编码' => fn($v) => $this->model->quote(trim((string) $v)),
         ];
+
+        // 附件：数组转 JSON 存储
+        if (array_key_exists('附件', $data)) {
+            $att = $data['附件'];
+            if (is_array($att)) {
+                $sets[] = sprintf('`附件`=%s', $this->model->quote(json_encode($att, JSON_UNESCAPED_UNICODE)));
+            } else {
+                $sets[] = sprintf('`附件`=%s', $this->valOrNull($att));
+            }
+        }
 
         foreach ($fieldMap as $field => $converter) {
             if (array_key_exists($field, $data)) {
@@ -345,12 +481,30 @@ class TodoService
             $sets[] = sprintf('`完成说明`=%s', $this->valOrNull($data['完成说明']));
         }
 
+        // 字段级变更对比（用于流水明细）
+        $changes = [];
+        foreach ($fieldMap as $field => $_) {
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            $before = trim((string) ($old[$field] ?? ''));
+            $afterRaw = $data[$field];
+            $after = is_array($afterRaw) ? implode(',', $afterRaw) : trim((string) $afterRaw);
+            if ($before !== $after) {
+                $changes[] = [$field, $before !== '' ? $before : '空', $after !== '' ? $after : '空'];
+            }
+        }
+
         $sql = sprintf(
             'update oa_todo set %s where GUID=%s and 有效标识="1" and 删除标识="0"',
             implode(', ', $sets),
             $this->model->quote($guid)
         );
         $this->model->exec($sql);
+
+        if ($changes !== []) {
+            $this->insertLog((int) $guid, '修改', $operator, $changes);
+        }
 
         return (int) $this->model->getDb()->affectedRows();
     }
@@ -371,7 +525,8 @@ class TodoService
         }
 
         $row = $this->model->select(sprintf(
-            'select GUID,待办状态 from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
+            'select GUID, 待办标题, 待办状态, 负责人, 指派人, 截止日期, 优先级, 重复规则, 父GUID
+             from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
             $this->model->quote($guid)
         ))->getRowArray();
         if (!$row) {
@@ -392,6 +547,224 @@ class TodoService
             $this->model->quote($now),
             $this->model->quote($guid)
         ));
+
+        $this->insertLog((int) $guid, '完成', $operator, [], $completedNote);
+
+        // 通知指派人（负责人完成 → 指派人知晓；排除操作人自己）
+        $assigner = trim((string) ($row['指派人'] ?? ''));
+        if ($assigner !== '' && $assigner !== $operator) {
+            $this->messageService->send(
+                $assigner,
+                '已完成',
+                sprintf('待办已完成：%s', (string) $row['待办标题']),
+                sprintf('由 %s 标记完成%s', $this->fetchUserName($operator) ?? $operator, $completedNote !== '' ? '，说明：' . $completedNote : ''),
+                (int) $guid
+            );
+        }
+
+        // 周期任务：自动生成下一期（截止日期按规则顺延）
+        $repeatRule = trim((string) ($row['重复规则'] ?? ''));
+        if ($repeatRule !== '') {
+            $this->createNextPeriod((array) $row, $repeatRule, $operator);
+        }
+
+        return (int) $this->model->getDb()->affectedRows();
+    }
+
+    /**
+     * 周期任务生成下一期（复制当前任务，截止日期顺延）
+     */
+    private function createNextPeriod(array $row, string $repeatRule, string $operator): void
+    {
+        try {
+            $due = trim((string) ($row['截止日期'] ?? ''));
+            $nextDue = '';
+            if ($due !== '' && ($ts = strtotime($due)) !== false) {
+                $nextDue = match ($repeatRule) {
+                    '每天' => date('Y-m-d', strtotime('+1 day', $ts)),
+                    '每周' => date('Y-m-d', strtotime('+7 days', $ts)),
+                    '每月' => date('Y-m-d', strtotime('+1 month', $ts)),
+                    default => '',
+                };
+            }
+
+            $now = date('Y-m-d H:i:s');
+            $next = [
+                '待办标题' => (string) $row['待办标题'],
+                '待办描述' => $this->valOrNull($row['待办描述'] ?? ''),
+                '来源类型' => (string) ($row['来源类型'] ?? '手动'),
+                '来源摘要' => trim((string) ($row['来源摘要'] ?? '')),
+                '指派人' => (string) ($row['指派人'] ?? $operator),
+                '负责人' => (string) $row['负责人'],
+                '截止日期' => $nextDue !== '' ? $nextDue : null,
+                '优先级' => (string) ($row['优先级'] ?? '中'),
+                '重复规则' => $repeatRule,
+                '待办状态' => '待处理',
+                '开始操作时间' => $now,
+                '操作记录' => '新增',
+                '操作来源' => '周期任务自动生成',
+                '操作人员' => $operator,
+                '操作时间' => $now,
+                '删除标识' => '0',
+                '有效标识' => '1',
+            ];
+            if (!empty($row['父GUID'])) {
+                $next['父GUID'] = (int) $row['父GUID'];
+            }
+            $this->insertRow('oa_todo', $next);
+
+            $newGuid = (int) $this->model->getDb()->insertID();
+            if ($newGuid > 0) {
+                $this->insertLog($newGuid, '新增', $operator, [['重复规则', '空', $repeatRule]], sprintf('周期任务自动生成（%s），截止：%s', $repeatRule, $nextDue ?: '未设置'));
+            }
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoService::createNextPeriod] ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * 开始待办（待处理 → 进行中）
+     *
+     * @return int 影响行数（-1=不存在，-3=状态不允许）
+     */
+    public function startTodo(string $guid, string $operator): int
+    {
+        return $this->changeStatus($guid, ['待处理'], '进行中', '开始', '开始进行', $operator);
+    }
+
+    /**
+     * 取消待办（→ 已取消，需填原因）
+     *
+     * @return int 影响行数（-1=不存在，-3=状态不允许）
+     */
+    public function cancelTodo(string $guid, string $reason, string $operator): int
+    {
+        $reason = trim($reason);
+        return $this->changeStatus($guid, ['待处理', '进行中'], '已取消', '取消', '取消待办', $operator, $reason);
+    }
+
+    /**
+     * 重新打开（已完成/已取消 → 进行中）
+     *
+     * @return int 影响行数（-1=不存在，-3=状态不允许）
+     */
+    public function reopenTodo(string $guid, string $operator): int
+    {
+        return $this->changeStatus($guid, ['已完成', '已取消'], '进行中', '重新打开', '重新打开待办', $operator);
+    }
+
+    /**
+     * 催办（不改状态，仅记流水；预留消息推送挂点）
+     *
+     * @return int 影响行数（-1=不存在）
+     */
+    public function urgeTodo(string $guid, string $operator): int
+    {
+        $guid = trim($guid);
+        if ($guid === '' || !ctype_digit($guid)) {
+            throw new BusinessException('待办GUID无效');
+        }
+        $row = $this->model->select(sprintf(
+            'select GUID, 待办标题, 负责人, 待办状态 from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
+            $this->model->quote($guid)
+        ))->getRowArray();
+        if (!$row) {
+            return -1;
+        }
+        if (((string) $row['待办状态']) === '已完成' || ((string) $row['待办状态']) === '已取消') {
+            throw new BusinessException('待办已结束，无需催办');
+        }
+
+        $this->insertLog((int) $guid, '催办', $operator, [], sprintf('催办负责人: %s', (string) $row['负责人']));
+
+        // 站内消息触达负责人（排除催办人自己）
+        $operatorName = $this->fetchUserName($operator) ?? $operator;
+        $receivers = array_diff(array_filter(explode(',', (string) $row['负责人'])), [$operator]);
+        $this->messageService->sendBatch(
+            $receivers,
+            '催办',
+            sprintf('【催办】%s 请尽快处理：%s', $operatorName, (string) $row['待办标题']),
+            '',
+            (int) $guid
+        );
+
+        return 1;
+    }
+
+    /**
+     * 状态流转通用方法（带前置状态校验与流水）
+     *
+     * @param string        $guid       待办GUID
+     * @param array|null    $fromStates 允许的前置状态列表（null=不限）
+     * @param string        $toState    目标状态
+     * @param string        $action     流水动作
+     * @param string        $opRecord   主表操作记录
+     * @param string        $operator   操作人
+     * @param string        $note       流水备注
+     * @return int 影响行数（-1=不存在，-3=状态不允许）
+     */
+    private function changeStatus(
+        string $guid,
+        ?array $fromStates,
+        string $toState,
+        string $action,
+        string $opRecord,
+        string $operator,
+        string $note = ''
+    ): int {
+        $guid = trim($guid);
+        if ($guid === '' || !ctype_digit($guid)) {
+            throw new BusinessException('待办GUID无效');
+        }
+        $row = $this->model->select(sprintf(
+            'select GUID, 待办标题, 待办状态, 负责人 from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
+            $this->model->quote($guid)
+        ))->getRowArray();
+        if (!$row) {
+            return -1;
+        }
+        $current = (string) $row['待办状态'];
+
+        // 前置状态校验
+        if ($fromStates !== null && !in_array($current, $fromStates, true)) {
+            return -3;
+        }
+
+        $changes = [['待办状态', $current, $toState]];
+        $now = date('Y-m-d H:i:s');
+        $this->model->exec(sprintf(
+            'update oa_todo set 待办状态=%s, 操作记录=%s, 操作来源=%s, 操作人员=%s, 操作时间=%s
+             where GUID=%s and 有效标识="1" and 删除标识="0"',
+            $this->model->quote($toState),
+            $this->model->quote($opRecord),
+            $this->model->quote('页面' . $action),
+            $this->model->quote($operator),
+            $this->model->quote($now),
+            $this->model->quote($guid)
+        ));
+
+        $this->insertLog((int) $guid, $action, $operator, $changes, $note);
+
+        // 取消/重新打开通知负责人（排除操作人自己）
+        $msgType = match ($action) {
+            '取消' => '已取消',
+            '重新打开' => '新待办',
+            default => null,
+        };
+        if ($msgType !== null) {
+            $operatorName = $this->fetchUserName($operator) ?? $operator;
+            $receivers = array_diff(array_filter(explode(',', (string) $row['负责人'])), [$operator]);
+            $title = sprintf(
+                '%s%s：%s',
+                $operatorName,
+                $action === '取消' ? ' 取消了待办' : ' 重新打开了待办',
+                (string) $row['待办标题']
+            );
+            if ($note !== '') {
+                $title .= '，原因：' . $note;
+            }
+            $this->messageService->sendBatch($receivers, $msgType, $title, '', (int) $guid);
+        }
 
         return (int) $this->model->getDb()->affectedRows();
     }
@@ -416,12 +789,14 @@ class TodoService
         }
 
         $row = $this->model->select(sprintf(
-            'select GUID from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
+            'select GUID, 负责人 from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
             $this->model->quote($guid)
         ))->getRowArray();
         if (!$row) {
             return -1;
         }
+
+        $oldAssignee = trim((string) ($row['负责人'] ?? ''));
 
         $now = date('Y-m-d H:i:s');
         $this->model->exec(sprintf(
@@ -432,6 +807,24 @@ class TodoService
             $this->model->quote($now),
             $this->model->quote($guid)
         ));
+
+        $changes = $oldAssignee === $newAssignee ? [] : [['负责人', $oldAssignee !== '' ? $oldAssignee : '空', $newAssignee]];
+        $this->insertLog((int) $guid, '转办', $operator, $changes, sprintf('转办给: %s', $newAssignee));
+
+        // 通知新负责人（排除转办人自己）
+        $todoTitle = $this->model->select(sprintf(
+            'select 待办标题, 截止日期 from oa_todo where GUID=%s',
+            $this->model->quote($guid)
+        ))->getRowArray();
+        $operatorName = $this->fetchUserName($operator) ?? $operator;
+        $due = $todoTitle ? trim((string) ($todoTitle['截止日期'] ?? '')) : '';
+        $this->messageService->sendBatch(
+            array_diff(explode(',', $newAssignee), [$operator]),
+            '转办',
+            sprintf('%s 将待办转办给您：%s', $operatorName, $todoTitle ? (string) $todoTitle['待办标题'] : ''),
+            $due !== '' ? '截止日期：' . $due : '',
+            (int) $guid
+        );
 
         return (int) $this->model->getDb()->affectedRows();
     }
@@ -464,6 +857,11 @@ class TodoService
             $in
         ));
 
+        // 每条待办分别记流水
+        foreach ($guids as $g) {
+            $this->insertLog((int) $g, '删除', $operator);
+        }
+
         return (int) $this->model->getDb()->affectedRows();
     }
 
@@ -481,9 +879,15 @@ class TodoService
         }
 
         $row = $this->model->select(sprintf(
-            'select GUID,待办标题,待办描述,来源类型,来源摘要,来源GUID,指派人,负责人,
-                    截止日期,提醒时间,优先级,待办状态,完成时间,完成说明,父级GUID,关联人员编码,
-                    开始操作时间,操作记录,操作来源,操作人员,操作时间
+            'select "task" as todoType, GUID, 待办标题 as title, 待办描述 as description,
+                    负责人 as assignee, 指派人 as assigner, 截止日期 as dueDate,
+                    优先级 as priority, 待办状态 as status,
+                    来源类型 as sourceType, 来源摘要 as sourceTitle, 来源GUID as sourceGuid,
+                    完成时间 as completedAt, 完成说明 as completedNote,
+                    关联人员编码 as personCode,
+                    置顶标识 as pinned, 重复规则 as repeatRule, 附件 as attachments, 父GUID as parentGuid,
+                    开始操作时间 as createdAt, 操作时间 as updatedAt,
+                    "" as bizType, "" as bizId, "" as instanceId, "" as nodeCode
              from oa_todo
              where GUID=%s and 有效标识="1" and 删除标识="0"',
             $this->model->quote($guid)
@@ -537,7 +941,199 @@ class TodoService
         return $s === '' ? 'NULL' : $this->model->quote($s);
     }
 
-    /** 行插入（字段名反引号包裹，值均已 quote/为字面量） */
+    /**
+     * 置顶/取消置顶
+     *
+     * @return array{pinned:bool}
+     */
+    public function togglePin(string $guid, string $operator): array
+    {
+        $guid = trim($guid);
+        if ($guid === '' || !ctype_digit($guid)) {
+            throw new BusinessException('待办GUID无效');
+        }
+        $row = $this->model->select(sprintf(
+            'select GUID, 置顶标识 from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
+            $this->model->quote($guid)
+        ))->getRowArray();
+        if (!$row) {
+            throw new BusinessException('待办不存在');
+        }
+        $newVal = ((string) $row['置顶标识']) === '1' ? '0' : '1';
+        $this->model->exec(sprintf(
+            'update oa_todo set 置顶标识=%s where GUID=%s and 有效标识="1" and 删除标识="0"',
+            $this->model->quote($newVal),
+            $this->model->quote($guid)
+        ));
+        $this->insertLog((int) $guid, $newVal === '1' ? '置顶' : '取消置顶', $operator);
+        return ['pinned' => $newVal === '1'];
+    }
+
+    /**
+     * 子任务列表（详情弹窗用）
+     */
+    public function getSubtasks(string $guid): array
+    {
+        $guid = trim($guid);
+        if ($guid === '' || !ctype_digit($guid)) {
+            throw new BusinessException('待办GUID无效');
+        }
+        $rows = $this->model->select(sprintf(
+            'select GUID, 待办标题 as title, 待办状态 as status, 负责人 as assignee, 截止日期 as dueDate,
+                    优先级 as priority, 完成时间 as completedAt
+             from oa_todo where 父GUID=%s and 有效标识="1" and 删除标识="0" order by GUID',
+            $this->model->quote($guid)
+        ))->getResultArray();
+        $total = count($rows);
+        $done = count(array_filter($rows, fn($r) => $r['status'] === '已完成'));
+        return ['list' => $rows, 'total' => $total, 'done' => $done];
+    }
+
+    /**
+     * 待办评论列表
+     */
+    public function getComments(string $guid): array
+    {
+        $guid = trim($guid);
+        if ($guid === '' || !ctype_digit($guid)) {
+            throw new BusinessException('待办GUID无效');
+        }
+        return $this->model->select(sprintf(
+            'select GUID, 评论人 as author, 评论人姓名 as authorName, 评论内容 as content, 创建时间 as createdAt
+             from oa_todo_comment where 待办GUID=%s order by GUID',
+            $this->model->quote($guid)
+        ))->getResultArray();
+    }
+
+    /**
+     * 添加评论（通知负责人/指派人，排除评论人自己）
+     *
+     * @return array 新评论
+     */
+    public function addComment(string $guid, string $content, string $operator): array
+    {
+        $guid = trim($guid);
+        if ($guid === '' || !ctype_digit($guid)) {
+            throw new BusinessException('待办GUID无效');
+        }
+        $content = trim($content);
+        if ($content === '') {
+            throw new BusinessException('评论内容不能为空');
+        }
+        if (mb_strlen($content) > 1000) {
+            throw new BusinessException('评论内容不能超过1000字');
+        }
+
+        $todo = $this->model->select(sprintf(
+            'select GUID, 待办标题, 负责人, 指派人 from oa_todo where GUID=%s and 有效标识="1" and 删除标识="0"',
+            $this->model->quote($guid)
+        ))->getRowArray();
+        if (!$todo) {
+            throw new BusinessException('待办不存在');
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $authorName = $this->fetchUserName($operator);
+        $this->insertRow('oa_todo_comment', [
+            '待办GUID' => (int) $guid,
+            '评论人' => $operator,
+            '评论人姓名' => $authorName,
+            '评论内容' => $content,
+            '创建时间' => $now,
+        ]);
+        $commentId = (int) $this->model->getDb()->insertID();
+
+        // 通知负责人与指派人（排除评论人自己）
+        $receivers = array_unique(array_merge(
+            array_filter(explode(',', (string) $todo['负责人'])),
+            [$todo['指派人'] ?? '']
+        ));
+        $this->messageService->sendBatch(
+            array_diff($receivers, [$operator]),
+            '评论',
+            sprintf('%s 评论了待办「%s」：%s', $authorName ?? $operator, (string) $todo['待办标题'], mb_substr($content, 0, 80)),
+            '',
+            (int) $guid
+        );
+
+        return [
+            'GUID' => $commentId,
+            'author' => $operator,
+            'authorName' => $authorName,
+            'content' => $content,
+            'createdAt' => $now,
+        ];
+    }
+
+    /**
+     * 到期/逾期提醒扫描（定时任务调用，幂等：同一天同待办只提醒一次）
+     *
+     * @return array{due:int, overdue:int} 发送的提醒条数
+     */
+    public function scanReminders(): array
+    {
+        $today = date('Y-m-d');
+        $tomorrow = date('Y-m-d', strtotime('+1 day'));
+        $sentDue = 0;
+        $sentOverdue = 0;
+
+        // 明天到期（提前一天提醒）
+        $dueRows = $this->model->select(sprintf(
+            'select GUID, 待办标题, 负责人, 截止日期 from oa_todo
+             where 有效标识="1" and 删除标识="0" and 待办状态 in ("待处理","进行中")
+               and 截止日期=%s and 父GUID is null',
+            $this->model->quote($tomorrow)
+        ))->getResultArray();
+        foreach ($dueRows as $r) {
+            if (!$this->hasRemindedToday((int) $r['GUID'], '到期提醒')) {
+                $this->messageService->sendBatch(
+                    array_filter(explode(',', (string) $r['负责人'])),
+                    '到期提醒',
+                    sprintf('待办明天到期：%s', (string) $r['待办标题']),
+                    sprintf('截止日期：%s', (string) $r['截止日期']),
+                    (int) $r['GUID']
+                );
+                $sentDue++;
+            }
+        }
+
+        // 今天已逾期
+        $overdueRows = $this->model->select(sprintf(
+            'select GUID, 待办标题, 负责人, 截止日期 from oa_todo
+             where 有效标识="1" and 删除标识="0" and 待办状态 in ("待处理","进行中")
+               and 截止日期<%s and 截止日期 is not null and 父GUID is null',
+            $this->model->quote($today)
+        ))->getResultArray();
+        foreach ($overdueRows as $r) {
+            if (!$this->hasRemindedToday((int) $r['GUID'], '逾期提醒')) {
+                $this->messageService->sendBatch(
+                    array_filter(explode(',', (string) $r['负责人'])),
+                    '逾期提醒',
+                    sprintf('待办已逾期：%s', (string) $r['待办标题']),
+                    sprintf('截止日期：%s', (string) $r['截止日期']),
+                    (int) $r['GUID']
+                );
+                $sentOverdue++;
+            }
+        }
+
+        return ['due' => $sentDue, 'overdue' => $sentOverdue];
+    }
+
+    /**
+     * 今天是否已发过某待办的某类提醒（幂等防重）
+     */
+    private function hasRemindedToday(int $todoGuid, string $type): bool
+    {
+        $row = $this->model->select(sprintf(
+            'select GUID from oa_message where 关联待办GUID=%d and 消息类型=%s and 创建时间>=%s limit 1',
+            $todoGuid,
+            $this->model->quote($type),
+            $this->model->quote(date('Y-m-d 00:00:00'))
+        ))->getRowArray();
+        return $row !== null;
+    }
+
     private function insertRow(string $table, array $row): void
     {
         $fields = array_map(fn($k) => sprintf('`%s`', $k), array_keys($row));

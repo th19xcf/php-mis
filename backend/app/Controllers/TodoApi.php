@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use App\Services\Oa\TodoService;
 use App\Services\Oa\MeetingService;
+use App\Services\Oa\MessageService;
 
 /**
  * 待办事项 API
@@ -14,22 +15,40 @@ use App\Services\Oa\MeetingService;
  *   POST /todo/create       手动新建待办
  *   POST /todo/update       修改待办
  *   POST /todo/complete     标记完成
+ *   POST /todo/start        开始（待处理→进行中）
+ *   POST /todo/cancel       取消
+ *   POST /todo/reopen       重新打开
+ *   POST /todo/urge         催办
  *   POST /todo/reassign     转办
  *   POST /todo/delete       批量删除（软删）
+ *   POST /todo/toggle-pin   置顶/取消置顶
  *   GET  /todo/detail       待办详情
+ *   GET  /todo/subtasks     子任务列表
+ *   GET  /todo/comments     评论列表
+ *   POST /todo/comment      添加评论
+ *   POST /todo/upload       上传附件
+ *   GET  /todo/download     下载附件
  *   GET  /todo/options      下拉选项
  *   GET  /todo/user-options 人员选择（负责人/转办）
+ *   GET  /todo/dept-tree    部门树
+ *   GET  /todo/logs         操作流水
+ *   GET  /todo/messages       我的站内消息
+ *   GET  /todo/messages-count 未读消息数
+ *   POST /todo/messages-read  标记已读（批量/全部）
+ *   POST /todo/remind-cron    定时提醒扫描（计划任务调用，token 保护）
  */
 class TodoApi extends BaseApiController
 {
     private TodoService $todoService;
     private MeetingService $meetingService;
+    private MessageService $messageService;
 
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
         $this->todoService = new TodoService();
         $this->meetingService = new MeetingService();
+        $this->messageService = new MessageService();
     }
 
     /**
@@ -161,6 +180,112 @@ class TodoApi extends BaseApiController
     }
 
     /**
+     * 开始待办（待处理 → 进行中）
+     * POST /todo/start
+     */
+    public function start()
+    {
+        try {
+            $data = $this->getJsonInput();
+            if ($error = $this->requireParam($data, 'guid')) {
+                return $error;
+            }
+            $affected = $this->todoService->startTodo((string) $data['guid'], $this->getUserWorkId());
+            if ($affected === -1) {
+                return $this->notFound('待办不存在');
+            }
+            if ($affected === -3) {
+                return $this->businessError('仅待处理状态可开始');
+            }
+            return $this->success(['started' => true], '已开始');
+        } catch (\App\Exceptions\BusinessException $e) {
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::start] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 取消待办
+     * POST /todo/cancel
+     */
+    public function cancel()
+    {
+        try {
+            $data = $this->getJsonInput();
+            if ($error = $this->requireParam($data, 'guid')) {
+                return $error;
+            }
+            $reason = (string) ($data['取消原因'] ?? '');
+            $affected = $this->todoService->cancelTodo((string) $data['guid'], $reason, $this->getUserWorkId());
+            if ($affected === -1) {
+                return $this->notFound('待办不存在');
+            }
+            if ($affected === -3) {
+                return $this->businessError('已结束的待办不能取消');
+            }
+            return $this->success(['cancelled' => true], '已取消');
+        } catch (\App\Exceptions\BusinessException $e) {
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::cancel] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 重新打开（已完成/已取消 → 进行中）
+     * POST /todo/reopen
+     */
+    public function reopen()
+    {
+        try {
+            $data = $this->getJsonInput();
+            if ($error = $this->requireParam($data, 'guid')) {
+                return $error;
+            }
+            $affected = $this->todoService->reopenTodo((string) $data['guid'], $this->getUserWorkId());
+            if ($affected === -1) {
+                return $this->notFound('待办不存在');
+            }
+            if ($affected === -3) {
+                return $this->businessError('仅已完成/已取消的待办可重新打开');
+            }
+            return $this->success(['reopened' => true], '已重新打开');
+        } catch (\App\Exceptions\BusinessException $e) {
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::reopen] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 催办（记流水，预留消息推送）
+     * POST /todo/urge
+     */
+    public function urge()
+    {
+        try {
+            $data = $this->getJsonInput();
+            if ($error = $this->requireParam($data, 'guid')) {
+                return $error;
+            }
+            $affected = $this->todoService->urgeTodo((string) $data['guid'], $this->getUserWorkId());
+            if ($affected === -1) {
+                return $this->notFound('待办不存在');
+            }
+            return $this->success(['urged' => true], '已催办');
+        } catch (\App\Exceptions\BusinessException $e) {
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::urge] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
      * 转办
      * POST /todo/reassign
      * 参数：guid / 新负责人
@@ -254,6 +379,27 @@ class TodoApi extends BaseApiController
     }
 
     /**
+     * 操作流水（详情时间线用）
+     * GET /todo/logs?guid=xxx
+     */
+    public function logs()
+    {
+        try {
+            $guid = trim((string) ($this->request->getGet('guid') ?? ''));
+            if ($guid === '') {
+                return $this->paramError('guid 不能为空');
+            }
+            $logs = $this->todoService->getLogs($guid);
+            return $this->success(['list' => $logs]);
+        } catch (\App\Exceptions\BusinessException $e) {
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::logs] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
      * 下拉选项
      * GET /todo/options
      */
@@ -300,6 +446,238 @@ class TodoApi extends BaseApiController
             return $this->success($tree);
         } catch (\Throwable $e) {
             log_message('error', '[TodoApi::deptTree] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    // ============================================================
+    // 站内消息
+    // ============================================================
+
+    /**
+     * 我的站内消息
+     * GET /todo/messages?page=1&pageSize=20&unreadOnly=1
+     */
+    public function messages()
+    {
+        try {
+            $page = (int) ($this->request->getGet('page') ?? 1);
+            $pageSize = (int) ($this->request->getGet('pageSize') ?? 20);
+            $unreadOnly = $this->request->getGet('unreadOnly') === '1';
+            $result = $this->messageService->list($this->getUserWorkId(), $unreadOnly, $page, $pageSize);
+            return $this->success($result);
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::messages] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 未读消息数（Header 角标轮询）
+     * GET /todo/messages-count
+     */
+    public function messagesCount()
+    {
+        try {
+            return $this->success(['count' => $this->messageService->unreadCount($this->getUserWorkId())]);
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::messagesCount] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 标记已读
+     * POST /todo/messages-read  body: {ids: [1,2]} 或 {all: true}
+     */
+    public function messagesRead()
+    {
+        try {
+            $data = $this->getJsonInput();
+            if (!empty($data['all'])) {
+                $affected = $this->messageService->markRead($this->getUserWorkId(), null);
+                return $this->success(['affected' => $affected], '已全部标记已读');
+            }
+            $ids = $data['ids'] ?? [];
+            if (!is_array($ids) || $ids === []) {
+                return $this->paramError('ids 不能为空');
+            }
+            $affected = $this->messageService->markRead($this->getUserWorkId(), $ids);
+            return $this->success(['affected' => $affected]);
+        } catch (\App\Exceptions\BusinessException $e) {
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::messagesRead] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    // ============================================================
+    // 置顶 / 子任务 / 评论
+    // ============================================================
+
+    /**
+     * 置顶/取消置顶
+     * POST /todo/toggle-pin
+     */
+    public function togglePin()
+    {
+        try {
+            $data = $this->getJsonInput();
+            if ($error = $this->requireParam($data, 'guid')) {
+                return $error;
+            }
+            $result = $this->todoService->togglePin((string) $data['guid'], $this->getUserWorkId());
+            return $this->success($result, $result['pinned'] ? '已置顶' : '已取消置顶');
+        } catch (\App\Exceptions\BusinessException $e) {
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::togglePin] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 子任务列表
+     * GET /todo/subtasks?guid=xxx
+     */
+    public function subtasks()
+    {
+        try {
+            $guid = (string) ($this->request->getGet('guid') ?? '');
+            if ($guid === '') {
+                return $this->paramError('guid 不能为空');
+            }
+            return $this->success($this->todoService->getSubtasks($guid));
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::subtasks] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 评论列表
+     * GET /todo/comments?guid=xxx
+     */
+    public function comments()
+    {
+        try {
+            $guid = (string) ($this->request->getGet('guid') ?? '');
+            if ($guid === '') {
+                return $this->paramError('guid 不能为空');
+            }
+            return $this->success($this->todoService->getComments($guid));
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::comments] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 添加评论
+     * POST /todo/comment  body: {guid, content}
+     */
+    public function comment()
+    {
+        try {
+            $data = $this->getJsonInput();
+            if ($error = $this->requireParam($data, 'guid')) {
+                return $error;
+            }
+            $content = trim((string) ($data['content'] ?? ''));
+            $comment = $this->todoService->addComment((string) $data['guid'], $content, $this->getUserWorkId());
+            return $this->success($comment, '评论成功');
+        } catch (\App\Exceptions\BusinessException $e) {
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::comment] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    // ============================================================
+    // 附件
+    // ============================================================
+
+    /**
+     * 上传附件
+     * POST /todo/upload  form-data: file
+     * 存储：writable/uploads/todo/YYYYMM/随机串.扩展名
+     */
+    public function upload()
+    {
+        try {
+            $file = $this->request->getFile('file');
+            if (!$file || !$file->isValid()) {
+                return $this->paramError('请上传有效的文件');
+            }
+            if ($file->getSizeByUnit('mb') > 20) {
+                return $this->paramError('文件不能超过 20MB');
+            }
+
+            $dir = WRITEPATH . 'uploads' . DIRECTORY_SEPARATOR . 'todo' . DIRECTORY_SEPARATOR . date('Ym');
+            if (!is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            $stored = $file->getRandomName();
+            $file->move($dir, $stored);
+
+            return $this->success([
+                'name' => $file->getClientName(),
+                'file' => date('Ym') . '/' . $stored,
+                'size' => $file->getSizeByUnit('kb'),
+            ], '上传成功');
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::upload] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 下载附件
+     * GET /todo/download?file=YYYYMM/xxx.ext&name=原始文件名
+     */
+    public function download()
+    {
+        try {
+            $file = (string) ($this->request->getGet('file') ?? '');
+            $name = (string) ($this->request->getGet('name') ?? '');
+            if ($file === '' || preg_match('/[^A-Za-z0-9\/.\-_]/', $file)) {
+                return $this->paramError('文件参数无效');
+            }
+            $path = WRITEPATH . 'uploads' . DIRECTORY_SEPARATOR . 'todo' . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $file);
+            if (!is_file($path)) {
+                return $this->notFound('文件不存在');
+            }
+            return $this->response->download($path, null)->setFileName($name !== '' ? $name : basename($file));
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::download] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    // ============================================================
+    // 定时任务
+    // ============================================================
+
+    /**
+     * 到期/逾期提醒扫描（计划任务调用）
+     * POST /todo/remind-cron?token=xxx
+     * token 取 .env 中 CRON_TOKEN，未配置时仅允许 CLI 执行
+     */
+    public function remindCron()
+    {
+        try {
+            $token = (string) ($this->request->getGet('token') ?? '');
+            $expected = (string) (getenv('CRON_TOKEN') ?: '');
+            if (!is_cli() && ($expected === '' || !hash_equals($expected, $token))) {
+                return $this->businessError('无权访问');
+            }
+            $result = $this->todoService->scanReminders();
+            log_message('info', sprintf('[TodoApi::remindCron] due=%d overdue=%d', $result['due'], $result['overdue']));
+            return $this->success($result);
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::remindCron] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
