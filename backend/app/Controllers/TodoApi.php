@@ -3,29 +3,33 @@
 namespace App\Controllers;
 
 use App\Services\Oa\TodoService;
+use App\Services\Oa\MeetingService;
 
 /**
  * 待办事项 API
  *
  * 路由组：/todo
- *   GET  /todo/center      待办中心（合并任务待办 + 审批待办）
- *   GET  /todo/stats       统计卡计数（Header 角标用）
- *   POST /todo/create      手动新建待办
- *   POST /todo/update      修改待办
- *   POST /todo/complete    标记完成
- *   POST /todo/reassign    转办
- *   POST /todo/delete      批量删除（软删）
- *   GET  /todo/detail      待办详情
- *   GET  /todo/options     下拉选项
+ *   GET  /todo/center       待办中心（合并任务待办 + 审批待办）
+ *   GET  /todo/stats        统计卡计数（Header 角标用）
+ *   POST /todo/create       手动新建待办
+ *   POST /todo/update       修改待办
+ *   POST /todo/complete     标记完成
+ *   POST /todo/reassign     转办
+ *   POST /todo/delete       批量删除（软删）
+ *   GET  /todo/detail       待办详情
+ *   GET  /todo/options      下拉选项
+ *   GET  /todo/user-options 人员选择（负责人/转办）
  */
 class TodoApi extends BaseApiController
 {
     private TodoService $todoService;
+    private MeetingService $meetingService;
 
     public function initController(\CodeIgniter\HTTP\RequestInterface $request, \CodeIgniter\HTTP\ResponseInterface $response, \Psr\Log\LoggerInterface $logger)
     {
         parent::initController($request, $response, $logger);
         $this->todoService = new TodoService();
+        $this->meetingService = new MeetingService();
     }
 
     /**
@@ -258,6 +262,41 @@ class TodoApi extends BaseApiController
             return $this->success($options);
         } catch (\Throwable $e) {
             log_message('error', '[TodoApi::options] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 人员选择（负责人/转办）
+     * GET /todo/user-options?keyword=xxx&deptCode=xxx
+     * 复用 MeetingService::getUserOptions，查 def_user 返回 [{工号, 姓名, 员工部门编码, 员工部门全称}]
+     */
+    public function userOptions()
+    {
+        try {
+            $keyword = (string) ($this->request->getGet('keyword') ?? '');
+            $deptCode = (string) ($this->request->getGet('deptCode') ?? '');
+            $users = $this->meetingService->getUserOptions($keyword, $deptCode);
+
+            return $this->success($users);
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::userOptions] ' . $e->getMessage());
+            return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 部门树
+     * GET /todo/dept-tree
+     * 复用 MeetingService::getDeptTree，返回 def_dept 树形结构
+     */
+    public function deptTree()
+    {
+        try {
+            $tree = $this->meetingService->getDeptTree();
+            return $this->success($tree);
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::deptTree] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }

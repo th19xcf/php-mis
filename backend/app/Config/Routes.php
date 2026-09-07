@@ -245,6 +245,8 @@ $routes->group('todo', static function ($routes) {
 	$routes->post('detail', 'TodoApi::detail');
 	$routes->get('options', 'TodoApi::options');
 	$routes->post('options', 'TodoApi::options');
+	$routes->get('user-options', 'TodoApi::userOptions');
+	$routes->get('dept-tree', 'TodoApi::deptTree');
 });
 
 $routes->group('onlyoffice', static function ($routes) {

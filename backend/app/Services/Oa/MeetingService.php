@@ -502,26 +502,70 @@ class MeetingService
     }
 
     /**
-     * 参会人选择数据（def_user，关键字过滤工号/姓名）
+     * 人员选择数据（def_user，关键字过滤工号/姓名，支持按部门过滤）
      *
-     * @return array [{工号, 姓名}]
+     * @param string $keyword   搜索关键字（工号/姓名）
+     * @param string $deptCode  部门编码（可选，按部门过滤）
+     * @param int    $limit     返回条数
+     * @return array [{工号, 姓名, 员工部门编码, 员工部门全称}]
      */
-    public function getUserOptions(string $keyword = '', int $limit = 50): array
+    public function getUserOptions(string $keyword = '', string $deptCode = '', int $limit = 100): array
     {
         $keyword = trim($keyword);
-        $limit = min(100, max(1, $limit));
+        $deptCode = trim($deptCode);
+        $limit = min(200, max(1, $limit));
 
         $where = ['有效标识="1"'];
         if ($keyword !== '') {
             $kw = $this->model->quote('%' . $keyword . '%');
             $where[] = sprintf('(工号 like %s or 姓名 like %s)', $kw, $kw);
         }
+        if ($deptCode !== '') {
+            $dc = $this->model->quote($deptCode . '%');
+            $where[] = sprintf('员工部门编码 like %s', $dc);
+        }
 
         return $this->model->select(sprintf(
-            'select 工号, 姓名 from def_user where %s group by 工号, 姓名 order by 工号 limit %d',
+            'select 工号, 姓名, 员工部门编码, 员工部门全称 from def_user where %s group by 工号, 姓名, 员工部门编码, 员工部门全称 order by 工号 limit %d',
             implode(' and ', $where),
             $limit
         ))->getResultArray();
+    }
+
+    /**
+     * 部门树（def_dept，树形结构）
+     *
+     * @return array [{部门编码, 部门名称, 部门全称, 部门级别, children: [...]}]
+     */
+    public function getDeptTree(): array
+    {
+        $rows = $this->model->select(
+            'select 部门编码, 部门名称, 部门全称, 部门级别, 上级部门编码 from def_dept where 有效标识="1" order by 部门级别, 部门编码'
+        )->getResultArray();
+
+        // 按上级部门编码分组
+        $byParent = [];
+        foreach ($rows as $r) {
+            $parent = $r['上级部门编码'] ?? '';
+            $byParent[$parent][] = $r;
+        }
+
+        // 递归构建树
+        $build = function ($parentCode) use (&$build, $byParent) {
+            $nodes = [];
+            foreach ($byParent[$parentCode] ?? [] as $r) {
+                $nodes[] = [
+                    '部门编码' => $r['部门编码'],
+                    '部门名称' => $r['部门名称'],
+                    '部门全称' => $r['部门全称'],
+                    '部门级别' => (int) $r['部门级别'],
+                    'children' => $build($r['部门编码'])
+                ];
+            }
+            return $nodes;
+        };
+
+        return $build('');
     }
 
     // ============================================================

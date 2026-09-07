@@ -1,20 +1,28 @@
 <script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue';
+import { ref, computed, h, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { NTag, NButton, NSpace, NPopconfirm, NInput } from 'naive-ui';
+import { NTag, NButton, NSpace, NPopconfirm, NInput, NSelect, NDataTable, NModal, NForm, NFormItem, NDatePicker, NDescriptions, NDescriptionsItem } from 'naive-ui';
 import type { DataTableColumns } from 'naive-ui';
 import {
   fetchTodoCenter,
   fetchTodoComplete,
   fetchTodoDelete,
   fetchTodoCreate,
+  fetchTodoUpdate,
+  fetchTodoReassign,
+  fetchTodoDetail,
+  fetchTodoOptions,
   type TodoCenterItem,
-  type TodoStats
+  type TodoStats,
+  type TodoUserOption
 } from '@/service/api/oa-todo';
+import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
+import UserPicker from '@/components/custom/user-picker.vue';
 
 defineOptions({ name: 'OaTodoCenter' });
 
 const router = useRouter();
+const message = useMessageWithConsole();
 
 // ============ 数据 ============
 const loading = ref(false);
@@ -36,25 +44,63 @@ const sourceFilter = ref('');
 const priorityFilter = ref('');
 const keyword = ref('');
 
-const sourceOptions = [
-  { label: '全部来源', value: '' },
-  { label: '手动', value: '手动' },
-  { label: '会议', value: '会议' },
-  { label: '工作流', value: '工作流' },
-  { label: '合同', value: '合同' }
-];
-const priorityOptions = [
-  { label: '全部优先级', value: '' },
-  { label: '高', value: '高' },
-  { label: '中', value: '中' },
-  { label: '低', value: '低' }
-];
+// 下拉选项（从接口获取）
+const sourceOptions = ref([{ label: '全部来源', value: '' }]);
+const priorityOptions = ref([{ label: '全部优先级', value: '' }]);
+const statusOptions = ref<string[]>(['待处理', '进行中', '已完成', '已取消']);
+
+// 批量选择
+const checkedRowKeys = ref<(string | number)[]>([]);
+
+// 人员选择器（UserPicker）
+const showUserPicker = ref(false);
+const userPickerTitle = ref('选择负责人');
+const userPickerMultiple = ref(false);
+const userPickerValue = ref<string[]>([]);
+// 当前正在选择负责人的目标：'create' | 'reassign'
+const userPickerTarget = ref<'create' | 'reassign'>('create');
+
+// 已选人员信息（用于显示姓名）
+const selectedUserMap = ref<Map<string, TodoUserOption>>(new Map());
+
+function openUserPicker(target: 'create' | 'reassign') {
+  userPickerTarget.value = target;
+  if (target === 'create') {
+    userPickerMultiple.value = false;
+    userPickerTitle.value = '选择负责人';
+    userPickerValue.value = createForm.value.负责人 ? [createForm.value.负责人] : [];
+  } else {
+    userPickerMultiple.value = false;
+    userPickerTitle.value = '选择新负责人';
+    userPickerValue.value = reassignForm.value.新负责人 ? [reassignForm.value.新负责人] : [];
+  }
+  showUserPicker.value = true;
+}
+
+function handleUserPickerConfirm(users: TodoUserOption[]) {
+  if (users.length === 0) return;
+  const user = users[0];
+  // 缓存用户信息
+  selectedUserMap.value.set(user.工号, user);
+  selectedUserMap.value = new Map(selectedUserMap.value);
+
+  if (userPickerTarget.value === 'create') {
+    createForm.value.负责人 = user.工号;
+  } else {
+    reassignForm.value.新负责人 = user.工号;
+  }
+}
+
+// 显示负责人名称（工号 -> 姓名）
+function getUserName(workId: string): string {
+  const user = selectedUserMap.value.get(workId);
+  return user ? `${user.姓名}（${user.工号}）` : workId;
+}
 
 // ============ 计算属性 ============
 const filteredList = computed(() => {
   let result = list.value;
 
-  // 左栏分类过滤
   if (activeCategory.value === 'overdue') {
     const today = new Date().toISOString().slice(0, 10);
     result = result.filter(
@@ -104,7 +150,9 @@ const rowClassName = (row: TodoCenterItem): string => {
   return '';
 };
 
-// ============ 事件 ============
+const rowKey = (row: TodoCenterItem) => `${row.todoType}-${row.GUID}`;
+
+// ============ 数据加载 ============
 async function loadData() {
   loading.value = true;
   try {
@@ -119,60 +167,237 @@ async function loadData() {
       list.value = res.data.list || [];
       stats.value = res.data.stats;
     }
+  } catch (e: any) {
+    message.error(e?.message || '加载失败');
   } finally {
     loading.value = false;
   }
 }
 
-async function handleComplete(item: TodoCenterItem) {
-  await fetchTodoComplete({ guid: item.GUID });
-  await loadData();
+async function loadOptions() {
+  try {
+    const res = await fetchTodoOptions();
+    if (res.data) {
+      sourceOptions.value = [{ label: '全部来源', value: '' }, ...(res.data.来源类型 || []).map((v: string) => ({ label: v, value: v }))];
+      priorityOptions.value = [{ label: '全部优先级', value: '' }, ...(res.data.优先级 || []).map((v: string) => ({ label: v, value: v }))];
+      if (res.data.待办状态?.length) statusOptions.value = res.data.待办状态;
+    }
+  } catch {
+    // 接口失败时使用默认硬编码选项
+    sourceOptions.value = [
+      { label: '全部来源', value: '' },
+      { label: '手动', value: '手动' },
+      { label: '会议', value: '会议' },
+      { label: '工作流', value: '工作流' },
+      { label: '合同', value: '合同' }
+    ];
+    priorityOptions.value = [
+      { label: '全部优先级', value: '' },
+      { label: '高', value: '高' },
+      { label: '中', value: '中' },
+      { label: '低', value: '低' }
+    ];
+  }
 }
 
+// ============ 事件：完成 ============
+const showCompleteModal = ref(false);
+const completeForm = ref({ guid: '' as string | number, note: '' });
+
+function handleComplete(item: TodoCenterItem) {
+  completeForm.value = { guid: item.GUID, note: '' };
+  showCompleteModal.value = true;
+}
+
+async function handleCompleteSubmit() {
+  try {
+    await fetchTodoComplete({ guid: completeForm.value.guid, 完成说明: completeForm.value.note });
+    message.success('已完成');
+    showCompleteModal.value = false;
+    await loadData();
+  } catch (e: any) {
+    message.error(e?.message || '操作失败');
+  }
+}
+
+// ============ 事件：删除 ============
 async function handleDelete(item: TodoCenterItem) {
-  await fetchTodoDelete([item.GUID]);
-  await loadData();
+  try {
+    await fetchTodoDelete([item.GUID]);
+    message.success('删除成功');
+    await loadData();
+  } catch (e: any) {
+    message.error(e?.message || '删除失败');
+  }
 }
 
+async function handleBatchDelete() {
+  if (checkedRowKeys.value.length === 0) {
+    message.warning('请先选择要删除的待办');
+    return;
+  }
+  const guids = checkedRowKeys.value
+    .map(k => {
+      const item = list.value.find(r => rowKey(r) === k);
+      return item?.todoType === 'task' ? item.GUID : null;
+    })
+    .filter((g): g is number => g !== null);
+
+  if (guids.length === 0) {
+    message.warning('所选待办中无可删除的任务待办');
+    return;
+  }
+  try {
+    await fetchTodoDelete(guids);
+    message.success(`已删除 ${guids.length} 条`);
+    checkedRowKeys.value = [];
+    await loadData();
+  } catch (e: any) {
+    message.error(e?.message || '删除失败');
+  }
+}
+
+// ============ 事件：分类切换 ============
 function handleCategoryChange(key: string) {
   activeCategory.value = key;
   loadData();
 }
 
+// ============ 事件：审批跳转 ============
 function handleWorkflowClick(item: TodoCenterItem) {
   if (item.todoType === 'workflow' && item.bizType === 'CONTRACT' && item.bizId) {
     router.push(`/contract-v2?businessId=${item.bizId}`);
+  } else {
+    message.info('该审批类型暂不支持跳转');
   }
 }
 
-// ============ 快速创建弹窗 ============
+// ============ 事件：新建 / 编辑 ============
 const showCreateModal = ref(false);
+const isEditMode = ref(false);
+const submitting = ref(false);
 const createForm = ref({
+  guid: '' as string | number,
   待办标题: '',
   负责人: '',
   待办描述: '',
-  截止日期: '',
+  截止日期: null as string | null,
   优先级: '中',
   来源类型: '手动'
 });
 
-async function handleCreate() {
-  if (!createForm.value.待办标题 || !createForm.value.负责人) return;
-  await fetchTodoCreate({
-    待办标题: createForm.value.待办标题,
-    负责人: createForm.value.负责人,
-    待办描述: createForm.value.待办描述,
-    截止日期: createForm.value.截止日期 || undefined,
-    优先级: createForm.value.优先级,
-    来源类型: createForm.value.来源类型
-  });
-  showCreateModal.value = false;
-  createForm.value = { 待办标题: '', 负责人: '', 待办描述: '', 截止日期: '', 优先级: '中', 来源类型: '手动' };
-  await loadData();
+function openCreateModal() {
+  isEditMode.value = false;
+  createForm.value = {
+    guid: '',
+    待办标题: '',
+    负责人: '',
+    待办描述: '',
+    截止日期: null,
+    优先级: '中',
+    来源类型: '手动'
+  };
+  showCreateModal.value = true;
+}
+
+function handleEdit(item: TodoCenterItem) {
+  isEditMode.value = true;
+  createForm.value = {
+    guid: item.GUID,
+    待办标题: item.title,
+    负责人: item.assignee,
+    待办描述: item.description || '',
+    截止日期: item.dueDate || null,
+    优先级: item.priority,
+    来源类型: item.sourceType
+  };
+  showCreateModal.value = true;
+}
+
+async function handleCreateSubmit() {
+  if (!createForm.value.待办标题.trim()) {
+    message.warning('请输入待办标题');
+    return;
+  }
+  if (!createForm.value.负责人) {
+    message.warning('请选择负责人');
+    return;
+  }
+
+  submitting.value = true;
+  try {
+    const data = {
+      待办标题: createForm.value.待办标题,
+      负责人: createForm.value.负责人,
+      待办描述: createForm.value.待办描述 || undefined,
+      截止日期: createForm.value.截止日期 || undefined,
+      优先级: createForm.value.优先级,
+      来源类型: createForm.value.来源类型
+    };
+
+    if (isEditMode.value) {
+      await fetchTodoUpdate({ guid: createForm.value.guid, ...data });
+      message.success('修改成功');
+    } else {
+      await fetchTodoCreate(data);
+      message.success('创建成功');
+    }
+    showCreateModal.value = false;
+    await loadData();
+  } catch (e: any) {
+    message.error(e?.message || '操作失败');
+  } finally {
+    submitting.value = false;
+  }
+}
+
+// ============ 事件：转办 ============
+const showReassignModal = ref(false);
+const reassignForm = ref({ guid: '' as string | number, 新负责人: '' });
+
+function handleReassign(item: TodoCenterItem) {
+  reassignForm.value = { guid: item.GUID, 新负责人: '' };
+  showReassignModal.value = true;
+}
+
+async function handleReassignSubmit() {
+  if (!reassignForm.value.新负责人) {
+    message.warning('请选择新负责人');
+    return;
+  }
+  try {
+    await fetchTodoReassign({ guid: reassignForm.value.guid, 新负责人: reassignForm.value.新负责人 });
+    message.success('转办成功');
+    showReassignModal.value = false;
+    await loadData();
+  } catch (e: any) {
+    message.error(e?.message || '转办失败');
+  }
+}
+
+// ============ 事件：详情 ============
+const showDetailModal = ref(false);
+const detailData = ref<TodoCenterItem | null>(null);
+
+async function handleViewDetail(item: TodoCenterItem) {
+  try {
+    const res = await fetchTodoDetail(item.GUID);
+    if (res.data) {
+      detailData.value = res.data as TodoCenterItem;
+      showDetailModal.value = true;
+    }
+  } catch (e: any) {
+    message.error(e?.message || '获取详情失败');
+  }
 }
 
 // ============ 列定义 ============
 const columns = computed<DataTableColumns<TodoCenterItem>>(() => [
+  {
+    type: 'selection',
+    width: 40,
+    disabled: (row: TodoCenterItem) => row.todoType !== 'task'
+  },
   {
     title: '标题',
     key: 'title',
@@ -246,11 +471,14 @@ const columns = computed<DataTableColumns<TodoCenterItem>>(() => [
   {
     title: '操作',
     key: 'actions',
-    width: 130,
+    width: 240,
     fixed: 'right',
     render(row) {
       const buttons: any[] = [];
-      if (row.todoType === 'task' && row.status !== '已完成' && row.status !== '已取消') {
+      const isTask = row.todoType === 'task';
+      const isDone = row.status === '已完成' || row.status === '已取消';
+
+      if (isTask && !isDone) {
         buttons.push(
           h(NButton, { size: 'small', type: 'primary', text: true, onClick: () => handleComplete(row) }, { default: () => '完成' })
         );
@@ -260,7 +488,20 @@ const columns = computed<DataTableColumns<TodoCenterItem>>(() => [
           h(NButton, { size: 'small', type: 'info', text: true, onClick: () => handleWorkflowClick(row) }, { default: () => '审批' })
         );
       }
-      if (row.todoType === 'task') {
+      if (isTask) {
+        buttons.push(
+          h(NButton, { size: 'small', type: 'default', text: true, onClick: () => handleEdit(row) }, { default: () => '编辑' })
+        );
+      }
+      if (isTask && !isDone) {
+        buttons.push(
+          h(NButton, { size: 'small', type: 'warning', text: true, onClick: () => handleReassign(row) }, { default: () => '转办' })
+        );
+      }
+      buttons.push(
+        h(NButton, { size: 'small', type: 'info', text: true, onClick: () => handleViewDetail(row) }, { default: () => '详情' })
+      );
+      if (isTask) {
         buttons.push(
           h(
             NPopconfirm,
@@ -277,7 +518,14 @@ const columns = computed<DataTableColumns<TodoCenterItem>>(() => [
   }
 ]);
 
-onMounted(loadData);
+onMounted(() => {
+  loadOptions();
+  loadData();
+});
+
+watch(keyword, (val) => {
+  if (val === '') loadData();
+});
 </script>
 
 <template>
@@ -285,9 +533,14 @@ onMounted(loadData);
     <!-- 顶部标题栏 -->
     <div class="todo-header">
       <h2 class="todo-title">待办中心</h2>
-      <NButton type="primary" @click="showCreateModal = true">
-        + 新建待办
-      </NButton>
+      <NSpace>
+        <NButton type="default" :disabled="checkedRowKeys.length === 0" @click="handleBatchDelete">
+          批量删除
+        </NButton>
+        <NButton type="primary" @click="openCreateModal">
+          + 新建待办
+        </NButton>
+      </NSpace>
     </div>
 
     <!-- 统计卡片 -->
@@ -335,21 +588,28 @@ onMounted(loadData);
       :columns="columns"
       :data="filteredList"
       :loading="loading"
-      :row-key="(row: TodoCenterItem) => `${row.todoType}-${row.GUID}`"
+      :row-key="rowKey"
       :row-class-name="rowClassName"
-      :scroll-x="900"
+      :checked-row-keys="checkedRowKeys"
+      @update:checked-row-keys="(keys) => (checkedRowKeys = keys)"
+      :scroll-x="1100"
       size="small"
       :bordered="false"
     />
 
-    <!-- 新建待办弹窗 -->
-    <NModal v-model:show="showCreateModal" preset="card" title="新建待办" style="width: 500px">
+    <!-- 新建 / 编辑待办弹窗 -->
+    <NModal v-model:show="showCreateModal" preset="card" :title="isEditMode ? '编辑待办' : '新建待办'" style="width: 500px">
       <NForm label-placement="left" :label-width="80">
         <NFormItem label="标题" required>
           <NInput v-model:value="createForm.待办标题" placeholder="待办标题" />
         </NFormItem>
         <NFormItem label="负责人" required>
-          <NInput v-model:value="createForm.负责人" placeholder="负责人工号" />
+          <NInput
+            :value="createForm.负责人 ? getUserName(createForm.负责人) : ''"
+            placeholder="点击选择负责人"
+            readonly
+            @click="openUserPicker('create')"
+          />
         </NFormItem>
         <NFormItem label="描述">
           <NInput v-model:value="createForm.待办描述" type="textarea" :rows="2" placeholder="待办描述" />
@@ -370,12 +630,83 @@ onMounted(loadData);
       <template #footer>
         <NSpace justify="end">
           <NButton @click="showCreateModal = false">取消</NButton>
-          <NButton type="primary" :disabled="!createForm.待办标题 || !createForm.负责人" @click="handleCreate">
-            创建
+          <NButton type="primary" :loading="submitting" :disabled="!createForm.待办标题 || !createForm.负责人" @click="handleCreateSubmit">
+            {{ isEditMode ? '保存' : '创建' }}
           </NButton>
         </NSpace>
       </template>
     </NModal>
+
+    <!-- 完成说明弹窗 -->
+    <NModal v-model:show="showCompleteModal" preset="card" title="标记完成" style="width: 420px">
+      <NForm label-placement="left" :label-width="80">
+        <NFormItem label="完成说明">
+          <NInput v-model:value="completeForm.note" type="textarea" :rows="3" placeholder="可选，填写完成说明" />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="showCompleteModal = false">取消</NButton>
+          <NButton type="primary" @click="handleCompleteSubmit">确认完成</NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <!-- 转办弹窗 -->
+    <NModal v-model:show="showReassignModal" preset="card" title="转办待办" style="width: 420px">
+      <NForm label-placement="left" :label-width="80">
+        <NFormItem label="新负责人" required>
+          <NInput
+            :value="reassignForm.新负责人 ? getUserName(reassignForm.新负责人) : ''"
+            placeholder="点击选择新负责人"
+            readonly
+            @click="openUserPicker('reassign')"
+          />
+        </NFormItem>
+      </NForm>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton @click="showReassignModal = false">取消</NButton>
+          <NButton type="primary" :disabled="!reassignForm.新负责人" @click="handleReassignSubmit">确认转办</NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <!-- 详情弹窗 -->
+    <NModal v-model:show="showDetailModal" preset="card" title="待办详情" style="width: 600px">
+      <NDescriptions v-if="detailData" label-placement="left" :column="2" bordered size="small">
+        <NDescriptionsItem label="标题" :span="2">{{ detailData.title }}</NDescriptionsItem>
+        <NDescriptionsItem label="类型">
+          {{ detailData.todoType === 'workflow' ? '审批待办' : '任务待办' }}
+        </NDescriptionsItem>
+        <NDescriptionsItem label="状态">{{ detailData.status }}</NDescriptionsItem>
+        <NDescriptionsItem label="负责人">{{ detailData.assignee }}</NDescriptionsItem>
+        <NDescriptionsItem label="指派人">{{ detailData.assigner || '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="优先级">{{ detailData.priority }}</NDescriptionsItem>
+        <NDescriptionsItem label="截止日期">{{ detailData.dueDate || '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="来源类型">{{ detailData.sourceType }}</NDescriptionsItem>
+        <NDescriptionsItem label="来源摘要">{{ detailData.sourceTitle || '-' }}</NDescriptionsItem>
+        <NDescriptionsItem label="创建时间">{{ detailData.createdAt }}</NDescriptionsItem>
+        <NDescriptionsItem label="更新时间">{{ detailData.updatedAt }}</NDescriptionsItem>
+        <NDescriptionsItem v-if="detailData.completedAt" label="完成时间" :span="2">{{ detailData.completedAt }}</NDescriptionsItem>
+        <NDescriptionsItem v-if="detailData.completedNote" label="完成说明" :span="2">{{ detailData.completedNote }}</NDescriptionsItem>
+        <NDescriptionsItem label="描述" :span="2">{{ detailData.description || '-' }}</NDescriptionsItem>
+      </NDescriptions>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton type="primary" @click="showDetailModal = false">关闭</NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <!-- 人员选择器 -->
+    <UserPicker
+      v-model:show="showUserPicker"
+      v-model="userPickerValue"
+      :multiple="userPickerMultiple"
+      :title="userPickerTitle"
+      @confirm="handleUserPickerConfirm"
+    />
   </div>
 </template>
 

@@ -77,7 +77,8 @@ class TodoService
                     来源类型 as sourceType, 来源摘要 as sourceTitle, 来源GUID as sourceGuid,
                     完成时间 as completedAt, 完成说明 as completedNote,
                     关联人员编码 as personCode,
-                    开始操作时间 as createdAt, 操作时间 as updatedAt
+                    开始操作时间 as createdAt, 操作时间 as updatedAt,
+                    "" as bizType, "" as bizId, "" as instanceId, "" as nodeCode
              from oa_todo
              where %s',
             $taskWhereSql

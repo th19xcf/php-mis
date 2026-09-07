@@ -43,6 +43,7 @@ yarn.lock
 commit-msg.txt
 commit-msg-temp.txt
 .commit-msg-temp.txt
+.git_commit_msg.txt
 
 # Auto-generated type declarations
 src/typings/components.d.ts

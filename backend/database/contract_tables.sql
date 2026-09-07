@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS `def_contract_master` (
   UNIQUE KEY `uk_合同编号` (`合同编号`),
   KEY `idx_合同状态` (`合同状态`),
   KEY `idx_创建时间` (`创建时间`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同主表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='合同主表';
 
 -- 2. 合同流程表
 CREATE TABLE IF NOT EXISTS `def_contract_flow` (
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS `def_contract_flow` (
   PRIMARY KEY (`GUID`),
   KEY `idx_合同编号` (`合同编号`),
   KEY `idx_操作时间` (`操作时间`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同流程表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='合同流程表';
 
 -- 3. 合同签署记录表
 CREATE TABLE IF NOT EXISTS `def_contract_sign` (
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS `def_contract_sign` (
   `操作时间` DATETIME DEFAULT NULL COMMENT '操作时间',
   PRIMARY KEY (`GUID`),
   KEY `idx_合同编号` (`合同编号`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同签署记录表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='合同签署记录表';
 
 -- 4. 合同提醒表
 CREATE TABLE IF NOT EXISTS `def_contract_reminder` (
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS `def_contract_reminder` (
   PRIMARY KEY (`GUID`),
   KEY `idx_合同编号` (`合同编号`),
   KEY `idx_提醒日期` (`提醒日期`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同提醒表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='合同提醒表';
 
 -- 5. 合同参与方表
 CREATE TABLE IF NOT EXISTS `def_contract_party` (
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS `def_contract_party` (
   `操作时间` DATETIME DEFAULT NULL COMMENT '操作时间',
   PRIMARY KEY (`GUID`),
   KEY `idx_合同编号` (`合同编号`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同参与方表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='合同参与方表';
 
 -- 6. 合同附件表
 CREATE TABLE IF NOT EXISTS `def_contract_attachment` (
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS `def_contract_attachment` (
   `操作时间` DATETIME DEFAULT NULL COMMENT '操作时间',
   PRIMARY KEY (`GUID`),
   KEY `idx_合同编号` (`合同编号`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同附件表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='合同附件表';
 
 -- 7. 合同模板表
 CREATE TABLE IF NOT EXISTS `def_contract_template` (
@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS `def_contract_template` (
   `操作时间` DATETIME DEFAULT NULL COMMENT '操作时间',
   PRIMARY KEY (`GUID`),
   UNIQUE KEY `uk_模板编码` (`模板编码`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同模板表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='合同模板表';
 
 -- 8. 合同类型表(数据字典)
 CREATE TABLE IF NOT EXISTS `def_contract_type` (
@@ -170,7 +170,7 @@ CREATE TABLE IF NOT EXISTS `def_contract_type` (
   `有效标识` CHAR(1) DEFAULT '1' COMMENT '有效标识',
   PRIMARY KEY (`GUID`),
   KEY `idx_公司ID` (`公司ID`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='合同类型表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='合同类型表';
 
 -- =========================================
 -- 初始化合同类型数据

@@ -114,3 +114,29 @@ export function fetchTodoDetail(guid: string | number) {
 export function fetchTodoOptions() {
   return request<{ 优先级: string[]; 待办状态: string[]; 来源类型: string[] }>({ url: '/todo/options' });
 }
+
+/** 人员选择（负责人/转办） */
+export interface TodoUserOption {
+  工号: string;
+  姓名: string;
+  员工部门编码: string;
+  员工部门全称: string;
+}
+
+/** 部门树节点 */
+export interface DeptTreeNode {
+  部门编码: string;
+  部门名称: string;
+  部门全称: string;
+  部门级别: number;
+  children?: DeptTreeNode[];
+}
+
+export function fetchTodoUserOptions(keyword = '', deptCode = '') {
+  return request<TodoUserOption[]>({ url: '/todo/user-options', params: { keyword, deptCode } });
+}
+
+/** 部门树 */
+export function fetchTodoDeptTree() {
+  return request<DeptTreeNode[]>({ url: '/todo/dept-tree' });
+}

@@ -51,6 +51,7 @@ Vagrantfile
 writable/
 
 # 前端构建产物：index.html 由 pnpm build 重新生成；assets 目录下的 .js/.css/.jpg 不入库
+public/index.html
 public/assets/*
 !public/assets/.gitkeep
 

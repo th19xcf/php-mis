@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS `def_seq` (
   `当前值` BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '该业务日已发放的最大序号',
   `更新时间` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`序列名`, `日期`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='通用发号序列表（按业务日期分桶 + LAST_INSERT_ID 防并发）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='通用发号序列表（按业务日期分桶 + LAST_INSERT_ID 防并发）';
 
 -- ============================================================
 -- 第 3 部分：发号核心存储过程（页面新增 + 导入前处理 都调用）
