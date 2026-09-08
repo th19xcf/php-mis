@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, h, onMounted, watch } from 'vue';
+import { ref, computed, h, onMounted, onActivated, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { NTag, NButton, NSpace, NInput, NSelect, NDataTable, NModal, NForm, NFormItem, NDatePicker, NDescriptions, NDescriptionsItem, NTimeline, NTimelineItem, NSpin, NDivider, NDropdown, NTabs, NTabPane, NEmpty } from 'naive-ui';
 import type { DataTableColumns, DropdownOption } from 'naive-ui';
@@ -202,8 +202,12 @@ function rowProps(row: TodoCenterItem) {
 }
 
 // ============ 数据加载 ============
-async function loadData() {
-  loading.value = true;
+// silent=true 为静默刷新（切回标签页场景）：已有数据时不显示进度圈，
+// 后台刷新完成后原位更新；列表为空时仍显示加载态。
+async function loadData(silent = false) {
+  if (!silent || list.value.length === 0) {
+    loading.value = true;
+  }
   try {
     const params: Record<string, string> = {};
     if (sourceFilter.value) params.sourceType = sourceFilter.value;
@@ -991,6 +995,18 @@ onMounted(() => {
   loadData();
 });
 
+// KeepAlive 场景：切回标签页时 onMounted 不会再次触发，用 onActivated 刷新。
+// 首次挂载时 activated 与 mounted 同帧触发，跳过以避免双重请求；
+// 此后每次切回标签页刷新列表与统计（选项、用户映射为慢变参考数据，不重复拉取）。
+let isFirstActivation = true;
+onActivated(() => {
+  if (isFirstActivation) {
+    isFirstActivation = false;
+    return;
+  }
+  loadData(true);
+});
+
 watch(keyword, (val) => {
   if (val === '') loadData();
 });
@@ -1028,7 +1044,7 @@ watch(keyword, (val) => {
           placeholder="搜索标题/描述"
           clearable
           class="search-input"
-          @update:value="loadData"
+          @update:value="() => loadData()"
         />
       </div>
 

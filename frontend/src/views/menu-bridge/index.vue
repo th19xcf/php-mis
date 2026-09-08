@@ -21,29 +21,26 @@ const route = useRoute();
 const themeStore = useThemeStore();
 const tabStore = useTabStore();
 const isDarkMode = computed(() => themeStore.darkMode);
+
+// 实例身份快照：setup（首次挂载）时固化当前路由参数。
+// 不能用 computed 实时读全局 route：KeepAlive 缓存的失活实例仍会响应全局路由变化，
+// 切到工作台类菜单（frontendRoute 不在 nativeComponentMap，如 def_user）时，
+// 失活实例的 isNativeFunction 会变 false，native 分支被 v-if 卸载，
+// 内层 KeepAlive 连同页面组件缓存一起销毁——切回时页面重新挂载，出现加载进度圈。
+const routeQuerySnapshot: Record<string, any> = { ...route.query };
+const routeMetaSnapshot: Record<string, unknown> = { ...((route.meta || {}) as Record<string, unknown>) };
+
 // workbench 由路由级 KeepAlive 保活，内部实例不再额外加 key
 const meta = computed(() => {
-  const routeMeta = (route.meta || {}) as Record<string, unknown>;
+  const routeMeta = routeMetaSnapshot;
 
-  const functionCode = String(route.query.functionCode || routeMeta.functionCode || '');
-  const module = String(route.query.module || routeMeta.module || '');
-  const rawParams = route.query.params || routeMeta.params || '';
+  const functionCode = String(routeQuerySnapshot.functionCode || routeMeta.functionCode || '');
+  const module = String(routeQuerySnapshot.module || routeMeta.module || '');
+  const rawParams = routeQuerySnapshot.params || routeMeta.params || '';
   const params = typeof rawParams === 'string' ? rawParams : JSON.stringify(rawParams);
-  const menu1 = String(route.query.menu1 || routeMeta.menu1 || '');
-  const menu2 = String(route.query.menu2 || routeMeta.menu2 || '');
-  const frontendRoute = String(route.query.frontendRoute || routeMeta.frontendRoute || '');
-
-  console.log('[MenuBridge Debug]', {
-    routeName: route.name,
-    routePath: route.path,
-    query: Object.fromEntries(Object.entries(route.query).map(([k, v]) => [k, String(v)])),
-    metaKeys: Object.keys(routeMeta),
-    metaFunctionCode: routeMeta.functionCode,
-    metaFrontendRoute: routeMeta.frontendRoute,
-    resolvedFunctionCode: functionCode,
-    resolvedFrontendRoute: frontendRoute,
-    isNative: !!(frontendRoute && nativeComponentMap[frontendRoute])
-  });
+  const menu1 = String(routeQuerySnapshot.menu1 || routeMeta.menu1 || '');
+  const menu2 = String(routeQuerySnapshot.menu2 || routeMeta.menu2 || '');
+  const frontendRoute = String(routeQuerySnapshot.frontendRoute || routeMeta.frontendRoute || '');
 
   return {
     ...routeMeta,

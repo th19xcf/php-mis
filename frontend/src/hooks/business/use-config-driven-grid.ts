@@ -351,9 +351,13 @@ export function useConfigDrivenGrid<TItem = any>(options: UseConfigDrivenGridOpt
 
   // ── 4 个加载函数 ──
 
-  async function loadList() {
+  async function loadList(silent = false) {
     if (!fetchList) return;
-    loading.value = true;
+    // silent=true 为静默刷新（切回标签页场景）：已有数据时不显示加载遮罩，
+    // 后台刷新完成后原位更新；列表为空时仍显示加载态。
+    if (!silent || listData.value.length === 0) {
+      loading.value = true;
+    }
     try {
       const params = {
         ...searchForm.value,

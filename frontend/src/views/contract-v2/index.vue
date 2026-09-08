@@ -531,10 +531,18 @@ onMounted(async () => {
   }
 });
 
-// KeepAlive 场景：切回标签页时如果配置未加载（首次访问被缓存、代码更新后热替换等），
-// onMounted 不会再次触发，用 onActivated 兜底
+// KeepAlive 场景：切回标签页时 onMounted 不会再次触发，用 onActivated 刷新。
+// 首次挂载时 activated 与 mounted 同帧触发，跳过以避免与 onMounted 双重请求；
+// 此后每次切回标签页刷新统计与列表（列配置由 columnConfigLoaded 守卫防重入）。
+let isFirstActivation = true;
 onActivated(async () => {
+  if (isFirstActivation) {
+    isFirstActivation = false;
+    return;
+  }
   await loadColumnConfig();
+  contractV2Store.loadStats();
+  await loadList(true);
 });
 
 // AG-Grid 在某些情况下不会自动响应 columnDefs 的变化（尤其是异步加载后），
