@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, h, onMounted, onActivated, watch } from 'vue';
+import { ref, computed, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
-import { NTag, NButton, NSpace, NInput, NSelect, NDataTable, NModal, NForm, NFormItem, NDatePicker, NDescriptions, NDescriptionsItem, NTimeline, NTimelineItem, NSpin, NDivider, NDropdown, NTabs, NTabPane, NEmpty } from 'naive-ui';
-import type { DataTableColumns, DropdownOption } from 'naive-ui';
+import { AgGridVue } from 'ag-grid-vue3';
+import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
+import type { GridApi } from 'ag-grid-community';
+import { NTag, NButton, NSpace, NInput, NSelect, NModal, NForm, NFormItem, NDatePicker, NDescriptions, NDescriptionsItem, NTimeline, NTimelineItem, NSpin, NDivider, NDropdown, NTabs, NTabPane, NEmpty } from 'naive-ui';
+import type { DropdownOption } from 'naive-ui';
 import { useDialog } from 'naive-ui';
 import {
   fetchTodoCenter,
@@ -31,7 +34,12 @@ import {
 } from '@/service/api/oa-todo';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import { useSplitter } from '@/hooks/business';
-import { useThemeStore } from '@/store/modules/theme';
+import {
+  createGridThemes,
+  createDefaultColDef,
+  createNumericColumnType,
+  createSequenceColumn
+} from '@/hooks/business/use-config-driven-grid';
 import UserPicker from '@/components/custom/user-picker.vue';
 
 defineOptions({ name: 'OaTodoCenter' });
@@ -48,8 +56,15 @@ const { leftWidth, isResizing, startResize } = useSplitter({
   storageKey: 'todo-center-splitter-width'
 });
 
-const themeStore = useThemeStore();
-const isDarkMode = computed(() => themeStore.darkMode);
+// AG-Grid 主题与默认配置（与合同管理 v2 的合同列表一致）
+const { isDarkMode, gridTheme } = createGridThemes();
+const defaultColDef = createDefaultColDef();
+const columnTypes = createNumericColumnType();
+
+const gridApi = ref<GridApi | null>(null);
+function onGridReady(params: { api: GridApi }) {
+  gridApi.value = params.api;
+}
 
 // ============ 数据 ============
 const loading = ref(false);
@@ -67,17 +82,26 @@ const categories = [
 ];
 
 // 筛选
-const sourceFilter = ref('');
-const priorityFilter = ref('');
 const keyword = ref('');
 
-// 下拉选项（从接口获取）
-const sourceOptions = ref([{ label: '全部来源', value: '' }]);
-const priorityOptions = ref([{ label: '全部优先级', value: '' }]);
+// 下拉选项（从接口获取，供新建/编辑表单使用）
+const sourceOptions = ref([{ label: '手动', value: '手动' }]);
+const priorityOptions = ref([{ label: '高', value: '高' }, { label: '中', value: '中' }, { label: '低', value: '低' }]);
 const statusOptions = ref<string[]>(['待处理', '进行中', '已完成', '已取消']);
 
-// 批量选择
-const checkedRowKeys = ref<(string | number)[]>([]);
+// 批量选择（AG-Grid 复选框多选，仅任务待办可选）
+const selectedTaskCount = ref(0);
+const rowSelection = {
+  mode: 'multiRow',
+  checkboxes: true,
+  headerCheckbox: true,
+  enableClickSelection: false,
+  isRowSelectable: (node: any) => node.data?.todoType === 'task'
+} as any;
+
+function onSelectionChanged() {
+  selectedTaskCount.value = (gridApi.value?.getSelectedRows() || []).filter(r => r.todoType === 'task').length;
+}
 
 // 人员选择器（UserPicker）
 const showUserPicker = ref(false);
@@ -146,21 +170,15 @@ const filteredList = computed(() => {
 });
 
 // ============ 工具函数 ============
-const sourceTagType = (source: string): 'default' | 'info' | 'success' | 'warning' => {
-  const map: Record<string, 'default' | 'info' | 'success' | 'warning'> = {
-    手动: 'default',
-    会议: 'info',
-    工作流: 'warning',
-    合同: 'success'
-  };
-  return map[source] || 'default';
-};
-
-const priorityColor = (priority: string): string => {
-  if (priority === '高') return '#ef4444';
-  if (priority === '中') return '#f59e0b';
-  return '#10b981';
-};
+/** HTML 转义：cellRenderer 以 HTML 字符串输出，防止待办标题等用户输入注入 */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 const isOverdue = (item: TodoCenterItem): boolean => {
   if (!item.dueDate || item.status === '已完成' || item.status === '已取消') return false;
@@ -176,29 +194,30 @@ const overdueDays = (item: TodoCenterItem): number => {
   return diff > 0 ? diff : 0;
 };
 
-const rowClassName = (row: TodoCenterItem): string => {
-  const classes: string[] = [];
-  if (rowKey(row) === selectedKey.value) classes.push('todo-row-selected');
-  if (row.status === '已完成') classes.push('todo-row-done');
-  else if (isOverdue(row)) classes.push('todo-row-overdue');
-  return classes.join(' ');
-};
-
 const rowKey = (row: TodoCenterItem) => `${row.todoType}-${row.GUID}`;
 
 // 当前选中行（右侧详情高亮）
 const selectedKey = ref('');
 
+// AG-Grid 行标识：数据刷新后按 id 复用行，保留勾选与滚动位置
+function getRowId(params: any): string {
+  return rowKey(params.data);
+}
+
+// 行样式：选中高亮 / 已完成置灰 / 逾期标红
+function getRowClass(params: any): string {
+  const row = params.data as TodoCenterItem;
+  if (!row) return '';
+  const classes: string[] = [];
+  if (rowKey(row) === selectedKey.value) classes.push('todo-row-selected');
+  if (row.status === '已完成') classes.push('todo-row-done');
+  else if (isOverdue(row)) classes.push('todo-row-overdue');
+  return classes.join(' ');
+}
+
 // 行点击：任务待办 → 右侧详情；审批待办 → 跳转审批
-function rowProps(row: TodoCenterItem) {
-  return {
-    style: 'cursor: pointer;',
-    onClick: (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest('.n-button') || target.closest('.n-checkbox')) return;
-      handleViewDetail(row);
-    }
-  };
+function onRowClicked(event: any) {
+  if (event.data) handleViewDetail(event.data);
 }
 
 // ============ 数据加载 ============
@@ -210,9 +229,7 @@ async function loadData(silent = false) {
   }
   try {
     const params: Record<string, string> = {};
-    if (sourceFilter.value) params.sourceType = sourceFilter.value;
-    if (priorityFilter.value) params.priority = priorityFilter.value;
-    if (keyword.value) params.keyword = keyword.value;
+    // keyword 走 AG-Grid quick filter 本地快速过滤，不再请求后端
     if (activeCategory.value !== 'all' && activeCategory.value !== 'overdue') params.status = activeCategory.value;
 
     const res = await fetchTodoCenter(params);
@@ -233,21 +250,19 @@ async function loadOptions() {
   try {
     const res = await fetchTodoOptions();
     if (res.data) {
-      sourceOptions.value = [{ label: '全部来源', value: '' }, ...(res.data.来源类型 || []).map((v: string) => ({ label: v, value: v }))];
-      priorityOptions.value = [{ label: '全部优先级', value: '' }, ...(res.data.优先级 || []).map((v: string) => ({ label: v, value: v }))];
+      sourceOptions.value = (res.data.来源类型 || []).map((v: string) => ({ label: v, value: v }));
+      priorityOptions.value = (res.data.优先级 || []).map((v: string) => ({ label: v, value: v }));
       if (res.data.待办状态?.length) statusOptions.value = res.data.待办状态;
     }
   } catch {
     // 接口失败时使用默认硬编码选项
     sourceOptions.value = [
-      { label: '全部来源', value: '' },
       { label: '手动', value: '手动' },
       { label: '会议', value: '会议' },
       { label: '工作流', value: '工作流' },
       { label: '合同', value: '合同' }
     ];
     priorityOptions.value = [
-      { label: '全部优先级', value: '' },
       { label: '高', value: '高' },
       { label: '中', value: '中' },
       { label: '低', value: '低' }
@@ -363,25 +378,18 @@ async function handleDelete(item: TodoCenterItem) {
 }
 
 async function handleBatchDelete() {
-  if (checkedRowKeys.value.length === 0) {
-    message.warning('请先选择要删除的待办');
-    return;
-  }
-  const guids = checkedRowKeys.value
-    .map(k => {
-      const item = list.value.find(r => rowKey(r) === k);
-      return item?.todoType === 'task' ? item.GUID : null;
-    })
-    .filter((g): g is number => g !== null);
+  const guids = (gridApi.value?.getSelectedRows() || [])
+    .filter(r => r.todoType === 'task')
+    .map(r => r.GUID);
 
   if (guids.length === 0) {
-    message.warning('所选待办中无可删除的任务待办');
+    message.warning('请先选择要删除的任务待办');
     return;
   }
   try {
     await fetchTodoDelete(guids);
     message.success(`已删除 ${guids.length} 条`);
-    checkedRowKeys.value = [];
+    gridApi.value?.deselectAll();
     await loadData();
   } catch (e: any) {
     message.error(e?.message || '删除失败');
@@ -632,6 +640,8 @@ async function handleViewDetail(item: TodoCenterItem) {
     if (res.data) {
       detailData.value = res.data as TodoCenterItem;
       selectedKey.value = rowKey(item);
+      // selectedKey 变化需要重绘行才能刷新选中高亮（AG-Grid 不会自动响应外部 ref）
+      gridApi.value?.redrawRows();
       detailLogs.value = [];
       detailSubtasks.value = [];
       detailComments.value = [];
@@ -664,6 +674,7 @@ async function refreshDetail() {
 function clearDetail() {
   detailData.value = null;
   selectedKey.value = '';
+  gridApi.value?.redrawRows();
   detailLogs.value = [];
   detailSubtasks.value = [];
   detailComments.value = [];
@@ -783,160 +794,116 @@ function renderLogContent(log: TodoLogItem): string {
   return text;
 }
 
-// ============ 列定义 ============
-const columns = computed<DataTableColumns<TodoCenterItem>>(() => [
+// ============ 列定义（AG-Grid，与合同管理 v2 的合同列表一致） ============
+/** 状态标签配色（对应原 NTag 的 type 映射） */
+const todoStatusColors: Record<string, { color: string; bg: string }> = {
+  待处理: { color: '#d97706', bg: 'rgba(245, 158, 11, 0.14)' },
+  进行中: { color: '#2563eb', bg: 'rgba(59, 130, 246, 0.12)' },
+  已完成: { color: '#16a34a', bg: 'rgba(34, 197, 94, 0.14)' },
+  已取消: { color: '#6b7280', bg: 'rgba(107, 114, 128, 0.12)' }
+};
+
+/** 来源标签配色（对应原 NTag 的 type 映射） */
+const todoSourceColors: Record<string, string> = {
+  手动: '#6b7280',
+  会议: '#2563eb',
+  工作流: '#d97706',
+  合同: '#16a34a'
+};
+
+const columnDefs: any[] = [
+  createSequenceColumn(),
   {
-    type: 'selection',
-    width: 40,
-    disabled: (row: TodoCenterItem) => row.todoType !== 'task'
-  },
-  {
-    title: '标题',
-    key: 'title',
-    minWidth: 280,
-    render(row) {
-      const children = [
-        h('span', { class: 'todo-title-text' }, row.title)
-      ];
-      if (row.pinned === '1') {
-        children.unshift(h('span', { class: 'todo-pin-icon', title: '已置顶' }, '📌'));
-      }
+    field: 'title',
+    headerName: '标题',
+    flex: 1,
+    minWidth: 260,
+    resizable: true,
+    filter: 'agTextColumnFilter',
+    cellRenderer: (params: any) => {
+      const row = params.data as TodoCenterItem;
+      if (!row) return '';
+      const parts: string[] = [];
+      if (row.pinned === '1') parts.push('<span class="todo-pin-icon" title="已置顶">📌</span>');
       if (row.sourceType) {
-        children.unshift(
-          h(NTag, { size: 'small', type: sourceTagType(row.sourceType), class: 'todo-source-tag' }, { default: () => row.sourceType })
+        const color = todoSourceColors[row.sourceType] || '#6b7280';
+        parts.push(
+          `<span class="todo-source-tag" style="color:${color};background:${color}1f;">${escapeHtml(row.sourceType)}</span>`
         );
       }
-      if (row.repeatRule) {
-        children.push(
-          h(NTag, { size: 'tiny', bordered: false, class: 'todo-repeat-tag' }, { default: () => `🔁${row.repeatRule}` })
-        );
-      }
-      return h('div', { class: 'todo-title-cell' }, children);
+      parts.push(`<span class="todo-title-text">${escapeHtml(row.title)}</span>`);
+      if (row.repeatRule) parts.push(`<span class="todo-repeat-tag">🔁${escapeHtml(row.repeatRule)}</span>`);
+      return `<span class="todo-title-cell">${parts.join('')}</span>`;
     }
   },
   {
-    title: '负责人',
-    key: 'assignee',
-    width: 130,
-    render(row) {
-      if (!row.assignee) return '-';
-      return getUserName(row.assignee);
-    }
+    field: 'assignee',
+    headerName: '负责人',
+    width: 150,
+    minWidth: 110,
+    resizable: true,
+    filter: 'agTextColumnFilter',
+    valueGetter: (params: any) => (params.data ? getUserName(params.data.assignee) : '')
   },
   {
-    title: '优先级',
-    key: 'priority',
-    width: 70,
-    render(row) {
-      return h('span', { style: { color: priorityColor(row.priority), fontWeight: row.priority === '高' ? 'bold' : 'normal' } }, row.priority);
-    }
-  },
-  {
-    title: '截止日期',
-    key: 'dueDate',
-    width: 130,
-    render(row) {
-      if (!row.dueDate) return '-';
-      if (isOverdue(row)) {
-        return h('span', { class: 'todo-overdue-date' }, `${row.dueDate} 逾期${overdueDays(row)}天`);
-      }
-      return row.dueDate;
-    }
-  },
-  {
-    title: '状态',
-    key: 'status',
+    field: 'priority',
+    headerName: '优先级',
     width: 90,
-    render(row) {
-      const typeMap: Record<string, 'default' | 'info' | 'success' | 'warning'> = {
-        待处理: 'warning',
-        进行中: 'info',
-        已完成: 'success',
-        已取消: 'default'
-      };
-      return h(NTag, { size: 'small', type: typeMap[row.status] || 'default', bordered: false }, { default: () => row.status });
+    minWidth: 70,
+    resizable: true,
+    filter: 'agTextColumnFilter',
+    cellRenderer: (params: any) => {
+      const p = params.value;
+      if (!p) return '';
+      const color = p === '高' ? '#ef4444' : p === '中' ? '#f59e0b' : '#10b981';
+      return `<span style="color:${color};font-weight:${p === '高' ? 600 : 400}">${escapeHtml(p)}</span>`;
     }
   },
   {
-    title: '来源',
-    key: 'sourceTitle',
-    width: 140,
-    render(row) {
-      if (row.todoType === 'workflow' && row.bizId) {
-        return h(
-          NButton,
-          { text: true, type: 'primary', onClick: () => handleWorkflowClick(row) },
-          { default: () => row.sourceTitle || row.sourceType }
-        );
+    field: 'dueDate',
+    headerName: '截止日期',
+    width: 150,
+    minWidth: 120,
+    resizable: true,
+    filter: 'agTextColumnFilter',
+    cellRenderer: (params: any) => {
+      const row = params.data as TodoCenterItem;
+      if (!row || !row.dueDate) return '<span style="color:#9ca3af">-</span>';
+      if (isOverdue(row)) {
+        return `<span class="todo-overdue-date">${escapeHtml(row.dueDate)} 逾期${overdueDays(row)}天</span>`;
       }
+      return escapeHtml(row.dueDate);
+    }
+  },
+  {
+    field: 'status',
+    headerName: '状态',
+    width: 100,
+    minWidth: 80,
+    resizable: true,
+    filter: 'agTextColumnFilter',
+    cellRenderer: (params: any) => {
+      const s = params.value;
+      if (!s) return '';
+      const c = todoStatusColors[s] || { color: '#6b7280', bg: 'rgba(107, 114, 128, 0.12)' };
+      return `<span class="todo-status-tag" style="color:${c.color};background:${c.bg}">${escapeHtml(s)}</span>`;
+    }
+  },
+  {
+    field: 'sourceTitle',
+    headerName: '来源',
+    width: 150,
+    minWidth: 110,
+    resizable: true,
+    filter: 'agTextColumnFilter',
+    valueGetter: (params: any) => {
+      const row = params.data as TodoCenterItem;
+      if (!row) return '';
+      // 审批待办点击行即跳转审批（onRowClicked），来源列仅作展示
       return row.sourceTitle || row.sourceType || '-';
     }
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 200,
-    fixed: 'right',
-    render(row) {
-      const buttons: any[] = [];
-      const isTask = row.todoType === 'task';
-      const isDone = row.status === '已完成' || row.status === '已取消';
-
-      if (row.todoType === 'workflow') {
-        // 审批待办：仅审批入口（详情接口仅支持任务待办）
-        buttons.push(
-          h(NButton, { size: 'small', type: 'info', text: true, onClick: () => handleWorkflowClick(row) }, { default: () => '审批' })
-        );
-        return h(NSpace, { size: 'small' }, { default: () => buttons });
-      }
-
-      if (!isTask) {
-        return h(NSpace, { size: 'small' }, { default: () => buttons });
-      }
-
-      // 主操作：按状态切换（待处理→开始，进行中→完成）
-      if (row.status === '待处理') {
-        buttons.push(
-          h(NButton, { size: 'small', type: 'primary', text: true, onClick: () => handleStart(row) }, { default: () => '开始' })
-        );
-      } else if (row.status === '进行中') {
-        buttons.push(
-          h(NButton, { size: 'small', type: 'primary', text: true, onClick: () => handleComplete(row) }, { default: () => '完成' })
-        );
-      }
-      buttons.push(
-        h(NButton, { size: 'small', type: 'default', text: true, onClick: () => handleEdit(row) }, { default: () => '编辑' })
-      );
-
-      // 更多操作：收纳低频操作
-      const options: DropdownOption[] = [
-        { label: '详情', key: 'detail' },
-        { label: '复制新建', key: 'copy' }
-      ];
-      if (!isDone) {
-        options.push(
-          { label: '转办', key: 'reassign' },
-          { label: '催办', key: 'urge' },
-          { label: '取消', key: 'cancel' }
-        );
-      } else {
-        options.push({ label: '重新打开', key: 'reopen' });
-      }
-      options.push({ label: row.pinned === '1' ? '取消置顶' : '置顶', key: 'pin' });
-      options.push({ label: '删除', key: 'delete', props: { style: 'color: rgb(var(--error-color))' } });
-
-      buttons.push(
-        h(
-          NDropdown,
-          { options, trigger: 'click', onSelect: (key: string) => handleRowAction(key, row) },
-          { default: () => h(NButton, { size: 'small', type: 'default', text: true }, { default: () => '更多' }) }
-        )
-      );
-
-      return h(NSpace, { size: 'small' }, { default: () => buttons });
-    }
   }
-]);
+];
 
 // 更多下拉操作分发
 function handleRowAction(key: string, row: TodoCenterItem) {
@@ -983,6 +950,8 @@ async function loadUserMap() {
     if (res.data) {
       res.data.forEach(u => selectedUserMap.value.set(u.工号, u));
       selectedUserMap.value = new Map(selectedUserMap.value);
+      // 人员映射就绪后刷新单元格，让负责人列从工号变为姓名
+      gridApi.value?.refreshCells({ force: true });
     }
   } catch {
     /* 加载失败时显示工号 */
@@ -1006,20 +975,16 @@ onActivated(() => {
   }
   loadData(true);
 });
-
-watch(keyword, (val) => {
-  if (val === '') loadData();
-});
 </script>
 
 <template>
-  <div class="todo-container">
+  <div class="todo-container" :class="{ 'system-dark': isDarkMode }">
     <!-- 左侧：待办列表 -->
     <div class="todo-panel todo-panel-left" :style="{ width: leftWidth + 'px', maxWidth: 'calc(100% - 320px)' }">
       <div class="panel-header">
         <span class="panel-title">待办列表</span>
         <div class="header-actions">
-          <NButton size="small" :disabled="checkedRowKeys.length === 0" @click="handleBatchDelete">
+          <NButton size="small" :disabled="selectedTaskCount === 0" @click="handleBatchDelete">
             批量删除
           </NButton>
           <NButton type="primary" size="small" @click="openCreateModal">
@@ -1028,7 +993,7 @@ watch(keyword, (val) => {
         </div>
       </div>
 
-      <!-- 分类 Tab（含计数）+ 搜索 -->
+      <!-- 分类 Tab（含计数） -->
       <div class="tab-bar">
         <NTabs v-model:value="activeCategory" type="line" @update:value="handleCategoryChange">
           <NTabPane
@@ -1038,50 +1003,51 @@ watch(keyword, (val) => {
             :tab="`${cat.label} ${stats[cat.statKey]}`"
           />
         </NTabs>
+      </div>
+
+      <!-- 表格上方工具栏：搜索框 -->
+      <div class="grid-toolbar">
         <NInput
           v-model:value="keyword"
           size="small"
-          placeholder="搜索标题/描述"
+          placeholder="搜索标题/负责人/状态..."
           clearable
           class="search-input"
-          @update:value="() => loadData()"
-        />
+        >
+          <template #suffix>
+            <NButton text size="small">
+              <template #icon>
+                <icon-mdi-magnify />
+              </template>
+            </NButton>
+          </template>
+        </NInput>
       </div>
 
-      <!-- 筛选条 -->
-      <div class="filter-bar">
-        <NSelect
-          v-model:value="sourceFilter"
-          :options="sourceOptions"
-          size="small"
-          style="width: 130px"
-          @update:value="loadData"
-        />
-        <NSelect
-          v-model:value="priorityFilter"
-          :options="priorityOptions"
-          size="small"
-          style="width: 130px"
-          @update:value="loadData"
-        />
-      </div>
-
-      <!-- 列表 -->
+      <!-- 列表（AG-Grid，与合同管理 v2 的合同列表一致） -->
       <div class="grid-container">
-        <NDataTable
-          class="todo-table"
-          :columns="columns"
-          :data="filteredList"
+        <AgGridVue
+          class="todo-grid"
+          :theme="gridTheme"
+          :row-data="filteredList"
+          :column-defs="columnDefs"
+          :default-col-def="defaultColDef"
+          :column-types="columnTypes"
+          :locale-text="AG_GRID_LOCALE_CN"
+          :row-height="38"
+          :header-height="40"
+          :animate-rows="true"
           :loading="loading"
-          :row-key="rowKey"
-          :row-class-name="rowClassName"
-          :row-props="rowProps"
-          :checked-row-keys="checkedRowKeys"
-          flex-height
-          :scroll-x="1100"
-          size="small"
-          :bordered="false"
-          @update:checked-row-keys="(keys) => (checkedRowKeys = keys)"
+          :pagination="true"
+          :pagination-page-size="50"
+          :pagination-page-size-selector="[50, 100, 200]"
+          :row-selection="rowSelection"
+          :quick-filter-text="keyword"
+          :get-row-id="getRowId"
+          :get-row-class="getRowClass"
+          @grid-ready="onGridReady"
+          @row-clicked="onRowClicked"
+          @selection-changed="onSelectionChanged"
         />
       </div>
     </div>
@@ -1234,13 +1200,10 @@ watch(keyword, (val) => {
           <NDatePicker v-model:formatted-value="createForm.截止日期" type="date" value-format="yyyy-MM-dd" style="width: 100%" />
         </NFormItem>
         <NFormItem label="优先级">
-          <NSelect v-model:value="createForm.优先级" :options="priorityOptions.filter(o => o.value)" />
+          <NSelect v-model:value="createForm.优先级" :options="priorityOptions" />
         </NFormItem>
         <NFormItem label="来源">
-          <NSelect
-            v-model:value="createForm.来源类型"
-            :options="sourceOptions.filter(o => o.value).map(o => ({ label: o.label, value: o.value }))"
-          />
+          <NSelect v-model:value="createForm.来源类型" :options="sourceOptions" />
         </NFormItem>
         <NFormItem label="重复">
           <NSelect v-model:value="createForm.重复规则" :options="repeatRuleOptions" />
@@ -1327,7 +1290,9 @@ watch(keyword, (val) => {
   </div>
 </template>
 
-<style scoped>
+<style lang="scss" scoped>
+@use '@/styles/scss/ag-grid-shared' as *;
+
 /* ============ 左右分栏容器 ============
    经 menu-bridge 桥接渲染（def_function.前端路由 = oa-todo-center），
    bridge-content-region 提供position:relative 定位上下文，绝对定位铺满该区域 */
@@ -1346,10 +1311,16 @@ watch(keyword, (val) => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: rgb(var(--container-bg-color));
-  border: 1px solid rgb(var(--base-text-color) / 0.12);
+  background: #fff;
+  border: 1px solid #e8e8e8;
   border-radius: 8px;
   overflow: hidden;
+}
+
+/* 暗色模式（与 contract-v2 一致） */
+.system-dark .todo-panel {
+  background: rgb(24, 24, 28);
+  border-color: rgba(255, 255, 255, 0.09);
 }
 
 .todo-panel-left {
@@ -1361,16 +1332,21 @@ watch(keyword, (val) => {
   min-width: 0;
 }
 
-/* 面板头部 */
+/* 面板头部（与 contract-v2 一致：#fafafa 底 + 16px 间距，按钮组右靠） */
 .panel-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   padding: 10px 16px;
-  border-bottom: 1px solid rgb(var(--base-text-color) / 0.1);
-  background: rgb(var(--base-text-color) / 0.03);
+  border-bottom: 1px solid #e8e8e8;
+  background: #fafafa;
   flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.system-dark .panel-header {
+  background: rgb(36, 36, 40);
+  border-color: rgba(255, 255, 255, 0.09);
 }
 
 .panel-title {
@@ -1382,16 +1358,23 @@ watch(keyword, (val) => {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  margin-left: auto;
 }
 
-/* Tab 栏（分类 + 计数） */
+/* Tab 栏（分类 + 计数，与 contract-v2 一致：16px 内边距 + 底部分隔线） */
 .tab-bar {
-  padding: 0 12px;
+  padding: 0 16px;
   flex-shrink: 0;
+  border-bottom: 1px solid #f0f0f0;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
+}
+
+.system-dark .tab-bar {
+  border-bottom-color: rgba(255, 255, 255, 0.09);
 }
 
 .tab-bar :deep(.n-tabs) {
@@ -1403,34 +1386,49 @@ watch(keyword, (val) => {
   padding: 8px 0;
 }
 
-.search-input {
-  width: 180px;
-  flex-shrink: 0;
-  padding-bottom: 6px;
-}
-
-/* 筛选条 */
-.filter-bar {
+/* 表格上方工具栏（搜索框，与 contract-v2 一致） */
+.grid-toolbar {
   display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 8px 16px 10px;
-  border-bottom: 1px solid rgb(var(--base-text-color) / 0.08);
+  padding: 8px 16px;
   flex-shrink: 0;
+
+  .search-input {
+    flex: 1;
+    min-width: 240px;
+  }
 }
 
-/* 列表区 */
+/* 列表区（AG-Grid 铺满面板，与 contract-v2 一致） */
 .grid-container {
   flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  padding: 8px 12px 12px;
+  min-height: 400px;
+  height: 100%;
+  overflow: auto;
 }
 
-.todo-table {
-  flex: 1;
-  min-height: 0;
+/* AG-Grid 主题变量与共享样式（与 contract-v2 的合同列表一致） */
+.todo-grid {
+  --wb-grid-surface: transparent;
+  --wb-grid-text: #1f2937;
+  width: 100%;
+  height: 100%;
+
+  .system-dark & {
+    --wb-grid-surface: rgb(var(--container-bg-color));
+    --wb-grid-text: rgb(var(--base-text-color));
+  }
 }
+
+@include ag-grid-base-layout('todo-grid');
+@include ag-grid-cell-borders('todo-grid', #e8eef4, rgba(255, 255, 255, 0.06));
+@include ag-grid-selection-column('todo-grid');
+@include ag-grid-checkbox-theme('todo-grid');
+@include ag-grid-cell-focus('todo-grid');
+@include ag-grid-checkbox-dark('todo-grid');
+@include ag-grid-base-dark('todo-grid');
+@include ag-grid-controls-dark('todo-grid');
 
 /* 拖拽分隔条 */
 .resize-splitter {
@@ -1467,56 +1465,77 @@ watch(keyword, (val) => {
   margin-top: 120px;
 }
 
-/* 行样式 */
-:deep(.todo-row-overdue) {
-  background: rgb(var(--error-color) / 0.08);
+/* 行样式（AG-Grid 行类，由 getRowClass 注入） */
+:deep(.todo-grid .ag-row.todo-row-overdue) {
+  background-color: rgb(var(--error-color) / 0.08) !important;
 }
 
-:deep(.todo-row-overdue:hover) {
-  background: rgb(var(--error-color) / 0.14);
+:deep(.todo-grid .ag-row.todo-row-overdue.ag-row-hover) {
+  background-color: rgb(var(--error-color) / 0.14) !important;
 }
 
-:deep(.todo-row-done) {
-  background: rgb(var(--base-text-color) / 0.04);
-  opacity: 0.6;
+:deep(.todo-grid .ag-row.todo-row-done) {
+  background-color: rgb(var(--base-text-color) / 0.04) !important;
+  opacity: 0.62;
 }
 
-:deep(.todo-row-done .todo-title-text) {
+:deep(.todo-grid .ag-row.todo-row-done .todo-title-text) {
   text-decoration: line-through;
   color: rgb(var(--base-text-color) / 0.45);
 }
 
-:deep(.todo-row-selected) {
-  background: rgb(var(--primary-color) / 0.1);
+:deep(.todo-grid .ag-row.todo-row-selected) {
+  background-color: rgb(var(--primary-color) / 0.1) !important;
 }
 
-:deep(.todo-row-selected:hover) {
-  background: rgb(var(--primary-color) / 0.14);
+:deep(.todo-grid .ag-row.todo-row-selected.ag-row-hover) {
+  background-color: rgb(var(--primary-color) / 0.14) !important;
 }
 
-/* 来源标签 */
-:deep(.todo-source-tag) {
-  margin-right: 6px;
-}
-
-:deep(.todo-title-cell) {
-  display: flex;
+/* 单元格内容（cellRenderer 注入的 HTML 类） */
+:deep(.todo-grid .todo-title-cell) {
+  display: inline-flex;
   align-items: center;
   gap: 4px;
+  overflow: hidden;
 }
 
-:deep(.todo-overdue-date) {
-  color: rgb(var(--error-color));
-  font-weight: bold;
+:deep(.todo-grid .todo-title-text) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-:deep(.todo-repeat-tag) {
+:deep(.todo-grid .todo-source-tag) {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+:deep(.todo-grid .todo-repeat-tag) {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+:deep(.todo-grid .todo-pin-icon) {
+  font-size: 12px;
+  line-height: 1;
   flex-shrink: 0;
 }
 
-:deep(.todo-pin-icon) {
+:deep(.todo-grid .todo-status-tag) {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 9px;
   font-size: 12px;
-  line-height: 1;
+  line-height: 18px;
+}
+
+:deep(.todo-grid .todo-overdue-date) {
+  color: rgb(var(--error-color));
+  font-weight: 600;
 }
 
 /* 附件（表单） */

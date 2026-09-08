@@ -614,14 +614,23 @@ watch(columnDefs, (newDefs) => {
           <NTabPane name="done" tab="我已审批" />
           <NTabPane name="my" tab="我发起的" />
         </NTabs>
+      </div>
+
+      <!-- 表格上方工具栏：搜索框 -->
+      <div v-if="activeTab === 'list'" class="grid-toolbar">
         <NInput
           v-model:value="searchKeyword"
+          size="small"
           placeholder="搜索合同编号、合同名称、甲方、乙方..."
           clearable
           class="search-input"
         >
-          <template #prefix>
-            <icon-mdi-magnify />
+          <template #suffix>
+            <NButton text size="small">
+              <template #icon>
+                <icon-mdi-magnify />
+              </template>
+            </NButton>
           </template>
         </NInput>
       </div>
@@ -1044,10 +1053,19 @@ watch(columnDefs, (newDefs) => {
   :deep(.n-tabs-tab) {
     padding: 8px 0;
   }
+}
+
+/* 表格上方工具栏（搜索框） */
+.grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  flex-shrink: 0;
 
   .search-input {
-    width: 240px;
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 240px;
   }
 }
 
