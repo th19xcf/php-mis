@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -624,6 +624,10 @@ function getTaskResultText(result?: string): string {
 onMounted(async () => {
   // splitter 宽度恢复已由 useSplitter 内部 onMounted 处理
   await loadList();
+  // 并行预取其余 Tab 首页数据，用于 Tab 标签计数（与待办列表格式一致）
+  loadPendingTasks();
+  loadDoneTasks();
+  loadMyInstances();
 });
 </script>
 
@@ -631,7 +635,7 @@ onMounted(async () => {
   <div class="workflow-container" :class="{ 'system-dark': isDarkMode }">
     <div class="workflow-panel workflow-panel-left" :style="{ width: leftWidth + 'px' }">
       <div class="panel-header">
-        <span class="text-lg font-600">工作流管理</span>
+        <span class="panel-title">工作流管理</span>
         <div class="stats-cards-inline">
           <div class="stat-item">
             <span class="stat-label">流程总数</span>
@@ -662,23 +666,31 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Tab 切换 -->
+      <!-- Tab 切换（含计数，与待办列表格式一致） -->
       <div class="tab-bar">
         <NTabs v-model:value="activeTab" type="line" animated @update:value="handleTabChange">
-          <NTabPane name="list" tab="全部流程" />
-          <NTabPane name="pending" tab="待我审批" />
-          <NTabPane name="done" tab="我已审批" />
-          <NTabPane name="my" tab="我发起的" />
+          <NTabPane name="list" :tab="`全部流程 ${pagination.total}`" />
+          <NTabPane name="pending" :tab="`待我审批 ${pendingPagination.total}`" />
+          <NTabPane name="done" :tab="`我已审批 ${donePagination.total}`" />
+          <NTabPane name="my" :tab="`我发起的 ${myPagination.total}`" />
         </NTabs>
+      </div>
+
+      <!-- 表格上方工具栏：搜索框 -->
+      <div v-if="activeTab === 'list'" class="grid-toolbar">
         <NInput
-          v-if="activeTab === 'list'"
           v-model:value="searchKeyword"
+          size="small"
           placeholder="搜索流程编码、流程名称..."
           clearable
           class="search-input"
         >
-          <template #prefix>
-            <icon-mdi-magnify />
+          <template #suffix>
+            <NButton text size="small">
+              <template #icon>
+                <icon-mdi-magnify />
+              </template>
+            </NButton>
           </template>
         </NInput>
       </div>
@@ -773,7 +785,7 @@ onMounted(async () => {
 
     <div class="workflow-panel workflow-panel-right">
       <div class="panel-header">
-        <span class="text-lg font-600">{{ isEditMode ? '编辑流程' : '流程详情' }}</span>
+        <span class="panel-title">{{ isEditMode ? '编辑流程' : '流程详情' }}</span>
         <div class="header-actions" v-if="isEditMode">
           <NButton size="small" @click="handleCancelEdit">取消</NButton>
           <NButton type="primary" size="small" @click="handleSubmitInline">保存</NButton>
@@ -1007,6 +1019,12 @@ onMounted(async () => {
   background: #fafafa;
   box-sizing: border-box;
 
+  .panel-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: rgb(var(--base-text-color));
+  }
+
   .stats-cards-inline {
     display: flex;
     align-items: center;
@@ -1017,9 +1035,11 @@ onMounted(async () => {
 
     .stat-item {
       display: flex;
-      flex-direction: column;
       align-items: center;
+      gap: 6px;
       line-height: 1.2;
+      white-space: nowrap;
+      flex-shrink: 0;
 
       .stat-label {
         font-size: 12px;
@@ -1027,7 +1047,7 @@ onMounted(async () => {
       }
 
       .stat-value {
-        font-size: 18px;
+        font-size: 14px;
         font-weight: 600;
         color: #1890ff;
 
@@ -1073,10 +1093,19 @@ onMounted(async () => {
   :deep(.n-tabs-tab) {
     padding: 8px 0;
   }
+}
+
+/* 表格上方工具栏（搜索框，与 contract-v2 / 待办列表一致） */
+.grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  flex-shrink: 0;
 
   .search-input {
-    width: 240px;
-    flex-shrink: 0;
+    flex: 1;
+    min-width: 240px;
   }
 }
 

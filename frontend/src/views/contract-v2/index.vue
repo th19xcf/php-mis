@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, onMounted, onActivated, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -194,14 +194,19 @@ const {
   pendingData: pendingTasks,
   doneData: doneTasks,
   myData: myContracts,
-  // 分页（仅主列表分页需在模板/脚本中直接使用；pending/done/my 的分页由 composable 内部管理）
+  // 分页（4 个 Tab 的 total 用于 Tab 标签计数，与待办列表格式一致）
   listPagination: pagination,
+  pendingPagination,
+  donePagination,
+  myPagination,
   // gridApi
   gridApi,
   onGridReady,
-  // 加载方法（loadPending 供 handleApprovalSuccess 调用；loadDone/loadMy 由 composable 内部的 handleTabChange 调用）
+  // 加载方法（loadPending 供 handleApprovalSuccess 调用；loadDone/loadMy 另供挂载时预取各 Tab 计数）
   loadList,
   loadPending,
+  loadDone,
+  loadMy,
   // 事件
   handleTabChange,
   handleRefresh: _handleRefresh
@@ -224,9 +229,8 @@ const {
   prependSequenceColumn: false
 });
 
-// 仍由 store 管理的状态（详情/统计/选项等，与列表无关）
+// 仍由 store 管理的状态（详情/选项等，与列表无关；统计已改为 Tab 标签计数展示）
 const currentContract = computed(() => contractV2Store.currentContract);
-const stats = computed(() => contractV2Store.stats);
 const options = computed(() => contractV2Store.options);
 
 // 条件面板字段下拉项：优先用服务端元数据中的可筛选列，否则用 fallbackColumnDefs
@@ -520,8 +524,11 @@ onMounted(async () => {
   // splitter 宽度恢复已由 useSplitter 内部 onMounted 处理
   await loadColumnConfig();
   contractV2Store.loadOptions();
-  contractV2Store.loadStats();
   await loadList();
+  // 并行预取其余 Tab 首页数据，用于 Tab 标签计数（与待办列表格式一致）
+  loadPending();
+  loadDone();
+  loadMy();
   // 诊断：打印数据字段名，与列定义 field 对比
   if (contractList.value.length > 0) {
     console.log('[ContractV2] 数据字段名:', Object.keys(contractList.value[0]));
@@ -533,7 +540,7 @@ onMounted(async () => {
 
 // KeepAlive 场景：切回标签页时 onMounted 不会再次触发，用 onActivated 刷新。
 // 首次挂载时 activated 与 mounted 同帧触发，跳过以避免与 onMounted 双重请求；
-// 此后每次切回标签页刷新统计与列表（列配置由 columnConfigLoaded 守卫防重入）。
+// 此后每次切回标签页刷新列表与各 Tab 计数（列配置由 columnConfigLoaded 守卫防重入）。
 let isFirstActivation = true;
 onActivated(async () => {
   if (isFirstActivation) {
@@ -541,8 +548,11 @@ onActivated(async () => {
     return;
   }
   await loadColumnConfig();
-  contractV2Store.loadStats();
   await loadList(true);
+  // 并行刷新其余 Tab 计数
+  loadPending();
+  loadDone();
+  loadMy();
 });
 
 // AG-Grid 在某些情况下不会自动响应 columnDefs 的变化（尤其是异步加载后），
@@ -562,21 +572,7 @@ watch(columnDefs, (newDefs) => {
   <div class="contract-container" :class="{ 'system-dark': isDarkMode }">
     <div class="contract-panel contract-panel-left" :style="{ width: leftWidth + 'px' }">
       <div class="panel-header">
-        <span class="text-lg font-600">合同列表</span>
-        <div class="stats-cards-inline">
-          <div class="stat-item">
-            <span class="stat-label">合同总数</span>
-            <span class="stat-value">{{ stats.总数 }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">审批中</span>
-            <span class="stat-value text-warning">{{ stats.审批中 }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">即将到期</span>
-            <span class="stat-value text-error">{{ stats.即将到期 }}</span>
-          </div>
-        </div>
+        <span class="panel-title">合同列表</span>
         <div class="header-actions">
           <NButton size="small" :type="hasActiveFilter ? 'warning' : 'default'" @click="openCondition">
             <template #icon>
@@ -606,13 +602,13 @@ watch(columnDefs, (newDefs) => {
         <NButton size="tiny" quaternary type="error" @click="handleClearCondition">清除</NButton>
       </div>
 
-      <!-- Tab 切换 -->
+      <!-- Tab 切换（含计数，与待办列表格式一致） -->
       <div class="tab-bar">
         <NTabs v-model:value="activeTab" type="line" animated @update:value="handleTabChange">
-          <NTabPane name="list" tab="全部合同" />
-          <NTabPane name="pending" tab="待我审批" />
-          <NTabPane name="done" tab="我已审批" />
-          <NTabPane name="my" tab="我发起的" />
+          <NTabPane name="list" :tab="`全部合同 ${pagination.total}`" />
+          <NTabPane name="pending" :tab="`待我审批 ${pendingPagination.total}`" />
+          <NTabPane name="done" :tab="`我已审批 ${donePagination.total}`" />
+          <NTabPane name="my" :tab="`我发起的 ${myPagination.total}`" />
         </NTabs>
       </div>
 
@@ -717,7 +713,7 @@ watch(columnDefs, (newDefs) => {
 
     <div class="contract-panel contract-panel-right">
       <div class="panel-header">
-        <span class="text-lg font-600">{{ isEditMode ? '编辑合同' : '合同详情' }}</span>
+        <span class="panel-title">{{ isEditMode ? '编辑合同' : '合同详情' }}</span>
         <div class="header-actions" v-if="isEditMode">
           <NButton size="small" @click="handleCancelEdit">取消</NButton>
           <NButton type="primary" size="small" @click="handleSubmitInline">保存</NButton>
@@ -945,14 +941,6 @@ watch(columnDefs, (newDefs) => {
   border-color: rgba(255, 255, 255, 0.09);
 }
 
-.system-dark .panel-header .stats-cards-inline {
-  border-left-color: rgba(255, 255, 255, 0.15);
-}
-
-.system-dark .panel-header .stats-cards-inline .stat-item .stat-label {
-  color: #b0b0b0;
-}
-
 .panel-header {
   display: flex;
   align-items: center;
@@ -963,31 +951,10 @@ watch(columnDefs, (newDefs) => {
   background: #fafafa;
   box-sizing: border-box;
 
-  .stats-cards-inline {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-left: 8px;
-    padding-left: 16px;
-    border-left: 1px solid #e0e0e0;
-
-    .stat-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      line-height: 1.2;
-
-      .stat-label {
-        font-size: 12px;
-        color: #999;
-      }
-
-      .stat-value {
-        font-size: 18px;
-        font-weight: 600;
-        color: #1890ff;
-      }
-    }
+  .panel-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: rgb(var(--base-text-color));
   }
 
   .header-actions {
