@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { NSpin, NSpace, NButton, NAlert, NForm, NFormItem, NInput, NInputNumber, NSelect, NDatePicker } from 'naive-ui';
+import { filterLinkedOptions, clearLinkedOptions } from '@/utils/common';
 
 const props = defineProps<{
   loading: boolean;
@@ -22,7 +23,10 @@ const emit = defineEmits<{
 }>();
 
 function handleFieldChange(fieldName: string, value: any) {
-  emit('update:formData', { ...props.formData, [fieldName]: value });
+  // def_object 上级对象级联：控制字段变更时清空子级失效值（如邀约业务→邀约岗位）
+  const next = clearLinkedOptions(props.formFields, props.formData, fieldName, value, f => f.fieldName);
+  next[fieldName] = value;
+  emit('update:formData', next);
 }
 
 /**
@@ -41,7 +45,8 @@ function safeDateFormatted(value: any): string | null {
 }
 
 function getFieldOptions(field: any) {
-  return field.objectOptions || [];
+  // def_object 上级对象级联：按控制字段当前值过滤子级选项（普通下拉原样返回）
+  return filterLinkedOptions(field, props.formFields, props.formData, f => f.fieldName);
 }
 
 /**

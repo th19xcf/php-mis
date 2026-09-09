@@ -185,7 +185,7 @@ declare namespace Api {
       objectName: string;
       editable: boolean;
       inputType?: 'text' | 'popup' | 'select';
-      objectOptions?: Array<{ label: string; value: string }>;
+      objectOptions?: Array<{ label: string; value: string; parentName?: string; parentValue?: string }>;
     }
 
     interface AddFieldsData {

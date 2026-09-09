@@ -3,6 +3,7 @@ import { ref, onMounted, computed, toRef, watch } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import {  } from 'naive-ui';
 import { useRoute } from 'vue-router';
+import { filterLinkedOptions, clearLinkedOptions } from '@/utils/common';
 import {
   fetchAddInvitation,
   fetchUpdateInvitation,
@@ -103,6 +104,27 @@ const renderPrefix = usePersonnelTreeIcon({
 
 // 公共：编辑表单规范化
 const { buildEditForm } = usePersonnelEditFormInit();
+
+// ============ def_object 上级对象级联联动（邀约业务→邀约岗位 等） ============
+// 共享工具见 utils/common.ts，本页表单键为 columnName
+function getLinkedOptions(
+  form: Record<string, any>,
+  fields: Api.Workbench.AddField[],
+  field: Api.Workbench.AddField
+) {
+  return filterLinkedOptions(field, fields, form, f => f.columnName);
+}
+
+function setLinkedFieldValue(
+  form: Record<string, any>,
+  fields: Api.Workbench.AddField[],
+  changedColumn: string,
+  value: any
+) {
+  const next = clearLinkedOptions(fields, form, changedColumn, value, f => f.columnName);
+  // 表单为 store 中的 reactive 对象，直接在副本上赋值后整体回写
+  Object.assign(form, next, { [changedColumn]: value });
+}
 
 async function loadTree() {
   await invitationStore.refreshTree();
@@ -668,12 +690,13 @@ onMounted(async () => {
                   <span v-if="field.required" class="text-red-500 ml-1">*</span>
                 </td>
                 <td>
-                  <!-- 下拉选择 -->
+                  <!-- 下拉选择（def_object 上级对象联动：按上级字段值过滤选项） -->
                   <NSelect
                     v-if="field.objectOptions && field.objectOptions.length > 0"
-                    v-model:value="batchEditForm[field.columnName]"
-                    :options="field.objectOptions"
+                    :value="batchEditForm[field.columnName]"
+                    :options="getLinkedOptions(batchEditForm, batchEditFields, field)"
                     size="small"
+                    @update:value="value => setLinkedFieldValue(batchEditForm, batchEditFields, field.columnName, value)"
                   />
                   <!-- 日期选择 -->
                   <NDatePicker
@@ -842,12 +865,13 @@ onMounted(async () => {
                   <NTag type="success" size="small">是</NTag>
                 </td>
                 <td>
-                  <!-- 下拉选择 -->
+                  <!-- 下拉选择（def_object 上级对象联动：按上级字段值过滤选项） -->
                   <NSelect
                     v-if="field.objectOptions && field.objectOptions.length > 0"
-                    v-model:value="addFormDynamic[field.columnName]"
-                    :options="field.objectOptions"
+                    :value="addFormDynamic[field.columnName]"
+                    :options="getLinkedOptions(addFormDynamic, addFields, field)"
                     size="small"
+                    @update:value="value => setLinkedFieldValue(addFormDynamic, addFields, field.columnName, value)"
                   />
                   <!-- 日期选择 -->
                   <NDatePicker
@@ -919,12 +943,13 @@ onMounted(async () => {
                     <!-- 获取对应的新增字段配置 -->
                     <template v-for="addField in addFields" :key="addField.columnName">
                       <template v-if="addField.columnName === field.columnName">
-                        <!-- 下拉选择 -->
+                        <!-- 下拉选择（def_object 上级对象联动：按上级字段值过滤选项） -->
                         <NSelect
                           v-if="addField.objectOptions && addField.objectOptions.length > 0"
-                          v-model:value="editDetailForm[field.columnName]"
-                          :options="addField.objectOptions"
+                          :value="editDetailForm[field.columnName]"
+                          :options="getLinkedOptions(editDetailForm, addFields, addField)"
                           size="small"
+                          @update:value="value => setLinkedFieldValue(editDetailForm, addFields, addField.columnName, value)"
                         />
                         <!-- 日期选择 -->
                         <NDatePicker

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { NSpin, NSpace, NButton, NAlert, NForm, NFormItem, NInput, NInputNumber, NSelect, NDatePicker } from 'naive-ui';
+import { filterLinkedOptions, clearLinkedOptions } from '@/utils/common';
 
 const props = defineProps<{
   loading: boolean;
@@ -22,7 +23,10 @@ const emit = defineEmits<{
 }>();
 
 function handleFieldChange(fieldName: string, value: any) {
-  emit('update:formData', { ...props.formData, [fieldName]: value });
+  // def_object 上级对象级联：控制字段变更时清空子级失效值（如邀约业务→邀约岗位）
+  const next = clearLinkedOptions(props.formFields, props.formData, fieldName, value, f => f.fieldName);
+  next[fieldName] = value;
+  emit('update:formData', next);
 }
 
 /**
@@ -58,6 +62,11 @@ function handleMultiFieldChange(fieldName: string, value: string[] | null | unde
     .map(s => (s == null ? '' : String(s).trim()))
     .filter(Boolean);
   handleFieldChange(fieldName, parts.join(','));
+}
+
+function getFieldOptions(field: any) {
+  // def_object 上级对象级联：按控制字段当前值过滤子级选项（普通下拉原样返回）
+  return filterLinkedOptions(field, props.formFields, props.formData, f => f.fieldName);
 }
 
 const dark = computed(() => !!props.isDarkMode);
@@ -125,7 +134,7 @@ const dark = computed(() => !!props.isDarkMode);
                   <NSelect
                     v-else-if="field.inputType === 'multiSelect'"
                     :value="getMultiSelectValue(field.fieldName)"
-                    :options="field.objectOptions || []"
+                    :options="getFieldOptions(field)"
                     :placeholder="`请选择${field.columnName}（可多选）`"
                     multiple
                     clearable
@@ -134,7 +143,7 @@ const dark = computed(() => !!props.isDarkMode);
                   <NSelect
                     v-else-if="field.objectName && field.objectName !== '' && field.inputType !== 'popup'"
                     :value="formData[field.fieldName]"
-                    :options="field.objectOptions || []"
+                    :options="getFieldOptions(field)"
                     :placeholder="`请选择${field.columnName}`"
                     clearable
                     @update:value="handleFieldChange(field.fieldName, $event)"

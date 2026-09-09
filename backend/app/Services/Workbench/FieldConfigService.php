@@ -465,8 +465,10 @@ class FieldConfigService
                 $uniqueNames
             ));
 
+            // 附带上级对象名称/上级对象值，供前端实现"邀约业务→邀约岗位"类
+            // def_object 级联下拉联动（上级对象值为空表示不参与联动）
             $sql = sprintf(
-                'select 对象名称, 对象值 from def_object
+                'select 对象名称, 对象值, 上级对象名称, 上级对象值 from def_object
                  where 对象名称 in (%s)
                  and (属地="" or locate(属地, %s))',
                 $quotedNames,
@@ -485,6 +487,8 @@ class FieldConfigService
                 $grouped[$name][] = [
                     'label' => $value,
                     'value' => $value,
+                    'parentName' => (string) ($row['上级对象名称'] ?? ''),
+                    'parentValue' => (string) ($row['上级对象值'] ?? ''),
                 ];
             }
 
