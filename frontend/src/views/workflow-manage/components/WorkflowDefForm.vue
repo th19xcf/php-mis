@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import {  } from 'naive-ui';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
@@ -381,13 +381,107 @@ defineExpose({
   }
 }
 
+/* 暗色模式：弹窗配色对齐 naive-ui NModal（待办中心新建待办弹窗） */
+.system-dark {
+  .modal-overlay {
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .modal-container {
+    background: #2c2c32;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-header {
+    h3 {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .close-btn {
+      color: rgba(255, 255, 255, 0.52);
+
+      &:hover {
+        color: rgba(255, 255, 255, 0.82);
+      }
+    }
+  }
+
+  .modal-body {
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  .form-grid .form-item {
+    label {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    input,
+    select,
+    textarea {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: transparent;
+      color: rgba(255, 255, 255, 0.82);
+      color-scheme: dark;
+
+      &::placeholder {
+        color: rgba(255, 255, 255, 0.38);
+      }
+
+      &:focus {
+        border-color: #646cff;
+      }
+
+      option {
+        background: #2c2c32;
+        color: rgba(255, 255, 255, 0.82);
+      }
+
+      &:disabled {
+        background: rgba(255, 255, 255, 0.04);
+      }
+    }
+  }
+
+  .notice {
+    background: rgba(240, 160, 32, 0.15);
+    border-color: rgba(240, 160, 32, 0.35);
+
+    p {
+      color: #f0a020;
+    }
+  }
+
+  .btn {
+    &.btn-primary {
+      background: #646cff;
+      color: rgb(0, 0, 0);
+
+      &:hover {
+        background: #7e86ff;
+      }
+    }
+
+    &.btn-default {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.24);
+      color: rgba(255, 255, 255, 0.82);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.14);
+        border-color: rgba(255, 255, 255, 0.4);
+        color: rgba(255, 255, 255, 0.9);
+      }
+    }
+  }
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -398,7 +492,7 @@ defineExpose({
   width: 600px;
   max-height: 85vh;
   background: #fff;
-  border-radius: 8px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
@@ -409,12 +503,12 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   padding: 16px 20px;
-  border-bottom: 1px solid #f0f0f0;
 
   h3 {
     margin: 0;
-    font-size: 16px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 500;
+    color: rgb(31, 34, 37);
   }
 
   .close-btn {
@@ -422,11 +516,11 @@ defineExpose({
     border: none;
     font-size: 24px;
     cursor: pointer;
-    color: #999;
+    color: rgb(118, 124, 130);
     line-height: 1;
 
     &:hover {
-      color: #333;
+      color: rgb(51, 54, 57);
     }
   }
 }
@@ -435,6 +529,7 @@ defineExpose({
   flex: 1;
   overflow-y: auto;
   padding: 20px;
+  color: rgb(51, 54, 57);
 }
 
 .form-grid {
@@ -453,7 +548,7 @@ defineExpose({
 
     label {
       font-size: 13px;
-      color: #666;
+      color: rgb(51, 54, 57);
 
       .required {
         color: #ff4d4f;
@@ -464,18 +559,24 @@ defineExpose({
     select,
     textarea {
       padding: 8px 12px;
-      border: 1px solid #d9d9d9;
+      border: 1px solid rgb(224, 224, 230);
       border-radius: 4px;
       font-size: 14px;
       outline: none;
+      background: #fff;
+      color: rgb(51, 54, 57);
       transition: border-color 0.2s;
 
+      &::placeholder {
+        color: rgb(158, 164, 170);
+      }
+
       &:focus {
-        border-color: #1890ff;
+        border-color: #646cff;
       }
 
       &:disabled {
-        background: #f5f5f5;
+        background: rgb(250, 250, 252);
         cursor: not-allowed;
       }
     }
@@ -511,7 +612,6 @@ defineExpose({
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 20px;
-  border-top: 1px solid #f0f0f0;
 }
 
 .btn {
@@ -523,22 +623,22 @@ defineExpose({
   transition: all 0.2s;
 
   &.btn-primary {
-    background: #1890ff;
+    background: #646cff;
     color: #fff;
 
     &:hover {
-      background: #40a9ff;
+      background: #7e86ff;
     }
   }
 
   &.btn-default {
-    background: #fff;
-    color: #333;
-    border: 1px solid #d9d9d9;
+    background: transparent;
+    color: rgb(51, 54, 57);
+    border: 1px solid rgb(224, 224, 230);
 
     &:hover {
-      border-color: #1890ff;
-      color: #1890ff;
+      border-color: #7e86ff;
+      color: #7e86ff;
     }
   }
 }
