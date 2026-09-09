@@ -67,7 +67,6 @@ function onGridReady(params: { api: GridApi }) {
 }
 
 // ============ 数据 ============
-const loading = ref(false);
 const list = ref<TodoCenterItem[]>([]);
 const stats = ref<TodoStats>({ all: 0, pending: 0, doing: 0, done: 0, overdue: 0 });
 
@@ -221,12 +220,8 @@ function onRowClicked(event: any) {
 }
 
 // ============ 数据加载 ============
-// silent=true 为静默刷新（切回标签页场景）：已有数据时不显示进度圈，
-// 后台刷新完成后原位更新；列表为空时仍显示加载态。
+// silent=true 为静默刷新（切回标签页场景）：后台刷新完成后原位更新
 async function loadData(silent = false) {
-  if (!silent || list.value.length === 0) {
-    loading.value = true;
-  }
   try {
     const params: Record<string, string> = {};
     // keyword 走 AG-Grid quick filter 本地快速过滤，不再请求后端
@@ -241,8 +236,6 @@ async function loadData(silent = false) {
     refreshDetail();
   } catch (e: any) {
     message.error(e?.message || '加载失败');
-  } finally {
-    loading.value = false;
   }
 }
 
@@ -811,14 +804,19 @@ const todoSourceColors: Record<string, string> = {
   合同: '#16a34a'
 };
 
+// 序号列也允许调整宽度：覆盖共享列定义的固定宽与不可调限制
+const sequenceColumn = createSequenceColumn();
+sequenceColumn.resizable = true;
+sequenceColumn.minWidth = 40;
+delete sequenceColumn.maxWidth;
+
 const columnDefs: any[] = [
-  createSequenceColumn(),
+  sequenceColumn,
   {
     field: 'title',
     headerName: '标题',
-    flex: 1,
-    minWidth: 260,
-    resizable: true,
+    width: 320,
+    minWidth: 40,
     filter: 'agTextColumnFilter',
     cellRenderer: (params: any) => {
       const row = params.data as TodoCenterItem;
@@ -840,8 +838,7 @@ const columnDefs: any[] = [
     field: 'assignee',
     headerName: '负责人',
     width: 150,
-    minWidth: 110,
-    resizable: true,
+    minWidth: 40,
     filter: 'agTextColumnFilter',
     valueGetter: (params: any) => (params.data ? getUserName(params.data.assignee) : '')
   },
@@ -849,8 +846,7 @@ const columnDefs: any[] = [
     field: 'priority',
     headerName: '优先级',
     width: 90,
-    minWidth: 70,
-    resizable: true,
+    minWidth: 40,
     filter: 'agTextColumnFilter',
     cellRenderer: (params: any) => {
       const p = params.value;
@@ -863,8 +859,7 @@ const columnDefs: any[] = [
     field: 'dueDate',
     headerName: '截止日期',
     width: 150,
-    minWidth: 120,
-    resizable: true,
+    minWidth: 40,
     filter: 'agTextColumnFilter',
     cellRenderer: (params: any) => {
       const row = params.data as TodoCenterItem;
@@ -879,8 +874,7 @@ const columnDefs: any[] = [
     field: 'status',
     headerName: '状态',
     width: 100,
-    minWidth: 80,
-    resizable: true,
+    minWidth: 40,
     filter: 'agTextColumnFilter',
     cellRenderer: (params: any) => {
       const s = params.value;
@@ -893,8 +887,7 @@ const columnDefs: any[] = [
     field: 'sourceTitle',
     headerName: '来源',
     width: 150,
-    minWidth: 110,
-    resizable: true,
+    minWidth: 40,
     filter: 'agTextColumnFilter',
     valueGetter: (params: any) => {
       const row = params.data as TodoCenterItem;
@@ -1037,7 +1030,6 @@ onActivated(() => {
           :row-height="38"
           :header-height="40"
           :animate-rows="true"
-          :loading="loading"
           :pagination="true"
           :pagination-page-size="50"
           :pagination-page-size-selector="[50, 100, 200]"
