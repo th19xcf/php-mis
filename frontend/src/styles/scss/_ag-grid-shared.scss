@@ -561,6 +561,19 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       background-color: var(--wb-grid-surface);
     }
 
+    // 加载指示器卡片：默认白底，暗色下改为深色卡片
+    :deep(#{$g} .ag-overlay-loading-center) {
+      background-color: $dark-surface;
+      color: var(--wb-grid-text);
+      border: 1px solid #43576b;
+    }
+
+    // 过滤器输入框本体（mini-filter/文本过滤器等）：默认白底深字，暗色下改为透明背景透出容器底色
+    :deep(#{$g} input.ag-input-field-input) {
+      background-color: transparent;
+      color: var(--wb-grid-text);
+    }
+
     :deep(#{$g} .ag-list-item) {
       background-color: var(--wb-grid-surface);
       color: var(--wb-grid-text);
