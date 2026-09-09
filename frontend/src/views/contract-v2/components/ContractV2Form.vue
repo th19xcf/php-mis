@@ -1,6 +1,6 @@
-﻿<script setup lang="ts">
-import { ref, watch, computed, reactive } from 'vue';
-import {  } from 'naive-ui';
+<script setup lang="ts">
+import { h, ref, watch, computed, reactive } from 'vue';
+import { NButton, useDialog } from 'naive-ui';
 import { useContractV2Store } from '@/store/modules/contract-v2';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
@@ -23,6 +23,7 @@ const emit = defineEmits<{
 }>();
 
 const message = useMessageWithConsole();
+const dialog = useDialog();
 const contractV2Store = useContractV2Store();
 
 const loading = computed(() => contractV2Store.loading);
@@ -119,13 +120,68 @@ watch(
         contractFiles.value = [];
         approvalFiles.value = [];
       }
+      formSnapshot.value = serializeForm();
     }
   },
   { immediate: true }
 );
 
+/** 表单快照（用于判断是否有未保存的修改） */
+const formSnapshot = ref('');
+
+function serializeForm() {
+  return JSON.stringify({ ...formData.value, contractFiles: contractFiles.value, approvalFiles: approvalFiles.value });
+}
+
+function formDirty() {
+  return serializeForm() !== formSnapshot.value;
+}
+
 function handleClose() {
   emit('update:visible', false);
+}
+
+/** 用户请求关闭弹窗（遮罩/关闭按钮/取消按钮）：有未保存修改时提示是否保存 */
+function requestClose() {
+  if (!formDirty()) {
+    handleClose();
+    return;
+  }
+  const d = dialog.warning({
+    title: '未保存提示',
+    content: '当前填写内容尚未保存，是否保存？',
+    action: () =>
+      h('div', { style: 'display: flex; gap: 8px; margin-left: auto;' }, [
+        h(
+          NButton,
+          { size: 'small', quaternary: true, onClick: () => d.destroy() },
+          { default: () => '继续编辑' }
+        ),
+        h(
+          NButton,
+          {
+            size: 'small',
+            onClick: () => {
+              d.destroy();
+              handleClose();
+            }
+          },
+          { default: () => '不保存' }
+        ),
+        h(
+          NButton,
+          {
+            size: 'small',
+            type: 'primary',
+            onClick: () => {
+              d.destroy();
+              handleSubmit();
+            }
+          },
+          { default: () => '保存' }
+        )
+      ])
+  });
 }
 
 async function handleSubmit() {
@@ -429,11 +485,11 @@ defineExpose({
   </div>
 
   <!-- 弹窗模式（新建合同等） -->
-  <div v-else-if="!inline && visible" class="modal-overlay" @click.self="handleClose">
+  <div v-else-if="!inline && visible" class="modal-overlay" @click.self="requestClose">
     <div class="modal-container">
       <div class="modal-header">
         <h3>{{ mode === 'create' ? '新建合同' : '编辑合同' }}</h3>
-        <button class="close-btn" @click="handleClose">×</button>
+        <button class="close-btn" @click="requestClose">×</button>
       </div>
       <div class="modal-body">
         <div class="form-grid">
@@ -587,7 +643,7 @@ defineExpose({
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-default" @click="handleClose">取消</button>
+        <button class="btn btn-default" @click="requestClose">取消</button>
         <button class="btn btn-primary" :disabled="loading" @click="handleSubmit">
           {{ loading ? '提交中...' : '确定' }}
         </button>

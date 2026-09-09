@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated } from 'vue';
+import { h, ref, computed, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
@@ -356,6 +356,7 @@ function handleCopyCreate(item: TodoCenterItem) {
     重复规则: item.repeatRule || '',
     附件: parseAttachments(item.attachments)
   };
+  snapshotCreateForm();
   showCreateModal.value = true;
 }
 
@@ -434,6 +435,69 @@ const createForm = ref({
 const uploading = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
+/** 打开弹窗时的表单快照（用于判断是否有未保存的修改） */
+const createFormSnapshot = ref('');
+
+function snapshotCreateForm() {
+  createFormSnapshot.value = JSON.stringify(createForm.value);
+}
+
+function createFormDirty() {
+  return JSON.stringify(createForm.value) !== createFormSnapshot.value;
+}
+
+/** NModal 内部关闭请求（右上角X / ESC）：false 时走统一关闭确认 */
+function handleCreateShowChange(val: boolean) {
+  if (val) {
+    showCreateModal.value = true;
+    return;
+  }
+  handleCreateCloseRequest();
+}
+
+/** 用户请求关闭新建/编辑弹窗（遮罩/右上角X/取消按钮/ESC）：有未保存修改时提示是否保存 */
+function handleCreateCloseRequest() {
+  if (!createFormDirty()) {
+    showCreateModal.value = false;
+    return;
+  }
+  const d = dialog.warning({
+    title: '未保存提示',
+    content: '当前填写内容尚未保存，是否保存？',
+    action: () =>
+      h('div', { style: 'display: flex; gap: 8px; margin-left: auto;' }, [
+        h(
+          NButton,
+          { size: 'small', quaternary: true, onClick: () => d.destroy() },
+          { default: () => '继续编辑' }
+        ),
+        h(
+          NButton,
+          {
+            size: 'small',
+            onClick: () => {
+              d.destroy();
+              showCreateModal.value = false;
+            }
+          },
+          { default: () => '不保存' }
+        ),
+        h(
+          NButton,
+          {
+            size: 'small',
+            type: 'primary',
+            onClick: () => {
+              d.destroy();
+              handleCreateSubmit();
+            }
+          },
+          { default: () => '保存' }
+        )
+      ])
+  });
+}
+
 function triggerFileSelect() {
   if (!uploading.value) fileInputRef.value?.click();
 }
@@ -493,6 +557,7 @@ function openCreateModal() {
     重复规则: '',
     附件: []
   };
+  snapshotCreateForm();
   showCreateModal.value = true;
 }
 
@@ -509,6 +574,7 @@ function handleEdit(item: TodoCenterItem) {
     重复规则: item.repeatRule || '',
     附件: parseAttachments(item.attachments)
   };
+  snapshotCreateForm();
   showCreateModal.value = true;
 }
 
@@ -1172,7 +1238,15 @@ onActivated(() => {
     </div>
 
     <!-- 新建 / 编辑待办弹窗 -->
-    <NModal v-model:show="showCreateModal" preset="card" :title="isEditMode ? '编辑待办' : '新建待办'" style="width: 500px">
+    <NModal
+      :show="showCreateModal"
+      preset="card"
+      :title="isEditMode ? '编辑待办' : '新建待办'"
+      :mask-closable="false"
+      @mask-click="handleCreateCloseRequest"
+      @update:show="handleCreateShowChange"
+      style="width: 500px"
+    >
       <NForm label-placement="left" :label-width="80">
         <NFormItem label="标题" required>
           <NInput v-model:value="createForm.待办标题" placeholder="待办标题" />
@@ -1213,7 +1287,7 @@ onActivated(() => {
       </NForm>
       <template #footer>
         <NSpace justify="end">
-          <NButton @click="showCreateModal = false">取消</NButton>
+          <NButton @click="handleCreateCloseRequest">取消</NButton>
           <NButton type="primary" :loading="submitting" :disabled="!createForm.待办标题 || !createForm.负责人" @click="handleCreateSubmit">
             {{ isEditMode ? '保存' : '创建' }}
           </NButton>
