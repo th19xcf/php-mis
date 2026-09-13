@@ -23,6 +23,9 @@ class TodoService
     /** 优先级选项 */
     public const PRIORITY_LEVELS = ['高', '中', '低'];
 
+    /** 高优先级任务逾期提醒间隔（小时）：紧急任务高频续催，中/低优先级仍为每天一次 */
+    public const URGENT_OVERDUE_INTERVAL_HOURS = 4;
+
     /** 待办状态选项 */
     public const TODO_STATUSES = ['待处理', '进行中', '已完成', '已取消'];
 
@@ -1066,7 +1069,8 @@ class TodoService
     }
 
     /**
-     * 到期/逾期提醒扫描（定时任务调用，幂等：同一天同待办只提醒一次）
+     * 到期/逾期提醒扫描（定时任务调用，幂等：中/低优先级同一天同待办只提醒一次，
+     * 高优先级逾期按 URGENT_OVERDUE_INTERVAL_HOURS 间隔续催）
      *
      * @return array{due:int, overdue:int} 发送的提醒条数
      */
@@ -1097,15 +1101,18 @@ class TodoService
             }
         }
 
-        // 今天已逾期
+        // 今天已逾期（高优先级按间隔续催，中/低优先级每天一次）
         $overdueRows = $this->model->select(sprintf(
-            'select GUID, 待办标题, 负责人, 截止日期 from oa_todo
+            'select GUID, 待办标题, 负责人, 截止日期, 优先级 from oa_todo
              where 有效标识="1" and 删除标识="0" and 待办状态 in ("待处理","进行中")
                and 截止日期<%s and 截止日期 is not null and 父GUID is null',
             $this->model->quote($today)
         ))->getResultArray();
         foreach ($overdueRows as $r) {
-            if (!$this->hasRemindedToday((int) $r['GUID'], '逾期提醒')) {
+            $reminded = (string) $r['优先级'] === '高'
+                ? $this->hasRemindedSince((int) $r['GUID'], '逾期提醒', $this->urgentIntervalSince())
+                : $this->hasRemindedToday((int) $r['GUID'], '逾期提醒');
+            if (!$reminded) {
                 $this->messageService->sendBatch(
                     array_filter(explode(',', (string) $r['负责人'])),
                     '逾期提醒',
@@ -1125,13 +1132,72 @@ class TodoService
      */
     private function hasRemindedToday(int $todoGuid, string $type): bool
     {
-        $row = $this->model->select(sprintf(
-            'select GUID from oa_message where 关联待办GUID=%d and 消息类型=%s and 创建时间>=%s limit 1',
-            $todoGuid,
-            $this->model->quote($type),
-            $this->model->quote(date('Y-m-d 00:00:00'))
-        ))->getRowArray();
+        return $this->hasRemindedSince($todoGuid, $type, date('Y-m-d 00:00:00'));
+    }
+
+    /**
+     * 自给定时间以来是否已发过某待办的某类提醒（高优先级间隔防重）
+     *
+     * 注意：走 query()（无请求级缓存）——幂等判断必须读实时数据，
+     * 避免 select() 的同 SQL 请求级缓存在同一请求/长进程内返回陈旧空结果。
+     */
+    private function hasRemindedSince(int $todoGuid, string $type, string $since): bool
+    {
+        $row = $this->model->query(
+            'select GUID from oa_message where 关联待办GUID=? and 消息类型=? and 创建时间>=? limit 1',
+            [$todoGuid, $type, $since]
+        )->getRowArray();
         return $row !== null;
+    }
+
+    /**
+     * 高优先级续催间隔的起点时间
+     */
+    private function urgentIntervalSince(): string
+    {
+        return date('Y-m-d H:i:s', strtotime(sprintf('-%d hours', self::URGENT_OVERDUE_INTERVAL_HOURS)));
+    }
+
+    /**
+     * 紧急（高优先级）逾期待办即时检测
+     *
+     * 供铃铛未读数轮询、待办中心查询调用：负责人在线时无需等定时扫描，
+     * 名下高优先级待办已逾期且距上次提醒超过续催间隔即立即补发（幂等），
+     * 实现"紧急即时、不紧急定时"的双轨提醒。
+     *
+     * @param string $workId 当前用户工号
+     * @return int 本次补发的提醒条数
+     */
+    public function checkUrgentOverdue(string $workId): int
+    {
+        $workId = trim($workId);
+        if ($workId === '') {
+            return 0;
+        }
+
+        $rows = $this->model->select(sprintf(
+            'select GUID, 待办标题, 负责人, 截止日期 from oa_todo
+             where 有效标识="1" and 删除标识="0" and 待办状态 in ("待处理","进行中")
+               and 优先级="高" and 截止日期<%s and 截止日期 is not null and 父GUID is null
+               and FIND_IN_SET(%s, 负责人)>0',
+            $this->model->quote(date('Y-m-d')),
+            $this->model->quote($workId)
+        ))->getResultArray();
+
+        $sent = 0;
+        foreach ($rows as $r) {
+            if (!$this->hasRemindedSince((int) $r['GUID'], '逾期提醒', $this->urgentIntervalSince())) {
+                $this->messageService->sendBatch(
+                    array_filter(explode(',', (string) $r['负责人'])),
+                    '逾期提醒',
+                    sprintf('待办已逾期：%s', (string) $r['待办标题']),
+                    sprintf('截止日期：%s', (string) $r['截止日期']),
+                    (int) $r['GUID']
+                );
+                $sent++;
+            }
+        }
+        return $sent;
     }
 
     private function insertRow(string $table, array $row): void

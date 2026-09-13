@@ -62,6 +62,9 @@ class TodoApi extends BaseApiController
             $params = $this->request->getGet() + ($this->request->getJSON(true) ?? []);
             $workId = $this->getUserWorkId();
 
+            // 紧急逾期即时提醒（高优先级不等定时扫描）
+            $this->tryUrgentOverdueCheck($workId);
+
             $result = $this->todoService->getCenterData($workId, $params);
 
             return $this->success($result);
@@ -479,7 +482,11 @@ class TodoApi extends BaseApiController
     public function messagesCount()
     {
         try {
-            return $this->success(['count' => $this->messageService->unreadCount($this->getUserWorkId())]);
+            $workId = $this->getUserWorkId();
+            // 紧急逾期即时提醒（铃铛轮询触发，高优先级不等定时扫描）
+            $this->tryUrgentOverdueCheck($workId);
+
+            return $this->success(['count' => $this->messageService->unreadCount($workId)]);
         } catch (\Throwable $e) {
             log_message('error', '[TodoApi::messagesCount] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
@@ -679,6 +686,18 @@ class TodoApi extends BaseApiController
         } catch (\Throwable $e) {
             log_message('error', '[TodoApi::remindCron] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
+        }
+    }
+
+    /**
+     * 紧急逾期即时提醒（失败仅记日志，不阻断主流程）
+     */
+    private function tryUrgentOverdueCheck(string $workId): void
+    {
+        try {
+            $this->todoService->checkUrgentOverdue($workId);
+        } catch (\Throwable $e) {
+            log_message('error', '[TodoApi::tryUrgentOverdueCheck] ' . $e->getMessage());
         }
     }
 }
