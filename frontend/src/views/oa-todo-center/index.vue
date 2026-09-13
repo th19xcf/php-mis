@@ -1469,9 +1469,8 @@ onActivated(() => {
 /* 列表区（AG-Grid 铺满面板，与 contract-v2 一致） */
 .grid-container {
   flex: 1;
-  min-height: 400px;
-  height: 100%;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* AG-Grid 主题变量与共享样式（与 contract-v2 的合同列表一致） */

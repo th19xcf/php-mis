@@ -1038,9 +1038,8 @@ watch(columnDefs, (newDefs) => {
 
 .grid-container {
   flex: 1;
-  min-height: 400px;
-  height: 100%;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .contract-grid {
