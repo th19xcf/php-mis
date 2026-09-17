@@ -14,6 +14,7 @@ import {
 import { useConfigDrivenGrid, useSplitter, useConditionPanel } from '@/hooks/business';
 import { fetchWorkbenchPage } from '@/service/api/workbench';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
+import { WorkbenchSelectAllHeader } from '@/views/menu-bridge/modules/components';
 import ContractV2Form from './components/ContractV2Form.vue';
 import ContractV2Approval from './components/ContractV2Approval.vue';
 import ContractV2FlowTimeline from './components/ContractV2FlowTimeline.vue';
@@ -145,15 +146,14 @@ const fallbackColumnDefs: any[] = [
     cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
     valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
   },
-  { field: '合同编号', headerName: '合同编号', width: 150, minWidth: 120, filter: 'agTextColumnFilter' },
-  { field: '合同名称', headerName: '合同名称', width: 220, minWidth: 150, filter: 'agTextColumnFilter' },
-  { field: '甲方名称', headerName: '甲方', width: 150, minWidth: 120, filter: 'agTextColumnFilter' },
-  { field: '乙方名称', headerName: '乙方', width: 150, minWidth: 120, filter: 'agTextColumnFilter' },
+  { field: '合同编号', headerName: '合同编号', width: 150, filter: 'agTextColumnFilter' },
+  { field: '合同名称', headerName: '合同名称', width: 220, filter: 'agTextColumnFilter' },
+  { field: '甲方名称', headerName: '甲方', width: 150, filter: 'agTextColumnFilter' },
+  { field: '乙方名称', headerName: '乙方', width: 150, filter: 'agTextColumnFilter' },
   {
     field: '合同金额',
     headerName: '金额',
     width: 120,
-    minWidth: 100,
     filter: 'agNumberColumnFilter',
     type: '数值',
     cellStyle: { textAlign: 'right' },
@@ -164,10 +164,10 @@ const fallbackColumnDefs: any[] = [
       return val.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
   },
-  { field: '合同状态', headerName: '状态', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
-  { field: '所属部门名称', headerName: '所属部门', width: 120, minWidth: 100, filter: 'agTextColumnFilter' },
-  { field: '签订日期', headerName: '签订日期', width: 120, minWidth: 100, filter: 'agDateColumnFilter' },
-  { field: '结束日期', headerName: '到期日期', width: 120, minWidth: 100, filter: 'agDateColumnFilter' }
+  { field: '合同状态', headerName: '状态', width: 100, filter: 'agTextColumnFilter' },
+  { field: '所属部门名称', headerName: '所属部门', width: 120, filter: 'agTextColumnFilter' },
+  { field: '签订日期', headerName: '签订日期', width: 120, filter: 'agDateColumnFilter' },
+  { field: '结束日期', headerName: '到期日期', width: 120, filter: 'agDateColumnFilter' }
 ];
 
 // 列表 composable：抽取自原重复的 4-Tab 数据加载/分页/gridApi/主题等公共逻辑
@@ -294,11 +294,13 @@ async function handleClearCondition() {
   message.success('已清除筛选条件');
 }
 
-function onRowClicked(event: { data: Api.ContractV2.ContractListItem }) {
-  if (event.data) {
-    selectedContract.value = event.data;
-    contractV2Store.loadContractDetail(event.data.合同编号);
-  }
+function onRowClicked(event: { data: Api.ContractV2.ContractListItem; event?: MouseEvent }) {
+  if (!event.data) return;
+  // 双击复制场景（参照通用工作台）：正在选中文本或双击第二击时，不触发行点击详情
+  if (window.getSelection()?.toString()) return;
+  if (event.event && event.event.detail > 1) return;
+  selectedContract.value = event.data;
+  contractV2Store.loadContractDetail(event.data.合同编号);
 }
 
 // 本地 handleRefresh：在 composable 通用刷新基础上清空选中项并重置 store 详情
@@ -648,7 +650,15 @@ watch(columnDefs, (newDefs) => {
           :pagination="true"
           :pagination-page-size="pagination.pageSize"
           :pagination-page-size-selector="[200, 500, 1000]"
-          :row-selection="{ mode: 'singleRow' }"
+          :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: false, selectAll: 'filtered', enableClickSelection: false }"
+          :enable-cell-text-selection="true"
+          :selection-column-def="{
+            width: 37,
+            minWidth: 37,
+            resizable: false,
+            headerClass: 'selection-header-left',
+            headerComponent: WorkbenchSelectAllHeader
+          }"
           :quick-filter-text="searchKeyword"
           @grid-ready="onGridReady"
           @row-clicked="onRowClicked"

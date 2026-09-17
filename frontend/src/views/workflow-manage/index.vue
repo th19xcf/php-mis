@@ -21,6 +21,7 @@ import {
 } from '@/service/api/workflow';
 import { useConfigDrivenGrid, useSplitter } from '@/hooks/business';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
+import { WorkbenchSelectAllHeader } from '@/views/menu-bridge/modules/components';
 import WorkflowDefForm from './components/WorkflowDefForm.vue';
 import WorkflowNodeForm from './components/WorkflowNodeForm.vue';
 import WorkflowEdgeForm from './components/WorkflowEdgeForm.vue';
@@ -119,14 +120,14 @@ const {
       cellStyle: { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' },
       valueGetter: (params: any) => (params.node ? params.node.rowIndex + 1 : 0)
     },
-    { field: '流程编码', headerName: '流程编码', width: 150, minWidth: 120, filter: 'agTextColumnFilter' },
-    { field: '流程名称', headerName: '流程名称', width: 200, minWidth: 150, filter: 'agTextColumnFilter' },
-    { field: '业务类型', headerName: '业务类型', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
-    { field: '版本号', headerName: '版本', width: 80, minWidth: 60, type: '数值', cellStyle: { textAlign: 'right' } },
-    { field: '流程状态', headerName: '状态', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
-    { field: '流程描述', headerName: '描述', width: 220, minWidth: 150, filter: 'agTextColumnFilter' },
-    { field: '创建人', headerName: '创建人', width: 100, minWidth: 80, filter: 'agTextColumnFilter' },
-    { field: '创建时间', headerName: '创建时间', width: 160, minWidth: 140, filter: 'agDateColumnFilter' }
+    { field: '流程编码', headerName: '流程编码', width: 150, filter: 'agTextColumnFilter' },
+    { field: '流程名称', headerName: '流程名称', width: 200, filter: 'agTextColumnFilter' },
+    { field: '业务类型', headerName: '业务类型', width: 100, filter: 'agTextColumnFilter' },
+    { field: '版本号', headerName: '版本', width: 80, type: '数值', cellStyle: { textAlign: 'right' } },
+    { field: '流程状态', headerName: '状态', width: 100, filter: 'agTextColumnFilter' },
+    { field: '流程描述', headerName: '描述', width: 220, filter: 'agTextColumnFilter' },
+    { field: '创建人', headerName: '创建人', width: 100, filter: 'agTextColumnFilter' },
+    { field: '创建时间', headerName: '创建时间', width: 160, filter: 'agDateColumnFilter' }
   ],
   initialSearchForm: {
     workflowCode: '',
@@ -312,13 +313,15 @@ async function handleDeactivate() {
   loadList();
 }
 
-function onRowClicked(event: { data: any }) {
-  if (event.data) {
-    selectedDefinition.value = event.data;
-    isEditMode.value = false;
-    // 加载详情
-    loadDefinitionDetail(event.data.GUID);
-  }
+function onRowClicked(event: { data: any; event?: MouseEvent }) {
+  if (!event.data) return;
+  // 双击复制场景（参照通用工作台）：正在选中文本或双击第二击时，不触发行点击详情
+  if (window.getSelection()?.toString()) return;
+  if (event.event && event.event.detail > 1) return;
+  selectedDefinition.value = event.data;
+  isEditMode.value = false;
+  // 加载详情
+  loadDefinitionDetail(event.data.GUID);
 }
 
 async function loadDefinitionDetail(defId: number) {
@@ -713,7 +716,15 @@ onMounted(async () => {
           :pagination="true"
           :pagination-page-size="pagination.pageSize"
           :pagination-page-size-selector="[200, 500, 1000]"
-          :row-selection="{ mode: 'singleRow' }"
+          :row-selection="{ mode: 'multiRow', checkboxes: true, headerCheckbox: false, selectAll: 'filtered', enableClickSelection: false }"
+          :enable-cell-text-selection="true"
+          :selection-column-def="{
+            width: 37,
+            minWidth: 37,
+            resizable: false,
+            headerClass: 'selection-header-left',
+            headerComponent: WorkbenchSelectAllHeader
+          }"
           :quick-filter-text="searchKeyword"
           @grid-ready="onGridReady"
           @row-clicked="onRowClicked"

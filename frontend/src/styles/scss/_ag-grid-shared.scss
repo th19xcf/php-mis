@@ -234,20 +234,21 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
   }
 
   :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-cell-label) {
+    width: 100% !important;
     justify-content: center !important;
-    padding-left: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
   }
 
   :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-header-select-all) {
-    position: absolute !important;
-    left: 50% !important;
-    top: 50% !important;
-    transform: translate(-50%, -50%) !important;
     width: 16px !important;
     height: 16px !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   :deep(#{$g} .ag-header-cell[col-id='ag-Grid-SelectionColumn'] .ag-selection-checkbox),
@@ -284,12 +285,7 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
+    margin: 0 auto !important;
   }
 }
 
@@ -309,6 +305,20 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     border-radius: 2px;
     background-color: #ffffff;
     line-height: 16px;
+    cursor: pointer;
+  }
+
+  /* 确保原生 input 覆盖整个 wrapper，可接收点击 */
+  :deep(#{$g} .ag-checkbox-input-wrapper input) {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    opacity: 0 !important;
+    cursor: pointer !important;
+    z-index: 1 !important;
+    margin: 0 !important;
   }
 
   :deep(#{$g} .ag-checkbox-input-wrapper::before) {
@@ -324,6 +334,7 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     height: 0;
     border: 0;
     transform: translate(-50%, -50%);
+    pointer-events: none;
   }
 
   :deep(#{$g} .ag-checkbox-input-wrapper.ag-checked) {
@@ -339,6 +350,7 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
+    pointer-events: none;
   }
 
   :deep(#{$g} .ag-checkbox-input-wrapper.ag-indeterminate) {
@@ -354,6 +366,7 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
+    pointer-events: none;
   }
 }
 
@@ -383,6 +396,7 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
+      pointer-events: none;
     }
 
     :deep(#{$g} .ag-checkbox-input-wrapper.ag-indeterminate::after) {
@@ -395,6 +409,7 @@ $wb-checkbox-line-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
       background-position: center;
       background-color: transparent;
       box-shadow: none;
+      pointer-events: none;
     }
   }
 }

@@ -191,8 +191,7 @@ export function convertServerColumnToColDef(column: ServerColumnMeta): any {
     sortable: isSequenceColumn ? false : column.sortable,
     filter: isSequenceColumn ? false : true,
     resizable: true,
-    width: colWidth,
-    minWidth: Math.min(colWidth, 100)
+    width: colWidth
   };
 
   if (isSequenceColumn) {

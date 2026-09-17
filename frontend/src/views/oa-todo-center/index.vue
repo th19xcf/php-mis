@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { h, ref, computed, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
 import { AgGridVue } from 'ag-grid-vue3';
@@ -40,6 +40,7 @@ import {
   createNumericColumnType,
   createSequenceColumn
 } from '@/hooks/business/use-config-driven-grid';
+import { WorkbenchSelectAllHeader } from '@/views/menu-bridge/modules/components';
 import UserPicker from '@/components/custom/user-picker.vue';
 
 defineOptions({ name: 'OaTodoCenter' });
@@ -88,14 +89,22 @@ const sourceOptions = ref([{ label: '手动', value: '手动' }]);
 const priorityOptions = ref([{ label: '高', value: '高' }, { label: '中', value: '中' }, { label: '低', value: '低' }]);
 const statusOptions = ref<string[]>(['待处理', '进行中', '已完成', '已取消']);
 
-// 批量选择（AG-Grid 复选框多选，仅任务待办可选）
+// 批量选择（AG-Grid 复选框多选，仅任务待办可选；表头用工作台自定义全选组件）
 const selectedTaskCount = ref(0);
 const rowSelection = {
   mode: 'multiRow',
   checkboxes: true,
-  headerCheckbox: true,
+  headerCheckbox: false,
+  selectAll: 'filtered',
   enableClickSelection: false,
   isRowSelectable: (node: any) => node.data?.todoType === 'task'
+} as any;
+const selectionColumnDef = {
+  width: 37,
+  minWidth: 37,
+  resizable: false,
+  headerClass: 'selection-header-left',
+  headerComponent: WorkbenchSelectAllHeader
 } as any;
 
 function onSelectionChanged() {
@@ -215,8 +224,12 @@ function getRowClass(params: any): string {
 }
 
 // 行点击：任务待办 → 右侧详情；审批待办 → 跳转审批
+// 双击复制场景（参照通用工作台）：正在选中文本或双击第二击时，不触发行点击
 function onRowClicked(event: any) {
-  if (event.data) handleViewDetail(event.data);
+  if (!event.data) return;
+  if (window.getSelection()?.toString()) return;
+  if (event.event && event.event.detail > 1) return;
+  handleViewDetail(event.data);
 }
 
 // ============ 数据加载 ============
@@ -882,7 +895,6 @@ const columnDefs: any[] = [
     field: 'title',
     headerName: '标题',
     width: 320,
-    minWidth: 40,
     filter: 'agTextColumnFilter',
     cellRenderer: (params: any) => {
       const row = params.data as TodoCenterItem;
@@ -904,7 +916,6 @@ const columnDefs: any[] = [
     field: 'assignee',
     headerName: '负责人',
     width: 150,
-    minWidth: 40,
     filter: 'agTextColumnFilter',
     valueGetter: (params: any) => (params.data ? getUserName(params.data.assignee) : '')
   },
@@ -912,7 +923,6 @@ const columnDefs: any[] = [
     field: 'priority',
     headerName: '优先级',
     width: 90,
-    minWidth: 40,
     filter: 'agTextColumnFilter',
     cellRenderer: (params: any) => {
       const p = params.value;
@@ -925,7 +935,6 @@ const columnDefs: any[] = [
     field: 'dueDate',
     headerName: '截止日期',
     width: 150,
-    minWidth: 40,
     filter: 'agTextColumnFilter',
     cellRenderer: (params: any) => {
       const row = params.data as TodoCenterItem;
@@ -940,7 +949,6 @@ const columnDefs: any[] = [
     field: 'status',
     headerName: '状态',
     width: 100,
-    minWidth: 40,
     filter: 'agTextColumnFilter',
     cellRenderer: (params: any) => {
       const s = params.value;
@@ -953,7 +961,6 @@ const columnDefs: any[] = [
     field: 'sourceTitle',
     headerName: '来源',
     width: 150,
-    minWidth: 40,
     filter: 'agTextColumnFilter',
     valueGetter: (params: any) => {
       const row = params.data as TodoCenterItem;
@@ -1100,6 +1107,8 @@ onActivated(() => {
           :pagination-page-size="200"
           :pagination-page-size-selector="[200, 500, 1000]"
           :row-selection="rowSelection"
+          :enable-cell-text-selection="true"
+          :selection-column-def="selectionColumnDef"
           :quick-filter-text="keyword"
           :get-row-id="getRowId"
           :get-row-class="getRowClass"

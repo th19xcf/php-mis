@@ -26,8 +26,11 @@ const tick = ref(0);
 const allCount = computed(() => {
   void tick.value;
   let count = 0;
-  props.params.api.forEachNodeAfterFilter(() => {
-    count += 1;
+  props.params.api.forEachNodeAfterFilter(node => {
+    // 仅统计可选行（未配置 isRowSelectable 时所有行 selectable 均为 true）
+    if (node.selectable) {
+      count += 1;
+    }
   });
   return count;
 });
@@ -36,7 +39,7 @@ const selectedCount = computed(() => {
   void tick.value;
   let count = 0;
   props.params.api.forEachNodeAfterFilter(node => {
-    if (node.isSelected()) {
+    if (node.selectable && node.isSelected()) {
       count += 1;
     }
   });
