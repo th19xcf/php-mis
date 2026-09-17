@@ -4,6 +4,7 @@ import { useAuthStore } from '@/store/modules/auth';
 import { useRouterPush } from '@/hooks/common/router';
 import { useNaiveForm } from '@/hooks/common/form';
 import { $t } from '@/locales';
+import { localStg } from '@/utils/storage';
 
 defineOptions({
   name: 'PwdLogin'
@@ -19,9 +20,12 @@ interface FormModel {
   password: string;
 }
 
+// 读取上次登录凭据，回填表单（属地缺省为上次填入的属地；密码不保存）
+const lastCredential = localStg.get('loginCredential');
+
 const model: FormModel = reactive({
-  region: null,
-  userName: '',
+  region: lastCredential?.region ?? null,
+  userName: lastCredential?.userName ?? '',
   password: ''
 });
 
@@ -47,6 +51,14 @@ const rules = computed<Record<keyof FormModel, App.Global.FormRule[]>>(() => {
 async function handleSubmit() {
   await validate();
   await authStore.login(model.userName, model.password, model.region || undefined);
+
+  // 登录成功后保存用户名和属地，供下次登录回填（不保存密码）
+  if (authStore.isLogin) {
+    localStg.set('loginCredential', {
+      region: model.region || '',
+      userName: model.userName
+    });
+  }
 }
 </script>
 

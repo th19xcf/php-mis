@@ -39,5 +39,10 @@ declare namespace StorageType {
     };
     /** The last login user id */
     lastLoginUserId: string;
+    /** 上次登录凭据（用于再次登录时回填用户名/属地，不保存密码） */
+    loginCredential: {
+      region: string;
+      userName: string;
+    };
   }
 }
