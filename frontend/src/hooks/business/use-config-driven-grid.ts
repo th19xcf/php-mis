@@ -178,17 +178,27 @@ export function convertServerColumnToColDef(column: ServerColumnMeta): any {
     ? { textAlign: 'right', justifyContent: 'flex-end' }
     : null;
 
+  const isSequenceColumn =
+    String(column.field || '').trim() === '序号' ||
+    String(column.title || '').trim() === '序号' ||
+    String(column.field || '').trim() === 'rowIndex';
+
   const colWidth = typeof column.width === 'number' && column.width > 0 ? column.width : 120;
   const definition: any = {
     field: column.field,
     headerName: column.title,
     hide: column.hidden || isGuidColumn,
-    sortable: column.sortable,
-    filter: true,
+    sortable: isSequenceColumn ? false : column.sortable,
+    filter: isSequenceColumn ? false : true,
     resizable: true,
     width: colWidth,
     minWidth: Math.min(colWidth, 100)
   };
+
+  if (isSequenceColumn) {
+    definition.valueGetter = (params: any) => (params.node ? params.node.rowIndex + 1 : 0);
+    definition.cellStyle = { textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+  }
 
   if (isNumericColumn) {
     definition.type = 'numericColumn';
