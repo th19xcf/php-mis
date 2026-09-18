@@ -254,7 +254,7 @@ const local: App.I18n.Schema = {
     personnel_train: 'Training Personnel',
     personnel_employee: 'Employee Management',
     personnel_person: 'Person Archive Management',
-    'contract-v2': 'Contract Management V2',
+    'contract-v2': 'Contract Management',
     'workflow-manage': 'Workflow Management',
     'oa-todo-center': 'Todo Center',
     'room-status': 'Room Status'
