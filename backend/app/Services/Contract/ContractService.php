@@ -884,7 +884,7 @@ class ContractService
             'docId' => $docId,
             'fileName' => $fileName,
             'fileSize' => (int) ($doc['文件大小'] ?? 0),
-            'downloadUrl' => site_url('api/contractV2/downloadDocument/' . $docId),
+            'downloadUrl' => site_url('api/contract/downloadDocument/' . $docId),
         ];
     }
 }

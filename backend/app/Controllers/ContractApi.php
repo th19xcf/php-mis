@@ -5,7 +5,7 @@ namespace App\Controllers;
 use App\Services\Contract\ContractService;
 use App\Services\Workflow\WorkflowService;
 
-class ContractV2Api extends BaseApiController
+class ContractApi extends BaseApiController
 {
     private ContractService $contractService;
     private WorkflowService $workflowService;
@@ -31,7 +31,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::list] ' . $e->getMessage());
+            log_message('error', '[ContractApi::list] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -54,7 +54,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::detail] ' . $e->getMessage());
+            log_message('error', '[ContractApi::detail] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -77,7 +77,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result, '创建合同成功');
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::create] ' . $e->getMessage());
+            log_message('error', '[ContractApi::create] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -98,7 +98,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success(['updated' => $result], '更新合同成功');
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::update] ' . $e->getMessage());
+            log_message('error', '[ContractApi::update] ' . $e->getMessage());
             return $this->businessError($e->getMessage());
         }
     }
@@ -119,7 +119,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success(['deleted' => $result], '删除合同成功');
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::delete] ' . $e->getMessage());
+            log_message('error', '[ContractApi::delete] ' . $e->getMessage());
             return $this->businessError($e->getMessage());
         }
     }
@@ -142,7 +142,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result, '提交审批成功');
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::submit] ' . $e->getMessage());
+            log_message('error', '[ContractApi::submit] ' . $e->getMessage());
             return $this->businessError($e->getMessage());
         }
     }
@@ -171,7 +171,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result, '审批成功');
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::approve] ' . $e->getMessage());
+            log_message('error', '[ContractApi::approve] ' . $e->getMessage());
             return $this->businessError($e->getMessage());
         }
     }
@@ -185,7 +185,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::stats] ' . $e->getMessage());
+            log_message('error', '[ContractApi::stats] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -199,7 +199,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::options] ' . $e->getMessage());
+            log_message('error', '[ContractApi::options] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -217,7 +217,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::pendingTasks] ' . $e->getMessage());
+            log_message('error', '[ContractApi::pendingTasks] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -235,7 +235,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::doneTasks] ' . $e->getMessage());
+            log_message('error', '[ContractApi::doneTasks] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -253,7 +253,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::myContracts] ' . $e->getMessage());
+            log_message('error', '[ContractApi::myContracts] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -276,7 +276,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::flowDetail] ' . $e->getMessage());
+            log_message('error', '[ContractApi::flowDetail] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -309,7 +309,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success($result, '上传成功');
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::uploadDocument] ' . $e->getMessage());
+            log_message('error', '[ContractApi::uploadDocument] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -329,7 +329,7 @@ class ContractV2Api extends BaseApiController
 
             return $this->success(['deleted' => $result], '删除成功');
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::deleteDocument] ' . $e->getMessage());
+            log_message('error', '[ContractApi::deleteDocument] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }
@@ -366,7 +366,7 @@ class ContractV2Api extends BaseApiController
                 ->download($filePath, null)
                 ->setFileName($safeFileName);
         } catch (\Throwable $e) {
-            log_message('error', '[ContractV2Api::downloadDocument] ' . $e->getMessage());
+            log_message('error', '[ContractApi::downloadDocument] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
     }

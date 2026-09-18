@@ -143,30 +143,30 @@ $routes->group('employee', static function ($routes) {
 	$routes->get('options', 'EmployeeApi::options');
 });
 
-$routes->group('contractV2', static function ($routes) {
-	$routes->get('list', 'ContractV2Api::list');
-	$routes->get('detail', 'ContractV2Api::detail');
-	$routes->post('detail', 'ContractV2Api::detail');
-	$routes->post('create', 'ContractV2Api::create');
-	$routes->post('update', 'ContractV2Api::update');
-	$routes->post('delete', 'ContractV2Api::delete');
-	$routes->post('submit', 'ContractV2Api::submit');
-	$routes->post('approve', 'ContractV2Api::approve');
-	$routes->get('stats', 'ContractV2Api::stats');
-	$routes->post('stats', 'ContractV2Api::stats');
-	$routes->get('options', 'ContractV2Api::options');
-	$routes->get('pendingTasks', 'ContractV2Api::pendingTasks');
-	$routes->post('pendingTasks', 'ContractV2Api::pendingTasks');
-	$routes->get('doneTasks', 'ContractV2Api::doneTasks');
-	$routes->post('doneTasks', 'ContractV2Api::doneTasks');
-	$routes->get('myContracts', 'ContractV2Api::myContracts');
-	$routes->post('myContracts', 'ContractV2Api::myContracts');
-	$routes->get('flowDetail', 'ContractV2Api::flowDetail');
-	$routes->post('flowDetail', 'ContractV2Api::flowDetail');
-	$routes->post('uploadDocument', 'ContractV2Api::uploadDocument');
-	$routes->post('deleteDocument', 'ContractV2Api::deleteDocument');
-	$routes->get('downloadDocument/(:num)', 'ContractV2Api::downloadDocument/$1');
-	$routes->get('downloadDocument', 'ContractV2Api::downloadDocument');
+$routes->group('contract', static function ($routes) {
+	$routes->get('list', 'ContractApi::list');
+	$routes->get('detail', 'ContractApi::detail');
+	$routes->post('detail', 'ContractApi::detail');
+	$routes->post('create', 'ContractApi::create');
+	$routes->post('update', 'ContractApi::update');
+	$routes->post('delete', 'ContractApi::delete');
+	$routes->post('submit', 'ContractApi::submit');
+	$routes->post('approve', 'ContractApi::approve');
+	$routes->get('stats', 'ContractApi::stats');
+	$routes->post('stats', 'ContractApi::stats');
+	$routes->get('options', 'ContractApi::options');
+	$routes->get('pendingTasks', 'ContractApi::pendingTasks');
+	$routes->post('pendingTasks', 'ContractApi::pendingTasks');
+	$routes->get('doneTasks', 'ContractApi::doneTasks');
+	$routes->post('doneTasks', 'ContractApi::doneTasks');
+	$routes->get('myContracts', 'ContractApi::myContracts');
+	$routes->post('myContracts', 'ContractApi::myContracts');
+	$routes->get('flowDetail', 'ContractApi::flowDetail');
+	$routes->post('flowDetail', 'ContractApi::flowDetail');
+	$routes->post('uploadDocument', 'ContractApi::uploadDocument');
+	$routes->post('deleteDocument', 'ContractApi::deleteDocument');
+	$routes->get('downloadDocument/(:num)', 'ContractApi::downloadDocument/$1');
+	$routes->get('downloadDocument', 'ContractApi::downloadDocument');
 });
 
 $routes->group('workflow', static function ($routes) {

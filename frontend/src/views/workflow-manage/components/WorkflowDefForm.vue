@@ -297,7 +297,7 @@ defineExpose({
   padding: 0;
 }
 
-// 表格化布局(参照 ContractV2Form 的 edit-table)
+// 表格化布局(参照 ContractForm 的 edit-table)
 .edit-table {
   display: flex;
   flex-direction: column;

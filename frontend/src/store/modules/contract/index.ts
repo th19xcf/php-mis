@@ -1,24 +1,24 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import {
-  fetchContractV2List,
-  fetchContractV2Detail,
-  fetchContractV2Create,
-  fetchContractV2Update,
-  fetchContractV2Delete,
-  fetchContractV2Submit,
-  fetchContractV2Approve,
-  fetchContractV2Stats,
-  fetchContractV2Options,
-  fetchContractV2PendingTasks,
-  fetchContractV2DoneTasks,
-  fetchContractV2MyContracts,
-  fetchContractV2FlowDetail
-} from '@/service/api/contract-v2';
+  fetchContractList,
+  fetchContractDetail,
+  fetchContractCreate,
+  fetchContractUpdate,
+  fetchContractDelete,
+  fetchContractSubmit,
+  fetchContractApprove,
+  fetchContractStats,
+  fetchContractOptions,
+  fetchContractPendingTasks,
+  fetchContractDoneTasks,
+  fetchContractMyContracts,
+  fetchContractFlowDetail
+} from '@/service/api/contract';
 
-export const useContractV2Store = defineStore('contract-v2-store', () => {
-  const contractList = ref<Api.ContractV2.ContractListItem[]>([]);
-  const currentContract = ref<Api.ContractV2.ContractDetail | null>(null);
+export const useContractStore = defineStore('contract-store', () => {
+  const contractList = ref<Api.Contract.ContractListItem[]>([]);
+  const currentContract = ref<Api.Contract.ContractDetail | null>(null);
   const loading = ref(false);
   const pagination = ref({
     page: 1,
@@ -33,13 +33,13 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     partyA: '',
     partyB: ''
   });
-  const options = ref<Api.ContractV2.ContractOptions>({
+  const options = ref<Api.Contract.ContractOptions>({
     合同类型: [],
     合同状态: [],
     付款方式: [],
     币别: []
   });
-  const stats = ref<Api.ContractV2.ContractStats>({
+  const stats = ref<Api.Contract.ContractStats>({
     总数: 0,
     草稿: 0,
     审批中: 0,
@@ -65,7 +65,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     loading.value = true;
     try {
       const queryParams = params || searchParams.value;
-      const response = await fetchContractV2List({
+      const response = await fetchContractList({
         ...queryParams,
         page: pagination.value.page,
         pageSize: pagination.value.pageSize
@@ -83,10 +83,10 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   async function loadContractDetail(contractNo: string) {
     loading.value = true;
     try {
-      const result = await fetchContractV2Detail(contractNo);
+      const result = await fetchContractDetail(contractNo);
       const data = (result as any)?.data || (result as any);
       if (data) {
-        currentContract.value = data as Api.ContractV2.ContractDetail;
+        currentContract.value = data as Api.Contract.ContractDetail;
       }
       return data;
     } finally {
@@ -94,10 +94,10 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     }
   }
 
-  async function createContract(data: Api.ContractV2.ContractCreateParams) {
+  async function createContract(data: Api.Contract.ContractCreateParams) {
     loading.value = true;
     try {
-      const res = await fetchContractV2Create(data);
+      const res = await fetchContractCreate(data);
       if (res) {
         await loadContractList();
       }
@@ -107,10 +107,10 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
     }
   }
 
-  async function updateContract(data: Api.ContractV2.ContractUpdateParams) {
+  async function updateContract(data: Api.Contract.ContractUpdateParams) {
     loading.value = true;
     try {
-      const res = await fetchContractV2Update(data);
+      const res = await fetchContractUpdate(data);
       if (res) {
         await loadContractList();
         if (currentContract.value && currentContract.value.合同编号 === data.contractNo) {
@@ -126,7 +126,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   async function deleteContract(contractNo: string) {
     loading.value = true;
     try {
-      const res = await fetchContractV2Delete(contractNo);
+      const res = await fetchContractDelete(contractNo);
       if (res) {
         await loadContractList();
       }
@@ -139,7 +139,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   async function submitApproval(contractNo: string, workflowCode = '') {
     loading.value = true;
     try {
-      const res = await fetchContractV2Submit(contractNo, workflowCode);
+      const res = await fetchContractSubmit(contractNo, workflowCode);
       if (res) {
         await loadContractList();
         if (currentContract.value && currentContract.value.合同编号 === contractNo) {
@@ -155,7 +155,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   async function handleApproval(taskId: number, action: 'APPROVE' | 'REJECT', opinion = '') {
     loading.value = true;
     try {
-      const res = await fetchContractV2Approve({ taskId, action, opinion });
+      const res = await fetchContractApprove({ taskId, action, opinion });
       if (res) {
         await loadPendingTasks();
       }
@@ -167,10 +167,10 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
 
   async function loadStats(filters?: Record<string, any>) {
     try {
-      const result = await fetchContractV2Stats(filters);
+      const result = await fetchContractStats(filters);
       const data = (result as any)?.data || (result as any);
       if (data) {
-        stats.value = data as Api.ContractV2.ContractStats;
+        stats.value = data as Api.Contract.ContractStats;
       }
     } catch {
       // Error loading stats
@@ -179,10 +179,10 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
 
   async function loadOptions() {
     try {
-      const result = await fetchContractV2Options();
+      const result = await fetchContractOptions();
       const data = (result as any)?.data || (result as any);
       if (data) {
-        options.value = data as Api.ContractV2.ContractOptions;
+        options.value = data as Api.Contract.ContractOptions;
       }
     } catch {
       // Error loading options
@@ -192,7 +192,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   async function loadPendingTasks(page = 1, pageSize = 20) {
     loading.value = true;
     try {
-      const result = await fetchContractV2PendingTasks({ page, pageSize });
+      const result = await fetchContractPendingTasks({ page, pageSize });
       const data = (result as any)?.data || (result as any);
       if (data && Array.isArray(data.list)) {
         pendingTasks.value = data.list;
@@ -210,7 +210,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   async function loadDoneTasks(page = 1, pageSize = 20) {
     loading.value = true;
     try {
-      const result = await fetchContractV2DoneTasks({ page, pageSize });
+      const result = await fetchContractDoneTasks({ page, pageSize });
       const data = (result as any)?.data || (result as any);
       if (data && Array.isArray(data.list)) {
         doneTasks.value = data.list;
@@ -228,7 +228,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   async function loadMyContracts(page = 1, pageSize = 20) {
     loading.value = true;
     try {
-      const result = await fetchContractV2MyContracts({ page, pageSize });
+      const result = await fetchContractMyContracts({ page, pageSize });
       const data = (result as any)?.data || (result as any);
       if (data && Array.isArray(data.list)) {
         myContracts.value = data.list;
@@ -246,7 +246,7 @@ export const useContractV2Store = defineStore('contract-v2-store', () => {
   async function loadFlowDetail(instanceId: number) {
     loading.value = true;
     try {
-      const result = await fetchContractV2FlowDetail(instanceId);
+      const result = await fetchContractFlowDetail(instanceId);
       const data = (result as any)?.data || (result as any);
       if (data) {
         currentFlowDetail.value = data as Api.Workflow.WorkflowInstance;

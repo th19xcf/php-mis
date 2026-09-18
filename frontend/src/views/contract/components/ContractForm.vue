@@ -1,18 +1,18 @@
 <script setup lang="ts">
 import { h, ref, watch, computed, reactive } from 'vue';
 import { NButton, useDialog } from 'naive-ui';
-import { useContractV2Store } from '@/store/modules/contract-v2';
+import { useContractStore } from '@/store/modules/contract';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
-  fetchContractV2UploadDocument,
-  fetchContractV2DeleteDocument,
-  fetchContractV2DownloadDocument
-} from '@/service/api/contract-v2';
+  fetchContractUploadDocument,
+  fetchContractDeleteDocument,
+  fetchContractDownloadDocument
+} from '@/service/api/contract';
 
 const props = defineProps<{
   visible: boolean;
   mode: 'create' | 'edit';
-  contract: Api.ContractV2.ContractDetail | null;
+  contract: Api.Contract.ContractDetail | null;
   inline?: boolean;
 }>();
 
@@ -24,9 +24,9 @@ const emit = defineEmits<{
 
 const message = useMessageWithConsole();
 const dialog = useDialog();
-const contractV2Store = useContractV2Store();
+const contractStore = useContractStore();
 
-const loading = computed(() => contractV2Store.loading);
+const loading = computed(() => contractStore.loading);
 
 const formData = ref({
   合同名称: '',
@@ -47,8 +47,8 @@ const formData = ref({
   备注: ''
 });
 
-const contractFiles = ref<Api.ContractV2.ContractDocument[]>([]);
-const approvalFiles = ref<Api.ContractV2.ContractDocument[]>([]);
+const contractFiles = ref<Api.Contract.ContractDocument[]>([]);
+const approvalFiles = ref<Api.Contract.ContractDocument[]>([]);
 const uploading = ref(false);
 const mainFileInput = ref<HTMLInputElement | null>(null);
 const approvalFileInput = ref<HTMLInputElement | null>(null);
@@ -61,7 +61,7 @@ function triggerUpload(docType: 'MAIN' | 'APPROVAL_FORM') {
 // 可在线编辑的文件格式
 const editableExts = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
 
-function isEditableDoc(doc: Api.ContractV2.ContractDocument): boolean {
+function isEditableDoc(doc: Api.Contract.ContractDocument): boolean {
   const ext = (doc.文档格式 || '').toLowerCase();
   return editableExts.includes(ext);
 }
@@ -200,11 +200,11 @@ async function handleSubmit() {
 
   try {
     if (props.mode === 'create') {
-      await contractV2Store.createContract(formData.value as any);
+      await contractStore.createContract(formData.value as any);
       message.success('创建成功');
     } else {
       if (!props.contract) return;
-      await contractV2Store.updateContract({
+      await contractStore.updateContract({
         ...(formData.value as any),
         contractNo: props.contract.合同编号
       });
@@ -217,13 +217,13 @@ async function handleSubmit() {
   }
 }
 
-const options = computed(() => contractV2Store.options);
+const options = computed(() => contractStore.options);
 
 const currentContractNo = computed(() => {
   if (props.mode === 'edit' && props.contract) {
     return props.contract.合同编号;
   }
-  return contractV2Store.currentContract?.合同编号 || '';
+  return contractStore.currentContract?.合同编号 || '';
 });
 
 function formatFileSize(bytes: number): string {
@@ -251,7 +251,7 @@ async function handleFileUpload(event: Event, docType: 'MAIN' | 'APPROVAL_FORM')
 
   uploading.value = true;
   try {
-    const result = await fetchContractV2UploadDocument({
+    const result = await fetchContractUploadDocument({
       contractNo: currentContractNo.value,
       docType,
       file
@@ -262,7 +262,7 @@ async function handleFileUpload(event: Event, docType: 'MAIN' | 'APPROVAL_FORM')
       approvalFiles.value.push(result as any);
     }
     message.success('上传成功');
-    contractV2Store.loadContractDetail(currentContractNo.value);
+    contractStore.loadContractDetail(currentContractNo.value);
   } catch (e: any) {
     message.error(e?.message || '上传失败');
   } finally {
@@ -271,22 +271,22 @@ async function handleFileUpload(event: Event, docType: 'MAIN' | 'APPROVAL_FORM')
   }
 }
 
-async function handleDeleteFile(doc: Api.ContractV2.ContractDocument, docType: 'MAIN' | 'APPROVAL_FORM') {
+async function handleDeleteFile(doc: Api.Contract.ContractDocument, docType: 'MAIN' | 'APPROVAL_FORM') {
   try {
-    await fetchContractV2DeleteDocument(doc.GUID);
+    await fetchContractDeleteDocument(doc.GUID);
     if (docType === 'MAIN') {
       contractFiles.value = contractFiles.value.filter(d => d.GUID !== doc.GUID);
     } else {
       approvalFiles.value = approvalFiles.value.filter(d => d.GUID !== doc.GUID);
     }
     message.success('删除成功');
-    contractV2Store.loadContractDetail(currentContractNo.value);
+    contractStore.loadContractDetail(currentContractNo.value);
   } catch (e: any) {
     message.error(e?.message || '删除失败');
   }
 }
 
-function handleDownload(doc: Api.ContractV2.ContractDocument) {
+function handleDownload(doc: Api.Contract.ContractDocument) {
   if (isEditableDoc(doc)) {
     emit('openEditor', doc.GUID, doc.文档名称);
   } else {
@@ -295,14 +295,14 @@ function handleDownload(doc: Api.ContractV2.ContractDocument) {
 }
 
 // 编辑文件：打开 OnlyOffice 编辑器
-function handleEditFile(doc: Api.ContractV2.ContractDocument) {
+function handleEditFile(doc: Api.Contract.ContractDocument) {
   emit('openEditor', doc.GUID, doc.文档名称);
 }
 
 // 通用下载：带 Authorization 头的 fetch 请求，避免 JWT 过滤器返回 JSON 错误
-async function doDownload(doc: Api.ContractV2.ContractDocument) {
+async function doDownload(doc: Api.Contract.ContractDocument) {
   try {
-    const { blob, filename } = await fetchContractV2DownloadDocument(doc.GUID);
+    const { blob, filename } = await fetchContractDownloadDocument(doc.GUID);
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -318,7 +318,7 @@ async function doDownload(doc: Api.ContractV2.ContractDocument) {
 }
 
 // 导出文件：带认证头的下载
-function handleExportFile(doc: Api.ContractV2.ContractDocument) {
+function handleExportFile(doc: Api.Contract.ContractDocument) {
   doDownload(doc);
 }
 

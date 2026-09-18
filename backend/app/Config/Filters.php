@@ -120,7 +120,6 @@ class Filters extends BaseFilters
                 'train/*',
                 'employee/*',
                 'contract/*',
-                'contractV2/*',
                 'workflow/*',
                 'todo/*',
                 'cache/*',

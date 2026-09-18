@@ -280,7 +280,7 @@ export function mergeColumnDefs(
 /**
  * 配置驱动的 AG-Grid 列表 composable
  *
- * 抽取自 workflow-manage 与 contract-v2 两个页面的公共逻辑：
+ * 抽取自 workflow-manage 与 contract 两个页面的公共逻辑：
  * 1. AG-Grid 主题与默认配置
  * 2. 列定义（支持服务端元数据驱动 + 兜底硬编码）
  * 3. 4-Tab 数据加载框架（list / pending / done / my）
@@ -545,7 +545,7 @@ export interface UseConditionPanelOptions {
 
 /**
  * 条件面板状态管理（与通用工作台 WorkbenchConditionDrawer 对齐）
- * contract-v2 已有此模式，抽取后便于后续其他模块复用
+ * contract 已有此模式，抽取后便于后续其他模块复用
  */
 export function useConditionPanel(options: UseConditionPanelOptions) {
   const conditionVisible = ref(false);

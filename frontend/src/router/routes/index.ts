@@ -19,7 +19,7 @@ const customRoutes: CustomRoute[] = [];
  * menu-bridge 提供 .bridge-content-region 作为 position:relative 定位上下文。
  */
 const backendDrivenRouteNames = new Set<string>([
-  'contract-v2',
+  'contract',
   'match-data',
   'workflow-manage',
   'personnel',

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { h, ref, computed, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
 import { AgGridVue } from 'ag-grid-vue3';
@@ -412,7 +412,7 @@ function handleCategoryChange(key: string) {
 // ============ 事件：审批跳转 ============
 function handleWorkflowClick(item: TodoCenterItem) {
   if (item.todoType === 'workflow' && item.bizType === 'CONTRACT' && item.bizId) {
-    router.push(`/contract-v2?businessId=${item.bizId}`);
+    router.push(`/contract?businessId=${item.bizId}`);
   } else {
     message.info('该审批类型暂不支持跳转');
   }
@@ -1392,7 +1392,7 @@ onActivated(() => {
   overflow: hidden;
 }
 
-/* 暗色模式（与 contract-v2 一致） */
+/* 暗色模式（与 contract 一致） */
 .system-dark .todo-panel {
   background: rgb(24, 24, 28);
   border-color: rgba(255, 255, 255, 0.09);
@@ -1407,7 +1407,7 @@ onActivated(() => {
   min-width: 0;
 }
 
-/* 面板头部（与 contract-v2 一致：#fafafa 底 + 16px 间距，按钮组右靠） */
+/* 面板头部（与 contract 一致：#fafafa 底 + 16px 间距，按钮组右靠） */
 .panel-header {
   display: flex;
   align-items: center;
@@ -1437,7 +1437,7 @@ onActivated(() => {
   margin-left: auto;
 }
 
-/* Tab 栏（分类 + 计数，与 contract-v2 一致：16px 内边距 + 底部分隔线） */
+/* Tab 栏（分类 + 计数，与 contract 一致：16px 内边距 + 底部分隔线） */
 .tab-bar {
   padding: 0 16px;
   flex-shrink: 0;
@@ -1461,7 +1461,7 @@ onActivated(() => {
   padding: 8px 0;
 }
 
-/* 表格上方工具栏（搜索框，与 contract-v2 一致） */
+/* 表格上方工具栏（搜索框，与 contract 一致） */
 .grid-toolbar {
   display: flex;
   align-items: center;
@@ -1475,14 +1475,14 @@ onActivated(() => {
   }
 }
 
-/* 列表区（AG-Grid 铺满面板，与 contract-v2 一致） */
+/* 列表区（AG-Grid 铺满面板，与 contract 一致） */
 .grid-container {
   flex: 1;
   min-height: 0;
   overflow: hidden;
 }
 
-/* AG-Grid 主题变量与共享样式（与 contract-v2 的合同列表一致） */
+/* AG-Grid 主题变量与共享样式（与 contract 的合同列表一致） */
 .todo-grid {
   --wb-grid-surface: transparent;
   --wb-grid-text: #1f2937;

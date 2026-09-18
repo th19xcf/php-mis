@@ -3,33 +3,33 @@ import { ref, onMounted, onActivated, computed, watch } from 'vue';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
 import { useDialog } from 'naive-ui';
-import { useContractV2Store } from '@/store/modules/contract-v2';
+import { useContractStore } from '@/store/modules/contract';
 import {
-  fetchContractV2List,
-  fetchContractV2PendingTasks,
-  fetchContractV2DoneTasks,
-  fetchContractV2MyContracts,
-  fetchContractV2DownloadDocument
-} from '@/service/api/contract-v2';
+  fetchContractList,
+  fetchContractPendingTasks,
+  fetchContractDoneTasks,
+  fetchContractMyContracts,
+  fetchContractDownloadDocument
+} from '@/service/api/contract';
 import { useConfigDrivenGrid, useSplitter, useConditionPanel } from '@/hooks/business';
 import { fetchWorkbenchPage } from '@/service/api/workbench';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import { WorkbenchSelectAllHeader } from '@/views/menu-bridge/modules/components';
-import ContractV2Form from './components/ContractV2Form.vue';
-import ContractV2Approval from './components/ContractV2Approval.vue';
-import ContractV2FlowTimeline from './components/ContractV2FlowTimeline.vue';
+import ContractForm from './components/ContractForm.vue';
+import ContractApproval from './components/ContractApproval.vue';
+import ContractFlowTimeline from './components/ContractFlowTimeline.vue';
 import OnlyOfficeEditor from './components/OnlyOfficeEditor.vue';
 
 const dialog = useDialog();
 const message = useMessageWithConsole();
-const contractV2Store = useContractV2Store();
+const contractStore = useContractStore();
 
 // 左右分栏（抽取为 useSplitter）
 const { leftWidth, isResizing, startResize } = useSplitter({
   defaultWidth: 800,
   minWidth: 500,
   maxWidth: 1000,
-  storageKey: 'contract-v2-splitter-width'
+  storageKey: 'contract-splitter-width'
 });
 
 const showFormModal = ref(false);
@@ -125,12 +125,12 @@ function onEditorMouseUp() {
 }
 
 const inlineFormRef = ref<{ submit: () => void } | null>(null);
-const selectedContract = ref<Api.ContractV2.ContractListItem | null>(null);
+const selectedContract = ref<Api.Contract.ContractListItem | null>(null);
 
 // 合同 V2 在 def_function 中对应的功能编码
-// 必须与后端 def_function.功能编码 完全一致（值为 'contract_v2'），
+// 必须与后端 def_function.功能编码 完全一致（值为 'contract'），
 // 否则 fetchWorkbenchPage 拉不到 def_query_column 配置
-const CONTRACT_V2_FUNCTION_CODE = 'contract_v2';
+const CONTRACT_FUNCTION_CODE = 'contract';
 
 // 兜底列定义：当后端 def_function/def_query_column 未配置合同 V2 列定义时使用
 const fallbackColumnDefs: any[] = [
@@ -172,7 +172,7 @@ const fallbackColumnDefs: any[] = [
 
 // 列表 composable：抽取自原重复的 4-Tab 数据加载/分页/gridApi/主题等公共逻辑
 // 列定义支持服务端元数据驱动（def_query_column）+ 兜底硬编码
-// 数据层走 fetchContractV2* 直连 API（不走 store），store 仅负责详情/CRUD/审批/stats/options
+// 数据层走 fetchContract* 直连 API（不走 store），store 仅负责详情/CRUD/审批/stats/options
 const {
   // 主题
   isDarkMode,
@@ -211,10 +211,10 @@ const {
   handleTabChange,
   handleRefresh: _handleRefresh
 } = useConfigDrivenGrid<any>({
-  fetchList: fetchContractV2List as any,
-  fetchPending: fetchContractV2PendingTasks as any,
-  fetchDone: fetchContractV2DoneTasks as any,
-  fetchMy: fetchContractV2MyContracts as any,
+  fetchList: fetchContractList as any,
+  fetchPending: fetchContractPendingTasks as any,
+  fetchDone: fetchContractDoneTasks as any,
+  fetchMy: fetchContractMyContracts as any,
   fallbackColumnDefs,
   initialSearchForm: {
     contractNo: '',
@@ -230,8 +230,8 @@ const {
 });
 
 // 仍由 store 管理的状态（详情/选项等，与列表无关；统计已改为 Tab 标签计数展示）
-const currentContract = computed(() => contractV2Store.currentContract);
-const options = computed(() => contractV2Store.options);
+const currentContract = computed(() => contractStore.currentContract);
+const options = computed(() => contractStore.options);
 
 // 条件面板字段下拉项：优先用服务端元数据中的可筛选列，否则用 fallbackColumnDefs
 const conditionFieldOptions = computed(() => {
@@ -294,20 +294,20 @@ async function handleClearCondition() {
   message.success('已清除筛选条件');
 }
 
-function onRowClicked(event: { data: Api.ContractV2.ContractListItem; event?: MouseEvent }) {
+function onRowClicked(event: { data: Api.Contract.ContractListItem; event?: MouseEvent }) {
   if (!event.data) return;
   // 双击复制场景（参照通用工作台）：正在选中文本或双击第二击时，不触发行点击详情
   if (window.getSelection()?.toString()) return;
   if (event.event && event.event.detail > 1) return;
   selectedContract.value = event.data;
-  contractV2Store.loadContractDetail(event.data.合同编号);
+  contractStore.loadContractDetail(event.data.合同编号);
 }
 
 // 本地 handleRefresh：在 composable 通用刷新基础上清空选中项并重置 store 详情
 async function handleRefresh() {
   await _handleRefresh(() => {
     selectedContract.value = null;
-    contractV2Store.resetCurrentContract();
+    contractStore.resetCurrentContract();
   });
   message.success('已刷新');
 }
@@ -339,7 +339,7 @@ function handleDelete() {
     positiveText: '确定',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await contractV2Store.deleteContract(selectedContract.value!.合同编号);
+      await contractStore.deleteContract(selectedContract.value!.合同编号);
       message.success('删除成功');
       selectedContract.value = null;
     }
@@ -357,7 +357,7 @@ function handleSubmit() {
     positiveText: '确定',
     negativeText: '取消',
     onPositiveClick: async () => {
-      await contractV2Store.submitApproval(selectedContract.value!.合同编号);
+      await contractStore.submitApproval(selectedContract.value!.合同编号);
       message.success('提交成功');
     }
   });
@@ -381,7 +381,7 @@ function handleApproval(task: Api.Workflow.WorkflowTask) {
     合同编号: task.业务ID,
     合同名称: task.业务标题
   } as any;
-  contractV2Store.loadContractDetail(task.业务ID);
+  contractStore.loadContractDetail(task.业务ID);
   showApprovalModal.value = true;
 }
 
@@ -456,7 +456,7 @@ function getStatusType(status: string): 'default' | 'success' | 'warning' | 'err
 // ── 附件相关辅助方法 ──
 const editableExts = ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
 
-function isEditableDoc(doc: Api.ContractV2.ContractDocument): boolean {
+function isEditableDoc(doc: Api.Contract.ContractDocument): boolean {
   const ext = (doc.文档格式 || '').toLowerCase();
   return editableExts.includes(ext);
 }
@@ -467,9 +467,9 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
-async function handleExportFile(doc: Api.ContractV2.ContractDocument) {
+async function handleExportFile(doc: Api.Contract.ContractDocument) {
   try {
-    const { blob, filename } = await fetchContractV2DownloadDocument(doc.GUID);
+    const { blob, filename } = await fetchContractDownloadDocument(doc.GUID);
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -503,20 +503,20 @@ async function loadColumnConfig() {
   if (columnConfigLoaded.value || columnConfigLoading.value) return;
   columnConfigLoading.value = true;
   try {
-    console.log('[ContractV2] 开始加载 def_query_column 配置, functionCode=', CONTRACT_V2_FUNCTION_CODE);
-    const res = await fetchWorkbenchPage(CONTRACT_V2_FUNCTION_CODE);
+    console.log('[Contract] 开始加载 def_query_column 配置, functionCode=', CONTRACT_FUNCTION_CODE);
+    const res = await fetchWorkbenchPage(CONTRACT_FUNCTION_CODE);
     const columns = (res as any)?.data?.meta?.columns || [];
-    console.log('[ContractV2] def_query_column 返回列数:', columns.length, columns);
-    console.log('[ContractV2] 列字段名:', columns.map((c: any) => c.field));
+    console.log('[Contract] def_query_column 返回列数:', columns.length, columns);
+    console.log('[Contract] 列字段名:', columns.map((c: any) => c.field));
     if (columns.length > 0) {
       setServerColumnDefs(columns);
       columnConfigLoaded.value = true;
-      console.log('[ContractV2] 已调用 setServerColumnDefs, serverColumnDefs 当前值:', columns.length, '列');
+      console.log('[Contract] 已调用 setServerColumnDefs, serverColumnDefs 当前值:', columns.length, '列');
     } else {
-      console.warn('[ContractV2] def_query_column 未配置列定义，使用 fallbackColumnDefs 兜底');
+      console.warn('[Contract] def_query_column 未配置列定义，使用 fallbackColumnDefs 兜底');
     }
   } catch (e) {
-    console.warn('[ContractV2] 加载 def_query_column 失败，使用 fallbackColumnDefs 兜底', e);
+    console.warn('[Contract] 加载 def_query_column 失败，使用 fallbackColumnDefs 兜底', e);
   } finally {
     columnConfigLoading.value = false;
   }
@@ -525,7 +525,7 @@ async function loadColumnConfig() {
 onMounted(async () => {
   // splitter 宽度恢复已由 useSplitter 内部 onMounted 处理
   await loadColumnConfig();
-  contractV2Store.loadOptions();
+  contractStore.loadOptions();
   await loadList();
   // 并行预取其余 Tab 首页数据，用于 Tab 标签计数（与待办列表格式一致）
   loadPending();
@@ -533,10 +533,10 @@ onMounted(async () => {
   loadMy();
   // 诊断：打印数据字段名，与列定义 field 对比
   if (contractList.value.length > 0) {
-    console.log('[ContractV2] 数据字段名:', Object.keys(contractList.value[0]));
-    console.log('[ContractV2] 第一行数据:', contractList.value[0]);
+    console.log('[Contract] 数据字段名:', Object.keys(contractList.value[0]));
+    console.log('[Contract] 第一行数据:', contractList.value[0]);
   } else {
-    console.warn('[ContractV2] loadList 返回空数据');
+    console.warn('[Contract] loadList 返回空数据');
   }
 });
 
@@ -561,11 +561,11 @@ onActivated(async () => {
 // 手动调用 gridApi.setGridOption('columnDefs', newDefs) 确保列定义更新生效
 watch(columnDefs, (newDefs) => {
   if (gridApi.value && newDefs.length > 0) {
-    console.log('[ContractV2] watch columnDefs 触发, 列数:', newDefs.length, '调用 gridApi.setGridOption');
+    console.log('[Contract] watch columnDefs 触发, 列数:', newDefs.length, '调用 gridApi.setGridOption');
     gridApi.value.setGridOption('columnDefs', newDefs);
     // 确认 AG-Grid 实际生效的列定义
     const actualCols = gridApi.value.getColumns();
-    console.log('[ContractV2] AG-Grid 实际生效列数:', actualCols?.length, actualCols?.map((c: any) => c.getColDef().field));
+    console.log('[Contract] AG-Grid 实际生效列数:', actualCols?.length, actualCols?.map((c: any) => c.getColDef().field));
   }
 });
 </script>
@@ -740,7 +740,7 @@ watch(columnDefs, (newDefs) => {
       <div class="panel-content">
         <!-- 编辑模式：内联表单 -->
         <template v-if="isEditMode && currentContract">
-          <ContractV2Form
+          <ContractForm
             ref="inlineFormRef"
             :visible="isEditMode"
             inline
@@ -806,7 +806,7 @@ watch(columnDefs, (newDefs) => {
 
           <NDivider>审批流程</NDivider>
 
-          <ContractV2FlowTimeline v-if="currentContract.合同编号" :contract-no="currentContract.合同编号" />
+          <ContractFlowTimeline v-if="currentContract.合同编号" :contract-no="currentContract.合同编号" />
         </template>
 
         <NEmpty v-else description="请选择左侧合同查看详情" class="py-20" />
@@ -814,7 +814,7 @@ watch(columnDefs, (newDefs) => {
     </div>
 
     <!-- 合同表单弹窗（仅新建模式使用弹窗） -->
-    <ContractV2Form
+    <ContractForm
       v-if="!isEditMode"
       v-model:visible="showFormModal"
       :mode="formMode"
@@ -824,7 +824,7 @@ watch(columnDefs, (newDefs) => {
     />
 
     <!-- 审批弹窗 -->
-    <ContractV2Approval
+    <ContractApproval
       v-model:visible="showApprovalModal"
       :contract="currentContract"
       @success="handleApprovalSuccess"
@@ -1427,7 +1427,7 @@ watch(columnDefs, (newDefs) => {
     }
   }
 
-  // 编辑模式（ContractV2Form 内联）附件列表 - 暗黑适配（穿透子组件 scoped）
+  // 编辑模式（ContractForm 内联）附件列表 - 暗黑适配（穿透子组件 scoped）
   :deep(.inline-form .file-item) {
     background: rgba(255, 255, 255, 0.05);
 

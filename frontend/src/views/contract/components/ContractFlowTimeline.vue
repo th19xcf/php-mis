@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue';
-import { useContractV2Store } from '@/store/modules/contract-v2';
+import { useContractStore } from '@/store/modules/contract';
 
 const props = defineProps<{
   contractNo: string;
 }>();
 
-const contractV2Store = useContractV2Store();
+const contractStore = useContractStore();
 
 const flowDetail = ref<Api.Workflow.WorkflowInstance | null>(null);
 const loading = ref(false);
@@ -16,14 +16,14 @@ async function loadFlowDetail() {
 
   loading.value = true;
   try {
-    const result = await contractV2Store.loadContractDetail(props.contractNo);
+    const result = await contractStore.loadContractDetail(props.contractNo);
     if (result) {
-      const myInstances = contractV2Store.myContracts;
+      const myInstances = contractStore.myContracts;
       const matchedInstance = myInstances.find(
         (inst: any) => inst.业务ID === props.contractNo
       );
       if (matchedInstance && matchedInstance.GUID) {
-        flowDetail.value = await contractV2Store.loadFlowDetail(matchedInstance.GUID);
+        flowDetail.value = await contractStore.loadFlowDetail(matchedInstance.GUID);
       }
     }
   } catch {

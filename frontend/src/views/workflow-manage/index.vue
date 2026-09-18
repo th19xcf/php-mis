@@ -1106,7 +1106,7 @@ onMounted(async () => {
   }
 }
 
-/* 表格上方工具栏（搜索框，与 contract-v2 / 待办列表一致） */
+/* 表格上方工具栏（搜索框，与 contract / 待办列表一致） */
 .grid-toolbar {
   display: flex;
   align-items: center;

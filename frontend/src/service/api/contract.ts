@@ -1,6 +1,6 @@
 import { request } from '../request';
 
-export function fetchContractV2List(params: {
+export function fetchContractList(params: {
   page?: number;
   pageSize?: number;
   contractNo?: string;
@@ -14,78 +14,78 @@ export function fetchContractV2List(params: {
   creator?: string;
   deptCode?: string;
 }) {
-  return request({ url: '/contractV2/list', params });
+  return request({ url: '/contract/list', params });
 }
 
-export function fetchContractV2Detail(contractNo: string) {
-  return request({ url: '/contractV2/detail', params: { contractNo } });
+export function fetchContractDetail(contractNo: string) {
+  return request({ url: '/contract/detail', params: { contractNo } });
 }
 
-export function fetchContractV2Create(data: Api.ContractV2.ContractCreateParams) {
+export function fetchContractCreate(data: Api.Contract.ContractCreateParams) {
   return request<{ contractNo: string; guid: number }>({
-    url: '/contractV2/create',
+    url: '/contract/create',
     method: 'post',
     data
   });
 }
 
-export function fetchContractV2Update(data: Api.ContractV2.ContractUpdateParams) {
+export function fetchContractUpdate(data: Api.Contract.ContractUpdateParams) {
   return request({
-    url: '/contractV2/update',
+    url: '/contract/update',
     method: 'post',
     data
   });
 }
 
-export function fetchContractV2Delete(contractNo: string) {
+export function fetchContractDelete(contractNo: string) {
   return request({
-    url: '/contractV2/delete',
+    url: '/contract/delete',
     method: 'post',
     data: { contractNo }
   });
 }
 
-export function fetchContractV2Submit(contractNo: string, workflowCode = '') {
+export function fetchContractSubmit(contractNo: string, workflowCode = '') {
   return request({
-    url: '/contractV2/submit',
+    url: '/contract/submit',
     method: 'post',
     data: { contractNo, workflowCode }
   });
 }
 
-export function fetchContractV2Approve(data: { taskId: number; action: 'APPROVE' | 'REJECT'; opinion?: string }) {
+export function fetchContractApprove(data: { taskId: number; action: 'APPROVE' | 'REJECT'; opinion?: string }) {
   return request({
-    url: '/contractV2/approve',
+    url: '/contract/approve',
     method: 'post',
     data
   });
 }
 
-export function fetchContractV2Stats(params?: Record<string, any>) {
-  return request({ url: '/contractV2/stats', params });
+export function fetchContractStats(params?: Record<string, any>) {
+  return request({ url: '/contract/stats', params });
 }
 
-export function fetchContractV2Options() {
-  return request({ url: '/contractV2/options' });
+export function fetchContractOptions() {
+  return request({ url: '/contract/options' });
 }
 
-export function fetchContractV2PendingTasks(params?: { page?: number; pageSize?: number }) {
-  return request({ url: '/contractV2/pendingTasks', params });
+export function fetchContractPendingTasks(params?: { page?: number; pageSize?: number }) {
+  return request({ url: '/contract/pendingTasks', params });
 }
 
-export function fetchContractV2DoneTasks(params?: { page?: number; pageSize?: number }) {
-  return request({ url: '/contractV2/doneTasks', params });
+export function fetchContractDoneTasks(params?: { page?: number; pageSize?: number }) {
+  return request({ url: '/contract/doneTasks', params });
 }
 
-export function fetchContractV2MyContracts(params?: { page?: number; pageSize?: number }) {
-  return request({ url: '/contractV2/myContracts', params });
+export function fetchContractMyContracts(params?: { page?: number; pageSize?: number }) {
+  return request({ url: '/contract/myContracts', params });
 }
 
-export function fetchContractV2FlowDetail(instanceId: number) {
-  return request({ url: '/contractV2/flowDetail', params: { instanceId } });
+export function fetchContractFlowDetail(instanceId: number) {
+  return request({ url: '/contract/flowDetail', params: { instanceId } });
 }
 
-export function fetchContractV2UploadDocument(data: {
+export function fetchContractUploadDocument(data: {
   contractNo: string;
   docType: 'MAIN' | 'APPROVAL_FORM' | 'ATTACHMENT' | 'SUPPLEMENT';
   docName?: string;
@@ -97,34 +97,34 @@ export function fetchContractV2UploadDocument(data: {
   if (data.docName) formData.append('docName', data.docName);
   formData.append('file', data.file);
 
-  return request<Api.ContractV2.ContractDocument>({
-    url: '/contractV2/uploadDocument',
+  return request<Api.Contract.ContractDocument>({
+    url: '/contract/uploadDocument',
     method: 'post',
     data: formData
   });
 }
 
-export function fetchContractV2DeleteDocument(docId: number) {
+export function fetchContractDeleteDocument(docId: number) {
   return request({
-    url: '/contractV2/deleteDocument',
+    url: '/contract/deleteDocument',
     method: 'post',
     data: { docId }
   });
 }
 
-export function getContractV2DownloadUrl(docId: number) {
-  return `/contractV2/downloadDocument/${docId}`;
+export function getContractDownloadUrl(docId: number) {
+  return `/contract/downloadDocument/${docId}`;
 }
 
 /**
  * 下载合同文档（使用项目统一的 request 实例，自动携带 Authorization 和 Vite 代理前缀）
  * 后端返回二进制文件流，需用 responseType: 'blob' 接收
  */
-export async function fetchContractV2DownloadDocument(
+export async function fetchContractDownloadDocument(
   docId: number
 ): Promise<{ blob: Blob; filename: string }> {
   const { data, error, response } = await request<any, 'blob'>({
-    url: `/contractV2/downloadDocument/${docId}`,
+    url: `/contract/downloadDocument/${docId}`,
     method: 'get',
     responseType: 'blob',
     // OnlyOffice 文档下载首次加载较慢（.doc 转换 + cpolar 内网穿透），覆盖全局 30s 超时

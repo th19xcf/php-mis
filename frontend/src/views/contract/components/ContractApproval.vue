@@ -1,12 +1,12 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, computed } from 'vue';
 import {  } from 'naive-ui';
-import { useContractV2Store } from '@/store/modules/contract-v2';
+import { useContractStore } from '@/store/modules/contract';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
 const props = defineProps<{
   visible: boolean;
-  contract: Api.ContractV2.ContractDetail | null;
+  contract: Api.Contract.ContractDetail | null;
 }>();
 
 const emit = defineEmits<{
@@ -15,9 +15,9 @@ const emit = defineEmits<{
 }>();
 
 const message = useMessageWithConsole();
-const contractV2Store = useContractV2Store();
+const contractStore = useContractStore();
 
-const loading = computed(() => contractV2Store.loading);
+const loading = computed(() => contractStore.loading);
 
 const formData = ref({
   action: 'APPROVE' as 'APPROVE' | 'REJECT',
@@ -25,7 +25,7 @@ const formData = ref({
 });
 
 const pendingTask = computed(() => {
-  const tasks = contractV2Store.pendingTasks;
+  const tasks = contractStore.pendingTasks;
   if (!props.contract) return null;
   return tasks.find(t => t.业务ID === props.contract?.合同编号) || null;
 });
@@ -42,7 +42,7 @@ async function handleSubmit() {
   }
 
   try {
-    await contractV2Store.handleApproval(
+    await contractStore.handleApproval(
       pendingTask.value.任务ID,
       formData.value.action,
       formData.value.opinion

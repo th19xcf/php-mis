@@ -1,5 +1,5 @@
 declare namespace Api {
-  namespace ContractV2 {
+  namespace Contract {
     interface ContractListItem {
       GUID: number;
       合同编号: string;
