@@ -3,7 +3,14 @@ import { ref, onMounted, computed, watch, toRef } from 'vue';
 import type { TreeOption } from 'naive-ui';
 import {  } from 'naive-ui';
 import { useRoute } from 'vue-router';
-import { fetchAddInterview, fetchUpdateInterview, fetchDeleteInterview, fetchTransferInterview, fetchInterviewDebugTree } from '@/service/api';
+import {
+  fetchAddInterview,
+  fetchUpdateInterview,
+  fetchDeleteInterview,
+  fetchTransferInterview,
+  fetchTransferPositionInterview,
+  fetchInterviewDebugTree
+} from '@/service/api';
 import { useInterviewStore } from '@/store/modules/interview';
 import { useSplitter } from '@/hooks/business/use-splitter';
 import { useTreeCheck } from '@/hooks/business/use-tree-check';
@@ -24,7 +31,7 @@ const route = useRoute();
 const themeStore = useThemeStore();
 const isDarkMode = computed(() => themeStore.darkMode);
 const interviewStore = useInterviewStore();
-const { confirmDelete, confirmTransfer } = useDangerConfirm();
+const { confirmDelete, confirmTransfer, confirm: confirmAction } = useDangerConfirm();
 
 const functionCode = computed(() => {
   return String(route.query.functionCode || route.meta?.functionCode || '2016');
@@ -41,6 +48,11 @@ const selectedGuids = computed(() => interviewStore.selectedGuids);
 const interviewDetail = computed(() => interviewStore.interviewDetail);
 const options = computed(() => interviewStore.options);
 
+// 历史投递链：detail 接口随人员详情返回（同人员编码的全部流程实例）
+const applicationHistory = computed<Api.Interview.ApplicationHistoryItem[]>(
+  () => (interviewDetail.value?.applicationHistory as Api.Interview.ApplicationHistoryItem[]) || []
+);
+
 const { leftWidth, isResizing, startResize } = useSplitter({
   defaultWidth: 320,
   minWidth: 200,
@@ -52,11 +64,17 @@ const isAddingMode = ref(false);
 const isEditingDetail = ref(false);
 const isTransferMode = ref(false);
 const isSecondInterviewMode = ref(false);
+const isTransferPositionMode = ref(false);
 const submitting = ref(false);
 
 const addFormDynamic = ref<Record<string, any>>({});
 
 const editDetailForm = ref<Record<string, any>>({});
+
+const transferPositionForm = ref({
+  建议岗位: '',
+  转投说明: ''
+});
 
 const transferForm = ref<Record<string, string | undefined>>({
   参培信息: '',
@@ -325,6 +343,106 @@ async function handleTransfer() {
   }
 }
 
+function openTransferPositionModal() {
+  if (selectedGuids.value.length === 0) {
+    message.warning('请选择要转面其他岗位的人员');
+    return;
+  }
+
+  transferPositionForm.value = {
+    建议岗位: '',
+    转投说明: ''
+  };
+  isTransferPositionMode.value = true;
+}
+
+function cancelTransferPositionMode() {
+  isTransferPositionMode.value = false;
+}
+
+/**
+ * 转面其他岗位确认提交（方案A：转投=新实例+血缘关联）
+ *
+ * 后端组合动作：旧面试行写转面结论 → 旧实例终止（转投其他岗位）→
+ * 发新候选人码 → 新建邀约行与新实例（邀约岗位=建议岗位）→ 血缘回填。
+ * 在途实例冲突时后端返回 needConfirm，二次确认后带 force 重提。
+ */
+async function handleTransferPositionConfirm() {
+  if (!transferPositionForm.value.建议岗位) {
+    message.error('请选择建议岗位');
+    return;
+  }
+  if (!transferPositionForm.value.转投说明.trim()) {
+    message.error('转投说明不能为空');
+    return;
+  }
+
+  const confirmed = await confirmAction({
+    title: '确认转面其他岗位',
+    content: `确定要将选中的 ${selectedGuids.value.length} 名人员转面至"${transferPositionForm.value.建议岗位}"吗？转面后原流程终止，并在邀约列表生成新投递记录。`,
+    dangerLevel: 'high',
+    confirmText: '确认转面',
+    cancelText: '取消'
+  });
+  if (!confirmed) return;
+
+  submitting.value = true;
+  const { error, response } = await fetchTransferPositionInterview({
+    guids: selectedGuids.value,
+    建议岗位: transferPositionForm.value.建议岗位,
+    转投说明: transferPositionForm.value.转投说明.trim()
+  });
+  submitting.value = false;
+
+  if (!error) {
+    message.success('转面成功，已在邀约列表生成新投递');
+    isTransferPositionMode.value = false;
+    interviewStore.clearSelection();
+    await loadTree();
+    return;
+  }
+
+  // 在途实例二次确认：同人员编码存在其他未终止投递流程，确认后带 force 重提
+  const bizData = (
+    response?.data as {
+      data?: {
+        needConfirm?: boolean;
+        confirmType?: string;
+        matches?: Array<{ 候选人编码: string; 当前阶段: string; 邀约岗位: string }>;
+      };
+    } | undefined
+  )?.data;
+  if (bizData?.confirmType === 'activeInstance' && Array.isArray(bizData.matches) && bizData.matches.length > 0) {
+    const lines = bizData.matches
+      .map(m => `${m.候选人编码}（${m.当前阶段}${m.邀约岗位 ? `·${m.邀约岗位}` : ''}）`)
+      .join('、');
+    const goOn = await confirmAction({
+      title: '存在进行中的投递流程',
+      content: `选中人员存在未终止的投递流程：${lines}。确认继续转面后原流程将并行保留，请确认是否继续。`,
+      dangerLevel: 'medium',
+      confirmText: '继续转面',
+      cancelText: '取消'
+    });
+    if (!goOn) return;
+
+    submitting.value = true;
+    const { error: forceError } = await fetchTransferPositionInterview({
+      guids: selectedGuids.value,
+      建议岗位: transferPositionForm.value.建议岗位,
+      转投说明: transferPositionForm.value.转投说明.trim(),
+      force: true
+    });
+    submitting.value = false;
+
+    if (!forceError) {
+      message.success('转面成功，已在邀约列表生成新投递');
+      isTransferPositionMode.value = false;
+      interviewStore.clearSelection();
+      await loadTree();
+    }
+  }
+}
+
 function handleDelete() {
   if (selectedGuids.value.length === 0) {
     message.warning('请选择要删除的人员');
@@ -422,7 +540,7 @@ onMounted(async () => {
   });
 });
 
-watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], newValues => {
+watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode, isTransferPositionMode], newValues => {
   if (newValues.every(v => !v) && interviewDetail.value) {
     interviewStore.loadInterviewDetail(interviewDetail.value.GUID);
   }
@@ -524,6 +642,12 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], ne
               <icon-mdi-arrow-right />
             </template>
             培训
+          </NButton>
+          <NButton type="primary" size="small" ghost @click="openTransferPositionModal">
+            <template #icon>
+              <icon-mdi-swap-horizontal />
+            </template>
+            转面
           </NButton>
         </NSpace>
       </div>
@@ -650,6 +774,61 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], ne
                     type="date"
                     size="small"
                     class="w-full"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </NTable>
+        </div>
+
+        <!-- 转面其他岗位模式（方案A：终止旧流程+新建邀约投递+血缘关联） -->
+        <div v-else-if="isTransferPositionMode" class="space-y-4">
+          <div class="flex justify-between items-center mb-2">
+            <span class="text-lg font-600">转面其他岗位 (已选择 {{ selectedGuids.length }} 人)</span>
+            <NSpace>
+              <NButton type="primary" size="small" :loading="submitting" @click="handleTransferPositionConfirm">
+                确认
+              </NButton>
+              <NButton size="small" @click="cancelTransferPositionMode">取消</NButton>
+            </NSpace>
+          </div>
+          <NAlert type="info" :show-icon="true" class="mb-2">
+            转面后原流程终止（终止原因：转投其他岗位），系统自动在邀约列表生成新投递记录（邀约岗位=建议岗位）。
+          </NAlert>
+          <NTable size="small" :single-line="false">
+            <thead>
+              <tr>
+                <th class="w-32">列名</th>
+                <th>列值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  建议岗位
+                  <span class="text-red-500 ml-1">*</span>
+                </td>
+                <td>
+                  <NSelect
+                    v-model:value="transferPositionForm.建议岗位"
+                    :options="options?.position || []"
+                    size="small"
+                    placeholder="请选择建议岗位"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  转投说明
+                  <span class="text-red-500 ml-1">*</span>
+                </td>
+                <td>
+                  <NInput
+                    v-model:value="transferPositionForm.转投说明"
+                    type="textarea"
+                    placeholder="请输入转投说明（如：沟通意愿、岗位匹配原因等）"
+                    size="small"
+                    :autosize="{ minRows: 2, maxRows: 6 }"
                   />
                 </td>
               </tr>
@@ -800,7 +979,16 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], ne
                   </template>
                   <template v-else>
                     <template v-if="field.columnName === '面试结果'">
-                      <NTag :type="interviewDetail[field.columnName] === '通过' ? 'success' : 'default'" size="small">
+                      <NTag
+                        :type="
+                          interviewDetail[field.columnName] === '通过'
+                            ? 'success'
+                            : interviewDetail[field.columnName] === '转面其他岗位'
+                              ? 'warning'
+                              : 'default'
+                        "
+                        size="small"
+                      >
                         {{ interviewDetail[field.columnName] || '-' }}
                       </NTag>
                     </template>
@@ -812,6 +1000,47 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode], ne
               </tr>
             </tbody>
           </NTable>
+
+          <!-- 历史投递链（同人员编码的全部流程实例，转面血缘追溯） -->
+          <div v-if="applicationHistory.length > 0" class="mt-4">
+            <div class="flex items-center gap-8px mb-2">
+              <span class="text-lg font-600">历史投递</span>
+              <NTag size="small" :bordered="false">共 {{ applicationHistory.length }} 次</NTag>
+            </div>
+            <NTable size="small" :single-line="false">
+              <thead>
+                <tr>
+                  <th>邀约日期</th>
+                  <th>候选人编码</th>
+                  <th>投递岗位</th>
+                  <th>当前阶段</th>
+                  <th>面试结果</th>
+                  <th>面试人/日期</th>
+                  <th>终止原因</th>
+                  <th>建议岗位</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="h in applicationHistory" :key="h.候选人编码">
+                  <td>{{ h.邀约日期 || '-' }}</td>
+                  <td>
+                    {{ h.候选人编码 }}
+                    <NTag v-if="h.转自候选人编码" size="small" type="warning">转投</NTag>
+                  </td>
+                  <td>{{ h.邀约岗位 || '-' }}</td>
+                  <td>
+                    <NTag :type="h.当前阶段 === '终止' ? 'error' : 'info'" size="small">
+                      {{ h.当前阶段 }}
+                    </NTag>
+                  </td>
+                  <td>{{ h.面试结果 || '-' }}</td>
+                  <td>{{ [h.面试人, h.面试日期].filter(Boolean).join(' / ') || '-' }}</td>
+                  <td>{{ h.终止原因 || '-' }}</td>
+                  <td>{{ h.建议岗位 || '-' }}</td>
+                </tr>
+              </tbody>
+            </NTable>
+          </div>
         </div>
 
         <NEmpty v-else description="请选择左侧人员查看详情" class="py-20" />

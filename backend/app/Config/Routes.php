@@ -119,6 +119,7 @@ $routes->group('interview', static function ($routes) {
 	$routes->post('update', 'InterviewApi::update');
 	$routes->post('delete', 'InterviewApi::delete');
 	$routes->post('transfer', 'InterviewApi::transfer');
+	$routes->post('transferPosition', 'InterviewApi::transferPosition');
 	$routes->get('options', 'InterviewApi::options');
 });
 

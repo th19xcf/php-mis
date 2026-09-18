@@ -74,10 +74,49 @@ declare namespace Api {
       预计完成日期?: string;
     }
 
+    /** 转面其他岗位参数（方案A：转投=终止旧实例+新建邀约实例+血缘关联） */
+    interface InterviewTransferPositionParams {
+      guids: string[];
+      建议岗位: string;
+      转投说明: string;
+      /** 在途实例二次确认放行标志 */
+      force?: boolean;
+    }
+
+    /** 在途实例确认信息（needConfirm 响应） */
+    interface ActiveInstanceConfirm {
+      needConfirm: true;
+      confirmType: 'activeInstance';
+      matches: Array<{
+        候选人编码: string;
+        当前阶段: string;
+        邀约岗位: string;
+      }>;
+    }
+
+    /** 历史投递链（detail 返回，同人员编码的全部流程实例） */
+    interface ApplicationHistoryItem {
+      候选人编码: string;
+      当前阶段: string;
+      终止原因: string;
+      邀约日期: string;
+      参培日期: string;
+      入职日期: string;
+      转自候选人编码: string;
+      邀约岗位: string;
+      邀约业务: string;
+      面试结果: string;
+      面试人: string;
+      面试日期: string;
+      建议岗位: string;
+      转投说明: string;
+    }
+
     interface InterviewOptions {
       region: Array<{ value: string; label: string }>;
       channel: Array<{ value: string; label: string }>;
       trainBiz: Array<{ value: string; label: string }>;
+      position: Array<{ value: string; label: string }>;
       interviewResult: Array<{ value: string; label: string }>;
       trainStatus: Array<{ value: string; label: string }>;
     }

@@ -49,6 +49,16 @@ export function fetchTransferInterview(data: Api.Interview.InterviewTransferPara
   });
 }
 
+/** 转面其他岗位（方案A：终止旧实例+新建邀约实例+血缘关联） */
+export function fetchTransferPositionInterview(data: Api.Interview.InterviewTransferPositionParams) {
+  return request<null>({
+    url: '/interview/transferPosition',
+    method: 'post',
+    data,
+    skipAuthError: true
+  });
+}
+
 export function fetchInterviewOptions() {
   return request<Api.Interview.InterviewOptions>({
     url: '/interview/options'

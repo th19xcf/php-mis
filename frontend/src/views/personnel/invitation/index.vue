@@ -275,6 +275,9 @@ function fillSuggestedInvitationCount() {
 // 人员主档查重确认弹窗状态
 const dedupVisible = ref(false);
 const dedupMatches = ref<Api.Invitation.PersonDedupMatch[]>([]);
+// 在途实例确认（同人员编码存在未终止投递流程，后端 needConfirm 触发）
+const activeInstanceVisible = ref(false);
+const activeInstanceMatches = ref<Array<{ 候选人编码: string; 当前阶段: string; 邀约岗位: string }>>([]);
 // 'new'=确认为新人员强制建档；其余值为选中挂接的人员编码
 const dedupChoice = ref('new');
 
@@ -312,10 +315,13 @@ async function saveAddMode() {
 /**
  * 提交新增邀约
  *
- * @param extra 查重确认后的决策参数：person_code（挂既有档）/ force_new（强制新建），二选一
+ * @param extra 查重/在途确认后的决策参数：person_code（挂既有档）/ force_new（强制新建）/
+ *              force_instance（在途实例二次确认放行），按需组合
  * @returns 是否提交成功
  */
-async function doSubmitAdd(extra?: { person_code?: string; force_new?: boolean }): Promise<boolean> {
+async function doSubmitAdd(
+  extra?: { person_code?: string; force_new?: boolean; force_instance?: boolean }
+): Promise<boolean> {
   submitting.value = true;
   const { error, response } = await fetchAddInvitation({
     ...addFormDynamic.value,
@@ -328,21 +334,50 @@ async function doSubmitAdd(extra?: { person_code?: string; force_new?: boolean }
     invitationStore.clearAddState();
     invitationStats.value = null;
     dedupVisible.value = false;
+    activeInstanceVisible.value = false;
     await loadTree();
     return true;
   }
 
+  const bizData = (
+    response?.data as {
+      data?: {
+        needConfirm?: boolean;
+        confirmType?: string;
+        matches?: Api.Invitation.PersonDedupMatch[] | Array<{ 候选人编码: string; 当前阶段: string; 邀约岗位: string }>;
+      };
+    } | undefined
+  )?.data;
+
+  // 在途实例确认：同人员编码存在未终止投递流程，弹窗确认后带 force_instance 重提
+  if (
+    bizData?.confirmType === 'activeInstance' &&
+    Array.isArray(bizData.matches) &&
+    bizData.matches.length > 0
+  ) {
+    activeInstanceMatches.value = bizData.matches as Array<{
+      候选人编码: string;
+      当前阶段: string;
+      邀约岗位: string;
+    }>;
+    activeInstanceVisible.value = true;
+    return false;
+  }
+
   // 竞态兜底：查重通过后、提交前他人新建了同姓名+手机号主档，
   // 后端返回 needConfirm + matches，转为弹窗确认后重提
-  const bizData = (
-    response?.data as { data?: { needConfirm?: boolean; matches?: Api.Invitation.PersonDedupMatch[] } } | undefined
-  )?.data;
   if (bizData?.needConfirm && Array.isArray(bizData.matches) && bizData.matches.length > 0) {
-    dedupMatches.value = bizData.matches;
+    dedupMatches.value = bizData.matches as Api.Invitation.PersonDedupMatch[];
     dedupChoice.value = 'new';
     dedupVisible.value = true;
   }
   return false;
+}
+
+/** 在途实例确认：继续新增（保留原流程并行，带 force_instance 放行） */
+async function handleActiveInstanceConfirm() {
+  activeInstanceVisible.value = false;
+  await doSubmitAdd({ force_instance: true });
 }
 
 async function handleDedupConfirm() {
@@ -1058,6 +1093,45 @@ onMounted(async () => {
           <NButton size="small" @click="dedupVisible = false">取消</NButton>
           <NButton type="primary" size="small" :loading="submitting" @click="handleDedupConfirm">
             确认提交
+          </NButton>
+        </NSpace>
+      </template>
+    </NModal>
+
+    <!-- 在途投递流程确认弹窗（同人员存在未终止的投递实例） -->
+    <NModal
+      v-model:show="activeInstanceVisible"
+      preset="card"
+      title="在途投递流程"
+      class="w-160"
+      :mask-closable="false"
+    >
+      <NAlert type="warning" :show-icon="true" class="mb-12px">
+        该人员存在进行中的投递流程（未终止）。如确认继续新增，系统将保留原流程并新增一条邀约记录（多流程并行）。
+      </NAlert>
+      <NTable size="small" :single-line="false">
+        <thead>
+          <tr>
+            <th>候选人编码</th>
+            <th>当前阶段</th>
+            <th>邀约岗位</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="m in activeInstanceMatches" :key="m.候选人编码">
+            <td>{{ m.候选人编码 }}</td>
+            <td>
+              <NTag size="small" type="info">{{ m.当前阶段 }}</NTag>
+            </td>
+            <td>{{ m.邀约岗位 || '-' }}</td>
+          </tr>
+        </tbody>
+      </NTable>
+      <template #footer>
+        <NSpace justify="end">
+          <NButton size="small" @click="activeInstanceVisible = false">取消</NButton>
+          <NButton type="primary" size="small" :loading="submitting" @click="handleActiveInstanceConfirm">
+            继续新增
           </NButton>
         </NSpace>
       </template>

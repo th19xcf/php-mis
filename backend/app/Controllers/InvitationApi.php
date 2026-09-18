@@ -178,7 +178,8 @@ class InvitationApi extends BaseApiController
         // 前端查重确认后的显式决策参数（非业务字段，不参与入库）
         $attachCode = trim((string) ($data['person_code'] ?? ''));
         $forceNew = !empty($data['force_new']);
-        unset($data['person_code'], $data['force_new']);
+        $forceInstance = !empty($data['force_instance']);
+        unset($data['person_code'], $data['force_new'], $data['force_instance']);
 
         // 字段归属路由：身份字段 → hr_person，实例字段 → ee_store（+兼容双写）
         $groups = $this->splitDataByFieldOwner('2015', 'ee_store', $data);
@@ -215,6 +216,20 @@ class InvitationApi extends BaseApiController
                 ]);
             }
             // none / forceNew：保持 $personCode=''，事务内新建
+        }
+
+        // 在途实例校验：同人员编码存在未终止实例（邀约/面试/培训/入职进行中）时
+        // 返回确认提示，前端二次确认后带 force_instance 重提放行
+        // （新建主档人员必无在途实例，仅挂既有档/证件号命中时校验）
+        if ($personCode !== '' && !$forceInstance) {
+            $conflicts = (new ApplicationService())->findActiveInstances([$personCode]);
+            if (!empty($conflicts)) {
+                return $this->error(ApiCode::BUSINESS_ERROR, '该人员存在进行中的投递流程，请确认是否继续新增邀约', [
+                    'needConfirm' => true,
+                    'confirmType' => 'activeInstance',
+                    'matches' => $conflicts,
+                ]);
+            }
         }
 
         $db = $this->model->getDb();

@@ -18,7 +18,9 @@ use RuntimeException;
  *
  * 状态机（硬编码于 STAGE_FLOW，配置表 def_stage_transfer 只管字段映射）：
  *   邀约 → 面试 | 终止(邀约拒绝)
- *   面试 → 培训 | 终止(面试未通过)
+ *   面试 → 培训 | 终止(面试未通过 / 转投其他岗位)   ← 转投：InterviewApi::transferPosition
+ *                                               终止旧实例后另发新候选人编码开新实例，
+ *                                               血缘见 ee_application.转自候选人编码
  *   培训 → 入职 | 终止(培训离开)
  *   入职 → 终止(离职)          ← 阶段③② 已启用（EmployeeService::processResignation 双关内调用）
  *   终态实例仅允许管理端复活，不走本服务
@@ -329,6 +331,57 @@ class ApplicationService
         }
 
         return $affected;
+    }
+
+    /**
+     * 查询人员在途实例（当前阶段≠终止的有效实例）
+     *
+     * 供邀约新增 / 面试转投前的二次确认（同人多实例在途提示）：
+     * 存在在途实例时调用方返回 needConfirm，前端二次确认后带 force 放行。
+     *
+     * @param array $personCodes  人员编码列表
+     * @param array $excludeCodes 排除的候选人编码（如本次转投将终止的实例）
+     * @return array [候选人编码, 当前阶段, 邀约岗位] 列表（邀约岗位取实例起点 ee_store 行）
+     */
+    public function findActiveInstances(array $personCodes, array $excludeCodes = []): array
+    {
+        $personCodes = array_values(array_unique(array_filter(
+            array_map('strval', $personCodes),
+            fn($v) => $v !== ''
+        )));
+        if (empty($personCodes)) {
+            return [];
+        }
+
+        $db = $this->model->getDb();
+        $quotedPersons = implode(',', array_map(
+            fn($v) => $db->escape($v),
+            $personCodes
+        ));
+
+        $excludeCond = '';
+        if (!empty($excludeCodes)) {
+            $quotedExcludes = implode(',', array_map(
+                fn($v) => $db->escape((string) $v),
+                $excludeCodes
+            ));
+            $excludeCond = " AND a.候选人编码 NOT IN ({$quotedExcludes})";
+        }
+
+        $sql = sprintf(
+            'SELECT a.候选人编码, a.当前阶段, IFNULL(s.邀约岗位, "") AS 邀约岗位
+             FROM ee_application a
+             LEFT JOIN ee_store s
+                 ON s.候选人编码 = a.候选人编码 AND s.有效标识 = "1" AND s.删除标识 = "0"
+             WHERE a.人员编码 IN (%s)
+               AND a.当前阶段 <> "终止"
+               AND a.有效标识 = "1" AND a.删除标识 = "0"%s
+             ORDER BY a.邀约日期, a.GUID',
+            $quotedPersons,
+            $excludeCond
+        );
+
+        return $this->model->select($sql)->getResultArray() ?: [];
     }
 
     /**

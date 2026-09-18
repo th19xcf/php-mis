@@ -2,6 +2,7 @@
 
 namespace App\Controllers;
 
+use App\Constants\ApiCode;
 use App\Services\Application\ApplicationService;
 use App\Services\Application\StageTransferService;
 use App\Exceptions\AuthException;
@@ -25,10 +26,10 @@ class InterviewApi extends BaseApiController
                 if(mod(substr(身份证号,17,1),2)=0,"女","男") as 性别,
                 招聘渠道,一次面试结果 as 面试结果,
                 if(参培信息="","待参培",参培信息) as 参培信息,
-                一次面试日期 as 面试日期,预约培训日期
+                一次面试日期 as 面试日期,预约培训日期,建议岗位
             from ee_interview
             where %s and 有效标识="1" and 删除标识="0"
-            order by 属地,field(面试结果,"未面试","通过","未通过"),
+            order by 属地,field(面试结果,"未面试","通过","未通过","转面其他岗位"),
                 field(参培信息,"待参培","已参培","未参培"),
                 招聘渠道,预约培训日期 desc,convert(姓名 using gbk)',
             $locationAuthzCond);
@@ -75,10 +76,10 @@ class InterviewApi extends BaseApiController
                 if(mod(substr(身份证号,17,1),2)=0,"女","男") as 性别,
                 招聘渠道,一次面试结果 as 面试结果,
                 if(参培信息="","待参培",参培信息) as 参培信息,
-                一次面试日期 as 面试日期,预约培训日期
+                一次面试日期 as 面试日期,预约培训日期,建议岗位
             from ee_interview
             where %s and 有效标识="1" and 删除标识="0"
-            order by 属地,field(面试结果,"未面试","通过","未通过"),
+            order by 属地,field(面试结果,"未面试","通过","未通过","转面其他岗位"),
                 field(参培信息,"待参培","已参培","未参培"),
                 招聘渠道,预约培训日期 desc,convert(姓名 using gbk)',
             $locationAuthzCond);
@@ -136,7 +137,52 @@ class InterviewApi extends BaseApiController
             return $this->notFound('人员不存在');
         }
 
+        // 历史投递链：同人员编码的全部流程实例（含当前），供详情页只读展示
+        // 岗位取 ee_store.邀约岗位（实例起点岗位），结论取 ee_interview 转面行
+        // 人员编码单独取（detail 配置驱动 SELECT 不保证含该列）
+        $locator = $this->model->select(sprintf(
+            'select 人员编码 from ee_interview where GUID=%s and 有效标识="1" and 删除标识="0" limit 1',
+            $this->model->quote($guid)
+        ))->getRowArray();
+        $result['applicationHistory'] = $this->loadApplicationHistory(
+            (string) ($locator['人员编码'] ?? '')
+        );
+
         return $this->success($result);
+    }
+
+    /**
+     * 查询同人员编码的历史投递链（ee_application 为主轴）
+     *
+     * @param string $personCode 人员编码（空则返回空数组）
+     * @return array 按邀约日期升序的实例列表
+     */
+    private function loadApplicationHistory(string $personCode): array
+    {
+        if ($personCode === '') {
+            return [];
+        }
+
+        $sql = sprintf(
+            'select a.候选人编码, a.当前阶段, a.终止原因, a.邀约日期,
+                a.参培日期, a.入职日期, a.转自候选人编码,
+                ifnull(s.邀约岗位, "") as 邀约岗位, ifnull(s.邀约业务, "") as 邀约业务,
+                ifnull(i.一次面试结果, "") as 面试结果,
+                ifnull(i.一次面试人, "") as 面试人,
+                ifnull(i.一次面试日期, "") as 面试日期,
+                ifnull(i.建议岗位, "") as 建议岗位,
+                ifnull(i.转投说明, "") as 转投说明
+            from ee_application a
+            left join ee_store s
+                on s.候选人编码 = a.候选人编码 and s.有效标识 = "1" and s.删除标识 = "0"
+            left join ee_interview i
+                on i.候选人编码 = a.候选人编码 and i.有效标识 = "1" and i.删除标识 = "0"
+            where a.人员编码 = %s and a.有效标识 = "1" and a.删除标识 = "0"
+            order by a.邀约日期, a.GUID',
+            $this->model->quote($personCode)
+        );
+
+        return $this->model->select($sql)->getResultArray() ?: [];
     }
 
     public function add()
@@ -324,6 +370,164 @@ class InterviewApi extends BaseApiController
         return $this->success(null, sprintf('更新参培信息成功，更新 %d 条记录', $num));
     }
 
+    /**
+     * 转面其他岗位（方案A：转投=新实例+血缘关联）
+     *
+     * 组合动作（单事务）：
+     * 1. 旧面试行写转面结论：一次面试结果=转面其他岗位 + 建议岗位 + 转投说明
+     * 2. 旧实例终止：transferStage 面试→终止（终止原因=转投其他岗位）
+     * 3. 逐人发新候选人编码 → INSERT ee_store（邀约岗位=建议岗位，回到邀约起点）
+     * 4. createInstance 新实例 + 回填 转自候选人编码（血缘）
+     *
+     * 在途实例校验：同人员编码存在其他未终止实例时返回 needConfirm，
+     * 前端二次确认后带 force=true 放行。
+     */
+    public function transferPosition()
+    {
+        $data = $this->getJsonInput();
+
+        if (empty($data['guids']) || !is_array($data['guids'])) {
+            return $this->paramError('请选择要转面其他岗位的人员');
+        }
+        if (empty($data['建议岗位'])) {
+            return $this->paramError('建议岗位不能为空');
+        }
+        if (trim((string) ($data['转投说明'] ?? '')) === '') {
+            return $this->paramError('转投说明不能为空');
+        }
+
+        $force = !empty($data['force']);
+        $suggestPosition = trim((string) $data['建议岗位']);
+        $transferNote = trim((string) $data['转投说明']);
+
+        $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
+
+        // 读取面试行（实例定位键 + 建新邀约行所需身份/渠道字段）
+        $rows = $this->model->select(sprintf(
+            'select GUID,候选人编码,人员编码,姓名,身份证号,手机号码,属地,
+                招聘渠道,渠道类型,渠道名称,面试业务
+            from ee_interview
+            where GUID in (%s) and 有效标识="1" and 删除标识="0"',
+            $guidStr
+        ))->getResultArray();
+
+        if (empty($rows)) {
+            return $this->notFound('人员不存在');
+        }
+
+        // 候选人编码缺失（历史数据）无法走实例状态机，明确拒绝
+        foreach ($rows as $row) {
+            if (trim((string) ($row['候选人编码'] ?? '')) === '') {
+                return $this->businessError(
+                    sprintf('人员[%s]的面试记录无候选人编码（历史数据），无法转投', $row['姓名'])
+                );
+            }
+        }
+
+        $candidateCodes = array_values(array_filter(
+            array_column($rows, '候选人编码'),
+            fn($v) => $v !== '' && $v !== null
+        ));
+
+        // 在途实例校验（同人员编码的其他未终止实例）
+        if (!$force) {
+            $personCodes = array_values(array_unique(array_filter(
+                array_column($rows, '人员编码'),
+                fn($v) => $v !== '' && $v !== null
+            )));
+            $conflicts = (new ApplicationService())->findActiveInstances($personCodes, $candidateCodes);
+            if (!empty($conflicts)) {
+                return $this->error(ApiCode::BUSINESS_ERROR, '选中人员存在进行中的投递流程，请确认是否继续转投', [
+                    'needConfirm' => true,
+                    'confirmType' => 'activeInstance',
+                    'matches' => $conflicts,
+                ]);
+            }
+        }
+
+        $operator = $this->getUserWorkId();
+        $today = date('Y-m-d');
+
+        $db = $this->model->getDb();
+        $db->transStart();
+        $newCodes = [];
+
+        try {
+            $applicationService = new ApplicationService();
+            $candidateCodeService = new CandidateCodeService();
+
+            // 1. 旧面试行写转面结论（所选人员共享建议岗位/转投说明）
+            $this->updateRecord('ee_interview', $this->buildUpdateData([
+                '一次面试结果' => '转面其他岗位',
+                '建议岗位' => $suggestPosition,
+                '转投说明' => $transferNote,
+            ]), sprintf('GUID in (%s)', $guidStr));
+
+            // 2. 旧实例终止（状态机：面试→终止；已终止实例抛异常整体回滚，天然防重复转投）
+            $applicationService->transferStage(
+                $candidateCodes,
+                '终止',
+                $operator,
+                ['终止原因' => '转投其他岗位', '终止日期' => $today]
+            );
+
+            // 3. 逐人：发新码 → 新邀约行 → 新实例 → 血缘回填
+            foreach ($rows as $row) {
+                $personCode = (string) ($row['人员编码'] ?? '');
+                $newCode = $candidateCodeService->generateOne($today);
+
+                $storeData = $this->buildInsertData([
+                    '候选人编码' => $newCode,
+                    '人员编码' => $personCode,
+                    '姓名' => (string) $row['姓名'],
+                    '身份证号' => (string) ($row['身份证号'] ?? ''),
+                    '手机号码' => (string) ($row['手机号码'] ?? ''),
+                    '属地' => (string) ($row['属地'] ?? ''),
+                    '招聘渠道' => (string) ($row['招聘渠道'] ?? ''),
+                    '渠道类型' => (string) ($row['渠道类型'] ?? ''),
+                    '渠道名称' => (string) ($row['渠道名称'] ?? ''),
+                    '邀约业务' => (string) ($row['面试业务'] ?? ''),
+                    '邀约岗位' => $suggestPosition,
+                    '邀约日期' => $today,
+                    '邀约结果' => '未邀约',
+                    '邀约次数' => 1,
+                ]);
+                $num = $this->insertRecord('ee_store', $storeData);
+                if ($num <= 0) {
+                    throw new BusinessException('新增邀约信息失败');
+                }
+
+                // 新实例（阶段②A 双 INSERT 闭环）+ 血缘回填（同事务）
+                $applicationService->createInstance($newCode, $personCode, $today, $operator);
+                $this->model->exec(sprintf(
+                    'update ee_application set 转自候选人编码=%s
+                     where 候选人编码=%s and 转自候选人编码=""',
+                    $this->model->quote((string) $row['候选人编码']),
+                    $this->model->quote($newCode)
+                ));
+
+                $newCodes[] = $newCode;
+            }
+        } catch (BusinessException $e) {
+            $db->transRollback();
+            return $this->businessError($e->getMessage());
+        } catch (\Throwable $e) {
+            $db->transRollback();
+            log_message('error', '[InterviewApi::transferPosition] 事务回滚: ' . $e->getMessage());
+            return $this->serverError('转面其他岗位失败');
+        }
+
+        $db->transComplete();
+        if ($db->transStatus() === false) {
+            return $this->serverError('转面其他岗位失败(事务已回滚)');
+        }
+
+        return $this->success(
+            ['候选人编码' => $newCodes],
+            sprintf('转面成功，已生成新投递 %d 条（邀约岗位：%s）', count($newCodes), $suggestPosition)
+        );
+    }
+
     public function options()
     {
         // 下拉选项过滤：与 2010 同源（FieldConfigService::getObjectOptions）
@@ -358,20 +562,33 @@ class InterviewApi extends BaseApiController
             $userLocation
         );
 
+        // 建议岗位选项：与邀约页"邀约岗位"同源（def_object），distinct 去重
+        $positionSql = sprintf('
+            select distinct 对象值 as value, 对象值 as label
+            from def_object
+            where 对象名称="邀约岗位" and 有效标识="1"
+                and (属地="" or locate(属地,"%s"))
+            order by convert(对象值 using gbk)',
+            $userLocation
+        );
+
         $regionResult = $this->model->select($regionSql)->getResultArray();
         $channelResult = $this->model->select($channelSql)->getResultArray();
         $trainBizResult = $this->model->select($trainBizSql)->getResultArray();
+        $positionResult = $this->model->select($positionSql)->getResultArray();
 
         return $this->success([
             'region' => $regionResult,
             'channel' => $channelResult,
             'trainBiz' => $trainBizResult,
+            'position' => $positionResult,
             'interviewResult' => [
                 ['value' => '通过', 'label' => '通过'],
                 ['value' => '未通过', 'label' => '未通过'],
                 ['value' => '考虑', 'label' => '考虑'],
                 ['value' => '拒绝', 'label' => '拒绝'],
-                ['value' => '未面试', 'label' => '未面试']
+                ['value' => '未面试', 'label' => '未面试'],
+                ['value' => '转面其他岗位', 'label' => '转面其他岗位']
             ],
             'trainStatus' => [
                 ['value' => '已参培', 'label' => '已参培'],
@@ -398,11 +615,17 @@ class InterviewApi extends BaseApiController
         $up1Arr = [];
 
         foreach ($data as $row) {
+            // 转面标识：转面其他岗位的人员节点追加建议岗位，便于在树上识别血缘去向
+            $personValue = sprintf('%s (%s)', $row['姓名'], $row['面试日期']);
+            if (($row['面试结果'] ?? '') === '转面其他岗位' && ($row['建议岗位'] ?? '') !== '') {
+                $personValue .= sprintf(' [转面:%s]', $row['建议岗位']);
+            }
+
             $eeArr = [
                 'id' => sprintf('人员^%s^%s', $row['GUID'], $row['姓名']),
                 'guid' => $row['GUID'],
                 'name' => $row['姓名'],
-                'value' => sprintf('%s (%s)', $row['姓名'], $row['面试日期']),
+                'value' => $personValue,
                 'type' => 'person'
             ];
 
