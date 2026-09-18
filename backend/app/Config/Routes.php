@@ -143,23 +143,6 @@ $routes->group('employee', static function ($routes) {
 	$routes->get('options', 'EmployeeApi::options');
 });
 
-$routes->group('contract', static function ($routes) {
-	$routes->get('list', 'ContractApi::list');
-	$routes->get('detail/(:segment)', 'ContractApi::detail/$1');
-	$routes->post('create', 'ContractApi::create');
-	$routes->post('update', 'ContractApi::update');
-	$routes->post('delete', 'ContractApi::delete');
-	$routes->post('submit', 'ContractApi::submit');
-	$routes->post('approve', 'ContractApi::approve');
-	$routes->post('reject', 'ContractApi::reject');
-	$routes->post('sign', 'ContractApi::sign');
-	$routes->post('archive', 'ContractApi::archive');
-	$routes->get('options', 'ContractApi::options');
-	$routes->get('stats', 'ContractApi::stats');
-	$routes->get('flow', 'ContractApi::flow');
-	$routes->get('flow/(:segment)', 'ContractApi::flow/$1');
-});
-
 $routes->group('contractV2', static function ($routes) {
 	$routes->get('list', 'ContractV2Api::list');
 	$routes->get('detail', 'ContractV2Api::detail');

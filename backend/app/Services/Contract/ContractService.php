@@ -31,8 +31,7 @@ class ContractService
     {
         $offset = ($page - 1) * $pageSize;
 
-        $useNewTable = $this->hasNewTableData();
-        $tableName = $useNewTable ? '`def_contract_master_new`' : '`def_contract_master`';
+        $tableName = '`def_contract_master_new`';
 
         $where = ['`删除标识`=' . $this->model->quote('0'), '`有效标识`=' . $this->model->quote('1')];
 
@@ -104,25 +103,13 @@ class ContractService
      */
     public function getDetail(string $contractNo): ?array
     {
-        $useNewTable = $this->hasNewTableData();
-
-        if ($useNewTable) {
-            $sql = sprintf(
-                'select * from `def_contract_master_new` 
-                where `合同编号`=%s and `删除标识`=%s and `有效标识`=%s limit 1',
-                $this->model->quote($contractNo),
-                $this->model->quote('0'),
-                $this->model->quote('1')
-            );
-        } else {
-            $sql = sprintf(
-                'select * from `def_contract_master` 
-                where `合同编号`=%s and `删除标识`=%s and `有效标识`=%s limit 1',
-                $this->model->quote($contractNo),
-                $this->model->quote('0'),
-                $this->model->quote('1')
-            );
-        }
+        $sql = sprintf(
+            'select * from `def_contract_master_new`
+            where `合同编号`=%s and `删除标识`=%s and `有效标识`=%s limit 1',
+            $this->model->quote($contractNo),
+            $this->model->quote('0'),
+            $this->model->quote('1')
+        );
 
         $result = $this->model->select($sql);
         $master = $result ? ($result->getRowArray() ?: []) : [];
@@ -130,21 +117,13 @@ class ContractService
             return null;
         }
 
-        $parties = [];
-        if ($useNewTable) {
-            $partySql = sprintf(
-                'select * from `def_contract_party` 
-                where `合同编号`=%s order by `GUID`',
-                $this->model->quote($contractNo)
-            );
-            $partyResult = $this->model->select($partySql);
-            $parties = $partyResult ? $partyResult->getResultArray() : [];
-        } else {
-            $parties = [
-                ['角色' => '甲方', '名称' => $master['甲方名称'] ?? '', '联系人' => $master['甲方联系人'] ?? '', '电话' => $master['甲方电话'] ?? ''],
-                ['角色' => '乙方', '名称' => $master['乙方名称'] ?? '', '联系人' => $master['乙方联系人'] ?? '', '电话' => $master['乙方电话'] ?? ''],
-            ];
-        }
+        $partySql = sprintf(
+            'select * from `def_contract_party`
+            where `合同编号`=%s order by `GUID`',
+            $this->model->quote($contractNo)
+        );
+        $partyResult = $this->model->select($partySql);
+        $parties = $partyResult ? $partyResult->getResultArray() : [];
 
         $docSql = sprintf(
             'select * from `def_contract_document` 
@@ -432,7 +411,7 @@ class ContractService
     public function handleApproval(int $taskId, string $approver, string $approverName, string $action, string $opinion = ''): array
     {
         $taskSql = sprintf(
-            'select * from `def_workflow_task` where `ID`=%d limit 1',
+            'select * from `def_workflow_task` where `GUID`=%d limit 1',
             $taskId
         );
         $taskResult = $this->model->select($taskSql);
@@ -441,10 +420,10 @@ class ContractService
             throw new \RuntimeException('审批任务不存在');
         }
 
-        $instanceId = (int) ($task['流程实例ID'] ?? 0);
+        $instanceId = (int) ($task['实例ID'] ?? 0);
 
         $instanceSql = sprintf(
-            'select * from `def_workflow_instance` where `ID`=%d limit 1',
+            'select * from `def_workflow_instance` where `GUID`=%d limit 1',
             $instanceId
         );
         $instanceResult = $this->model->select($instanceSql);
@@ -465,9 +444,9 @@ class ContractService
 
         $now = date('Y-m-d H:i:s');
         $opinionSql = sprintf(
-            'insert into `def_contract_approval_opinion` 
-            (`合同编号`, `流程实例ID`, `任务ID`, `节点编码`, `节点名称`, 
-             `审批人`, `审批人姓名`, `审批动作`, `审批意见`, `审批时间`)
+            'insert into `def_contract_approval_opinion`
+            (`合同编号`, `流程实例ID`, `任务ID`, `节点编码`, `节点名称`,
+             `审批人`, `审批人姓名`, `审批结果`, `审批意见`, `审批时间`)
             values (%s, %d, %d, %s, %s, %s, %s, %s, %s, %s)',
             $this->model->quote($contractNo),
             $instanceId,
@@ -493,7 +472,7 @@ class ContractService
                 $this->model->quote($contractNo)
             );
             $this->model->exec($updateSql);
-        } elseif ($instanceStatus === 'REJECTED') {
+        } elseif ($instanceStatus === 'TERMINATED') {
             $updateSql = sprintf(
                 'update `def_contract_master_new` 
                 set `合同状态`=%s, `更新时间`=%s 
@@ -516,8 +495,7 @@ class ContractService
      */
     public function getStats(array $filters = []): array
     {
-        $useNewTable = $this->hasNewTableData();
-        $tableName = $useNewTable ? '`def_contract_master_new`' : '`def_contract_master`';
+        $tableName = '`def_contract_master_new`';
 
         $where = ['`删除标识`=' . $this->model->quote('0'), '`有效标识`=' . $this->model->quote('1')];
 
@@ -627,8 +605,7 @@ class ContractService
      */
     public function contractExists(string $contractNo): bool
     {
-        $useNewTable = $this->hasNewTableData();
-        $tableName = $useNewTable ? '`def_contract_master_new`' : '`def_contract_master`';
+        $tableName = '`def_contract_master_new`';
 
         $sql = sprintf(
             'select count(*) as `cnt` from %s 
@@ -683,25 +660,6 @@ class ContractService
             'statusOptions' => $statusOptions,
             'paymentOptions' => $paymentOptions,
         ];
-    }
-
-    /**
-     * 判断新表是否有数据
-     *
-     * @return bool
-     */
-    private function hasNewTableData(): bool
-    {
-        $sql = sprintf(
-            'select count(*) as `cnt` from `def_contract_master_new` 
-            where `删除标识`=%s and `有效标识`=%s limit 1',
-            $this->model->quote('0'),
-            $this->model->quote('1')
-        );
-        $result = $this->model->select($sql);
-        $row = $result ? ($result->getRowArray() ?: []) : [];
-
-        return ((int) ($row['cnt'] ?? 0)) > 0;
     }
 
     /**

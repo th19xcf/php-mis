@@ -49,16 +49,6 @@ export const generatedRoutes: GeneratedRoute[] = [
     }
   },
   {
-    name: 'contract',
-    path: '/contract',
-    component: 'layout.base$view.contract',
-    meta: {
-      title: 'contract',
-      i18nKey: 'route.contract',
-      functionCode: 'contract'
-    }
-  },
-  {
     name: 'contract-v2',
     path: '/contract-v2',
     component: 'layout.base$view.contract-v2',

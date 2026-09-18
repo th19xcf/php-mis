@@ -250,7 +250,6 @@ const local: App.I18n.Schema = {
     personnel_train: '培训人员维护',
     personnel_employee: '在职人员维护',
     personnel_person: '人员主档管理',
-    contract: '合同管理',
     'contract-v2': '合同管理 V2',
     'workflow-manage': '工作流管理',
     'oa-todo-center': '待办中心',

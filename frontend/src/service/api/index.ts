@@ -6,6 +6,5 @@ export * from './invitation';
 export * from './interview';
 export * from './personnel';
 export * from './person';
-export * from './contract';
 export * from './contract-v2';
 export * from './oa-todo';

@@ -22,7 +22,6 @@ export const views: Record<LastLevelRouteKey, RouteComponent | (() => Promise<Ro
   login: () => import("@/views/_builtin/login/index.vue"),
   common: () => import("@/views/common/index.vue"),
   "contract-v2": () => import("@/views/contract-v2/index.vue"),
-  contract: () => import("@/views/contract/index.vue"),
   home: () => import("@/views/home/index.vue"),
   "match-data": () => import("@/views/match-data/index.vue"),
   "menu-bridge": () => import("@/views/menu-bridge/index.vue"),
