@@ -72,9 +72,28 @@ const addFormDynamic = ref<Record<string, any>>({});
 const editDetailForm = ref<Record<string, any>>({});
 
 const transferPositionForm = ref({
-  建议岗位: '',
-  转投说明: ''
+  转面业务: '',
+  转面岗位: '',
+  备注说明: ''
 });
+
+// 转面岗位级联：按选中的转面业务过滤岗位选项（与邀约页 filterLinkedOptions 同机制）
+const filteredTransferPositions = computed(() => {
+  const biz = transferPositionForm.value.转面业务;
+  const positions = options.value?.position || [];
+  if (!biz) return positions.filter(p => !p.parentValue);
+  return positions.filter(p => !p.parentValue || p.parentValue === biz);
+});
+
+function handleTransferBizChange(value: string) {
+  // 业务变更后清空失效的岗位值（与邀约页 clearLinkedOptions 同逻辑）
+  transferPositionForm.value.转面业务 = value;
+  const positions = options.value?.position || [];
+  const current = transferPositionForm.value.转面岗位;
+  if (current && !positions.some(p => p.value === current && (!p.parentValue || p.parentValue === value))) {
+    transferPositionForm.value.转面岗位 = '';
+  }
+}
 
 const transferForm = ref<Record<string, string | undefined>>({
   参培信息: '',
@@ -350,8 +369,9 @@ function openTransferPositionModal() {
   }
 
   transferPositionForm.value = {
-    建议岗位: '',
-    转投说明: ''
+    转面业务: '',
+    转面岗位: '',
+    备注说明: ''
   };
   isTransferPositionMode.value = true;
 }
@@ -363,23 +383,27 @@ function cancelTransferPositionMode() {
 /**
  * 转面其他岗位确认提交（方案A：转投=新实例+血缘关联）
  *
- * 后端组合动作：旧面试行写转面结论 → 旧实例终止（转投其他岗位）→
- * 发新候选人码 → 新建邀约行与新实例（邀约岗位=建议岗位）→ 血缘回填。
+ * 后端组合动作：旧面试行写转面结论（仅结果标记） → 旧实例终止（转投其他岗位）→
+ * 发新候选人码 → 新建邀约行与新实例（邀约业务=转面业务、邀约岗位=转面岗位、备注说明）→ 血缘回填。
  * 在途实例冲突时后端返回 needConfirm，二次确认后带 force 重提。
  */
 async function handleTransferPositionConfirm() {
-  if (!transferPositionForm.value.建议岗位) {
-    message.error('请选择建议岗位');
+  if (!transferPositionForm.value.转面业务) {
+    message.error('请选择转面业务');
     return;
   }
-  if (!transferPositionForm.value.转投说明.trim()) {
-    message.error('转投说明不能为空');
+  if (!transferPositionForm.value.转面岗位) {
+    message.error('请选择转面岗位');
+    return;
+  }
+  if (!transferPositionForm.value.备注说明.trim()) {
+    message.error('备注说明不能为空');
     return;
   }
 
   const confirmed = await confirmAction({
     title: '确认转面其他岗位',
-    content: `确定要将选中的 ${selectedGuids.value.length} 名人员转面至"${transferPositionForm.value.建议岗位}"吗？转面后原流程终止，并在邀约列表生成新投递记录。`,
+    content: `确定要将选中的 ${selectedGuids.value.length} 名人员转面至"${transferPositionForm.value.转面业务}／${transferPositionForm.value.转面岗位}"吗？转面后原流程终止，并在邀约列表生成新投递记录。`,
     dangerLevel: 'high',
     confirmText: '确认转面',
     cancelText: '取消'
@@ -389,8 +413,9 @@ async function handleTransferPositionConfirm() {
   submitting.value = true;
   const { error, response } = await fetchTransferPositionInterview({
     guids: selectedGuids.value,
-    建议岗位: transferPositionForm.value.建议岗位,
-    转投说明: transferPositionForm.value.转投说明.trim()
+    转面业务: transferPositionForm.value.转面业务,
+    转面岗位: transferPositionForm.value.转面岗位,
+    备注说明: transferPositionForm.value.备注说明.trim()
   });
   submitting.value = false;
 
@@ -428,8 +453,9 @@ async function handleTransferPositionConfirm() {
     submitting.value = true;
     const { error: forceError } = await fetchTransferPositionInterview({
       guids: selectedGuids.value,
-      建议岗位: transferPositionForm.value.建议岗位,
-      转投说明: transferPositionForm.value.转投说明.trim(),
+      转面业务: transferPositionForm.value.转面业务,
+      转面岗位: transferPositionForm.value.转面岗位,
+      备注说明: transferPositionForm.value.备注说明.trim(),
       force: true
     });
     submitting.value = false;
@@ -637,17 +663,17 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode, isT
             </template>
             二次面试
           </NButton>
-          <NButton type="warning" size="small" @click="openTransferModal">
-            <template #icon>
-              <icon-mdi-arrow-right />
-            </template>
-            培训
-          </NButton>
           <NButton type="primary" size="small" ghost @click="openTransferPositionModal">
             <template #icon>
               <icon-mdi-swap-horizontal />
             </template>
             转面
+          </NButton>
+          <NButton type="warning" size="small" @click="openTransferModal">
+            <template #icon>
+              <icon-mdi-arrow-right />
+            </template>
+            培训
           </NButton>
         </NSpace>
       </div>
@@ -793,7 +819,7 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode, isT
             </NSpace>
           </div>
           <NAlert type="info" :show-icon="true" class="mb-2">
-            转面后原流程终止（终止原因：转投其他岗位），系统自动在邀约列表生成新投递记录（邀约岗位=建议岗位）。
+            转面后原流程终止（终止原因：转投其他岗位），系统自动在邀约列表生成新投递记录（邀约业务=转面业务、邀约岗位=转面岗位、备注说明）。
           </NAlert>
           <NTable size="small" :single-line="false">
             <thead>
@@ -805,28 +831,44 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode, isT
             <tbody>
               <tr>
                 <td>
-                  建议岗位
+                  转面业务
                   <span class="text-red-500 ml-1">*</span>
                 </td>
                 <td>
                   <NSelect
-                    v-model:value="transferPositionForm.建议岗位"
-                    :options="options?.position || []"
+                    :value="transferPositionForm.转面业务"
+                    :options="options?.biz || []"
                     size="small"
-                    placeholder="请选择建议岗位"
+                    placeholder="请选择转面业务"
+                    @update:value="handleTransferBizChange"
                   />
                 </td>
               </tr>
               <tr>
                 <td>
-                  转投说明
+                  转面岗位
+                  <span class="text-red-500 ml-1">*</span>
+                </td>
+                <td>
+                  <NSelect
+                    v-model:value="transferPositionForm.转面岗位"
+                    :options="filteredTransferPositions"
+                    size="small"
+                    placeholder="请选择转面岗位"
+                    :disabled="!transferPositionForm.转面业务"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  备注说明
                   <span class="text-red-500 ml-1">*</span>
                 </td>
                 <td>
                   <NInput
-                    v-model:value="transferPositionForm.转投说明"
+                    v-model:value="transferPositionForm.备注说明"
                     type="textarea"
-                    placeholder="请输入转投说明（如：沟通意愿、岗位匹配原因等）"
+                    placeholder="请输入备注说明（如：沟通意愿、岗位匹配原因等）"
                     size="small"
                     :autosize="{ minRows: 2, maxRows: 6 }"
                   />
@@ -1017,7 +1059,7 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode, isT
                   <th>面试结果</th>
                   <th>面试人/日期</th>
                   <th>终止原因</th>
-                  <th>建议岗位</th>
+                  <th>备注说明</th>
                 </tr>
               </thead>
               <tbody>
@@ -1036,7 +1078,7 @@ watch([isAddingMode, isEditingDetail, isTransferMode, isSecondInterviewMode, isT
                   <td>{{ h.面试结果 || '-' }}</td>
                   <td>{{ [h.面试人, h.面试日期].filter(Boolean).join(' / ') || '-' }}</td>
                   <td>{{ h.终止原因 || '-' }}</td>
-                  <td>{{ h.建议岗位 || '-' }}</td>
+                  <td>{{ h.备注说明 || '-' }}</td>
                 </tr>
               </tbody>
             </NTable>

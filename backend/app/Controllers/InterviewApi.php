@@ -26,7 +26,7 @@ class InterviewApi extends BaseApiController
                 if(mod(substr(身份证号,17,1),2)=0,"女","男") as 性别,
                 招聘渠道,一次面试结果 as 面试结果,
                 if(参培信息="","待参培",参培信息) as 参培信息,
-                一次面试日期 as 面试日期,预约培训日期,建议岗位
+                一次面试日期 as 面试日期,预约培训日期
             from ee_interview
             where %s and 有效标识="1" and 删除标识="0"
             order by 属地,field(面试结果,"未面试","通过","未通过","转面其他岗位"),
@@ -76,7 +76,7 @@ class InterviewApi extends BaseApiController
                 if(mod(substr(身份证号,17,1),2)=0,"女","男") as 性别,
                 招聘渠道,一次面试结果 as 面试结果,
                 if(参培信息="","待参培",参培信息) as 参培信息,
-                一次面试日期 as 面试日期,预约培训日期,建议岗位
+                一次面试日期 as 面试日期,预约培训日期
             from ee_interview
             where %s and 有效标识="1" and 删除标识="0"
             order by 属地,field(面试结果,"未面试","通过","未通过","转面其他岗位"),
@@ -167,11 +167,10 @@ class InterviewApi extends BaseApiController
             'select a.候选人编码, a.当前阶段, a.终止原因, a.邀约日期,
                 a.参培日期, a.入职日期, a.转自候选人编码,
                 ifnull(s.邀约岗位, "") as 邀约岗位, ifnull(s.邀约业务, "") as 邀约业务,
+                ifnull(s.备注说明, "") as 备注说明,
                 ifnull(i.一次面试结果, "") as 面试结果,
                 ifnull(i.一次面试人, "") as 面试人,
-                ifnull(i.一次面试日期, "") as 面试日期,
-                ifnull(i.建议岗位, "") as 建议岗位,
-                ifnull(i.转投说明, "") as 转投说明
+                ifnull(i.一次面试日期, "") as 面试日期
             from ee_application a
             left join ee_store s
                 on s.候选人编码 = a.候选人编码 and s.有效标识 = "1" and s.删除标识 = "0"
@@ -374,9 +373,9 @@ class InterviewApi extends BaseApiController
      * 转面其他岗位（方案A：转投=新实例+血缘关联）
      *
      * 组合动作（单事务）：
-     * 1. 旧面试行写转面结论：一次面试结果=转面其他岗位 + 建议岗位 + 转投说明
+     * 1. 旧面试行写转面结论：一次面试结果=转面其他岗位（仅结果标记）
      * 2. 旧实例终止：transferStage 面试→终止（终止原因=转投其他岗位）
-     * 3. 逐人发新候选人编码 → INSERT ee_store（邀约岗位=建议岗位，回到邀约起点）
+     * 3. 逐人发新候选人编码 → INSERT ee_store（邀约业务=转面业务、邀约岗位=转面岗位、备注说明，回到邀约起点）
      * 4. createInstance 新实例 + 回填 转自候选人编码（血缘）
      *
      * 在途实例校验：同人员编码存在其他未终止实例时返回 needConfirm，
@@ -389,23 +388,27 @@ class InterviewApi extends BaseApiController
         if (empty($data['guids']) || !is_array($data['guids'])) {
             return $this->paramError('请选择要转面其他岗位的人员');
         }
-        if (empty($data['建议岗位'])) {
-            return $this->paramError('建议岗位不能为空');
+        if (empty($data['转面业务'])) {
+            return $this->paramError('转面业务不能为空');
         }
-        if (trim((string) ($data['转投说明'] ?? '')) === '') {
-            return $this->paramError('转投说明不能为空');
+        if (empty($data['转面岗位'])) {
+            return $this->paramError('转面岗位不能为空');
+        }
+        if (trim((string) ($data['备注说明'] ?? '')) === '') {
+            return $this->paramError('备注说明不能为空');
         }
 
         $force = !empty($data['force']);
-        $suggestPosition = trim((string) $data['建议岗位']);
-        $transferNote = trim((string) $data['转投说明']);
+        $transferBiz = trim((string) $data['转面业务']);
+        $transferPosition = trim((string) $data['转面岗位']);
+        $remarkNote = trim((string) $data['备注说明']);
 
         $guidStr = implode(',', array_map(fn($v) => $this->model->quote((string)$v), $data['guids']));
 
         // 读取面试行（实例定位键 + 建新邀约行所需身份/渠道字段）
         $rows = $this->model->select(sprintf(
             'select GUID,候选人编码,人员编码,姓名,身份证号,手机号码,属地,
-                招聘渠道,渠道类型,渠道名称,面试业务
+                招聘渠道,渠道类型,渠道名称
             from ee_interview
             where GUID in (%s) and 有效标识="1" and 删除标识="0"',
             $guidStr
@@ -456,11 +459,9 @@ class InterviewApi extends BaseApiController
             $applicationService = new ApplicationService();
             $candidateCodeService = new CandidateCodeService();
 
-            // 1. 旧面试行写转面结论（所选人员共享建议岗位/转投说明）
+            // 1. 旧面试行写转面结论（仅结果标记，转面详情由 ee_store 承载）
             $this->updateRecord('ee_interview', $this->buildUpdateData([
                 '一次面试结果' => '转面其他岗位',
-                '建议岗位' => $suggestPosition,
-                '转投说明' => $transferNote,
             ]), sprintf('GUID in (%s)', $guidStr));
 
             // 2. 旧实例终止（状态机：面试→终止；已终止实例抛异常整体回滚，天然防重复转投）
@@ -486,8 +487,9 @@ class InterviewApi extends BaseApiController
                     '招聘渠道' => (string) ($row['招聘渠道'] ?? ''),
                     '渠道类型' => (string) ($row['渠道类型'] ?? ''),
                     '渠道名称' => (string) ($row['渠道名称'] ?? ''),
-                    '邀约业务' => (string) ($row['面试业务'] ?? ''),
-                    '邀约岗位' => $suggestPosition,
+                    '邀约业务' => $transferBiz,
+                    '邀约岗位' => $transferPosition,
+                    '备注说明' => $remarkNote,
                     '邀约日期' => $today,
                     '邀约结果' => '未邀约',
                     '邀约次数' => 1,
@@ -524,7 +526,7 @@ class InterviewApi extends BaseApiController
 
         return $this->success(
             ['候选人编码' => $newCodes],
-            sprintf('转面成功，已生成新投递 %d 条（邀约岗位：%s）', count($newCodes), $suggestPosition)
+            sprintf('转面成功，已生成新投递 %d 条（邀约业务：%s，邀约岗位：%s）', count($newCodes), $transferBiz, $transferPosition)
         );
     }
 
@@ -562,9 +564,20 @@ class InterviewApi extends BaseApiController
             $userLocation
         );
 
-        // 建议岗位选项：与邀约页"邀约岗位"同源（def_object），distinct 去重
-        $positionSql = sprintf('
+        // 转面业务选项：与邀约页"邀约业务"同源（def_object）
+        $bizSql = sprintf('
             select distinct 对象值 as value, 对象值 as label
+            from def_object
+            where 对象名称="邀约业务" and 有效标识="1"
+                and (属地="" or locate(属地,"%s"))
+            order by convert(对象值 using gbk)',
+            $userLocation
+        );
+
+        // 转面岗位选项：与邀约页"邀约岗位"同源，带上级对象信息供前端级联过滤
+        $positionSql = sprintf('
+            select distinct 对象值 as value, 对象值 as label,
+                上级对象名称 as parentName, 上级对象值 as parentValue
             from def_object
             where 对象名称="邀约岗位" and 有效标识="1"
                 and (属地="" or locate(属地,"%s"))
@@ -575,12 +588,14 @@ class InterviewApi extends BaseApiController
         $regionResult = $this->model->select($regionSql)->getResultArray();
         $channelResult = $this->model->select($channelSql)->getResultArray();
         $trainBizResult = $this->model->select($trainBizSql)->getResultArray();
+        $bizResult = $this->model->select($bizSql)->getResultArray();
         $positionResult = $this->model->select($positionSql)->getResultArray();
 
         return $this->success([
             'region' => $regionResult,
             'channel' => $channelResult,
             'trainBiz' => $trainBizResult,
+            'biz' => $bizResult,
             'position' => $positionResult,
             'interviewResult' => [
                 ['value' => '通过', 'label' => '通过'],
@@ -615,10 +630,10 @@ class InterviewApi extends BaseApiController
         $up1Arr = [];
 
         foreach ($data as $row) {
-            // 转面标识：转面其他岗位的人员节点追加建议岗位，便于在树上识别血缘去向
+            // 转面标识：转面其他岗位的人员节点追加标记，便于在树上识别
             $personValue = sprintf('%s (%s)', $row['姓名'], $row['面试日期']);
-            if (($row['面试结果'] ?? '') === '转面其他岗位' && ($row['建议岗位'] ?? '') !== '') {
-                $personValue .= sprintf(' [转面:%s]', $row['建议岗位']);
+            if (($row['面试结果'] ?? '') === '转面其他岗位') {
+                $personValue .= ' [转面]';
             }
 
             $eeArr = [

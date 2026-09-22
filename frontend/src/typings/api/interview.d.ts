@@ -77,8 +77,9 @@ declare namespace Api {
     /** 转面其他岗位参数（方案A：转投=终止旧实例+新建邀约实例+血缘关联） */
     interface InterviewTransferPositionParams {
       guids: string[];
-      建议岗位: string;
-      转投说明: string;
+      转面业务: string;
+      转面岗位: string;
+      备注说明: string;
       /** 在途实例二次确认放行标志 */
       force?: boolean;
     }
@@ -105,18 +106,18 @@ declare namespace Api {
       转自候选人编码: string;
       邀约岗位: string;
       邀约业务: string;
+      备注说明: string;
       面试结果: string;
       面试人: string;
       面试日期: string;
-      建议岗位: string;
-      转投说明: string;
     }
 
     interface InterviewOptions {
       region: Array<{ value: string; label: string }>;
       channel: Array<{ value: string; label: string }>;
       trainBiz: Array<{ value: string; label: string }>;
-      position: Array<{ value: string; label: string }>;
+      biz: Array<{ value: string; label: string }>;
+      position: Array<{ value: string; label: string; parentName?: string; parentValue?: string }>;
       interviewResult: Array<{ value: string; label: string }>;
       trainStatus: Array<{ value: string; label: string }>;
     }
