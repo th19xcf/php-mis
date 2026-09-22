@@ -21,7 +21,9 @@ const employeeStore = useEmployeeStore();
 const { confirmDelete, confirmBatch } = useDangerConfirm();
 
 const functionCode = computed(() => {
-  return String(route.query.functionCode || route.meta?.functionCode || '');
+  // 兜底值必须是 def_function 中真实存在的功能编码（2045=员工管理，与后端 EmployeeApi 硬编码一致），
+  // 避免 F5 刷新启动期间路由 query 丢失时字段接口返回空、详情面板无内容（对齐邀约/面试页模式）
+  return String(route.query.functionCode || route.meta?.functionCode || '2045');
 });
 
 // 调试按钮可见性：与 pageMeta.toolbar.debugSql 同源（def_user.调试赋权=1 或代理登录）

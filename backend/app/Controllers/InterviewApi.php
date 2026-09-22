@@ -21,6 +21,9 @@ class InterviewApi extends BaseApiController
             return $this->serverError('无法获取属地权限');
         }
 
+        // 数据口径：def_function(2025).参数=2020 → def_query_config(ee_interview).查询条件，与通用查询页一致
+        $queryCond = $this->resolveConfigQueryCond('2025') ?? '有效标识="1" and 删除标识="0"';
+
         $sql = sprintf('
             select GUID,姓名,身份证号,手机号码,属地,
                 if(mod(substr(身份证号,17,1),2)=0,"女","男") as 性别,
@@ -28,11 +31,12 @@ class InterviewApi extends BaseApiController
                 if(参培信息="","待参培",参培信息) as 参培信息,
                 一次面试日期 as 面试日期,预约培训日期
             from ee_interview
-            where %s and 有效标识="1" and 删除标识="0"
+            where %s and %s
             order by 属地,field(面试结果,"未面试","通过","未通过","转面其他岗位"),
                 field(参培信息,"待参培","已参培","未参培"),
                 招聘渠道,预约培训日期 desc,convert(姓名 using gbk)',
-            $locationAuthzCond);
+            $locationAuthzCond,
+            $queryCond);
 
         $results = $this->model->select($sql)->getResultArray();
         $tree = $this->buildGroupedInterviewTree($results);
@@ -71,6 +75,7 @@ class InterviewApi extends BaseApiController
         $contextEnd = hrtime(true);
 
         // 2. 构建 SQL（与 tree() 完全一致）
+        $queryCond = $this->resolveConfigQueryCond('2025') ?? '有效标识="1" and 删除标识="0"';
         $sql = sprintf('
             select GUID,姓名,身份证号,手机号码,属地,
                 if(mod(substr(身份证号,17,1),2)=0,"女","男") as 性别,
@@ -78,11 +83,12 @@ class InterviewApi extends BaseApiController
                 if(参培信息="","待参培",参培信息) as 参培信息,
                 一次面试日期 as 面试日期,预约培训日期
             from ee_interview
-            where %s and 有效标识="1" and 删除标识="0"
+            where %s and %s
             order by 属地,field(面试结果,"未面试","通过","未通过","转面其他岗位"),
                 field(参培信息,"待参培","已参培","未参培"),
                 招聘渠道,预约培训日期 desc,convert(姓名 using gbk)',
-            $locationAuthzCond);
+            $locationAuthzCond,
+            $queryCond);
 
         // 3. 执行查询
         $queryStart = hrtime(true);
@@ -99,6 +105,7 @@ class InterviewApi extends BaseApiController
         return $this->success([
             'sql'                     => $sql,
             'locationAuthzCondition'  => $locationAuthzCond,
+            'appliedQueryCondition'  => $queryCond,
             'userLocationAuth'        => $userLocationAuth,
             'deptAuthzCondition'      => $deptAuthzCond,
             'rowCount'                => count($results),

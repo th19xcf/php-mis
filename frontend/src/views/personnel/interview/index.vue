@@ -34,7 +34,11 @@ const interviewStore = useInterviewStore();
 const { confirmDelete, confirmTransfer, confirm: confirmAction } = useDangerConfirm();
 
 const functionCode = computed(() => {
-  return String(route.query.functionCode || route.meta?.functionCode || '2016');
+  // 兜底值必须是 def_function 中真实存在的功能编码（2025=面试人员维护）。
+  // 曾误用 '2016'（不存在的编码）：F5 刷新启动期间路由 query 里的 functionCode
+  // 短暂丢失时兜底生效，字段接口返回 0 个字段，右侧"面试信息"面板无行可渲染。
+  // 对齐邀约页模式：兜底值与后端 InterviewApi 硬编码的功能编码保持一致。
+  return String(route.query.functionCode || route.meta?.functionCode || '2025');
 });
 
 // 导入按钮可见性：与通用工作台 toolbar.import 同一逻辑（导入授权=1 且已配置导入模块）

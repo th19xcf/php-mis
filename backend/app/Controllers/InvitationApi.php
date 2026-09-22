@@ -21,6 +21,9 @@ class InvitationApi extends BaseApiController
             return $this->serverError('无法获取属地权限');
         }
 
+        // 数据口径：def_function(2015).参数=2010 → def_query_config(ee_store).查询条件，与通用查询页一致
+        $queryCond = $this->resolveConfigQueryCond('2015') ?? '有效标识="1" and 删除标识="0"';
+
         $sql = sprintf('
             select
                 GUID,姓名,身份证号,性别,年龄,手机号码,
@@ -29,9 +32,10 @@ class InvitationApi extends BaseApiController
                 邀约业务,邀约岗位,预约面试日期,
                 if(面试信息="","待面试",面试信息) as 面试信息
             from ee_store
-            where %s and 有效标识="1" and 删除标识="0"
+            where %s and %s
             order by 属地,field(邀约结果,"通过","未通过","考虑","拒绝","未邀约"),面试信息,招聘渠道,convert(姓名 using gbk)',
-            $locationAuthzCond);
+            $locationAuthzCond,
+            $queryCond);
 
         $results = $this->model->select($sql)->getResultArray();
         $tree = $this->buildGroupedInvitationTree($results);
@@ -74,6 +78,7 @@ class InvitationApi extends BaseApiController
         $contextEnd = hrtime(true);
 
         // 2. 构建 SQL（与 tree() 完全一致）
+        $queryCond = $this->resolveConfigQueryCond('2015') ?? '有效标识="1" and 删除标识="0"';
         $sql = sprintf('
             select
                 GUID,姓名,身份证号,性别,年龄,手机号码,
@@ -82,9 +87,10 @@ class InvitationApi extends BaseApiController
                 邀约业务,邀约岗位,预约面试日期,
                 if(面试信息="","待面试",面试信息) as 面试信息
             from ee_store
-            where %s and 有效标识="1" and 删除标识="0"
+            where %s and %s
             order by 属地,field(邀约结果,"通过","未通过","考虑","拒绝","未邀约"),面试信息,招聘渠道,convert(姓名 using gbk)',
-            $locationAuthzCond);
+            $locationAuthzCond,
+            $queryCond);
 
         // 3. 执行查询
         $queryStart = hrtime(true);
@@ -99,9 +105,10 @@ class InvitationApi extends BaseApiController
         $totalEnd = hrtime(true);
 
         return $this->success([
-            'sql'                    => $sql,
+            'sql'                     => $sql,
             'locationAuthzCondition' => $locationAuthzCond,
-            'userLocationAuth'       => $userLocationAuth,
+            'appliedQueryCondition'   => $queryCond,
+            'userLocationAuth'        => $userLocationAuth,
             'deptAuthzCondition'     => $deptAuthzCond,
             'rowCount'               => count($results),
             'treeNodeCount'          => count($tree),

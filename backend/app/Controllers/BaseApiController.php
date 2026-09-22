@@ -305,6 +305,47 @@ class BaseApiController extends BaseController
         }
     }
 
+    /**
+     * 解析配置化查询条件（树形页数据口径与通用查询页保持一致）
+     *
+     * 链路：def_function(功能编码).参数 → 目标功能编码 → def_function.模块名称
+     *       → def_query_config.查询模块 → 查询条件（SQL WHERE 片段）
+     * 例：2015(邀约维护).参数=2010 → ee_store → 有效标识="1" and 删除标识="0" and 邀约日期>="2025-01-01"
+     *
+     * @param string $functionCode 树形页功能编码（如 2015/2025）
+     * @return string|null 查询条件；未配置参数或未命中 def_query_config 时返回 null（调用方回退写死条件）
+     */
+    protected function resolveConfigQueryCond(string $functionCode): ?string
+    {
+        try {
+            $row = $this->model->select(
+                'select 参数 from def_function where 功能编码=' . $this->model->quote($functionCode) . ' and 有效标识="1"'
+            )->getRowArray();
+
+            $linkedCode = trim((string) ($row['参数'] ?? ''));
+            if ($linkedCode === '') {
+                return null;
+            }
+
+            $cfg = $this->model->select(
+                'select t3.查询条件 as 查询条件'
+                . ' from def_function t2'
+                . ' left join def_query_config t3 on if(t2.功能类型="查询", t2.模块名称, "")=t3.查询模块'
+                . ' where t2.功能编码=' . $this->model->quote($linkedCode) . ' and t2.有效标识="1"'
+            )->getRowArray();
+
+            $cond = trim((string) ($cfg['查询条件'] ?? ''));
+            return $cond === '' ? null : $cond;
+        } catch (\Throwable $e) {
+            log_message('error', sprintf(
+                '[BaseApiController] 解析 %s 配置查询条件失败: %s',
+                $functionCode,
+                $e->getMessage()
+            ));
+            return null;
+        }
+    }
+
     protected function getJsonInput(): array
     {
         return $this->request->getJSON(true) ?? [];
