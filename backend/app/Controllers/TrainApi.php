@@ -19,6 +19,9 @@ class TrainApi extends BaseApiController
             return $this->serverError('无法获取属地权限');
         }
 
+        // 数据口径：def_function(2035).参数 → 对应查询页功能编码 → def_query_config(ee_train).查询条件，与通用查询页一致；未配置时回退写死条件
+        $queryCond = $this->resolveConfigQueryCond('2035') ?? '有效标识="1" and 删除标识="0"';
+
         $sql = sprintf('
             select GUID,姓名,身份证号,手机号码,属地,
                 if(instr(培训状态,"在培"),"在培",培训状态) as 培训状态,培训批次,
@@ -26,10 +29,11 @@ class TrainApi extends BaseApiController
                 培训开始日期,预计完成日期,培训完成日期,
                 培训离开日期,培训离开原因
             from ee_train
-            where %s and 有效标识="1" and 删除标识="0"
+            where %s and %s
             order by if(instr(培训状态,"在培"),"在培",培训状态),
                 培训老师,培训开始日期 desc,convert(姓名 using gbk)',
-            $locationAuthzCond);
+            $locationAuthzCond,
+            $queryCond);
 
         $results = $this->model->select($sql)->getResultArray();
         $tree = $this->buildGroupedTrainTree($results);
@@ -68,6 +72,7 @@ class TrainApi extends BaseApiController
         $contextEnd = hrtime(true);
 
         // 2. 构建 SQL（与 tree() 完全一致）
+        $queryCond = $this->resolveConfigQueryCond('2035') ?? '有效标识="1" and 删除标识="0"';
         $sql = sprintf('
             select GUID,姓名,身份证号,手机号码,属地,
                 if(instr(培训状态,"在培"),"在培",培训状态) as 培训状态,培训批次,
@@ -75,10 +80,11 @@ class TrainApi extends BaseApiController
                 培训开始日期,预计完成日期,培训完成日期,
                 培训离开日期,培训离开原因
             from ee_train
-            where %s and 有效标识="1" and 删除标识="0"
+            where %s and %s
             order by if(instr(培训状态,"在培"),"在培",培训状态),
                 培训老师,培训开始日期 desc,convert(姓名 using gbk)',
-            $locationAuthzCond);
+            $locationAuthzCond,
+            $queryCond);
 
         // 3. 执行查询
         $queryStart = hrtime(true);
@@ -95,6 +101,7 @@ class TrainApi extends BaseApiController
         return $this->success([
             'sql'                     => $sql,
             'locationAuthzCondition'  => $locationAuthzCond,
+            'appliedQueryCondition'  => $queryCond,
             'userLocationAuth'        => $userLocationAuth,
             'deptAuthzCondition'      => $deptAuthzCond,
             'rowCount'                => count($results),

@@ -25,7 +25,10 @@ class EmployeeApi extends BaseApiController
             return $this->serverError('无法获取属地权限');
         }
 
-        $data = $this->getService()->getEmployeeList($locationAuthzCond);
+        // 数据口径：def_function(2045).参数 → 对应查询页功能编码 → def_query_config(ee_employment).查询条件，与通用查询页一致；未配置时回退写死条件
+        $queryCond = $this->resolveConfigQueryCond('2045') ?? '有效标识="1" and 删除标识="0"';
+
+        $data = $this->getService()->getEmployeeList($locationAuthzCond, $queryCond);
         $tree = $this->getService()->buildGroupedEmployeeTree($data);
 
         return $this->success($tree);
@@ -64,7 +67,8 @@ class EmployeeApi extends BaseApiController
 
         // 2. 构建 SQL（与 tree() 完全一致，复用 service 的 SQL 构造方法）
         $service = $this->getService();
-        $sql = $service->getEmployeeListSql($locationAuthzCond);
+        $queryCond = $this->resolveConfigQueryCond('2045') ?? '有效标识="1" and 删除标识="0"';
+        $sql = $service->getEmployeeListSql($locationAuthzCond, $queryCond);
 
         // 3. 执行查询
         $queryStart = hrtime(true);
@@ -81,6 +85,7 @@ class EmployeeApi extends BaseApiController
         return $this->success([
             'sql'                     => $sql,
             'locationAuthzCondition'  => $locationAuthzCond,
+            'appliedQueryCondition'  => $queryCond,
             'userLocationAuth'        => $userLocationAuth,
             'deptAuthzCondition'      => $deptAuthzCond,
             'rowCount'                => count($results),

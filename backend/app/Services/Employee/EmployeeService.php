@@ -40,9 +40,9 @@ class EmployeeService
      * @param string $locationAuthzCond 属地权限 WHERE 条件
      * @return array 人员数据列表
      */
-    public function getEmployeeList(string $locationAuthzCond): array
+    public function getEmployeeList(string $locationAuthzCond, string $queryCond = '有效标识="1" and 删除标识="0"'): array
     {
-        $sql = $this->getEmployeeListSql($locationAuthzCond);
+        $sql = $this->getEmployeeListSql($locationAuthzCond, $queryCond);
         $result = $this->model->select($sql);
         return $result ? $result->getResultArray() : [];
     }
@@ -57,9 +57,10 @@ class EmployeeService
      * 抽取出来供 EmployeeApi::debugTree 复用，确保调试输出与 tree() 完全一致。
      *
      * @param string $locationAuthzCond 属地权限 WHERE 条件
+     * @param string $queryCond 数据口径条件（def_query_config.查询条件，作用于 ee_employment 派生表，默认写死有效/删除标识）
      * @return string 完整 SQL 语句
      */
-    public function getEmployeeListSql(string $locationAuthzCond): string
+    public function getEmployeeListSql(string $locationAuthzCond, string $queryCond = '有效标识="1" and 删除标识="0"'): string
     {
         if ($locationAuthzCond === '') {
             $locationAuthzCond = '1=1';
@@ -72,7 +73,7 @@ class EmployeeService
                 floor(datediff(if(e.离职日期 is null, curdate(), e.离职日期), e.一阶段日期)/30) as 在岗月数
             from (
                 select * from ee_employment
-                where %s and 有效标识="1" and 删除标识="0"
+                where %s and %s
             ) e
             left join hr_person p
                 on p.人员编码 = e.人员编码
@@ -81,7 +82,8 @@ class EmployeeService
                 convert(e.部门名称 using gbk),
                 convert(e.班组 using gbk),
                 convert(p.姓名 using gbk)',
-            $locationAuthzCond
+            $locationAuthzCond,
+            $queryCond
         );
     }
 
