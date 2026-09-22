@@ -20,7 +20,15 @@ const message = useMessageWithConsole();
 const trainStore = useTrainStore();
 const { confirmDelete, confirmBatch, confirmTransfer } = useDangerConfirm();
 
-const functionCode = computed(() => route.params.code || '2035');
+// 功能编码纯配置驱动（def_function.功能编码 → 菜单 → 路由 meta/URL query），不设兜底默认值。
+// setup 时固化快照：KeepAlive 失活实例实时读 route 会响应路由变化；
+// 此前读取的 route.params.code 在动态路由（字面量路径 /dynamic-menu/xxx）下恒为 undefined。
+const routeQuerySnapshot: Record<string, any> = { ...route.query };
+const routeMetaSnapshot: Record<string, unknown> = { ...((route.meta || {}) as Record<string, unknown>) };
+
+const functionCode = computed(() => {
+  return String(routeQuerySnapshot.functionCode || routeMetaSnapshot.functionCode || '');
+});
 
 // 调试按钮可见性：与 pageMeta.toolbar.debugSql 同源（def_user.调试赋权=1 或代理登录）
 const canDebug = ref(false);

@@ -33,12 +33,14 @@ const isDarkMode = computed(() => themeStore.darkMode);
 const interviewStore = useInterviewStore();
 const { confirmDelete, confirmTransfer, confirm: confirmAction } = useDangerConfirm();
 
+// 功能编码纯配置驱动（def_function.功能编码 → 菜单 → 路由 meta/URL query），不设兜底默认值。
+// setup 时固化快照：KeepAlive 失活实例实时读 route 会响应路由变化，
+// 曾因此读到其它路由的空 query、触发错误兜底值（2016）导致字段接口返回 0 个字段，面试信息面板空白。
+const routeQuerySnapshot: Record<string, any> = { ...route.query };
+const routeMetaSnapshot: Record<string, unknown> = { ...((route.meta || {}) as Record<string, unknown>) };
+
 const functionCode = computed(() => {
-  // 兜底值必须是 def_function 中真实存在的功能编码（2025=面试人员维护）。
-  // 曾误用 '2016'（不存在的编码）：F5 刷新启动期间路由 query 里的 functionCode
-  // 短暂丢失时兜底生效，字段接口返回 0 个字段，右侧"面试信息"面板无行可渲染。
-  // 对齐邀约页模式：兜底值与后端 InterviewApi 硬编码的功能编码保持一致。
-  return String(route.query.functionCode || route.meta?.functionCode || '2025');
+  return String(routeQuerySnapshot.functionCode || routeMetaSnapshot.functionCode || '');
 });
 
 // 导入按钮可见性：与通用工作台 toolbar.import 同一逻辑（导入授权=1 且已配置导入模块）

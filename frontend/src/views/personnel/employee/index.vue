@@ -20,10 +20,14 @@ const message = useMessageWithConsole();
 const employeeStore = useEmployeeStore();
 const { confirmDelete, confirmBatch } = useDangerConfirm();
 
+// 功能编码纯配置驱动（def_function.功能编码 → 菜单 → 路由 meta/URL query），不设兜底默认值。
+// setup 时固化快照：KeepAlive 失活实例实时读 route 会响应路由变化，
+// 曾因此读到其它路由的空 query、触发错误兜底值导致字段接口返回 0 个字段。
+const routeQuerySnapshot: Record<string, any> = { ...route.query };
+const routeMetaSnapshot: Record<string, unknown> = { ...((route.meta || {}) as Record<string, unknown>) };
+
 const functionCode = computed(() => {
-  // 兜底值必须是 def_function 中真实存在的功能编码（2045=员工管理，与后端 EmployeeApi 硬编码一致），
-  // 避免 F5 刷新启动期间路由 query 丢失时字段接口返回空、详情面板无内容（对齐邀约/面试页模式）
-  return String(route.query.functionCode || route.meta?.functionCode || '2045');
+  return String(routeQuerySnapshot.functionCode || routeMetaSnapshot.functionCode || '');
 });
 
 // 调试按钮可见性：与 pageMeta.toolbar.debugSql 同源（def_user.调试赋权=1 或代理登录）

@@ -37,8 +37,14 @@ const isDarkMode = computed(() => themeStore.darkMode);
 const invitationStore = useInvitationStore();
 const { confirmDelete, confirmBatch, confirmTransfer } = useDangerConfirm();
 
+// 功能编码纯配置驱动（def_function.功能编码 → 菜单 → 路由 meta/URL query），不设兜底默认值。
+// setup 时固化快照：KeepAlive 失活实例实时读 route 会响应路由变化，
+// 曾因此读到其它路由的空 query、触发错误兜底值导致字段接口返回 0 个字段。
+const routeQuerySnapshot: Record<string, any> = { ...route.query };
+const routeMetaSnapshot: Record<string, unknown> = { ...((route.meta || {}) as Record<string, unknown>) };
+
 const functionCode = computed(() => {
-  return String(route.query.functionCode || route.meta?.functionCode || '2015');
+  return String(routeQuerySnapshot.functionCode || routeMetaSnapshot.functionCode || '');
 });
 
 // 导入按钮可见性：与通用工作台 toolbar.import 同一逻辑（导入授权=1 且已配置导入模块）
