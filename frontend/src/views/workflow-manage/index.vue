@@ -261,6 +261,9 @@ async function handleActivate() {
   await fetchWorkflowDefinitionActivate(selectedDefinition.value.GUID);
   message.success('启用成功');
   loadList();
+  // 同步右侧详情与操作按钮状态
+  selectedDefinition.value.流程状态 = '启用';
+  await loadDefinitionDetail(selectedDefinition.value.GUID);
 }
 
 async function handleDeactivate() {
@@ -271,6 +274,9 @@ async function handleDeactivate() {
   await fetchWorkflowDefinitionDeactivate(selectedDefinition.value.GUID);
   message.success('停用成功');
   loadList();
+  // 同步右侧详情与操作按钮状态
+  selectedDefinition.value.流程状态 = '停用';
+  await loadDefinitionDetail(selectedDefinition.value.GUID);
 }
 
 function onRowClicked(event: { data: any; event?: MouseEvent }) {
@@ -776,7 +782,7 @@ onMounted(async () => {
           <NDescriptions bordered :column="2" size="small">
             <NDescriptionsItem label="流程编码">{{ currentDefinition.流程编码 }}</NDescriptionsItem>
             <NDescriptionsItem label="流程状态">
-              <NTag :type="getStatusType(currentDefinition.流程状态)" size="small">
+              <NTag :type="getStatusType(currentDefinition.流程状态)" size="medium">
                 {{ currentDefinition.流程状态 }}
               </NTag>
             </NDescriptionsItem>
