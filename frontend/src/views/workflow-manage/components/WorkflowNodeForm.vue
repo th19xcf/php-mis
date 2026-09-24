@@ -418,7 +418,7 @@ async function handleSaveAsTemplate() {
         </div>
         <div class="form-item">
           <label class="form-label">适用业务类型</label>
-          <NInput v-model:value="templateFormData.适用业务类型" placeholder="如:CONTRACT,EXPENSE(逗号分隔,留空表示通用)" />
+          <NInput v-model:value="templateFormData.适用业务类型" placeholder="如:合同,费用(逗号分隔,留空表示通用)" />
         </div>
         <div class="form-item">
           <label class="form-label">模板说明</label>

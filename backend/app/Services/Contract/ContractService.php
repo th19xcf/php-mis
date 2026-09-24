@@ -183,7 +183,7 @@ class ContractService
             $this->model->quote($contractNo),
             $this->model->quote($data['合同名称'] ?? ''),
             $this->model->quote($data['合同类型'] ?? ''),
-            $this->model->quote('DRAFT'),
+            $this->model->quote('草稿'),
             $this->model->quote($data['甲方名称'] ?? ''),
             $this->model->quote($data['乙方名称'] ?? ''),
             empty($data['签订日期']) ? 'NULL' : $this->model->quote($data['签订日期']),
@@ -231,7 +231,7 @@ class ContractService
         }
 
         $status = $contract['合同状态'] ?? '';
-        if (!in_array($status, ['DRAFT', 'REJECTED'], true)) {
+        if (!in_array($status, ['草稿', '已驳回'], true)) {
             throw new \RuntimeException('只有草稿或已驳回状态的合同可以修改');
         }
 
@@ -292,7 +292,7 @@ class ContractService
         }
 
         $status = $contract['合同状态'] ?? '';
-        if (!in_array($status, ['DRAFT', 'REJECTED'], true)) {
+        if (!in_array($status, ['草稿', '已驳回'], true)) {
             throw new \RuntimeException('只有草稿或已驳回状态的合同可以删除');
         }
 
@@ -335,7 +335,7 @@ class ContractService
         }
 
         $status = $contract['合同状态'] ?? '';
-        if (!in_array($status, ['DRAFT', 'REJECTED'], true)) {
+        if (!in_array($status, ['草稿', '已驳回'], true)) {
             throw new \RuntimeException('只有草稿或已驳回状态的合同可以提交审批');
         }
 
@@ -345,7 +345,7 @@ class ContractService
         $routing = null;
         if ($workflowCode === '') {
             $defaultCode = 'contract_approval';
-            $routing = $this->routingService->resolveRouting('CONTRACT', $contract);
+            $routing = $this->routingService->resolveRouting('合同', $contract);
             $workflowCode = $routing !== null
                 ? ($routing['目标流程编码'] ?? $defaultCode)
                 : $defaultCode;
@@ -366,7 +366,7 @@ class ContractService
 
         $result = $this->workflowService->startProcess(
             $workflowCode,
-            'CONTRACT',
+            '合同',
             $contractNo,
             $businessTitle,
             $sponsor,
@@ -382,7 +382,7 @@ class ContractService
             'update `def_contract_master_new`
             set `合同状态`=%s, `流程实例ID`=%s, `更新时间`=%s
             where `合同编号`=%s',
-            $this->model->quote('PENDING'),
+            $this->model->quote('审批中'),
             $this->model->quote((string) $instanceId),
             $this->model->quote($now),
             $this->model->quote($contractNo)
@@ -462,22 +462,22 @@ class ContractService
         $this->model->exec($opinionSql);
 
         $instanceStatus = $result['instanceStatus'] ?? '';
-        if ($instanceStatus === 'COMPLETED') {
+        if ($instanceStatus === '已完成') {
             $updateSql = sprintf(
                 'update `def_contract_master_new` 
                 set `合同状态`=%s, `更新时间`=%s 
                 where `合同编号`=%s',
-                $this->model->quote('APPROVED'),
+                $this->model->quote('审批通过'),
                 $this->model->quote($now),
                 $this->model->quote($contractNo)
             );
             $this->model->exec($updateSql);
-        } elseif ($instanceStatus === 'TERMINATED') {
+        } elseif ($instanceStatus === '已终止') {
             $updateSql = sprintf(
                 'update `def_contract_master_new` 
                 set `合同状态`=%s, `更新时间`=%s 
                 where `合同编号`=%s',
-                $this->model->quote('REJECTED'),
+                $this->model->quote('已驳回'),
                 $this->model->quote($now),
                 $this->model->quote($contractNo)
             );
@@ -520,10 +520,10 @@ class ContractService
         $statusRows = $statusResult ? $statusResult->getResultArray() : [];
 
         $statusCount = [
-            'DRAFT' => 0,
-            'PENDING' => 0,
-            'APPROVED' => 0,
-            'REJECTED' => 0,
+            '草稿' => 0,
+            '审批中' => 0,
+            '审批通过' => 0,
+            '已驳回' => 0,
         ];
         foreach ($statusRows as $row) {
             $status = $row['合同状态'] ?? '';
@@ -541,7 +541,7 @@ class ContractService
             and `合同状态`=%s',
             $tableName,
             $whereSql,
-            $this->model->quote('APPROVED')
+            $this->model->quote('审批通过')
         );
         $expiringResult = $this->model->select($expiringSql);
         $expiringRow = $expiringResult ? ($expiringResult->getRowArray() ?: []) : [];
@@ -640,10 +640,10 @@ class ContractService
         $contractTypes = $typeResult ? $typeResult->getResultArray() : [];
 
         $statusOptions = [
-            ['value' => 'DRAFT', 'label' => '草稿'],
-            ['value' => 'PENDING', 'label' => '审批中'],
-            ['value' => 'APPROVED', 'label' => '已通过'],
-            ['value' => 'REJECTED', 'label' => '已驳回'],
+            ['value' => '草稿', 'label' => '草稿'],
+            ['value' => '审批中', 'label' => '审批中'],
+            ['value' => '审批通过', 'label' => '审批通过'],
+            ['value' => '已驳回', 'label' => '已驳回'],
         ];
 
         $paymentOptions = [
@@ -758,7 +758,7 @@ class ContractService
             1,
             $this->model->quote('1'),
             $this->model->quote($canEditOnline),
-            $this->model->quote('IDLE'),
+            $this->model->quote('空闲'),
             $this->model->quote($creator),
             $this->model->quote($now),
             $this->model->quote($creator),

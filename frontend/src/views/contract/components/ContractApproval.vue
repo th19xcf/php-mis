@@ -20,7 +20,7 @@ const contractStore = useContractStore();
 const loading = computed(() => contractStore.loading);
 
 const formData = ref({
-  action: 'APPROVE' as 'APPROVE' | 'REJECT',
+  action: '同意' as '同意' | '拒绝',
   opinion: ''
 });
 
@@ -32,7 +32,7 @@ const pendingTask = computed(() => {
 
 function handleClose() {
   emit('update:visible', false);
-  formData.value = { action: 'APPROVE', opinion: '' };
+  formData.value = { action: '同意', opinion: '' };
 }
 
 async function handleSubmit() {
@@ -47,7 +47,7 @@ async function handleSubmit() {
       formData.value.action,
       formData.value.opinion
     );
-    message.success(formData.value.action === 'APPROVE' ? '审批通过' : '已拒绝');
+    message.success(formData.value.action === '同意' ? '审批通过' : '已拒绝');
     emit('success');
     emit('update:visible', false);
   } catch (e: any) {
@@ -92,11 +92,11 @@ async function handleSubmit() {
             <label>审批意见</label>
             <div class="action-radio">
               <label class="radio-item">
-                <input type="radio" v-model="formData.action" value="APPROVE" />
+                <input type="radio" v-model="formData.action" value="同意" />
                 <span>同意</span>
               </label>
               <label class="radio-item">
-                <input type="radio" v-model="formData.action" value="REJECT" />
+                <input type="radio" v-model="formData.action" value="拒绝" />
                 <span>拒绝</span>
               </label>
             </div>
@@ -111,11 +111,11 @@ async function handleSubmit() {
         <button class="btn btn-default" @click="handleClose">取消</button>
         <button
           class="btn"
-          :class="formData.action === 'APPROVE' ? 'btn-primary' : 'btn-danger'"
+          :class="formData.action === '同意' ? 'btn-primary' : 'btn-danger'"
           :disabled="loading"
           @click="handleSubmit"
         >
-          {{ loading ? '提交中...' : formData.action === 'APPROVE' ? '同意' : '拒绝' }}
+          {{ loading ? '提交中...' : formData.action === '同意' ? '同意' : '拒绝' }}
         </button>
       </div>
     </div>

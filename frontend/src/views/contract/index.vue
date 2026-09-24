@@ -411,12 +411,12 @@ function getActionButtons() {
   if (!selectedContract.value) return [];
   const status = selectedContract.value.合同状态;
   const buttons: Array<{ label: string; key: string; type: string }> = [];
-  if (status === 'DRAFT' || status === 'REJECTED') {
+  if (status === '草稿' || status === '已驳回') {
     buttons.push({ label: '编辑', key: 'edit', type: 'primary' });
     buttons.push({ label: '删除', key: 'delete', type: 'error' });
     buttons.push({ label: '提交审批', key: 'submit', type: 'warning' });
   }
-  if (status === 'PENDING' || status === 'APPROVING') {
+  if (status === '审批中') {
     buttons.push({ label: '审核', key: 'approve', type: 'warning' });
   }
   return buttons;
@@ -441,14 +441,14 @@ async function handleAction(key: string) {
 
 function getStatusType(status: string): 'default' | 'success' | 'warning' | 'error' | 'info' {
   const map: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
-    DRAFT: 'default',
-    REJECTED: 'error',
-    PENDING: 'warning',
-    APPROVING: 'warning',
-    APPROVED: 'info',
-    SIGNING: 'info',
-    SIGNED: 'success',
-    ARCHIVED: 'success'
+    草稿: 'default',
+    已驳回: 'error',
+    审批中: 'warning',
+    审批通过: 'info',
+    已签署: 'success',
+    履行中: 'info',
+    已归档: 'success',
+    已终止: 'error'
   };
   return map[status] || 'default';
 }
@@ -685,8 +685,8 @@ watch(columnDefs, (newDefs) => {
           <div v-for="task in doneTasks" :key="task.任务ID" class="task-item done">
             <div class="task-header">
               <span class="task-title">{{ task.业务标题 }}</span>
-              <NTag size="small" :type="task.处理结果 === 'APPROVE' ? 'success' : 'error'">
-                {{ task.处理结果 === 'APPROVE' ? '同意' : '拒绝' }}
+              <NTag size="small" :type="task.处理结果 === '同意' ? 'success' : 'error'">
+                {{ task.处理结果 === '同意' ? '同意' : '拒绝' }}
               </NTag>
             </div>
             <div class="task-info">
@@ -702,9 +702,9 @@ watch(columnDefs, (newDefs) => {
               <span class="task-title">{{ inst.业务标题 }}</span>
               <NTag
                 size="small"
-                :type="inst.实例状态 === 'COMPLETED' ? 'success' : inst.实例状态 === 'TERMINATED' ? 'error' : 'info'"
+                :type="inst.实例状态 === '已完成' ? 'success' : inst.实例状态 === '已终止' ? 'error' : 'info'"
               >
-                {{ inst.实例状态 === 'RUNNING' ? '运行中' : inst.实例状态 === 'COMPLETED' ? '已完成' : '已终止' }}
+                {{ inst.实例状态 === '运行中' ? '运行中' : inst.实例状态 === '已完成' ? '已完成' : '已终止' }}
               </NTag>
             </div>
             <div class="task-info">

@@ -93,8 +93,8 @@ class TodoService
             $taskWhereSql
         );
 
-        // 2. 审批待办（def_workflow_task）——处理人=我 且 PENDING
-        $wfWhere = ['t.处理人=' . $this->model->quote($workId), 't.任务状态=' . $this->model->quote('PENDING'), 't.删除标识=' . $this->model->quote('0')];
+        // 2. 审批待办（def_workflow_task）——处理人=我 且 待处理
+        $wfWhere = ['t.处理人=' . $this->model->quote($workId), 't.任务状态=' . $this->model->quote('待处理'), 't.删除标识=' . $this->model->quote('0')];
 
         if ($keyword !== '') {
             $kw = $this->model->quote('%' . $keyword . '%');
@@ -167,7 +167,7 @@ class TodoService
         $wfPending = $this->model->select(sprintf(
             'select count(*) as cnt from def_workflow_task where 处理人=%s and 任务状态=%s and 删除标识="0"',
             $this->model->quote($workId),
-            $this->model->quote('PENDING')
+            $this->model->quote('待处理')
         ));
         $wfRow = $wfPending ? ($wfPending->getRowArray() ?: []) : [];
         $wfPendingCount = (int) ($wfRow['cnt'] ?? 0);

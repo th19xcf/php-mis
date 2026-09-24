@@ -129,7 +129,7 @@ class OnlyOfficeService
         $now = date('Y-m-d H:i:s');
         $updateSql = sprintf(
             'update `def_contract_document` set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s, `文档密钥`=%s where `GUID`=%d',
-            $this->model->quote('EDITING'),
+            $this->model->quote('编辑中'),
             $this->model->quote($userId),
             $this->model->quote($now),
             $this->model->quote($documentKey),
@@ -420,7 +420,7 @@ class OnlyOfficeService
             $this->model->quote((string) $version),
             $this->model->quote('1'),
             $this->model->quote($data['是否在线编辑'] ?? '1'),
-            $this->model->quote('IDLE'),
+            $this->model->quote('空闲'),
             $this->model->quote($data['备注'] ?? ''),
             $this->model->quote($data['创建人'] ?? ''),
             $this->model->quote($now),
@@ -732,7 +732,7 @@ class OnlyOfficeService
             $documentId,
             $this->model->quote($newDocumentKey),
             $this->model->quote($document['是否在线编辑'] ?? '1'),
-            $this->model->quote('IDLE'),
+            $this->model->quote('空闲'),
             $this->model->quote($document['备注'] ?? ''),
             $this->model->quote($operator),
             $this->model->quote($now),
@@ -838,9 +838,9 @@ class OnlyOfficeService
         $now = date('Y-m-d H:i:s');
         $sql = sprintf(
             'update `def_contract_document` 
-            set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s 
+            set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s
             where `GUID`=%d',
-            $this->model->quote('EDITING'),
+            $this->model->quote('编辑中'),
             $this->model->quote($userId),
             $this->model->quote($now),
             $documentId
@@ -922,7 +922,7 @@ class OnlyOfficeService
                 $this->model->quote($fileMd5),
                 $this->model->quote($documentKey),
                 $newVersion,
-                $this->model->quote('IDLE'),
+                $this->model->quote('空闲'),
                 $this->model->quote($userId),
                 $this->model->quote($now),
                 $this->model->quote($now),
@@ -952,9 +952,9 @@ class OnlyOfficeService
         $now = date('Y-m-d H:i:s');
         $sql = sprintf(
             'update `def_contract_document` 
-            set `编辑状态`=%s, `最后编辑时间`=%s 
+            set `编辑状态`=%s, `最后编辑时间`=%s
             where `GUID`=%d',
-            $this->model->quote('IDLE'),
+            $this->model->quote('空闲'),
             $this->model->quote($now),
             $documentId
         );
@@ -979,9 +979,9 @@ class OnlyOfficeService
         $now = date('Y-m-d H:i:s');
         $sql = sprintf(
             'update `def_contract_document` 
-            set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s 
+            set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s
             where `GUID`=%d',
-            $this->model->quote('IDLE'),
+            $this->model->quote('空闲'),
             $this->model->quote($userId),
             $this->model->quote($now),
             $documentId

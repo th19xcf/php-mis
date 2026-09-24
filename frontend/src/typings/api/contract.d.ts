@@ -203,15 +203,15 @@ declare namespace Api {
     }
 
     type WorkflowInstanceStatus =
-      | 'RUNNING'
-      | 'COMPLETED'
-      | 'TERMINATED'
-      | 'SUSPENDED';
+      | '运行中'
+      | '已完成'
+      | '已终止'
+      | '已挂起';
 
     type WorkflowTaskStatus =
-      | 'PENDING'
-      | 'DONE'
-      | 'WITHDRAWN'
-      | 'REJECTED';
+      | '待处理'
+      | '已处理'
+      | '已撤回'
+      | '已拒绝';
   }
 }

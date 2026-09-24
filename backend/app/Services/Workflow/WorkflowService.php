@@ -27,7 +27,7 @@ class WorkflowService
             where `流程编码`=%s and `流程状态`=%s
             order by `版本号` desc limit 1',
             $this->model->quote($workflowCode),
-            $this->model->quote('ACTIVE')
+            $this->model->quote('启用')
         );
         $result = $this->model->select($sql);
         $definition = $result ? ($result->getRowArray() ?: []) : [];
@@ -92,7 +92,7 @@ class WorkflowService
             $this->model->quote($businessType),
             $this->model->quote($businessId),
             $this->model->quote($businessTitle),
-            $this->model->quote('RUNNING'),
+            $this->model->quote('运行中'),
             $this->model->quote($nextNodeCode),
             $this->model->quote($sponsor),
             $this->model->quote($sponsorName),
@@ -130,7 +130,7 @@ class WorkflowService
         string $approver,
         string $approverName,
         string $opinion,
-        string $action = 'APPROVE'
+        string $action = '同意'
     ): array {
         $sql = sprintf(
             'select * from `def_workflow_task`
@@ -142,7 +142,7 @@ class WorkflowService
         if (empty($task)) {
             throw new \RuntimeException('任务不存在');
         }
-        if (($task['任务状态'] ?? '') !== 'PENDING') {
+        if (($task['任务状态'] ?? '') !== '待处理') {
             throw new \RuntimeException('任务状态不是待处理');
         }
         if (($task['处理人'] ?? '') !== $approver) {
@@ -162,12 +162,12 @@ class WorkflowService
         if (empty($instance)) {
             throw new \RuntimeException('流程实例不存在');
         }
-        if (($instance['实例状态'] ?? '') !== 'RUNNING') {
+        if (($instance['实例状态'] ?? '') !== '运行中') {
             throw new \RuntimeException('流程不是运行中状态');
         }
 
         $now = date('Y-m-d H:i:s');
-        $actionResult = ($action === 'APPROVE') ? 'APPROVE' : 'REJECT';
+        $actionResult = ($action === '同意') ? '同意' : '拒绝';
 
         $sql = sprintf(
             'update `def_workflow_task`
@@ -175,7 +175,7 @@ class WorkflowService
                 `处理时间`=%s, `操作来源`=%s, `操作人员`=%s, `操作时间`=%s,
                 `更新人`=%s, `更新时间`=%s
             where `GUID`=%d',
-            $this->model->quote('DONE'),
+            $this->model->quote('已处理'),
             $this->model->quote($actionResult),
             $this->model->quote($opinion),
             $this->model->quote($now),
@@ -193,19 +193,19 @@ class WorkflowService
         $newTasks = [];
         $instanceStatus = $instance['实例状态'];
 
-        if ($action === 'REJECT') {
+        if ($action === '拒绝') {
             $sql = sprintf(
                 'update `def_workflow_instance`
                 set `实例状态`=%s, `结束时间`=%s, `更新人`=%s, `更新时间`=%s
                 where `GUID`=%d',
-                $this->model->quote('TERMINATED'),
+                $this->model->quote('已终止'),
                 $this->model->quote($now),
                 $this->model->quote($approver),
                 $this->model->quote($now),
                 $instanceId
             );
             $this->model->exec($sql);
-            $instanceStatus = 'TERMINATED';
+            $instanceStatus = '已终止';
         } else {
             $nodeApproved = $this->checkNodeApproved($instanceId, $nodeCode);
             if ($nodeApproved) {
@@ -222,7 +222,7 @@ class WorkflowService
                         set `实例状态`=%s, `当前节点编码`=%s, `结束时间`=%s,
                             `更新人`=%s, `更新时间`=%s
                         where `GUID`=%d',
-                        $this->model->quote('COMPLETED'),
+                        $this->model->quote('已完成'),
                         $this->model->quote('END'),
                         $this->model->quote($now),
                         $this->model->quote($approver),
@@ -230,7 +230,7 @@ class WorkflowService
                         $instanceId
                     );
                     $this->model->exec($sql);
-                    $instanceStatus = 'COMPLETED';
+                    $instanceStatus = '已完成';
                 } else {
                     $sql = sprintf(
                         'update `def_workflow_instance`
@@ -264,7 +264,7 @@ class WorkflowService
             inner join `def_workflow_instance` i on t.`实例ID` = i.`GUID`
             where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s',
             $this->model->quote($approver),
-            $this->model->quote('PENDING'),
+            $this->model->quote('待处理'),
             $this->model->quote('0')
         );
         $result = $this->model->select($countSql);
@@ -283,7 +283,7 @@ class WorkflowService
             order by t.`创建时间` desc
             limit %d offset %d',
             $this->model->quote($approver),
-            $this->model->quote('PENDING'),
+            $this->model->quote('待处理'),
             $this->model->quote('0'),
             $pageSize,
             $offset
@@ -309,7 +309,7 @@ class WorkflowService
             inner join `def_workflow_instance` i on t.`实例ID` = i.`GUID`
             where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s',
             $this->model->quote($approver),
-            $this->model->quote('DONE'),
+            $this->model->quote('已处理'),
             $this->model->quote('0')
         );
         $result = $this->model->select($countSql);
@@ -329,7 +329,7 @@ class WorkflowService
             order by t.`处理时间` desc
             limit %d offset %d',
             $this->model->quote($approver),
-            $this->model->quote('DONE'),
+            $this->model->quote('已处理'),
             $this->model->quote('0'),
             $pageSize,
             $offset
@@ -450,7 +450,7 @@ class WorkflowService
         if (($instance['发起人'] ?? '') !== $sponsor) {
             throw new \RuntimeException('只有发起人可以撤回');
         }
-        if (($instance['实例状态'] ?? '') !== 'RUNNING') {
+        if (($instance['实例状态'] ?? '') !== '运行中') {
             throw new \RuntimeException('只有运行中的流程可以撤回');
         }
 
@@ -460,11 +460,11 @@ class WorkflowService
             'update `def_workflow_task`
             set `任务状态`=%s, `更新人`=%s, `更新时间`=%s
             where `实例ID`=%d and `任务状态`=%s and `删除标识`=%s',
-            $this->model->quote('WITHDRAWN'),
+            $this->model->quote('已撤回'),
             $this->model->quote($sponsor),
             $this->model->quote($now),
             $instanceId,
-            $this->model->quote('PENDING'),
+            $this->model->quote('待处理'),
             $this->model->quote('0')
         );
         $this->model->exec($sql);
@@ -473,14 +473,14 @@ class WorkflowService
             'update `def_workflow_instance`
             set `实例状态`=%s, `更新人`=%s, `更新时间`=%s
             where `GUID`=%d',
-            $this->model->quote('TERMINATED'),
+            $this->model->quote('已终止'),
             $this->model->quote($sponsor),
             $this->model->quote($now),
             $instanceId
         );
         $this->model->exec($sql);
 
-        $this->addTaskLog(0, $instanceId, '', $sponsor, $instance['发起人姓名'] ?? '', 'WITHDRAW', '发起人撤回');
+        $this->addTaskLog(0, $instanceId, '', $sponsor, $instance['发起人姓名'] ?? '', '撤回', '发起人撤回');
 
         return true;
     }
@@ -563,7 +563,7 @@ class WorkflowService
                 $this->model->quote($taskType),
                 $this->model->quote($workId),
                 $this->model->quote($userName),
-                $this->model->quote('PENDING'),
+                $this->model->quote('待处理'),
                 $this->model->quote('SYSTEM'),
                 $this->model->quote($sponsor),
                 $this->model->quote($now),
@@ -588,7 +588,7 @@ class WorkflowService
                     'taskType' => $taskType,
                     'approver' => $workId,
                     'approverName' => $userName,
-                    'status' => 'PENDING',
+                    'status' => '待处理',
                 ];
             }
         }
@@ -846,11 +846,11 @@ class WorkflowService
                 count(*) as `total_count`
             from `def_workflow_task`
             where `实例ID`=%d and `节点编码`=%s and `删除标识`=%s',
-            $this->model->quote('PENDING'),
-            $this->model->quote('DONE'),
-            $this->model->quote('APPROVE'),
-            $this->model->quote('DONE'),
-            $this->model->quote('REJECT'),
+            $this->model->quote('待处理'),
+            $this->model->quote('已处理'),
+            $this->model->quote('同意'),
+            $this->model->quote('已处理'),
+            $this->model->quote('拒绝'),
             $instanceId,
             $this->model->quote($nodeCode),
             $this->model->quote('0')

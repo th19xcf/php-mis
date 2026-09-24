@@ -157,10 +157,10 @@ class ContractApi extends BaseApiController
             }
 
             $taskId = (int) $data['taskId'];
-            $action = strtoupper($data['action']);
+            $action = (string) $data['action'];
             $opinion = $data['opinion'] ?? '';
 
-            if (!in_array($action, ['APPROVE', 'REJECT'], true)) {
+            if (!in_array($action, ['同意', '拒绝'], true)) {
                 return $this->paramError('action 参数无效');
             }
 

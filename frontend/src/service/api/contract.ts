@@ -53,7 +53,7 @@ export function fetchContractSubmit(contractNo: string, workflowCode = '') {
   });
 }
 
-export function fetchContractApprove(data: { taskId: number; action: 'APPROVE' | 'REJECT'; opinion?: string }) {
+export function fetchContractApprove(data: { taskId: number; action: '同意' | '拒绝'; opinion?: string }) {
   return request({
     url: '/contract/approve',
     method: 'post',

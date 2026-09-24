@@ -43,20 +43,6 @@ watch(
 onMounted(() => {
   loadFlowDetail();
 });
-
-const statusMap: Record<string, { text: string; class: string }> = {
-  PENDING: { text: '待处理', class: 'status-pending' },
-  DONE: { text: '已处理', class: 'status-done' },
-  WITHDRAWN: { text: '已撤回', class: 'status-withdrawn' }
-};
-
-const actionMap: Record<string, string> = {
-  APPROVE: '同意',
-  REJECT: '拒绝',
-  WITHDRAW: '撤回',
-  START: '发起',
-  END: '结束'
-};
 </script>
 
 <template>
@@ -74,15 +60,15 @@ const actionMap: Record<string, string> = {
       >
         <div class="timeline-dot">
           <span
-            v-if="item.action === 'APPROVE'"
+            v-if="item.action === '同意'"
             class="dot success"
           ></span>
           <span
-            v-else-if="item.action === 'REJECT'"
+            v-else-if="item.action === '拒绝'"
             class="dot error"
           ></span>
           <span
-            v-else-if="item.action === 'WITHDRAW'"
+            v-else-if="item.action === '撤回'"
             class="dot warning"
           ></span>
           <span v-else class="dot default"></span>
@@ -90,7 +76,7 @@ const actionMap: Record<string, string> = {
         <div class="timeline-content">
           <div class="timeline-header">
             <span class="operator">{{ item.operatorName || item.operator }}</span>
-            <span class="action">{{ actionMap[item.action] || item.action }}</span>
+            <span class="action">{{ item.action }}</span>
           </div>
           <div class="timeline-time">{{ item.time }}</div>
           <div v-if="item.remark" class="timeline-remark">{{ item.remark }}</div>

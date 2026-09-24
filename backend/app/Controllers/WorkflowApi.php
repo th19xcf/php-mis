@@ -163,7 +163,7 @@ class WorkflowApi extends BaseApiController
                 $this->model->quote($data['流程名称']),
                 $this->model->quote($data['业务类型']),
                 $newVersion,
-                $this->model->quote($data['流程状态'] ?? 'DRAFT'),
+                $this->model->quote($data['流程状态'] ?? '草稿'),
                 $this->model->quote($data['流程描述'] ?? ''),
                 $approvalConfig ? $this->model->quote($approvalConfig) : 'null',
                 $timeoutRules ? $this->model->quote($timeoutRules) : 'null',
@@ -298,11 +298,11 @@ class WorkflowApi extends BaseApiController
                 'update `def_workflow_definition`
                 set `流程状态`=%s, `更新人`=%s, `更新时间`=%s
                 where `流程编码`=%s and `流程状态`=%s and `删除标识`=%s',
-                $this->model->quote('INACTIVE'),
+                $this->model->quote('停用'),
                 $this->model->quote($operator),
                 $this->model->quote($now),
                 $this->model->quote($workflowCode),
-                $this->model->quote('ACTIVE'),
+                $this->model->quote('启用'),
                 $this->model->quote('0')
             );
             $this->model->exec($sql);
@@ -311,7 +311,7 @@ class WorkflowApi extends BaseApiController
                 'update `def_workflow_definition`
                 set `流程状态`=%s, `更新人`=%s, `更新时间`=%s
                 where `GUID`=%d',
-                $this->model->quote('ACTIVE'),
+                $this->model->quote('启用'),
                 $this->model->quote($operator),
                 $this->model->quote($now),
                 $defId
@@ -342,7 +342,7 @@ class WorkflowApi extends BaseApiController
                 'update `def_workflow_definition`
                 set `流程状态`=%s, `更新人`=%s, `更新时间`=%s
                 where `GUID`=%d',
-                $this->model->quote('INACTIVE'),
+                $this->model->quote('停用'),
                 $this->model->quote($operator),
                 $this->model->quote($now),
                 $defId
@@ -1107,24 +1107,12 @@ class WorkflowApi extends BaseApiController
 
             if (!empty($businessType)) {
                 // 适用业务类型为逗号分隔字段,使用 FIND_IN_SET 匹配
-                // 同时匹配英文编码与中文标签(用户可能填中文或英文)
-                // 业务类型中英文映射
-                $typeMap = [
-                    'CONTRACT' => '合同',
-                    'EMPLOYEE' => '员工',
-                    'LEAVE' => '请假'
-                ];
-                $cnLabel = $typeMap[$businessType] ?? '';
-
-                // 构造 OR 条件:NULL/空(通用模板) 或 匹配英文编码 或 匹配中文标签
+                // NULL/空表示通用模板
                 $orParts = [
                     '`适用业务类型` IS NULL',
                     "`适用业务类型`=" . $this->model->quote(''),
                     'FIND_IN_SET(' . $this->model->quote($businessType) . ', `适用业务类型`) > 0'
                 ];
-                if (!empty($cnLabel)) {
-                    $orParts[] = 'FIND_IN_SET(' . $this->model->quote($cnLabel) . ', `适用业务类型`) > 0';
-                }
                 $where[] = '(' . implode(' OR ', $orParts) . ')';
             }
 

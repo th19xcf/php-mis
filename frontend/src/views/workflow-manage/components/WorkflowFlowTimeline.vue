@@ -37,30 +37,19 @@ onMounted(() => {
   loadFlowDetail();
 });
 
-const actionMap: Record<string, string> = {
-  APPROVE: '同意',
-  REJECT: '拒绝',
-  WITHDRAW: '撤回',
-  START: '发起',
-  END: '结束',
-  TRANSFER: '转签',
-  COUNTERSIGN: '加签',
-  TIMEOUT: '超时处理'
-};
-
 const instanceStatusMap: Record<string, { text: string; type: 'default' | 'success' | 'warning' | 'error' | 'info' }> = {
-  RUNNING: { text: '运行中', type: 'warning' },
-  COMPLETED: { text: '已完成', type: 'success' },
-  TERMINATED: { text: '已终止', type: 'error' },
-  SUSPENDED: { text: '已挂起', type: 'info' }
+  运行中: { text: '运行中', type: 'warning' },
+  已完成: { text: '已完成', type: 'success' },
+  已终止: { text: '已终止', type: 'error' },
+  已挂起: { text: '已挂起', type: 'info' }
 };
 
 const taskStatusMap: Record<string, { text: string; class: string }> = {
-  PENDING: { text: '待处理', class: 'status-pending' },
-  DONE: { text: '已处理', class: 'status-done' },
-  WITHDRAWN: { text: '已撤回', class: 'status-withdrawn' },
-  REJECTED: { text: '已拒绝', class: 'status-rejected' },
-  SKIPPED: { text: '已跳过', class: 'status-skipped' }
+  待处理: { text: '待处理', class: 'status-pending' },
+  已处理: { text: '已处理', class: 'status-done' },
+  已撤回: { text: '已撤回', class: 'status-withdrawn' },
+  已拒绝: { text: '已拒绝', class: 'status-rejected' },
+  已跳过: { text: '已跳过', class: 'status-skipped' }
 };
 </script>
 
@@ -114,7 +103,7 @@ const taskStatusMap: Record<string, { text: string; class: string }> = {
           >
             <div class="task-header">
               <span class="task-node">{{ task.节点名称 }}</span>
-              <NTag size="tiny" :type="task.任务状态 === 'DONE' ? 'success' : task.任务状态 === 'REJECTED' ? 'error' : 'warning'">
+              <NTag size="tiny" :type="task.任务状态 === '已处理' ? 'success' : task.任务状态 === '已拒绝' ? 'error' : 'warning'">
                 {{ taskStatusMap[task.任务状态]?.text || task.任务状态 }}
               </NTag>
             </div>
@@ -139,15 +128,15 @@ const taskStatusMap: Record<string, { text: string; class: string }> = {
           >
             <div class="timeline-dot">
               <span
-                v-if="item.action === 'APPROVE'"
+                v-if="item.action === '同意'"
                 class="dot success"
               ></span>
               <span
-                v-else-if="item.action === 'REJECT'"
+                v-else-if="item.action === '拒绝'"
                 class="dot error"
               ></span>
               <span
-                v-else-if="item.action === 'WITHDRAW'"
+                v-else-if="item.action === '撤回'"
                 class="dot warning"
               ></span>
               <span v-else class="dot default"></span>
@@ -155,7 +144,7 @@ const taskStatusMap: Record<string, { text: string; class: string }> = {
             <div class="timeline-content">
               <div class="timeline-header">
                 <span class="operator">{{ item.operatorName || item.operator }}</span>
-                <span class="action">{{ actionMap[item.action] || item.action }}</span>
+                <span class="action">{{ item.action }}</span>
               </div>
               <div class="timeline-time">{{ item.time }}</div>
               <div v-if="item.remark" class="timeline-remark">{{ item.remark }}</div>

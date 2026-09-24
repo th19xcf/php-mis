@@ -152,7 +152,7 @@ export const useContractStore = defineStore('contract-store', () => {
     }
   }
 
-  async function handleApproval(taskId: number, action: 'APPROVE' | 'REJECT', opinion = '') {
+  async function handleApproval(taskId: number, action: '同意' | '拒绝', opinion = '') {
     loading.value = true;
     try {
       const res = await fetchContractApprove({ taskId, action, opinion });

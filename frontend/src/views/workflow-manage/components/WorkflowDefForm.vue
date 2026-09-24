@@ -24,23 +24,23 @@ const message = useMessageWithConsole();
 const formData = ref({
   流程编码: '',
   流程名称: '',
-  业务类型: 'CONTRACT',
-  流程状态: 'DRAFT',
+  业务类型: '合同',
+  流程状态: '草稿',
   流程描述: '',
   审批人配置: '' as string,
   超时规则: '' as string
 });
 
 const businessTypeOptions = [
-  { label: '合同', value: 'CONTRACT' },
-  { label: '员工', value: 'EMPLOYEE' },
-  { label: '请假', value: 'LEAVE' }
+  { label: '合同', value: '合同' },
+  { label: '员工', value: '员工' },
+  { label: '请假', value: '请假' }
 ];
 
 const statusOptions = [
-  { label: '草稿', value: 'DRAFT' },
-  { label: '启用', value: 'ACTIVE' },
-  { label: '停用', value: 'INACTIVE' }
+  { label: '草稿', value: '草稿' },
+  { label: '启用', value: '启用' },
+  { label: '停用', value: '停用' }
 ];
 
 function parseJsonObject(value: any): string {
@@ -61,8 +61,8 @@ watch(
         formData.value = {
           流程编码: props.definition.流程编码 || '',
           流程名称: props.definition.流程名称 || '',
-          业务类型: props.definition.业务类型 || 'CONTRACT',
-          流程状态: props.definition.流程状态 || 'DRAFT',
+          业务类型: props.definition.业务类型 || '合同',
+          流程状态: props.definition.流程状态 || '草稿',
           流程描述: props.definition.流程描述 || '',
           审批人配置: parseJsonObject(props.definition.审批人配置),
           超时规则: parseJsonObject(props.definition.超时规则)
@@ -71,8 +71,8 @@ watch(
         formData.value = {
           流程编码: '',
           流程名称: '',
-          业务类型: 'CONTRACT',
-          流程状态: 'DRAFT',
+          业务类型: '合同',
+          流程状态: '草稿',
           流程描述: '',
           审批人配置: '',
           超时规则: ''

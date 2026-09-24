@@ -411,7 +411,7 @@ function handleCategoryChange(key: string) {
 
 // ============ 事件：审批跳转 ============
 function handleWorkflowClick(item: TodoCenterItem) {
-  if (item.todoType === 'workflow' && item.bizType === 'CONTRACT' && item.bizId) {
+  if (item.todoType === 'workflow' && item.bizType === '合同' && item.bizId) {
     router.push(`/contract?businessId=${item.bizId}`);
   } else {
     message.info('该审批类型暂不支持跳转');

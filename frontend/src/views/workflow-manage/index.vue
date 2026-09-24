@@ -147,9 +147,9 @@ watch(definitionList, (list) => updateStats(list));
 function updateStats(list: any[]) {
   stats.value = {
     总数: pagination.value.total || list.length,
-    启用: list.filter((item: any) => item.流程状态 === 'ACTIVE').length,
-    停用: list.filter((item: any) => item.流程状态 === 'INACTIVE').length,
-    草稿: list.filter((item: any) => item.流程状态 === 'DRAFT').length
+    启用: list.filter((item: any) => item.流程状态 === '启用').length,
+    停用: list.filter((item: any) => item.流程状态 === '停用').length,
+    草稿: list.filter((item: any) => item.流程状态 === '草稿').length
   };
 }
 
@@ -190,46 +190,6 @@ function handlePageSizeChange(pageSize: number) {
   pagination.value.page = 1;
   loadList();
 }
-
-const businessTypeOptions = [
-  { label: '合同', value: 'CONTRACT' },
-  { label: '员工', value: 'EMPLOYEE' },
-  { label: '请假', value: 'LEAVE' }
-];
-
-const statusOptions = [
-  { label: '草稿', value: 'DRAFT' },
-  { label: '启用', value: 'ACTIVE' },
-  { label: '停用', value: 'INACTIVE' }
-];
-
-const businessTypeTextMap: Record<string, string> = {
-  CONTRACT: '合同',
-  EMPLOYEE: '员工',
-  LEAVE: '请假'
-};
-
-const statusTextMap: Record<string, string> = {
-  DRAFT: '草稿',
-  ACTIVE: '启用',
-  INACTIVE: '停用'
-};
-
-const instanceStatusTextMap: Record<string, string> = {
-  RUNNING: '运行中',
-  COMPLETED: '已完成',
-  TERMINATED: '已终止',
-  SUSPENDED: '已挂起',
-  PENDING_START: '待启动'
-};
-
-const taskStatusTextMap: Record<string, string> = {
-  PENDING: '待处理',
-  DONE: '已处理',
-  WITHDRAWN: '已撤回',
-  REJECTED: '已拒绝',
-  SKIPPED: '已跳过'
-};
 
 function handleCreate() {
   formMode.value = 'create';
@@ -554,11 +514,11 @@ function getActionButtons() {
   if (!selectedDefinition.value) return [];
   const status = selectedDefinition.value.流程状态;
   const buttons: Array<{ label: string; key: string; type: any }> = [];
-  if (status === 'DRAFT' || status === 'INACTIVE') {
+  if (status === '草稿' || status === '停用') {
     buttons.push({ label: '编辑', key: 'edit', type: 'primary' });
     buttons.push({ label: '启用', key: 'activate', type: 'success' });
     buttons.push({ label: '删除', key: 'delete', type: 'error' });
-  } else if (status === 'ACTIVE') {
+  } else if (status === '启用') {
     buttons.push({ label: '编辑', key: 'edit', type: 'primary' });
     buttons.push({ label: '停用', key: 'deactivate', type: 'warning' });
   }
@@ -584,44 +544,30 @@ async function handleAction(key: string) {
 
 function getStatusType(status: string): 'default' | 'success' | 'warning' | 'error' | 'info' {
   const map: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
-    DRAFT: 'default',
-    ACTIVE: 'success',
-    INACTIVE: 'warning'
+    草稿: 'default',
+    启用: 'success',
+    停用: 'warning'
   };
   return map[status] || 'default';
-}
-
-function getStatusText(status: string): string {
-  return statusTextMap[status] || status;
-}
-
-function getBusinessTypeText(type: string): string {
-  return businessTypeTextMap[type] || type;
 }
 
 function getInstanceStatusType(status: string): 'default' | 'success' | 'warning' | 'error' | 'info' {
   const map: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
-    RUNNING: 'warning',
-    COMPLETED: 'success',
-    TERMINATED: 'error',
-    SUSPENDED: 'info',
-    PENDING_START: 'default'
+    运行中: 'warning',
+    已完成: 'success',
+    已终止: 'error',
+    已挂起: 'info'
   };
   return map[status] || 'default';
 }
 
-function getInstanceStatusText(status: string): string {
-  return instanceStatusTextMap[status] || status;
-}
-
 function getTaskResultType(result?: string): 'default' | 'success' | 'warning' | 'error' | 'info' {
   if (!result) return 'default';
-  return result === 'APPROVE' ? 'success' : 'error';
+  return result === '同意' ? 'success' : 'error';
 }
 
 function getTaskResultText(result?: string): string {
-  if (!result) return '-';
-  return result === 'APPROVE' ? '同意' : '拒绝';
+  return result || '-';
 }
 
 onMounted(async () => {
@@ -773,14 +719,14 @@ onMounted(async () => {
             <div class="task-header">
               <span class="task-title">{{ inst.业务标题 }}</span>
               <NTag size="small" :type="getInstanceStatusType(inst.实例状态)">
-                {{ getInstanceStatusText(inst.实例状态) }}
+                {{ inst.实例状态 }}
               </NTag>
             </div>
             <div class="task-info">
               <span>当前节点:{{ inst.当前节点编码 || '-' }}</span>
               <span>发起时间:{{ inst.发起时间 }}</span>
             </div>
-            <div class="task-actions" v-if="inst.实例状态 === 'RUNNING'">
+            <div class="task-actions" v-if="inst.实例状态 === '运行中'">
               <NButton size="tiny" type="warning" @click.stop="handleWithdraw(inst.GUID)">撤回</NButton>
               <NButton size="tiny" type="primary" @click.stop="handleViewInstance(inst.GUID)">查看流程</NButton>
             </div>
@@ -831,11 +777,11 @@ onMounted(async () => {
             <NDescriptionsItem label="流程编码">{{ currentDefinition.流程编码 }}</NDescriptionsItem>
             <NDescriptionsItem label="流程状态">
               <NTag :type="getStatusType(currentDefinition.流程状态)" size="small">
-                {{ getStatusText(currentDefinition.流程状态) }}
+                {{ currentDefinition.流程状态 }}
               </NTag>
             </NDescriptionsItem>
             <NDescriptionsItem label="流程名称" :span="2">{{ currentDefinition.流程名称 }}</NDescriptionsItem>
-            <NDescriptionsItem label="业务类型">{{ getBusinessTypeText(currentDefinition.业务类型) }}</NDescriptionsItem>
+            <NDescriptionsItem label="业务类型">{{ currentDefinition.业务类型 }}</NDescriptionsItem>
             <NDescriptionsItem label="版本号">v{{ currentDefinition.版本号 }}</NDescriptionsItem>
             <NDescriptionsItem label="创建人">{{ currentDefinition.创建人 || '-' }}</NDescriptionsItem>
             <NDescriptionsItem label="创建时间">{{ currentDefinition.创建时间 || '-' }}</NDescriptionsItem>
