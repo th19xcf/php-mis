@@ -439,6 +439,11 @@ function handleSubmitInline() {
 
 function handleApprovalSuccess() {
   showApprovalModal.value = false;
+  // 审批/驳回/重新提交会改变合同状态（已驳回/已退回/审批中），刷新列表与详情使状态即时可见
+  loadList();
+  if (selectedContract.value?.合同编号) {
+    contractStore.loadContractDetail(selectedContract.value.合同编号);
+  }
   if (activeTab.value === 'pending') {
     loadPending();
   }
@@ -455,6 +460,11 @@ function getActionButtons() {
   }
   if (status === '审批中') {
     buttons.push({ label: '审核', key: 'approve', type: 'warning' });
+  }
+  // 已退回：流程挂起等待发起人重新提交（可先编辑修改，再经弹窗重新提交）
+  if (status === '已退回') {
+    buttons.push({ label: '编辑', key: 'edit', type: 'primary' });
+    buttons.push({ label: '重新提交', key: 'approve', type: 'warning' });
   }
   return buttons;
 }
@@ -480,6 +490,7 @@ function getStatusType(status: string): 'default' | 'success' | 'warning' | 'err
   const map: Record<string, 'default' | 'success' | 'warning' | 'error' | 'info'> = {
     草稿: 'default',
     已驳回: 'error',
+    已退回: 'warning',
     审批中: 'warning',
     审批通过: 'info',
     已签署: 'success',

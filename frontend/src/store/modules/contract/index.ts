@@ -153,10 +153,19 @@ export const useContractStore = defineStore('contract-store', () => {
     }
   }
 
-  async function handleApproval(taskId: number, action: '同意' | '拒绝', opinion = '') {
+  /**
+   * 审批处理
+   * @param rejectMode 拒绝模式（仅 action=拒绝 时生效）：terminate 终止 / sponsor 退回发起人 / previous 退回上一节点
+   */
+  async function handleApproval(
+    taskId: number,
+    action: '同意' | '拒绝',
+    opinion = '',
+    rejectMode: 'terminate' | 'sponsor' | 'previous' = 'terminate'
+  ) {
     loading.value = true;
     try {
-      const res = await fetchContractApprove({ taskId, action, opinion });
+      const res = await fetchContractApprove({ taskId, action, opinion, rejectMode });
       if (res) {
         await loadPendingTasks();
       }

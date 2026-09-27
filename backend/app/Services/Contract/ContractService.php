@@ -235,8 +235,9 @@ class ContractService
         }
 
         $status = $contract['合同状态'] ?? '';
-        if (!in_array($status, ['草稿', '已驳回'], true)) {
-            throw new \RuntimeException('只有草稿或已驳回状态的合同可以修改');
+        // 已退回：sponsor 驳回退回发起人，流程挂起中，允许发起人修改后重新提交
+        if (!in_array($status, ['草稿', '已驳回', '已退回'], true)) {
+            throw new \RuntimeException('只有草稿、已驳回或已退回状态的合同可以修改');
         }
 
         $oldVersion = (int) ($contract['版本号'] ?? 1);
@@ -296,8 +297,9 @@ class ContractService
         }
 
         $status = $contract['合同状态'] ?? '';
-        if (!in_array($status, ['草稿', '已驳回'], true)) {
-            throw new \RuntimeException('只有草稿或已驳回状态的合同可以删除');
+        // 已退回：流程挂起等待重新提交，发起人可选择放弃（删除）该合同
+        if (!in_array($status, ['草稿', '已驳回', '已退回'], true)) {
+            throw new \RuntimeException('只有草稿、已驳回或已退回状态的合同可以删除');
         }
 
         $now = date('Y-m-d H:i:s');
@@ -458,15 +460,19 @@ class ContractService
     /**
      * 审批处理
      *
+     * 三步写操作（流程审批推进、审批意见落库、合同状态回写）纳入同一事务，
+     * 防止流程已推进而合同状态未回写（或反之）的不一致。
+     *
      * @param int $taskId 任务ID
      * @param string $approver 审批人工号
      * @param string $approverName 审批人姓名
-     * @param string $action 审批动作（APPROVE/REJECT）
+     * @param string $action 审批动作（同意/拒绝）
      * @param string $opinion 审批意见
+     * @param string $rejectMode 拒绝模式（terminate 终止 / sponsor 退回发起人 / previous 退回上一节点）
      * @return array
      * @throws \RuntimeException
      */
-    public function handleApproval(int $taskId, string $approver, string $approverName, string $action, string $opinion = ''): array
+    public function handleApproval(int $taskId, string $approver, string $approverName, string $action, string $opinion = '', string $rejectMode = 'terminate'): array
     {
         $taskSql = sprintf(
             'select * from `def_workflow_task` where `GUID`=%d limit 1',
@@ -491,58 +497,71 @@ class ContractService
         }
 
         $contractNo = $instance['业务ID'] ?? '';
+        $taskType = $task['任务类型'] ?? '';
 
-        $result = $this->workflowService->approve(
-            $taskId,
-            $approver,
-            $approverName,
-            $opinion,
-            $action
-        );
-
-        $now = date('Y-m-d H:i:s');
-        $opinionSql = sprintf(
-            'insert into `def_contract_approval_opinion`
-            (`合同编号`, `流程实例ID`, `任务ID`, `节点编码`, `节点名称`,
-             `审批人`, `审批人姓名`, `审批结果`, `审批意见`, `审批时间`)
-            values (%s, %d, %d, %s, %s, %s, %s, %s, %s, %s)',
-            $this->model->quote($contractNo),
-            $instanceId,
-            $taskId,
-            $this->model->quote($task['节点编码'] ?? ''),
-            $this->model->quote($task['节点名称'] ?? ''),
-            $this->model->quote($approver),
-            $this->model->quote($approverName),
-            $this->model->quote($action),
-            $this->model->quote($opinion),
-            $this->model->quote($now)
-        );
-        $this->model->exec($opinionSql);
-
-        $instanceStatus = $result['instanceStatus'] ?? '';
-        if ($instanceStatus === '已完成') {
-            $updateSql = sprintf(
-                'update `def_contract_master_new` 
-                set `合同状态`=%s, `更新时间`=%s 
-                where `合同编号`=%s',
-                $this->model->quote('审批通过'),
-                $this->model->quote($now),
-                $this->model->quote($contractNo)
+        // 嵌套事务：内部 approve 自带事务，经 SAVEPOINT 与本事务合并
+        return $this->withTransaction(function () use ($taskId, $approver, $approverName, $action, $opinion, $rejectMode, $task, $taskType, $instance, $instanceId, $contractNo) {
+            $result = $this->workflowService->approve(
+                $taskId,
+                $approver,
+                $approverName,
+                $opinion,
+                $action,
+                $rejectMode
             );
-            $this->model->exec($updateSql);
-        } elseif ($instanceStatus === '已终止') {
-            $updateSql = sprintf(
-                'update `def_contract_master_new` 
-                set `合同状态`=%s, `更新时间`=%s 
-                where `合同编号`=%s',
-                $this->model->quote('已驳回'),
-                $this->model->quote($now),
-                $this->model->quote($contractNo)
-            );
-            $this->model->exec($updateSql);
-        }
 
-        return $result;
+            $now = date('Y-m-d H:i:s');
+            // 退回任务的审批意见按"重新提交"口径记录，时间线语义更清晰
+            $opinionResult = ($taskType === 'RETURN') ? '重新提交' : $action;
+            $opinionSql = sprintf(
+                'insert into `def_contract_approval_opinion`
+                (`合同编号`, `流程实例ID`, `任务ID`, `节点编码`, `节点名称`,
+                 `审批人`, `审批人姓名`, `审批结果`, `审批意见`, `审批时间`)
+                values (%s, %d, %d, %s, %s, %s, %s, %s, %s, %s)',
+                $this->model->quote($contractNo),
+                $instanceId,
+                $taskId,
+                $this->model->quote($task['节点编码'] ?? ''),
+                $this->model->quote($task['节点名称'] ?? ''),
+                $this->model->quote($approver),
+                $this->model->quote($approverName),
+                $this->model->quote($opinionResult),
+                $this->model->quote($opinion),
+                $this->model->quote($now)
+            );
+            $this->model->exec($opinionSql);
+
+            // 合同状态回写规则：
+            // - 退回任务重新提交 → 审批中（流程从被退回节点续走）
+            // - 实例已完成 → 审批通过；实例已终止（terminate 驳回）→ 已驳回
+            // - sponsor 退回 → 已退回（流程挂起等待发起人修改后重新提交）
+            // - previous 退回 → 实例仍运行中、合同保持审批中（上一节点重审）
+            $instanceStatus = $result['instanceStatus'] ?? '';
+            $newStatus = null;
+            if (!empty($result['resubmitted'])) {
+                $newStatus = '审批中';
+            } elseif ($instanceStatus === '已完成') {
+                $newStatus = '审批通过';
+            } elseif ($instanceStatus === '已终止') {
+                $newStatus = '已驳回';
+            } elseif (($result['rejectMode'] ?? '') === 'sponsor') {
+                $newStatus = '已退回';
+            }
+
+            if ($newStatus !== null) {
+                $updateSql = sprintf(
+                    'update `def_contract_master_new`
+                    set `合同状态`=%s, `更新时间`=%s
+                    where `合同编号`=%s',
+                    $this->model->quote($newStatus),
+                    $this->model->quote($now),
+                    $this->model->quote($contractNo)
+                );
+                $this->model->exec($updateSql);
+            }
+
+            return $result;
+        });
     }
 
     /**
@@ -582,6 +601,7 @@ class ContractService
             '审批中' => 0,
             '审批通过' => 0,
             '已驳回' => 0,
+            '已退回' => 0,
         ];
         foreach ($statusRows as $row) {
             $status = $row['合同状态'] ?? '';
@@ -707,6 +727,7 @@ class ContractService
             ['value' => '审批中', 'label' => '审批中'],
             ['value' => '审批通过', 'label' => '审批通过'],
             ['value' => '已驳回', 'label' => '已驳回'],
+            ['value' => '已退回', 'label' => '已退回'],
         ];
 
         $paymentOptions = [

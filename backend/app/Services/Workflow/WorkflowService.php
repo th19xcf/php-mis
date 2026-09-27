@@ -134,13 +134,34 @@ class WorkflowService
         });
     }
 
+    /**
+     * 审批处理
+     *
+     * @param int $taskId 任务ID
+     * @param string $approver 审批人工号
+     * @param string $approverName 审批人姓名
+     * @param string $opinion 审批意见
+     * @param string $action 审批动作（同意/拒绝）
+     * @param string $rejectMode 拒绝模式：
+     *   - terminate 终止流程（默认，历史行为：实例置已终止，整单终结）
+     *   - sponsor   退回发起人：当前节点生成 RETURN 任务给发起人，实例保持运行中；
+     *               发起人修改后处理该任务（重新提交）即从当前节点续走
+     *   - previous  退回上一审批节点：实例回退至最近一次同意动作所在节点并重建审批任务；
+     *               首个审批节点拒绝时无前序节点，自动回落为退回发起人
+     * @return array ['instanceId', 'instanceStatus', 'newTasks', 'rejectMode'?, 'resubmitted'?]
+     */
     public function approve(
         int $taskId,
         string $approver,
         string $approverName,
         string $opinion,
-        string $action = '同意'
+        string $action = '同意',
+        string $rejectMode = 'terminate'
     ): array {
+        if (!in_array($rejectMode, ['terminate', 'sponsor', 'previous'], true)) {
+            throw new \RuntimeException('无效的拒绝模式：' . $rejectMode);
+        }
+
         $sql = sprintf(
             'select * from `def_workflow_task`
             where `GUID`=%d limit 1',
@@ -156,6 +177,18 @@ class WorkflowService
         }
         if (($task['处理人'] ?? '') !== $approver) {
             throw new \RuntimeException('无权处理此任务');
+        }
+
+        $taskType = $task['任务类型'] ?? '';
+        if ($action === '拒绝') {
+            // 抄送任务是通知性质，拒绝语义不适用，防止误终止/误退回流程
+            if ($taskType === 'CC') {
+                throw new \RuntimeException('抄送任务不支持驳回');
+            }
+            // 退回任务仅支持发起人重新提交，不存在再次拒绝
+            if ($taskType === 'RETURN') {
+                throw new \RuntimeException('退回任务仅支持重新提交');
+            }
         }
 
         $instanceId = (int) $task['实例ID'];
@@ -177,9 +210,10 @@ class WorkflowService
 
         // 写入阶段整体纳入事务；任务采用条件更新抢占（仅"待处理"状态可被处理），
         // 防止或签节点下两审批人并发处理导致下一节点任务重复生成
-        return $this->withTransaction(function () use ($taskId, $approver, $approverName, $opinion, $action, $instance, $instanceId, $nodeCode) {
+        return $this->withTransaction(function () use ($taskId, $approver, $approverName, $opinion, $action, $rejectMode, $task, $taskType, $instance, $instanceId, $nodeCode) {
             $now = date('Y-m-d H:i:s');
-            $actionResult = ($action === '同意') ? '同意' : '拒绝';
+            // 退回任务的处理语义是"重新提交"，处理结果与流水动作均按此口径记录
+            $actionResult = ($taskType === 'RETURN') ? '重新提交' : (($action === '同意') ? '同意' : '拒绝');
 
             $sql = sprintf(
                 'update `def_workflow_task`
@@ -208,20 +242,78 @@ class WorkflowService
 
             $newTasks = [];
             $instanceStatus = $instance['实例状态'];
+            $result = [];
 
-            if ($action === '拒绝') {
-                $sql = sprintf(
-                    'update `def_workflow_instance`
-                    set `实例状态`=%s, `结束时间`=%s, `更新人`=%s, `更新时间`=%s
-                    where `GUID`=%d',
-                    $this->model->quote('已终止'),
-                    $this->model->quote($now),
-                    $this->model->quote($approver),
-                    $this->model->quote($now),
-                    $instanceId
-                );
-                $this->model->exec($sql);
-                $instanceStatus = '已终止';
+            if ($taskType === 'RETURN') {
+                // 退回任务重新提交：作废当前节点旧轮审批任务后重建新一轮，实例保持运行中并停留当前节点
+                // （createTasksForNode 内部会作废旧轮任务，防止新旧两轮混合统计导致节点永远无法通过）
+                $newTasks = $this->createTasksForNode($instanceId, $nodeCode);
+                $result['resubmitted'] = true;
+            } elseif ($action === '拒绝') {
+                if ($rejectMode === 'terminate') {
+                    $sql = sprintf(
+                        'update `def_workflow_instance`
+                        set `实例状态`=%s, `结束时间`=%s, `更新人`=%s, `更新时间`=%s
+                        where `GUID`=%d',
+                        $this->model->quote('已终止'),
+                        $this->model->quote($now),
+                        $this->model->quote($approver),
+                        $this->model->quote($now),
+                        $instanceId
+                    );
+                    $this->model->exec($sql);
+                    $instanceStatus = '已终止';
+                } else {
+                    // 退回模式：实例保持运行中，流程不终结
+                    $modeUsed = $rejectMode;
+                    $returnNodeCode = $nodeCode;
+
+                    if ($rejectMode === 'previous') {
+                        $prevNodeCode = $this->findLastApprovedNode($instanceId);
+                        if ($prevNodeCode === null) {
+                            // 首个审批节点拒绝，无前序审批节点，回落为退回发起人
+                            $modeUsed = 'sponsor';
+                        } else {
+                            $returnNodeCode = $prevNodeCode;
+                        }
+                    }
+
+                    // 作废当前节点其余待处理审批任务：
+                    // 会签场景下其他审批人的待办若保留，其后续同意会误触发节点推进判定
+                    $this->voidNodePendingTasks($instanceId, $nodeCode, $taskId, $approver, $now);
+
+                    if ($modeUsed === 'sponsor') {
+                        // 退回发起人：当前节点生成 RETURN 任务，发起人修改后重新提交即从当前节点续走
+                        $this->createReturnTask($instanceId, $nodeCode, $task['节点名称'] ?? '', $instance, $approver, $now);
+                    } else {
+                        // 退回上一节点：实例当前节点回退，上一节点重建审批任务（旧轮任务一并作废）
+                        $sql = sprintf(
+                            'update `def_workflow_instance`
+                            set `当前节点编码`=%s, `更新人`=%s, `更新时间`=%s
+                            where `GUID`=%d',
+                            $this->model->quote($returnNodeCode),
+                            $this->model->quote($approver),
+                            $this->model->quote($now),
+                            $instanceId
+                        );
+                        $this->model->exec($sql);
+                        $newTasks = $this->createTasksForNode($instanceId, $returnNodeCode);
+                    }
+
+                    $instanceStatus = '运行中';
+                    $result['rejectMode'] = $modeUsed;
+
+                    // 退回路由流水：与拒绝动作分条记录，时间线上可区分"审批人拒绝"与"流程退回去向"
+                    $this->addTaskLog(
+                        $taskId,
+                        $instanceId,
+                        $nodeCode,
+                        $approver,
+                        $approverName,
+                        '退回',
+                        $modeUsed === 'sponsor' ? '退回发起人修改' : '退回上一节点：' . $returnNodeCode
+                    );
+                }
             } else {
                 $nodeApproved = $this->checkNodeApproved($instanceId, $nodeCode);
                 if ($nodeApproved) {
@@ -241,7 +333,7 @@ class WorkflowService
                 }
             }
 
-            return [
+            return $result + [
                 'instanceId' => $instanceId,
                 'instanceStatus' => $instanceStatus,
                 'newTasks' => $newTasks,
@@ -622,6 +714,27 @@ class WorkflowService
         $tasks = [];
         $taskType = $nodeType === 'CC' ? 'CC' : 'APPROVAL';
 
+        // 节点重入（退回重审 / 重新提交 / 流程环回）时作废该节点旧轮审批任务，开启新一轮：
+        // 若旧轮的"已处理-拒绝/同意"记录保留在统计口径内，会签节点将永远无法满足通过条件
+        if ($taskType === 'APPROVAL') {
+            $sql = sprintf(
+                'update `def_workflow_task`
+                set `任务状态`=%s, `更新人`=%s, `更新时间`=%s
+                where `实例ID`=%d and `节点编码`=%s and `任务类型`=%s
+                  and `任务状态` in (%s, %s) and `删除标识`=%s',
+                $this->model->quote('已作废'),
+                $this->model->quote($sponsor),
+                $this->model->quote($now),
+                $instanceId,
+                $this->model->quote($nodeCode),
+                $this->model->quote('APPROVAL'),
+                $this->model->quote('待处理'),
+                $this->model->quote('已处理'),
+                $this->model->quote('0')
+            );
+            $this->model->exec($sql);
+        }
+
         foreach ($approvers as $approver) {
             $workId = $approver['work_id'] ?? '';
             $userName = $approver['user_name'] ?? '';
@@ -674,6 +787,86 @@ class WorkflowService
         }
 
         return $tasks;
+    }
+
+    /**
+     * 查询实例最近一次"同意"动作所在的节点编码（退回上一节点的定位依据）
+     *
+     * 从事务内调用，走无缓存查询保证读到同事务刚写入的流水；
+     * 首个审批节点拒绝时无前序同意记录，返回 null（调用方回落为退回发起人）
+     */
+    private function findLastApprovedNode(int $instanceId): ?string
+    {
+        $sql = sprintf(
+            'select `节点编码` from `def_workflow_task_log`
+            where `实例ID`=%d and `动作类型`=%s and `节点编码` is not null and `节点编码` != %s
+            order by `GUID` desc limit 1',
+            $instanceId,
+            $this->model->quote('同意'),
+            $this->model->quote('')
+        );
+        $result = $this->model->query($sql);
+        $row = $result ? ($result->getRowArray() ?: []) : [];
+        $nodeCode = $row['节点编码'] ?? null;
+        return ($nodeCode === null || $nodeCode === '') ? null : (string) $nodeCode;
+    }
+
+    /**
+     * 作废节点上除当前任务外的其余待处理审批任务
+     *
+     * 驳回退回时调用：会签场景下其他审批人的待办若保留，
+     * 其后续同意会基于残留任务误触发节点推进判定
+     */
+    private function voidNodePendingTasks(int $instanceId, string $nodeCode, int $excludeTaskId, string $operator, string $now): void
+    {
+        $sql = sprintf(
+            'update `def_workflow_task`
+            set `任务状态`=%s, `更新人`=%s, `更新时间`=%s
+            where `实例ID`=%d and `节点编码`=%s and `任务类型`=%s
+              and `任务状态`=%s and `删除标识`=%s and `GUID`<>%d',
+            $this->model->quote('已作废'),
+            $this->model->quote($operator),
+            $this->model->quote($now),
+            $instanceId,
+            $this->model->quote($nodeCode),
+            $this->model->quote('APPROVAL'),
+            $this->model->quote('待处理'),
+            $this->model->quote('0'),
+            $excludeTaskId
+        );
+        $this->model->exec($sql);
+    }
+
+    /**
+     * 生成退回发起人任务（任务类型 RETURN，处理人为流程发起人）
+     *
+     * 发起人在待办中心处理该任务（重新提交）后，流程从被退回节点续走
+     */
+    private function createReturnTask(int $instanceId, string $nodeCode, string $nodeName, array $instance, string $operator, string $now): void
+    {
+        $sql = sprintf(
+            'insert into `def_workflow_task`
+            (`实例ID`, `节点编码`, `节点名称`, `任务类型`,
+             `处理人`, `处理人姓名`, `任务状态`,
+             `操作来源`, `操作人员`, `操作时间`,
+             `创建人`, `创建时间`, `更新人`, `更新时间`)
+            values (%d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
+            $instanceId,
+            $this->model->quote($nodeCode),
+            $this->model->quote($nodeName),
+            $this->model->quote('RETURN'),
+            $this->model->quote($instance['发起人'] ?? ''),
+            $this->model->quote($instance['发起人姓名'] ?? ''),
+            $this->model->quote('待处理'),
+            $this->model->quote('SYSTEM'),
+            $this->model->quote($operator),
+            $this->model->quote($now),
+            $this->model->quote($operator),
+            $this->model->quote($now),
+            $this->model->quote($operator),
+            $this->model->quote($now)
+        );
+        $this->model->exec($sql);
     }
 
     private function findNextNode(int $workflowDefId, string $currentNodeCode, array $variables): ?string
@@ -1023,12 +1216,14 @@ class WorkflowService
         $approvalMode = $node['会签或签'] ?? 'OR';
 
         // 仅统计 APPROVAL 任务：抄送(CC)任务不参与节点推进判定（CC 非阻塞）
+        // total_count 仅计活跃任务（待处理/已处理）：退回重审后旧轮任务已置"已作废"，
+        // 若计入总数，会签节点会因旧轮拒绝记录永远无法满足通过条件
         $sql = sprintf(
             'select
                 sum(case when `任务状态`=%s then 1 else 0 end) as `pending_count`,
                 sum(case when `任务状态`=%s and `处理结果`=%s then 1 else 0 end) as `approve_count`,
                 sum(case when `任务状态`=%s and `处理结果`=%s then 1 else 0 end) as `reject_count`,
-                count(*) as `total_count`
+                sum(case when `任务状态` in (%s, %s) then 1 else 0 end) as `total_count`
             from `def_workflow_task`
             where `实例ID`=%d and `节点编码`=%s and `删除标识`=%s and `任务类型`=%s',
             $this->model->quote('待处理'),
@@ -1036,6 +1231,8 @@ class WorkflowService
             $this->model->quote('同意'),
             $this->model->quote('已处理'),
             $this->model->quote('拒绝'),
+            $this->model->quote('待处理'),
+            $this->model->quote('已处理'),
             $instanceId,
             $this->model->quote($nodeCode),
             $this->model->quote('0'),

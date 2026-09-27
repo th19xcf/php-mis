@@ -53,7 +53,17 @@ export function fetchContractSubmit(contractNo: string, workflowCode = '') {
   });
 }
 
-export function fetchContractApprove(data: { taskId: number; action: '同意' | '拒绝'; opinion?: string }) {
+/**
+ * 审批处理
+ * @param data.rejectMode 拒绝模式（仅 action=拒绝 时生效）：
+ *   terminate 终止流程（默认）/ sponsor 退回发起人修改 / previous 退回上一审批节点
+ */
+export function fetchContractApprove(data: {
+  taskId: number;
+  action: '同意' | '拒绝';
+  opinion?: string;
+  rejectMode?: 'terminate' | 'sponsor' | 'previous';
+}) {
   return request({
     url: '/contract/approve',
     method: 'post',

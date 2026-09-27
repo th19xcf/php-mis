@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import {  } from 'naive-ui';
+import { ref, computed, watch } from 'vue';
+import { } from 'naive-ui';
 import { useContractStore } from '@/store/modules/contract';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 
@@ -21,7 +21,8 @@ const loading = computed(() => contractStore.loading);
 
 const formData = ref({
   action: '同意' as '同意' | '拒绝',
-  opinion: ''
+  opinion: '',
+  rejectMode: 'terminate' as 'terminate' | 'sponsor' | 'previous'
 });
 
 const pendingTask = computed(() => {
@@ -30,9 +31,29 @@ const pendingTask = computed(() => {
   return tasks.find(t => t.业务ID === props.contract?.合同编号) || null;
 });
 
+/** 退回发起人任务：由发起人处理，语义为"重新提交"（流程从被退回节点续走） */
+const isReturnTask = computed(() => pendingTask.value?.任务类型 === 'RETURN');
+
+// 弹窗打开时拉取最新待办：store.pendingTasks 此前无页面级加载入口，
+// 且驳回退回会实时改变待办归属（退回发起人后 RETURN 任务归发起人）
+watch(
+  () => props.visible,
+  visible => {
+    if (visible) {
+      contractStore.loadPendingTasks();
+    }
+  }
+);
+
+const rejectModeOptions = [
+  { value: 'terminate', label: '终止流程' },
+  { value: 'sponsor', label: '退回发起人修改' },
+  { value: 'previous', label: '退回上一审批节点' }
+] as const;
+
 function handleClose() {
   emit('update:visible', false);
-  formData.value = { action: '同意', opinion: '' };
+  formData.value = { action: '同意', opinion: '', rejectMode: 'terminate' };
 }
 
 async function handleSubmit() {
@@ -42,12 +63,15 @@ async function handleSubmit() {
   }
 
   try {
-    await contractStore.handleApproval(
-      pendingTask.value.任务ID,
-      formData.value.action,
-      formData.value.opinion
-    );
-    message.success(formData.value.action === '同意' ? '审批通过' : '已拒绝');
+    // 退回任务按"重新提交"处理（action 固定同意）；拒绝时携带驳回模式
+    const action = isReturnTask.value ? '同意' : formData.value.action;
+    const rejectMode = action === '拒绝' ? formData.value.rejectMode : 'terminate';
+    await contractStore.handleApproval(pendingTask.value.任务ID, action, formData.value.opinion, rejectMode);
+    if (isReturnTask.value) {
+      message.success('已重新提交，流程从被退回节点续走');
+    } else {
+      message.success(action === '同意' ? '审批通过' : '已拒绝');
+    }
     emit('success');
     emit('update:visible', false);
   } catch (e: any) {
@@ -60,7 +84,7 @@ async function handleSubmit() {
   <div v-if="visible" class="modal-overlay" @click.self="handleClose">
     <div class="modal-container">
       <div class="modal-header">
-        <h3>审批合同</h3>
+        <h3>{{ isReturnTask ? '重新提交审批' : '审批合同' }}</h3>
         <button class="close-btn" @click="handleClose">×</button>
       </div>
       <div class="modal-body">
@@ -87,8 +111,12 @@ async function handleSubmit() {
           </div>
         </div>
 
+        <div v-if="isReturnTask" class="return-tip">
+          合同已被退回，请确认修改无误后重新提交；提交后流程将从被退回的节点继续审批。
+        </div>
+
         <div class="form-section">
-          <div class="form-item">
+          <div v-if="!isReturnTask" class="form-item">
             <label>审批意见</label>
             <div class="action-radio">
               <label class="radio-item">
@@ -101,21 +129,47 @@ async function handleSubmit() {
               </label>
             </div>
           </div>
+          <div v-if="!isReturnTask && formData.action === '拒绝'" class="form-item">
+            <label>驳回方式</label>
+            <div class="action-radio reject-mode">
+              <label
+                v-for="opt in rejectModeOptions"
+                :key="opt.value"
+                class="radio-item"
+              >
+                <input type="radio" v-model="formData.rejectMode" :value="opt.value" />
+                <span>{{ opt.label }}</span>
+              </label>
+            </div>
+          </div>
           <div class="form-item">
-            <label>意见说明</label>
-            <textarea v-model="formData.opinion" rows="4" placeholder="请输入审批意见（可选）"></textarea>
+            <label>{{ isReturnTask ? '提交说明' : '意见说明' }}</label>
+            <textarea
+              v-model="formData.opinion"
+              rows="4"
+              :placeholder="isReturnTask ? '请输入重新提交说明（可选）' : '请输入审批意见（可选）'"
+            ></textarea>
           </div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-default" @click="handleClose">取消</button>
         <button
+          v-if="!isReturnTask"
           class="btn"
           :class="formData.action === '同意' ? 'btn-primary' : 'btn-danger'"
           :disabled="loading"
           @click="handleSubmit"
         >
           {{ loading ? '提交中...' : formData.action === '同意' ? '同意' : '拒绝' }}
+        </button>
+        <button
+          v-else
+          class="btn btn-primary"
+          :disabled="loading"
+          @click="handleSubmit"
+        >
+          {{ loading ? '提交中...' : '重新提交' }}
         </button>
       </div>
     </div>
@@ -209,6 +263,17 @@ async function handleSubmit() {
   }
 }
 
+.return-tip {
+  padding: 10px 16px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  border-radius: 6px;
+  color: #ad6800;
+  font-size: 13px;
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
 .form-section {
   .form-item {
     margin-bottom: 16px;
@@ -223,6 +288,12 @@ async function handleSubmit() {
     .action-radio {
       display: flex;
       gap: 24px;
+
+      &.reject-mode {
+        flex-direction: column;
+        gap: 10px;
+        align-items: flex-start;
+      }
 
       .radio-item {
         display: flex;

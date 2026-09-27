@@ -160,15 +160,20 @@ class ContractApi extends BaseApiController
             $taskId = (int) $data['taskId'];
             $action = (string) $data['action'];
             $opinion = $data['opinion'] ?? '';
+            // 拒绝模式：terminate 终止（默认）/ sponsor 退回发起人 / previous 退回上一节点
+            $rejectMode = (string) ($data['rejectMode'] ?? 'terminate');
 
             if (!in_array($action, ['同意', '拒绝'], true)) {
                 return $this->paramError('action 参数无效');
+            }
+            if (!in_array($rejectMode, ['terminate', 'sponsor', 'previous'], true)) {
+                return $this->paramError('rejectMode 参数无效');
             }
 
             $approver = $this->getUserWorkId();
             $approverName = $this->getUserName();
 
-            $result = $this->contractService->handleApproval($taskId, $approver, $approverName, $action, $opinion);
+            $result = $this->contractService->handleApproval($taskId, $approver, $approverName, $action, $opinion, $rejectMode);
 
             return $this->success($result, '审批成功');
         } catch (\Throwable $e) {
