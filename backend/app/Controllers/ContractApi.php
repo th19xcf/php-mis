@@ -134,7 +134,8 @@ class ContractApi extends BaseApiController
             }
 
             $contractNo = $data['contractNo'];
-            $workflowCode = $data['workflowCode'] ?? 'contract_approval';
+            // 留空走流程路由解析（def_workflow_routing），未命中时由服务层默认流程编码兜底
+            $workflowCode = $data['workflowCode'] ?? '';
             $sponsor = $this->getUserWorkId();
             $sponsorName = $this->getUserName();
 
@@ -172,6 +173,31 @@ class ContractApi extends BaseApiController
             return $this->success($result, '审批成功');
         } catch (\Throwable $e) {
             log_message('error', '[ContractApi::approve] ' . $e->getMessage());
+            return $this->businessError($e->getMessage());
+        }
+    }
+
+    /**
+     * 撤回审批（仅发起人、审批未开始前；撤回后合同回置草稿可重新提交）
+     */
+    public function withdraw()
+    {
+        try {
+            $data = $this->getJsonInput();
+
+            if ($error = $this->requireParam($data, 'contractNo')) {
+                return $error;
+            }
+
+            $contractNo = $data['contractNo'];
+            $sponsor = $this->getUserWorkId();
+            $sponsorName = $this->getUserName();
+
+            $result = $this->contractService->withdrawApproval($contractNo, $sponsor, $sponsorName);
+
+            return $this->success($result, '撤回审批成功，合同已恢复为草稿');
+        } catch (\Throwable $e) {
+            log_message('error', '[ContractApi::withdraw] ' . $e->getMessage());
             return $this->businessError($e->getMessage());
         }
     }

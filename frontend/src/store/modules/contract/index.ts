@@ -8,6 +8,7 @@ import {
   fetchContractDelete,
   fetchContractSubmit,
   fetchContractApprove,
+  fetchContractWithdraw,
   fetchContractStats,
   fetchContractOptions,
   fetchContractPendingTasks,
@@ -165,6 +166,24 @@ export const useContractStore = defineStore('contract-store', () => {
     }
   }
 
+  /** 撤回审批：成功后刷新合同列表、我发起的实例与当前详情（合同状态回置草稿） */
+  async function withdrawApproval(contractNo: string) {
+    loading.value = true;
+    try {
+      const res = await fetchContractWithdraw(contractNo);
+      if (res) {
+        await loadContractList();
+        await loadMyContracts();
+        if (currentContract.value && currentContract.value.合同编号 === contractNo) {
+          await loadContractDetail(contractNo);
+        }
+      }
+      return res;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function loadStats(filters?: Record<string, any>) {
     try {
       const result = await fetchContractStats(filters);
@@ -296,6 +315,7 @@ export const useContractStore = defineStore('contract-store', () => {
     deleteContract,
     submitApproval,
     handleApproval,
+    withdrawApproval,
     loadStats,
     loadOptions,
     loadPendingTasks,

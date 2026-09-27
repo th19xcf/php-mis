@@ -61,6 +61,17 @@ export function fetchContractApprove(data: { taskId: number; action: '同意' | 
   });
 }
 
+/**
+ * 撤回合同审批（仅发起人、审批未开始前可撤回；撤回后合同回置草稿可重新提交）
+ */
+export function fetchContractWithdraw(contractNo: string) {
+  return request({
+    url: '/contract/withdraw',
+    method: 'post',
+    data: { contractNo }
+  });
+}
+
 export function fetchContractStats(params?: Record<string, any>) {
   return request({ url: '/contract/stats', params });
 }

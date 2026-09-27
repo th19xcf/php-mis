@@ -525,6 +525,31 @@ class WorkflowApi extends BaseApiController
         }
     }
 
+    /**
+     * 抄送任务已读确认：仅 CC 类型且待处理的任务可操作
+     */
+    public function ackCc()
+    {
+        try {
+            $data = $this->getJsonInput();
+
+            if ($error = $this->requireParam($data, 'taskId')) {
+                return $error;
+            }
+
+            $taskId = (int) $data['taskId'];
+            $operator = $this->getUserWorkId();
+            $operatorName = $this->getUserName();
+
+            $this->workflowService->ackCcTask($taskId, $operator, $operatorName);
+
+            return $this->success(['acked' => true], '抄送已读确认成功');
+        } catch (\Throwable $e) {
+            log_message('error', '[WorkflowApi::ackCc] ' . $e->getMessage());
+            return $this->businessError($e->getMessage());
+        }
+    }
+
     // ============ 节点(Node)CRUD ============
 
     public function nodeList()
@@ -929,16 +954,22 @@ class WorkflowApi extends BaseApiController
             $now = date('Y-m-d H:i:s');
             $operator = $this->getUserWorkId();
 
+            // 匹配条件：支持数组（结构化条件）或 JSON 字符串；空表示默认流转
+            $matchCondition = $data['匹配条件'] ?? null;
+            if (is_array($matchCondition)) {
+                $matchCondition = empty($matchCondition) ? null : json_encode($matchCondition, JSON_UNESCAPED_UNICODE);
+            }
+
             $sql = sprintf(
                 'insert into `def_workflow_edge`
-                (`流程定义ID`, `源节点编码`, `目标节点编码`, `条件表达式`, `条件描述`,
+                (`流程定义ID`, `源节点编码`, `目标节点编码`, `匹配条件`, `条件描述`,
                  `排序`, `操作来源`, `操作人员`, `操作时间`,
                  `创建人`, `创建时间`, `更新人`, `更新时间`)
                 values (%d, %s, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s)',
                 $defId,
                 $this->model->quote($sourceCode),
                 $this->model->quote($targetCode),
-                !empty($data['条件表达式']) ? $this->model->quote((string) $data['条件表达式']) : 'null',
+                !empty($matchCondition) ? $this->model->quote((string) $matchCondition) : 'null',
                 !empty($data['条件描述']) ? $this->model->quote((string) $data['条件描述']) : 'null',
                 $sort,
                 $this->model->quote('WEB'),
@@ -1024,11 +1055,15 @@ class WorkflowApi extends BaseApiController
             }
 
             $updates = [];
-            $allowedFields = ['源节点编码', '目标节点编码', '条件表达式', '条件描述', '排序'];
+            $allowedFields = ['源节点编码', '目标节点编码', '匹配条件', '条件描述', '排序'];
 
             foreach ($allowedFields as $field) {
                 if (array_key_exists($field, $data)) {
                     $value = $data[$field];
+                    // 匹配条件支持数组（结构化条件），序列化为 JSON 后存储
+                    if ($field === '匹配条件' && is_array($value)) {
+                        $value = empty($value) ? null : json_encode($value, JSON_UNESCAPED_UNICODE);
+                    }
                     if ($value === null || $value === '') {
                         $updates[] = sprintf('`%s`=null', $field);
                     } else {

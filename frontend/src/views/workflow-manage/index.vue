@@ -13,12 +13,14 @@ import {
   fetchWorkflowDoneTasks,
   fetchWorkflowMyInstances,
   fetchWorkflowWithdraw,
+  fetchWorkflowAckCc,
   fetchWorkflowNodeList,
   fetchWorkflowNodeDelete,
   fetchWorkflowNodeSort,
   fetchWorkflowEdgeList,
   fetchWorkflowEdgeDelete
 } from '@/service/api/workflow';
+import { fetchContractWithdraw } from '@/service/api/contract';
 import { useConfigDrivenGrid, useSplitter } from '@/hooks/business';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import { WorkbenchSelectAllHeader } from '@/views/menu-bridge/modules/components';
@@ -491,15 +493,20 @@ async function handleViewInstance(instanceId: number) {
   currentInstanceId.value = instanceId;
 }
 
-function handleWithdraw(instanceId: number) {
+function handleWithdraw(inst: any) {
   dialog.warning({
     title: '确认撤回',
-    content: '确定要撤回该流程实例吗?(仅当前节点未处理时可撤回)',
+    content: '确定要撤回该流程实例吗?(已有审批人处理后不可撤回)',
     positiveText: '确定',
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await fetchWorkflowWithdraw(instanceId);
+        // 合同实例必须走合同域端点撤回，由后端在同一事务内回置合同状态，避免合同永久卡在"审批中"
+        if (inst.业务类型 === '合同') {
+          await fetchContractWithdraw(inst.业务ID);
+        } else {
+          await fetchWorkflowWithdraw(inst.GUID);
+        }
         message.success('撤回成功');
         loadMyInstances();
       } catch (e: any) {
@@ -513,6 +520,17 @@ function handleWithdraw(instanceId: number) {
 function handlePendingTaskClick(task: any) {
   if (task.实例ID) {
     currentInstanceId.value = task.实例ID;
+  }
+}
+
+// 抄送任务已读确认：CC 任务不阻塞流程推进，确认后从待办移除
+async function handleAckCc(task: any) {
+  try {
+    await fetchWorkflowAckCc(task.任务ID);
+    message.success('已确认');
+    loadPendingTasks();
+  } catch (e: any) {
+    message.error(e?.message || '操作失败');
   }
 }
 
@@ -574,6 +592,26 @@ function getTaskResultType(result?: string): 'default' | 'success' | 'warning' |
 
 function getTaskResultText(result?: string): string {
   return result || '-';
+}
+
+// 连线匹配条件格式化展示：{"合同金额":{">=":100000,"<":5000000}} → 合同金额>=100000 且 合同金额<5000000
+function formatMatchCondition(raw: any): string {
+  try {
+    const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const parts: string[] = [];
+    for (const [field, rule] of Object.entries(obj || {})) {
+      if (rule === null || typeof rule !== 'object') {
+        parts.push(`${field}=${rule ?? '空'}`);
+      } else {
+        for (const [op, val] of Object.entries(rule as Record<string, any>)) {
+          parts.push(`${field}${op}${Array.isArray(val) ? val.join('/') : (val ?? '')}`);
+        }
+      }
+    }
+    return parts.join(' 且 ');
+  } catch {
+    return String(raw);
+  }
 }
 
 onMounted(async () => {
@@ -692,7 +730,19 @@ onMounted(async () => {
           >
             <div class="task-header">
               <span class="task-title">{{ task.业务标题 }}</span>
-              <NTag size="small" type="warning">{{ task.节点名称 }}</NTag>
+              <div class="task-header-actions">
+                <NTag size="small" :type="task.任务类型 === 'CC' ? 'info' : 'warning'">
+                  {{ task.任务类型 === 'CC' ? `抄送 · ${task.节点名称}` : task.节点名称 }}
+                </NTag>
+                <NButton
+                  v-if="task.任务类型 === 'CC'"
+                  size="tiny"
+                  type="primary"
+                  @click.stop="handleAckCc(task)"
+                >
+                  已读
+                </NButton>
+              </div>
             </div>
             <div class="task-info">
               <span>发起人:{{ task.发起人姓名 }}</span>
@@ -707,8 +757,8 @@ onMounted(async () => {
           <div v-for="task in doneTasks" :key="task.任务ID" class="task-item done">
             <div class="task-header">
               <span class="task-title">{{ task.业务标题 }}</span>
-              <NTag size="small" :type="getTaskResultType(task.处理结果)">
-                {{ getTaskResultText(task.处理结果) }}
+              <NTag size="small" :type="task.任务类型 === 'CC' ? 'info' : getTaskResultType(task.处理结果)">
+                {{ task.任务类型 === 'CC' ? (task.处理结果 || '-') : getTaskResultText(task.处理结果) }}
               </NTag>
             </div>
             <div class="task-info">
@@ -733,7 +783,7 @@ onMounted(async () => {
               <span>发起时间:{{ inst.发起时间 }}</span>
             </div>
             <div class="task-actions" v-if="inst.实例状态 === '运行中'">
-              <NButton size="tiny" type="warning" @click.stop="handleWithdraw(inst.GUID)">撤回</NButton>
+              <NButton size="tiny" type="warning" @click.stop="handleWithdraw(inst)">撤回</NButton>
               <NButton size="tiny" type="primary" @click.stop="handleViewInstance(inst.GUID)">查看流程</NButton>
             </div>
           </div>
@@ -867,8 +917,8 @@ onMounted(async () => {
                 <span class="edge-arrow">→</span>
                 <span class="edge-node">{{ edge.目标节点编码 }}</span>
               </div>
-              <div class="edge-condition-wrap" v-if="edge.条件表达式 || edge.条件描述">
-                <NTag v-if="edge.条件表达式" size="small" type="info">条件:{{ edge.条件表达式 }}</NTag>
+              <div class="edge-condition-wrap" v-if="edge.匹配条件 || edge.条件描述">
+                <NTag v-if="edge.匹配条件" size="small" type="info">条件:{{ formatMatchCondition(edge.匹配条件) }}</NTag>
                 <span v-if="edge.条件描述" class="edge-desc">{{ edge.条件描述 }}</span>
               </div>
               <div class="edge-actions">
@@ -1120,6 +1170,12 @@ onMounted(async () => {
       .task-title {
         font-size: 15px;
         font-weight: 500;
+      }
+
+      .task-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
     }
 

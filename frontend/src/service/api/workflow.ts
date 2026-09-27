@@ -91,6 +91,15 @@ export function fetchWorkflowWithdraw(instanceId: number) {
   });
 }
 
+/** 抄送任务已读确认（仅 CC 类型待处理任务可操作） */
+export function fetchWorkflowAckCc(taskId: number) {
+  return request({
+    url: '/workflow/ackCc',
+    method: 'post',
+    data: { taskId }
+  });
+}
+
 // ============ 节点(Node)CRUD ============
 
 export function fetchWorkflowNodeList(defId: number) {
@@ -169,7 +178,7 @@ export function fetchWorkflowEdgeCreate(data: {
   流程定义ID: number;
   源节点编码: string;
   目标节点编码: string;
-  条件表达式?: string | null;
+  匹配条件?: Record<string, any> | string | null;
   条件描述?: string | null;
   排序?: number;
 }) {
@@ -184,7 +193,7 @@ export function fetchWorkflowEdgeUpdate(data: {
   edgeId: number;
   源节点编码?: string;
   目标节点编码?: string;
-  条件表达式?: string | null;
+  匹配条件?: Record<string, any> | string | null;
   条件描述?: string | null;
   排序?: number;
 }) {

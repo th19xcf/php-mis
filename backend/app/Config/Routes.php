@@ -153,6 +153,7 @@ $routes->group('contract', static function ($routes) {
 	$routes->post('delete', 'ContractApi::delete');
 	$routes->post('submit', 'ContractApi::submit');
 	$routes->post('approve', 'ContractApi::approve');
+	$routes->post('withdraw', 'ContractApi::withdraw');
 	$routes->get('stats', 'ContractApi::stats');
 	$routes->post('stats', 'ContractApi::stats');
 	$routes->get('options', 'ContractApi::options');
@@ -191,6 +192,7 @@ $routes->group('workflow', static function ($routes) {
 	$routes->get('myInstances', 'WorkflowApi::myInstances');
 	$routes->post('myInstances', 'WorkflowApi::myInstances');
 	$routes->post('withdraw', 'WorkflowApi::withdraw');
+	$routes->post('ackCc', 'WorkflowApi::ackCc');
 
 	// 节点(Node)CRUD
 	$routes->get('node/list', 'WorkflowApi::nodeList');

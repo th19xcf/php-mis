@@ -3,11 +3,15 @@
 namespace App\Services\Contract;
 
 use App\Models\Mcommon;
+use App\Services\Workflow\WorkflowConstants;
 use App\Services\Workflow\WorkflowRoutingService;
 use App\Services\Workflow\WorkflowService;
+use App\Traits\TransactionTrait;
 
 class ContractService
 {
+    use TransactionTrait;
+
     private Mcommon $model;
     private WorkflowService $workflowService;
     private WorkflowRoutingService $routingService;
@@ -318,7 +322,7 @@ class ContractService
      * 流程编码解析顺序：
      *  1. 调用方显式传入 $workflowCode（非空）则优先使用；
      *  2. 否则调用 WorkflowRoutingService 按 def_workflow_routing 配置匹配；
-     *  3. 路由未命中时使用默认值 `contract_approval`。
+     *  3. 路由未命中时使用默认流程编码（WorkflowConstants::CONTRACT_DEFAULT_WORKFLOW_CODE）。
      *
      * @param string $contractNo 合同编号
      * @param string $sponsor 发起人工号
@@ -344,8 +348,8 @@ class ContractService
         // 流程路由解析
         $routing = null;
         if ($workflowCode === '') {
-            $defaultCode = 'contract_approval';
-            $routing = $this->routingService->resolveRouting('合同', $contract);
+            $defaultCode = WorkflowConstants::CONTRACT_DEFAULT_WORKFLOW_CODE;
+            $routing = $this->routingService->resolveRouting(WorkflowConstants::BUSINESS_TYPE_CONTRACT, $contract);
             $workflowCode = $routing !== null
                 ? ($routing['目标流程编码'] ?? $defaultCode)
                 : $defaultCode;
@@ -366,7 +370,7 @@ class ContractService
 
         $result = $this->workflowService->startProcess(
             $workflowCode,
-            '合同',
+            WorkflowConstants::BUSINESS_TYPE_CONTRACT,
             $contractNo,
             $businessTitle,
             $sponsor,
@@ -395,6 +399,60 @@ class ContractService
             'workflowCode' => $workflowCode,
             'routing' => $routing,
         ];
+    }
+
+    /**
+     * 撤回审批
+     *
+     * 流程撤回校验（发起人、运行中、已有审批人处理不可撤回）由 WorkflowService::withdraw 承担；
+     * 撤回成功后合同状态由"审批中"回置"草稿"，恢复可编辑、可重新提交。
+     * 撤回流程与合同状态回置纳入同一事务（嵌套事务经 SAVEPOINT 处理），避免合同永久卡在"审批中"。
+     *
+     * @param string $contractNo 合同编号
+     * @param string $sponsor 发起人工号
+     * @param string $sponsorName 发起人姓名
+     * @return array ['instanceId' => int, 'contractStatus' => string]
+     * @throws \RuntimeException
+     */
+    public function withdrawApproval(string $contractNo, string $sponsor, string $sponsorName): array
+    {
+        $contract = $this->getDetail($contractNo);
+        if (!$contract) {
+            throw new \RuntimeException('合同不存在');
+        }
+        if (($contract['合同状态'] ?? '') !== '审批中') {
+            throw new \RuntimeException('只有审批中状态的合同可以撤回');
+        }
+
+        $instanceId = (int) ($contract['流程实例ID'] ?? 0);
+        if ($instanceId <= 0) {
+            throw new \RuntimeException('合同未关联流程实例，无法撤回');
+        }
+
+        return $this->withTransaction(function () use ($contractNo, $sponsor, $instanceId) {
+            // 嵌套事务：内部 withdraw 自带事务，经 SAVEPOINT 与本事务合并
+            $this->workflowService->withdraw($instanceId, $sponsor);
+
+            $now = date('Y-m-d H:i:s');
+            $sql = sprintf(
+                'update `def_contract_master_new`
+                set `合同状态`=%s, `更新人`=%s, `更新时间`=%s
+                where `合同编号`=%s and `合同状态`=%s',
+                $this->model->quote('草稿'),
+                $this->model->quote($sponsor),
+                $this->model->quote($now),
+                $this->model->quote($contractNo),
+                $this->model->quote('审批中')
+            );
+            if ($this->model->exec($sql) === 0) {
+                throw new \RuntimeException('合同状态已变化，撤回失败，请刷新后重试');
+            }
+
+            return [
+                'instanceId' => $instanceId,
+                'contractStatus' => '草稿',
+            ];
+        });
     }
 
     /**
@@ -571,27 +629,32 @@ class ContractService
     /**
      * 生成合同编号
      *
-     * @return string 合同编号
+     * 发号核心：sp_生成合同编号（def_seq 按业务日期分桶 + LAST_INSERT_ID 防并发）。
+     * 原"查当日最大编号+1"写法在并发创建时多个请求读到同一最大值导致重号
+     * （主表唯一索引 uk_合同编号 会直接报重复键）；SP 内 UPDATE 行锁串行化 +
+     * LAST_INSERT_ID 连接级隔离保证并发安全。当日序列行缺失时 SP 以主表当日
+     * 既有最大序号播种（序号自第 11 位起解析，兼容历史 3/4 位序号格式）。
+     *
+     * 存储过程必须走 getDb()->query() 直连：Mcommon::select() 有请求级结果缓存，
+     * 同请求第二次发号会拿到缓存结果而不执行存储过程，导致重号
+     * （与 CandidateCodeService::generateOne 同理）
+     *
+     * @return string 合同编号（HT + YYYYMMDD + 4 位序号）
+     * @throws \RuntimeException 发号失败时抛出
      */
     private function generateContractNo(): string
     {
-        $dateStr = date('Ymd');
-        $prefix = 'HT' . $dateStr;
-
-        $sql = sprintf(
-            'select `合同编号` from `def_contract_master_new` 
-            where `合同编号` like %s 
-            order by `合同编号` desc limit 1',
-            $this->model->quote($prefix . '%')
-        );
-        $result = $this->model->select($sql);
-        $row = $result ? ($result->getRowArray() ?: []) : [];
-
-        $seq = 1;
-        if (!empty($row['合同编号'])) {
-            $lastNo = $row['合同编号'];
-            $lastSeq = (int) substr($lastNo, -4);
-            $seq = $lastSeq + 1;
+        $db = $this->model->getDb();
+        // 初始化会话变量（防残留）
+        $db->query("SET @seq = 0, @prefix = ''");
+        // 发号（LAST_INSERT_ID 防并发，按业务日期分桶；合同创建即业务日期）
+        $db->query(sprintf("CALL sp_生成合同编号(1, '%s', @seq, @prefix)", date('Y-m-d')));
+        // 读取 OUT 参数（同一连接，@变量可见）
+        $row = $db->query('SELECT @prefix AS `p`, @seq AS `s`')->getRowArray() ?: [];
+        $prefix = (string) ($row['p'] ?? '');
+        $seq = (int) ($row['s'] ?? 0);
+        if ($prefix === '' || $seq <= 0) {
+            throw new \RuntimeException('生成合同编号失败');
         }
 
         return $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);

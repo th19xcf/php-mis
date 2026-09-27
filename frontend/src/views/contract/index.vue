@@ -11,6 +11,7 @@ import {
   fetchContractMyContracts,
   fetchContractDownloadDocument
 } from '@/service/api/contract';
+import { fetchWorkflowAckCc } from '@/service/api/workflow';
 import { useConfigDrivenGrid, useSplitter, useConditionPanel } from '@/hooks/business';
 import { fetchWorkbenchPage } from '@/service/api/workbench';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
@@ -363,6 +364,25 @@ function handleSubmit() {
   });
 }
 
+/** 撤回我发起的合同审批（仅运行中、审批未开始前可撤回；成功后合同回置草稿） */
+function handleWithdrawContract(inst: any) {
+  const contractNo = inst.业务ID;
+  if (!contractNo) {
+    message.warning('实例缺少业务编号，无法撤回');
+    return;
+  }
+  dialog.warning({
+    title: '确认撤回',
+    content: `确定要撤回「${inst.业务标题 || contractNo}」的审批吗？撤回后合同将恢复为草稿。`,
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      await contractStore.withdrawApproval(contractNo);
+      message.success('撤回成功，合同已恢复为草稿');
+    }
+  });
+}
+
 async function handlePageChange(page: number) {
   pagination.value.page = page;
   await loadList();
@@ -383,6 +403,23 @@ function handleApproval(task: Api.Workflow.WorkflowTask) {
   } as any;
   contractStore.loadContractDetail(task.业务ID);
   showApprovalModal.value = true;
+}
+
+// 待办任务点击：审批任务打开审批弹窗；抄送(CC)任务不进入审批，只支持已读确认
+function handlePendingTaskClick(task: Api.Workflow.WorkflowTask) {
+  if (task.任务类型 === 'CC') return;
+  handleApproval(task);
+}
+
+// 抄送任务已读确认：CC 任务不阻塞流程推进，确认后从待办移除
+async function handleAckCc(task: Api.Workflow.WorkflowTask) {
+  try {
+    await fetchWorkflowAckCc(task.任务ID);
+    message.success('已确认');
+    loadPending();
+  } catch (e: any) {
+    message.error(e?.message || '操作失败');
+  }
 }
 
 function handleFormSuccess() {
@@ -668,11 +705,23 @@ watch(columnDefs, (newDefs) => {
             v-for="task in pendingTasks"
             :key="task.任务ID"
             class="task-item"
-            @click="handleApproval(task)"
+            @click="handlePendingTaskClick(task)"
           >
             <div class="task-header">
               <span class="task-title">{{ task.业务标题 }}</span>
-              <NTag size="small" type="warning">{{ task.节点名称 }}</NTag>
+              <div class="task-header-actions">
+                <NTag size="small" :type="task.任务类型 === 'CC' ? 'info' : 'warning'">
+                  {{ task.任务类型 === 'CC' ? `抄送 · ${task.节点名称}` : task.节点名称 }}
+                </NTag>
+                <NButton
+                  v-if="task.任务类型 === 'CC'"
+                  size="tiny"
+                  type="primary"
+                  @click.stop="handleAckCc(task)"
+                >
+                  已读
+                </NButton>
+              </div>
             </div>
             <div class="task-info">
               <span>发起人：{{ task.发起人姓名 }}</span>
@@ -685,8 +734,11 @@ watch(columnDefs, (newDefs) => {
           <div v-for="task in doneTasks" :key="task.任务ID" class="task-item done">
             <div class="task-header">
               <span class="task-title">{{ task.业务标题 }}</span>
-              <NTag size="small" :type="task.处理结果 === '同意' ? 'success' : 'error'">
-                {{ task.处理结果 === '同意' ? '同意' : '拒绝' }}
+              <NTag
+                size="small"
+                :type="task.任务类型 === 'CC' ? 'info' : task.处理结果 === '同意' ? 'success' : 'error'"
+              >
+                {{ task.任务类型 === 'CC' ? task.处理结果 : task.处理结果 === '同意' ? '同意' : '拒绝' }}
               </NTag>
             </div>
             <div class="task-info">
@@ -700,12 +752,22 @@ watch(columnDefs, (newDefs) => {
           <div v-for="inst in myContracts" :key="inst.GUID" class="task-item">
             <div class="task-header">
               <span class="task-title">{{ inst.业务标题 }}</span>
-              <NTag
-                size="small"
-                :type="inst.实例状态 === '已完成' ? 'success' : inst.实例状态 === '已终止' ? 'error' : 'info'"
-              >
-                {{ inst.实例状态 === '运行中' ? '运行中' : inst.实例状态 === '已完成' ? '已完成' : '已终止' }}
-              </NTag>
+              <div class="task-header-actions">
+                <NTag
+                  size="small"
+                  :type="inst.实例状态 === '已完成' ? 'success' : inst.实例状态 === '已终止' ? 'error' : 'info'"
+                >
+                  {{ inst.实例状态 === '运行中' ? '运行中' : inst.实例状态 === '已完成' ? '已完成' : '已终止' }}
+                </NTag>
+                <NButton
+                  v-if="inst.实例状态 === '运行中'"
+                  size="tiny"
+                  type="warning"
+                  @click.stop="handleWithdrawContract(inst)"
+                >
+                  撤回
+                </NButton>
+              </div>
             </div>
             <div class="task-info">
               <span>当前节点：{{ inst.当前节点编码 }}</span>
@@ -1094,6 +1156,12 @@ watch(columnDefs, (newDefs) => {
       .task-title {
         font-size: 15px;
         font-weight: 500;
+      }
+
+      .task-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
     }
 
