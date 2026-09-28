@@ -26,14 +26,22 @@ use App\Models\Mcommon;
  *
  * 多个键之间为 AND 关系；同业务类型下按 `优先级` 升序匹配，命中第一条即返回。
  * 若所有路由均未命中，则返回 `默认流程编码`（调用方传入）。
+ *
+ * 缓存：路由配置读多写少（当前仅 SQL 配置无 API CRUD），
+ *      listRoutings 结果按业务类型缓存 300 秒，避免每次发起审批都全表扫描。
+ *      路由变更后最长 300 秒自动失效；如需即时生效可手动清缓存或重启。
  */
 class WorkflowRoutingService
 {
     private Mcommon $model;
+    private $cache;
+    private const CACHE_TTL = 300;
+    private const CACHE_KEY_PREFIX = 'workflow_routing_';
 
     public function __construct()
     {
         $this->model = new Mcommon();
+        $this->cache = \Config\Services::cache();
     }
 
     /**
@@ -82,10 +90,18 @@ class WorkflowRoutingService
     /**
      * 查询某业务类型下所有启用的路由配置（按优先级升序）
      *
+     * 结果按业务类型缓存 300 秒：路由配置读多写少，避免每次发起审批都全表扫描。
+     *
      * @return array<int, array>
      */
     public function listRoutings(string $businessType): array
     {
+        $cacheKey = self::CACHE_KEY_PREFIX . $businessType;
+        $cached = $this->cache->get($cacheKey);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
         $sql = sprintf(
             'select * from `def_workflow_routing`
             where `业务类型`=%s and `启用状态`=%s
@@ -97,7 +113,11 @@ class WorkflowRoutingService
             $this->model->quote('1')
         );
         $result = $this->model->select($sql);
-        return $result ? ($result->getResultArray() ?: []) : [];
+        $routings = $result ? ($result->getResultArray() ?: []) : [];
+
+        $this->cache->save($cacheKey, $routings, self::CACHE_TTL);
+
+        return $routings;
     }
 
     /**

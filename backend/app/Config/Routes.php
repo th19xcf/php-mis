@@ -193,6 +193,8 @@ $routes->group('workflow', static function ($routes) {
 	$routes->post('myInstances', 'WorkflowApi::myInstances');
 	$routes->post('withdraw', 'WorkflowApi::withdraw');
 	$routes->post('ackCc', 'WorkflowApi::ackCc');
+	$routes->post('addSign', 'WorkflowApi::addSign');
+	$routes->post('transfer', 'WorkflowApi::transfer');
 
 	// 节点(Node)CRUD
 	$routes->get('node/list', 'WorkflowApi::nodeList');

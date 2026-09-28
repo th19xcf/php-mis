@@ -100,6 +100,24 @@ export function fetchWorkflowAckCc(taskId: number) {
   });
 }
 
+/** 加签：当前审批人增加其他审批人共同审批 */
+export function fetchWorkflowAddSign(data: { taskId: number; signWorkId: string; signName: string }) {
+  return request({
+    url: '/workflow/addSign',
+    method: 'post',
+    data
+  });
+}
+
+/** 转签：当前审批人将任务转给他人处理 */
+export function fetchWorkflowTransfer(data: { taskId: number; targetWorkId: string; targetName: string }) {
+  return request({
+    url: '/workflow/transfer',
+    method: 'post',
+    data
+  });
+}
+
 // ============ 节点(Node)CRUD ============
 
 export function fetchWorkflowNodeList(defId: number) {

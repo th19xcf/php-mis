@@ -294,6 +294,12 @@ class WorkflowApi extends BaseApiController
 
             $workflowCode = $definition['流程编码'];
 
+            // 启用前校验流程完整性：防止残缺流程（缺 START/END、连线不连通）上线后运行时报错
+            $integrityError = $this->validateWorkflowIntegrity($defId);
+            if ($integrityError !== null) {
+                return $this->businessError('启用失败：' . $integrityError);
+            }
+
             $sql = sprintf(
                 'update `def_workflow_definition`
                 set `流程状态`=%s, `更新人`=%s, `更新时间`=%s
@@ -381,14 +387,28 @@ class WorkflowApi extends BaseApiController
                 $where[] = 'd.`流程编码`=' . $this->model->quote($params['workflowCode']);
             }
 
+            // 数据权限：非超管（deptCodeAuthz 非空）时按部门授权过滤
+            // 实例表无部门字段，关联 def_user 取发起人所在部门
+            $deptAuthz = $this->getDeptAuthz();
+            $joinUserSql = '';
+            if ($deptAuthz !== '') {
+                $deptCodes = array_filter(explode('|', $deptAuthz));
+                if (!empty($deptCodes)) {
+                    $quoted = array_map(fn ($code) => $this->model->quote($code), $deptCodes);
+                    $where[] = 'u.`员工部门编码` in (' . implode(',', $quoted) . ')';
+                    $joinUserSql = ' left join `def_user` u on i.`发起人`=u.`工号` and u.`有效标识`=' . $this->model->quote('1');
+                }
+            }
+
             $whereSql = implode(' and ', $where);
             $offset = ($page - 1) * $pageSize;
 
             $countSql = sprintf(
                 'select count(*) as `total`
                 from `def_workflow_instance` i
-                left join `def_workflow_definition` d on i.`流程定义ID` = d.`GUID`
+                left join `def_workflow_definition` d on i.`流程定义ID` = d.`GUID`%s
                 where %s',
+                $joinUserSql,
                 $whereSql
             );
             $result = $this->model->select($countSql);
@@ -401,10 +421,11 @@ class WorkflowApi extends BaseApiController
                        i.`发起人姓名`, i.`发起时间`, i.`创建时间`, i.`结束时间`,
                        d.`流程编码`, d.`流程名称`
                 from `def_workflow_instance` i
-                left join `def_workflow_definition` d on i.`流程定义ID` = d.`GUID`
+                left join `def_workflow_definition` d on i.`流程定义ID` = d.`GUID`%s
                 where %s
                 order by i.`创建时间` desc
                 limit %d offset %d',
+                $joinUserSql,
                 $whereSql,
                 $pageSize,
                 $offset
@@ -546,6 +567,68 @@ class WorkflowApi extends BaseApiController
             return $this->success(['acked' => true], '抄送已读确认成功');
         } catch (\Throwable $e) {
             log_message('error', '[WorkflowApi::ackCc] ' . $e->getMessage());
+            return $this->businessError($e->getMessage());
+        }
+    }
+
+    /**
+     * 加签：当前审批人增加其他审批人共同审批
+     */
+    public function addSign()
+    {
+        try {
+            $data = $this->getJsonInput();
+
+            if ($error = $this->requireParams($data, ['taskId', 'signWorkId', 'signName'])) {
+                return $error;
+            }
+
+            $taskId = (int) $data['taskId'];
+            $operator = $this->getUserWorkId();
+            $operatorName = $this->getUserName();
+
+            $result = $this->workflowService->addSign(
+                $taskId,
+                $operator,
+                $operatorName,
+                (string) $data['signWorkId'],
+                (string) $data['signName']
+            );
+
+            return $this->success($result, '加签成功');
+        } catch (\Throwable $e) {
+            log_message('error', '[WorkflowApi::addSign] ' . $e->getMessage());
+            return $this->businessError($e->getMessage());
+        }
+    }
+
+    /**
+     * 转签：当前审批人将任务转给他人处理
+     */
+    public function transfer()
+    {
+        try {
+            $data = $this->getJsonInput();
+
+            if ($error = $this->requireParams($data, ['taskId', 'targetWorkId', 'targetName'])) {
+                return $error;
+            }
+
+            $taskId = (int) $data['taskId'];
+            $operator = $this->getUserWorkId();
+            $operatorName = $this->getUserName();
+
+            $result = $this->workflowService->transfer(
+                $taskId,
+                $operator,
+                $operatorName,
+                (string) $data['targetWorkId'],
+                (string) $data['targetName']
+            );
+
+            return $this->success($result, '转签成功');
+        } catch (\Throwable $e) {
+            log_message('error', '[WorkflowApi::transfer] ' . $e->getMessage());
             return $this->businessError($e->getMessage());
         }
     }
@@ -785,6 +868,22 @@ class WorkflowApi extends BaseApiController
             $node = $result ? ($result->getRowArray() ?: []) : [];
             if (empty($node)) {
                 return $this->notFound('节点不存在');
+            }
+
+            // 校验：该流程定义下存在运行中的实例时，禁止删除节点
+            // 否则运行中流程推进到已删除节点会报错，实例卡死
+            $defId = (int) $node['流程定义ID'];
+            $sql = sprintf(
+                'select count(*) as `cnt` from `def_workflow_instance`
+                where `流程定义ID`=%d and `实例状态`=%s and `删除标识`=%s',
+                $defId,
+                $this->model->quote('运行中'),
+                $this->model->quote('0')
+            );
+            $result = $this->model->select($sql);
+            $row = $result ? ($result->getRowArray() ?: []) : [];
+            if ((int) ($row['cnt'] ?? 0) > 0) {
+                return $this->businessError('该流程存在运行中的实例，无法删除节点，请先处理运行中的流程');
             }
 
             // 逻辑删除节点
@@ -1361,5 +1460,91 @@ class WorkflowApi extends BaseApiController
             log_message('error', '[WorkflowApi::templateDelete] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
+    }
+
+    /**
+     * 校验流程定义完整性（启用前调用）
+     *
+     * 校验项：
+     * 1. 有且仅有一个 START 节点
+     * 2. 至少有一个 END 节点
+     * 3. 连通性：从 START 出发沿连线能到达至少一个 END
+     *
+     * @param int $defId 流程定义ID
+     * @return string|null 校验失败返回错误信息，通过返回 null
+     */
+    private function validateWorkflowIntegrity(int $defId): ?string
+    {
+        $sql = sprintf(
+            'select `节点编码`, `节点类型` from `def_workflow_node`
+            where `流程定义ID`=%d and `删除标识`=%s',
+            $defId,
+            $this->model->quote('0')
+        );
+        $result = $this->model->select($sql);
+        $nodes = $result ? $result->getResultArray() : [];
+        if (empty($nodes)) {
+            return '流程未配置任何节点';
+        }
+
+        $nodeCodes = array_column($nodes, '节点编码');
+        $startNodes = array_values(array_filter($nodes, fn ($n) => ($n['节点类型'] ?? '') === 'START'));
+        $endNodes = array_values(array_filter($nodes, fn ($n) => ($n['节点类型'] ?? '') === 'END'));
+
+        if (count($startNodes) === 0) {
+            return '缺少 START（开始）节点';
+        }
+        if (count($startNodes) > 1) {
+            return '存在多个 START（开始）节点，只能有一个';
+        }
+        if (count($endNodes) === 0) {
+            return '缺少 END（结束）节点';
+        }
+
+        // 连通性校验：从 START 出发沿连线 BFS，必须能到达至少一个 END
+        $sql = sprintf(
+            'select `源节点编码`, `目标节点编码` from `def_workflow_edge`
+            where `流程定义ID`=%d and `删除标识`=%s',
+            $defId,
+            $this->model->quote('0')
+        );
+        $result = $this->model->select($sql);
+        $edges = $result ? $result->getResultArray() : [];
+
+        $adjacency = [];
+        foreach ($edges as $edge) {
+            $src = $edge['源节点编码'] ?? '';
+            $dst = $edge['目标节点编码'] ?? '';
+            if ($src === '' || $dst === '') {
+                continue;
+            }
+            $adjacency[$src][] = $dst;
+        }
+
+        $startCode = $startNodes[0]['节点编码'];
+        $endCodes = array_column($endNodes, '节点编码');
+        $visited = [$startCode => true];
+        $queue = [$startCode];
+        $reachableEnd = false;
+
+        while (!empty($queue)) {
+            $current = array_shift($queue);
+            if (in_array($current, $endCodes, true)) {
+                $reachableEnd = true;
+                break;
+            }
+            foreach ($adjacency[$current] ?? [] as $next) {
+                if (!isset($visited[$next])) {
+                    $visited[$next] = true;
+                    $queue[] = $next;
+                }
+            }
+        }
+
+        if (!$reachableEnd) {
+            return '从 START 节点无法沿连线到达任何 END 节点，流程不连通';
+        }
+
+        return null;
     }
 }

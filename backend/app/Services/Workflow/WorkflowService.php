@@ -1024,6 +1024,78 @@ class WorkflowService
                 break;
         }
 
+        // 委托代理：解析出审批人后，对每个审批人查当前有效委托配置，命中则替换为代理人
+        // 避免审批人休假时流程停滞；批量查询防 N+1
+        $approvers = $this->applyDelegation($approvers);
+
+        return $approvers;
+    }
+
+    /**
+     * 委托代理替换：批量查当前有效委托配置，将委托人替换为代理人
+     *
+     * 同一委托人若有多条有效配置，取优先级最高（GUID 最小）的一条；
+     * 代理人不可与委托人为同一人（防循环）。
+     *
+     * @param array $approvers 原始审批人列表
+     * @return array 替换后的审批人列表
+     */
+    private function applyDelegation(array $approvers): array
+    {
+        if (empty($approvers)) {
+            return $approvers;
+        }
+
+        $workIds = array_filter(array_map(fn ($a) => $a['work_id'] ?? '', $approvers));
+        if (empty($workIds)) {
+            return $approvers;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $quotedIds = implode(',', array_map(fn ($id) => $this->model->quote($id), $workIds));
+
+        $sql = sprintf(
+            'select `委托人`, `代理人`, `代理人姓名`
+            from `def_workflow_delegate`
+            where `委托人` in (%s) and `开始时间` <= %s and `结束时间` >= %s
+              and `删除标识`=%s and `有效标识`=%s
+            order by `GUID` asc',
+            $quotedIds,
+            $this->model->quote($now),
+            $this->model->quote($now),
+            $this->model->quote('0'),
+            $this->model->quote('1')
+        );
+        $result = $this->model->select($sql);
+        $delegations = $result ? ($result->getResultArray() ?: []) : [];
+
+        if (empty($delegations)) {
+            return $approvers;
+        }
+
+        // 同一委托人取第一条（GUID 最小，优先级最高）
+        $map = [];
+        foreach ($delegations as $d) {
+            $principal = $d['委托人'] ?? '';
+            if (!isset($map[$principal])) {
+                $map[$principal] = $d;
+            }
+        }
+
+        foreach ($approvers as &$approver) {
+            $wid = $approver['work_id'] ?? '';
+            if (isset($map[$wid])) {
+                $delegateWorkId = $map[$wid]['代理人'] ?? '';
+                // 防循环：代理人不可与委托人为同一人
+                if ($delegateWorkId !== '' && $delegateWorkId !== $wid) {
+                    $approver['work_id'] = $delegateWorkId;
+                    $approver['user_name'] = $map[$wid]['代理人姓名'] ?? '';
+                    $approver['delegated_from'] = $wid;
+                }
+            }
+        }
+        unset($approver);
+
         return $approvers;
     }
 
@@ -1289,5 +1361,187 @@ class WorkflowService
             $this->model->quote($now)
         );
         $this->model->exec($sql);
+    }
+
+    /**
+     * 加签：当前审批人在审批过程中增加其他审批人共同审批
+     *
+     * 加签后原任务保持待处理，新增一条 APPROVAL 任务（加签父任务ID 指向原任务），
+     * checkNodeApproved 会自动统计加签任务（同节点 APPROVAL），会签节点需全部同意、或签任一同意。
+     *
+     * @param int $taskId 原任务ID
+     * @param string $approver 当前操作人（原任务处理人）
+     * @param string $approverName 当前操作人姓名
+     * @param string $signWorkId 加签目标人工号
+     * @param string $signName 加签目标人姓名
+     * @return array ['addedTaskId' => int]
+     * @throws \RuntimeException
+     */
+    public function addSign(int $taskId, string $approver, string $approverName, string $signWorkId, string $signName): array
+    {
+        $sql = sprintf(
+            'select * from `def_workflow_task`
+            where `GUID`=%d limit 1',
+            $taskId
+        );
+        $result = $this->model->select($sql);
+        $task = $result ? ($result->getRowArray() ?: []) : [];
+        if (empty($task)) {
+            throw new \RuntimeException('任务不存在');
+        }
+        if (($task['任务状态'] ?? '') !== '待处理') {
+            throw new \RuntimeException('任务状态不是待处理');
+        }
+        if (($task['处理人'] ?? '') !== $approver) {
+            throw new \RuntimeException('无权操作此任务');
+        }
+        if (($task['任务类型'] ?? '') !== 'APPROVAL') {
+            throw new \RuntimeException('仅审批任务可加签');
+        }
+
+        $instanceId = (int) $task['实例ID'];
+        $nodeCode = $task['节点编码'] ?? '';
+
+        // 校验流程运行中
+        $sql = sprintf(
+            'select `实例状态` from `def_workflow_instance`
+            where `GUID`=%d limit 1',
+            $instanceId
+        );
+        $result = $this->model->select($sql);
+        $instance = $result ? ($result->getRowArray() ?: []) : [];
+        if (empty($instance) || ($instance['实例状态'] ?? '') !== '运行中') {
+            throw new \RuntimeException('流程不是运行中状态');
+        }
+
+        // 防重复加签：同一父任务同一加签人只能有一条待处理的加签任务
+        $sql = sprintf(
+            'select count(*) as `cnt` from `def_workflow_task`
+            where `加签父任务ID`=%d and `处理人`=%s and `任务状态`=%s and `删除标识`=%s',
+            $taskId,
+            $this->model->quote($signWorkId),
+            $this->model->quote('待处理'),
+            $this->model->quote('0')
+        );
+        $result = $this->model->select($sql);
+        $row = $result ? ($result->getRowArray() ?: []) : [];
+        if ((int) ($row['cnt'] ?? 0) > 0) {
+            throw new \RuntimeException('该审批人已被加签，请勿重复操作');
+        }
+
+        return $this->withTransaction(function () use ($taskId, $instanceId, $nodeCode, $approver, $approverName, $signWorkId, $signName, $task) {
+            $now = date('Y-m-d H:i:s');
+
+            $sql = sprintf(
+                'insert into `def_workflow_task`
+                (`实例ID`, `节点编码`, `任务类型`, `处理人`, `处理人姓名`,
+                 `任务状态`, `加签父任务ID`, `任务标题`,
+                 `操作来源`, `操作人员`, `操作时间`,
+                 `创建人`, `创建时间`, `更新人`, `更新时间`, `删除标识`, `有效标识`)
+                values (%d, %s, %s, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
+                $instanceId,
+                $this->model->quote($nodeCode),
+                $this->model->quote('APPROVAL'),
+                $this->model->quote($signWorkId),
+                $this->model->quote($signName),
+                $this->model->quote('待处理'),
+                $taskId,
+                $this->model->quote($task['任务标题'] ?? ''),
+                $this->model->quote('SYSTEM'),
+                $this->model->quote($approver),
+                $this->model->quote($now),
+                $this->model->quote($approver),
+                $this->model->quote($now),
+                $this->model->quote($approver),
+                $this->model->quote($now),
+                $this->model->quote('0'),
+                $this->model->quote('1')
+            );
+            $this->model->exec($sql);
+
+            $result = $this->model->query('select last_insert_id() as `id`');
+            $row = $result ? ($result->getRowArray() ?: []) : [];
+            $newTaskId = (int) ($row['id'] ?? 0);
+
+            $this->addTaskLog($taskId, $instanceId, $nodeCode, $approver, $approverName, '加签', '加签给：' . $signName . '(' . $signWorkId . ')');
+
+            return ['addedTaskId' => $newTaskId];
+        });
+    }
+
+    /**
+     * 转签：当前审批人将任务转给他人处理（不新增任务，直接改处理人）
+     *
+     * @param int $taskId 原任务ID
+     * @param string $approver 当前操作人（原任务处理人）
+     * @param string $approverName 当前操作人姓名
+     * @param string $targetWorkId 转签目标人工号
+     * @param string $targetName 转签目标人姓名
+     * @return array ['transferred' => bool]
+     * @throws \RuntimeException
+     */
+    public function transfer(int $taskId, string $approver, string $approverName, string $targetWorkId, string $targetName): array
+    {
+        $sql = sprintf(
+            'select * from `def_workflow_task`
+            where `GUID`=%d limit 1',
+            $taskId
+        );
+        $result = $this->model->select($sql);
+        $task = $result ? ($result->getRowArray() ?: []) : [];
+        if (empty($task)) {
+            throw new \RuntimeException('任务不存在');
+        }
+        if (($task['任务状态'] ?? '') !== '待处理') {
+            throw new \RuntimeException('任务状态不是待处理');
+        }
+        if (($task['处理人'] ?? '') !== $approver) {
+            throw new \RuntimeException('无权操作此任务');
+        }
+        if (($task['任务类型'] ?? '') !== 'APPROVAL') {
+            throw new \RuntimeException('仅审批任务可转签');
+        }
+
+        $instanceId = (int) $task['实例ID'];
+        $nodeCode = $task['节点编码'] ?? '';
+
+        // 校验流程运行中
+        $sql = sprintf(
+            'select `实例状态` from `def_workflow_instance`
+            where `GUID`=%d limit 1',
+            $instanceId
+        );
+        $result = $this->model->select($sql);
+        $instance = $result ? ($result->getRowArray() ?: []) : [];
+        if (empty($instance) || ($instance['实例状态'] ?? '') !== '运行中') {
+            throw new \RuntimeException('流程不是运行中状态');
+        }
+
+        return $this->withTransaction(function () use ($taskId, $instanceId, $nodeCode, $approver, $approverName, $targetWorkId, $targetName, $task) {
+            $now = date('Y-m-d H:i:s');
+
+            $sql = sprintf(
+                'update `def_workflow_task`
+                set `处理人`=%s, `处理人姓名`=%s,
+                    `转签源任务ID`=`GUID`,
+                    `更新人`=%s, `更新时间`=%s, `操作人员`=%s, `操作时间`=%s
+                where `GUID`=%d and `任务状态`=%s',
+                $this->model->quote($targetWorkId),
+                $this->model->quote($targetName),
+                $this->model->quote($approver),
+                $this->model->quote($now),
+                $this->model->quote($approver),
+                $this->model->quote($now),
+                $taskId,
+                $this->model->quote('待处理')
+            );
+            if ($this->model->exec($sql) === 0) {
+                throw new \RuntimeException('任务已被处理或已撤回，请刷新待办列表');
+            }
+
+            $this->addTaskLog($taskId, $instanceId, $nodeCode, $approver, $approverName, '转签', '转签给：' . $targetName . '(' . $targetWorkId . ')');
+
+            return ['transferred' => true];
+        });
     }
 }

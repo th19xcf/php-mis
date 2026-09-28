@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue';
 import { } from 'naive-ui';
 import { useContractStore } from '@/store/modules/contract';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
+import { fetchWorkflowAddSign, fetchWorkflowTransfer } from '@/service/api/workflow';
 
 const props = defineProps<{
   visible: boolean;
@@ -25,6 +26,11 @@ const formData = ref({
   rejectMode: 'terminate' as 'terminate' | 'sponsor' | 'previous'
 });
 
+/** 加签/转签面板模式：none 默认审批 | addSign 加签 | transfer 转签 */
+const panelMode = ref<'none' | 'addSign' | 'transfer'>('none');
+const signTarget = ref({ workId: '', name: '' });
+const transferTarget = ref({ workId: '', name: '' });
+
 const pendingTask = computed(() => {
   const tasks = contractStore.pendingTasks;
   if (!props.contract) return null;
@@ -41,6 +47,7 @@ watch(
   visible => {
     if (visible) {
       contractStore.loadPendingTasks();
+      panelMode.value = 'none';
     }
   }
 );
@@ -54,6 +61,7 @@ const rejectModeOptions = [
 function handleClose() {
   emit('update:visible', false);
   formData.value = { action: '同意', opinion: '', rejectMode: 'terminate' };
+  panelMode.value = 'none';
 }
 
 async function handleSubmit() {
@@ -76,6 +84,50 @@ async function handleSubmit() {
     emit('update:visible', false);
   } catch (e: any) {
     message.error(e?.message || '审批失败');
+  }
+}
+
+async function handleAddSign() {
+  if (!pendingTask.value) return;
+  if (!signTarget.value.workId || !signTarget.value.name) {
+    message.error('请输入加签人工号和姓名');
+    return;
+  }
+  try {
+    await fetchWorkflowAddSign({
+      taskId: pendingTask.value.任务ID,
+      signWorkId: signTarget.value.workId,
+      signName: signTarget.value.name
+    });
+    message.success('加签成功');
+    panelMode.value = 'none';
+    signTarget.value = { workId: '', name: '' };
+    emit('success');
+    emit('update:visible', false);
+  } catch (e: any) {
+    message.error(e?.message || '加签失败');
+  }
+}
+
+async function handleTransfer() {
+  if (!pendingTask.value) return;
+  if (!transferTarget.value.workId || !transferTarget.value.name) {
+    message.error('请输入转签目标人工号和姓名');
+    return;
+  }
+  try {
+    await fetchWorkflowTransfer({
+      taskId: pendingTask.value.任务ID,
+      targetWorkId: transferTarget.value.workId,
+      targetName: transferTarget.value.name
+    });
+    message.success('转签成功');
+    panelMode.value = 'none';
+    transferTarget.value = { workId: '', name: '' };
+    emit('success');
+    emit('update:visible', false);
+  } catch (e: any) {
+    message.error(e?.message || '转签失败');
   }
 }
 </script>
@@ -151,26 +203,62 @@ async function handleSubmit() {
             ></textarea>
           </div>
         </div>
+        <!-- 加签/转签面板 -->
+        <div v-if="!isReturnTask && panelMode !== 'none'" class="form-section sign-panel">
+          <div v-if="panelMode === 'addSign'">
+            <div class="form-item">
+              <label>加签人工号</label>
+              <input v-model="signTarget.workId" type="text" placeholder="请输入工号" />
+            </div>
+            <div class="form-item">
+              <label>加签人姓名</label>
+              <input v-model="signTarget.name" type="text" placeholder="请输入姓名" />
+            </div>
+          </div>
+          <div v-if="panelMode === 'transfer'">
+            <div class="form-item">
+              <label>转签目标工号</label>
+              <input v-model="transferTarget.workId" type="text" placeholder="请输入工号" />
+            </div>
+            <div class="form-item">
+              <label>转签目标姓名</label>
+              <input v-model="transferTarget.name" type="text" placeholder="请输入姓名" />
+            </div>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-default" @click="handleClose">取消</button>
-        <button
-          v-if="!isReturnTask"
-          class="btn"
-          :class="formData.action === '同意' ? 'btn-primary' : 'btn-danger'"
-          :disabled="loading"
-          @click="handleSubmit"
-        >
-          {{ loading ? '提交中...' : formData.action === '同意' ? '同意' : '拒绝' }}
-        </button>
-        <button
-          v-else
-          class="btn btn-primary"
-          :disabled="loading"
-          @click="handleSubmit"
-        >
-          {{ loading ? '提交中...' : '重新提交' }}
-        </button>
+        <template v-if="!isReturnTask && panelMode === 'none'">
+          <button class="btn btn-default" @click="handleClose">取消</button>
+          <button class="btn btn-default btn-sign" @click="panelMode = 'addSign'">加签</button>
+          <button class="btn btn-default btn-sign" @click="panelMode = 'transfer'">转签</button>
+          <button
+            class="btn"
+            :class="formData.action === '同意' ? 'btn-primary' : 'btn-danger'"
+            :disabled="loading"
+            @click="handleSubmit"
+          >
+            {{ loading ? '提交中...' : formData.action === '同意' ? '同意' : '拒绝' }}
+          </button>
+        </template>
+        <template v-else-if="!isReturnTask && panelMode === 'addSign'">
+          <button class="btn btn-default" @click="panelMode = 'none'">返回</button>
+          <button class="btn btn-primary" :disabled="loading" @click="handleAddSign">确认加签</button>
+        </template>
+        <template v-else-if="!isReturnTask && panelMode === 'transfer'">
+          <button class="btn btn-default" @click="panelMode = 'none'">返回</button>
+          <button class="btn btn-primary" :disabled="loading" @click="handleTransfer">确认转签</button>
+        </template>
+        <template v-else>
+          <button class="btn btn-default" @click="handleClose">取消</button>
+          <button
+            class="btn btn-primary"
+            :disabled="loading"
+            @click="handleSubmit"
+          >
+            {{ loading ? '提交中...' : '重新提交' }}
+          </button>
+        </template>
       </div>
     </div>
   </div>
@@ -380,5 +468,15 @@ async function handleSubmit() {
       color: #1890ff;
     }
   }
+}
+.sign-panel {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px dashed #d0d5dd;
+}
+.btn-sign {
+  margin-left: 4px;
 }
 </style>
