@@ -255,7 +255,7 @@ const local: App.I18n.Schema = {
     personnel_employee: 'Employee Management',
     personnel_person: 'Person Archive Management',
     'contract': 'Contract Management',
-    'workflow-manage': 'Workflow Management',
+    'workflow-manage': 'Process Management',
     'oa-todo-center': 'Todo Center',
     'room-status': 'Room Status'
   },

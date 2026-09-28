@@ -251,7 +251,7 @@ const local: App.I18n.Schema = {
     personnel_employee: '在职人员维护',
     personnel_person: '人员主档管理',
     'contract': '合同管理',
-    'workflow-manage': '工作流管理',
+    'workflow-manage': '流程管理',
     'oa-todo-center': '待办中心',
     'room-status': '房态图'
   },

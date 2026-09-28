@@ -628,7 +628,7 @@ onMounted(async () => {
   <div class="workflow-container" :class="{ 'system-dark': isDarkMode }">
     <div class="workflow-panel workflow-panel-left" :style="{ width: leftWidth + 'px' }">
       <div class="panel-header">
-        <span class="panel-title">工作流管理</span>
+        <span class="panel-title">流程管理</span>
         <div class="stats-cards-inline">
           <div class="stat-item">
             <span class="stat-label">流程总数</span>
