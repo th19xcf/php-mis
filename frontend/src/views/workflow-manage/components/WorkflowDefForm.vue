@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
+import { ref, watch } from 'vue';
 import { NModal, NForm, NFormItem, NInput, NSelect, NSpace, NButton } from 'naive-ui';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
@@ -21,14 +21,14 @@ const emit = defineEmits<{
 
 const message = useMessageWithConsole();
 
+// 流程定义仅维护结构信息：编码/名称/业务类型/状态/描述
+// 审批人/超时配置已下沉至节点级（def_workflow_node），不再在此处维护
 const formData = ref({
   流程编码: '',
   流程名称: '',
   业务类型: '合同',
   流程状态: '草稿',
-  流程描述: '',
-  审批人配置: '' as string,
-  超时规则: '' as string
+  流程描述: ''
 });
 
 const businessTypeOptions = [
@@ -43,16 +43,6 @@ const statusOptions = [
   { label: '停用', value: '停用' }
 ];
 
-function parseJsonObject(value: any): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return '';
-  }
-}
-
 watch(
   () => props.visible,
   (val) => {
@@ -63,9 +53,7 @@ watch(
           流程名称: props.definition.流程名称 || '',
           业务类型: props.definition.业务类型 || '合同',
           流程状态: props.definition.流程状态 || '草稿',
-          流程描述: props.definition.流程描述 || '',
-          审批人配置: parseJsonObject(props.definition.审批人配置),
-          超时规则: parseJsonObject(props.definition.超时规则)
+          流程描述: props.definition.流程描述 || ''
         };
       } else {
         formData.value = {
@@ -73,9 +61,7 @@ watch(
           流程名称: '',
           业务类型: '合同',
           流程状态: '草稿',
-          流程描述: '',
-          审批人配置: '',
-          超时规则: ''
+          流程描述: ''
         };
       }
     }
@@ -98,24 +84,6 @@ function buildPayload() {
   // 流程状态仅在新建时传递,编辑时由启用/停用接口控制
   if (props.mode === 'create') {
     payload.流程状态 = formData.value.流程状态;
-  }
-
-  // 审批人配置: 非空时解析为对象
-  if (formData.value.审批人配置.trim()) {
-    try {
-      payload.审批人配置 = JSON.parse(formData.value.审批人配置);
-    } catch {
-      throw new Error('审批人配置 JSON 格式错误');
-    }
-  }
-
-  // 超时规则: 非空时解析为对象
-  if (formData.value.超时规则.trim()) {
-    try {
-      payload.超时规则 = JSON.parse(formData.value.超时规则);
-    } catch {
-      throw new Error('超时规则 JSON 格式错误');
-    }
   }
 
   return payload;
@@ -195,32 +163,6 @@ defineExpose({
           <NInput v-model:value="formData.流程描述" type="textarea" :rows="2" placeholder="请输入流程描述" size="small" />
         </div>
       </div>
-      <div class="edit-row">
-        <div class="edit-cell edit-cell-name">审批人配置</div>
-        <div class="edit-cell edit-cell-value">
-          <NInput
-            v-model:value="formData.审批人配置"
-            type="textarea"
-            :rows="6"
-            placeholder='JSON 格式,例如:{"nodes":[{"code":"start","name":"开始"}]}'
-            size="small"
-            class="json-input"
-          />
-        </div>
-      </div>
-      <div class="edit-row">
-        <div class="edit-cell edit-cell-name">超时规则</div>
-        <div class="edit-cell edit-cell-value">
-          <NInput
-            v-model:value="formData.超时规则"
-            type="textarea"
-            :rows="4"
-            placeholder='JSON 格式,例如:{"timeoutMinutes":1440,"action":"NOTIFY"}'
-            size="small"
-            class="json-input"
-          />
-        </div>
-      </div>
     </div>
   </div>
 
@@ -234,7 +176,7 @@ defineExpose({
     @update:show="val => !val && handleClose()"
     style="width: 560px"
   >
-    <NForm label-placement="left" :label-width="90">
+    <NForm label-placement="left" :label-width="80">
       <NFormItem label="流程编码" required>
         <NInput v-model:value="formData.流程编码" placeholder="请输入流程编码" :disabled="mode === 'edit'" />
       </NFormItem>
@@ -250,27 +192,9 @@ defineExpose({
       <NFormItem label="流程描述">
         <NInput v-model:value="formData.流程描述" type="textarea" :rows="2" placeholder="请输入流程描述" />
       </NFormItem>
-      <NFormItem label="审批人配置">
-        <NInput
-          v-model:value="formData.审批人配置"
-          type="textarea"
-          :rows="5"
-          placeholder='JSON 格式,例如:{"nodes":[{"code":"start","name":"开始"}]}'
-          class="json-textarea"
-        />
-      </NFormItem>
-      <NFormItem label="超时规则">
-        <NInput
-          v-model:value="formData.超时规则"
-          type="textarea"
-          :rows="4"
-          placeholder='JSON 格式,例如:{"timeoutMinutes":1440,"action":"NOTIFY"}'
-          class="json-textarea"
-        />
-      </NFormItem>
     </NForm>
     <div class="modal-notice">
-      提示:流程节点和连线配置请在流程设计器中完成。
+      提示:审批人/超时配置请在流程设计器的节点编辑中完成。
     </div>
     <template #footer>
       <NSpace justify="end">
@@ -338,11 +262,6 @@ defineExpose({
     :deep(.n-input-number) {
       width: 100%;
     }
-
-    .json-input :deep(textarea) {
-      font-family: 'Consolas', 'Monaco', monospace;
-      font-size: 12px;
-    }
   }
 
   .required-mark {
@@ -379,11 +298,5 @@ defineExpose({
   border: 1px solid rgb(255, 229, 143);
   font-size: 13px;
   color: rgb(212, 136, 6);
-}
-
-// JSON 文本框等宽字体（应用于 NInput textarea）
-.json-textarea :deep(textarea) {
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 12px;
 }
 </style>

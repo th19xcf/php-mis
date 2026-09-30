@@ -494,12 +494,12 @@ defineExpose({
     @update:show="val => !val && requestClose()"
     style="width: 600px"
   >
-    <NForm label-placement="left" :label-width="90">
+    <NForm label-placement="left" :label-width="80">
       <NFormItem label="合同名称" required>
         <NInput v-model:value="formData.合同名称" placeholder="请输入合同名称" />
       </NFormItem>
       <NFormItem label="合同类型">
-        <NSelect v-model:value="formData.合同类型" :options="合同类型Options" placeholder="请选择" clearable />
+        <NSelect v-model:value="formData.合同类型" :options="合同类型Options" />
       </NFormItem>
       <NFormItem label="甲方名称" required>
         <NInput v-model:value="formData.甲方名称" placeholder="请输入甲方名称" />
@@ -523,10 +523,10 @@ defineExpose({
         <NInputNumber v-model:value="formData.合同金额" placeholder="请输入合同金额" :precision="2" style="width: 100%" />
       </NFormItem>
       <NFormItem label="付款方式">
-        <NSelect v-model:value="formData.付款方式" :options="付款方式Options" placeholder="请选择" clearable />
+        <NSelect v-model:value="formData.付款方式" :options="付款方式Options" />
       </NFormItem>
       <NFormItem label="币别">
-        <NSelect v-model:value="formData.币别" :options="币别Options" placeholder="请选择" clearable />
+        <NSelect v-model:value="formData.币别" :options="币别Options" />
       </NFormItem>
       <NFormItem label="汇率">
         <NInputNumber v-model:value="formData.汇率" placeholder="请输入汇率" :precision="4" :step="0.0001" style="width: 100%" />

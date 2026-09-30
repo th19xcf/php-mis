@@ -145,28 +145,19 @@ class WorkflowApi extends BaseApiController
             $maxVersion = (int) ($row['cnt'] ?? 0);
             $newVersion = $maxVersion + 1;
 
-            $approvalConfig = !empty($data['审批人配置'])
-                ? json_encode($data['审批人配置'], JSON_UNESCAPED_UNICODE)
-                : null;
-            $timeoutRules = !empty($data['超时规则'])
-                ? json_encode($data['超时规则'], JSON_UNESCAPED_UNICODE)
-                : null;
-
+            // 审批人/超时配置已下沉到节点级（def_workflow_node），定义级不再维护这些字段
             $sql = sprintf(
                 'insert into `def_workflow_definition`
                 (`流程编码`, `流程名称`, `业务类型`, `版本号`, `流程状态`, `流程描述`,
-                 `审批人配置`, `超时规则`,
                  `操作来源`, `操作人员`, `操作时间`,
                  `创建人`, `创建时间`, `更新人`, `更新时间`)
-                values (%s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
+                values (%s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
                 $this->model->quote($data['流程编码']),
                 $this->model->quote($data['流程名称']),
                 $this->model->quote($data['业务类型']),
                 $newVersion,
                 $this->model->quote($data['流程状态'] ?? '草稿'),
                 $this->model->quote($data['流程描述'] ?? ''),
-                $approvalConfig ? $this->model->quote($approvalConfig) : 'null',
-                $timeoutRules ? $this->model->quote($timeoutRules) : 'null',
                 $this->model->quote('WEB'),
                 $this->model->quote($operator),
                 $this->model->quote($now),
@@ -203,14 +194,12 @@ class WorkflowApi extends BaseApiController
             $operator = $this->getUserWorkId();
 
             $updates = [];
-            $allowedFields = ['流程名称', '流程描述', '审批人配置', '超时规则'];
+            // 审批人/超时配置已下沉到节点级（def_workflow_node），定义级仅维护核心字段
+            $allowedFields = ['流程名称', '流程描述'];
 
             foreach ($allowedFields as $field) {
                 if (isset($data[$field])) {
-                    $value = $data[$field];
-                    if (is_array($value)) {
-                        $value = json_encode($value, JSON_UNESCAPED_UNICODE);
-                    }
+                    $value = is_array($data[$field]) ? implode(',', $data[$field]) : (string) $data[$field];
                     $updates[] = sprintf('`%s`=%s', $field, $this->model->quote($value));
                 }
             }
