@@ -28,12 +28,12 @@ const dialog = useDialog();
 const formData = ref({
   节点编码: '',
   节点名称: '',
-  节点类型: 'APPROVAL',
+  节点类型: '审批',
   审批人类型: '' as string,
   审批人配置: '' as string,
-  会签或签: 'OR',
+  会签或签: '或签',
   超时天数: 0,
-  超时处理: 'NOTIFY',
+  超时处理: '通知',
   排序: 0
 });
 
@@ -50,49 +50,49 @@ const templateFormData = ref({
 });
 
 const nodeTypeOptions = [
-  { label: '开始(START)', value: 'START' },
-  { label: '审批(APPROVAL)', value: 'APPROVAL' },
-  { label: '抄送(CC)', value: 'CC' },
-  { label: '结束(END)', value: 'END' }
+  { label: '开始', value: '开始' },
+  { label: '审批', value: '审批' },
+  { label: '抄送', value: '抄送' },
+  { label: '结束', value: '结束' }
 ];
 
 const approverTypeOptions = [
-  { label: '不配置(留空)', value: '' },
-  { label: '角色(ROLE)', value: 'ROLE' },
-  { label: '部门(DEPT)', value: 'DEPT' },
-  { label: '上级(SUPERIOR)', value: 'SUPERIOR' },
-  { label: '指定人(ASSIGN)', value: 'ASSIGN' },
-  { label: '发起人(SPONSOR)', value: 'SPONSOR' }
+  { label: '不配置', value: '' },
+  { label: '角色', value: '角色' },
+  { label: '部门', value: '部门' },
+  { label: '上级', value: '上级' },
+  { label: '指定人', value: '指定人' },
+  { label: '发起人', value: '发起人' }
 ];
 
 const signModeOptions = [
-  { label: '或签(任一同意即推进)', value: 'OR' },
-  { label: '会签(全部同意才推进)', value: 'AND' }
+  { label: '或签', value: '或签' },
+  { label: '会签', value: '会签' }
 ];
 
 const timeoutActionOptions = [
-  { label: '通知(NOTIFY)', value: 'NOTIFY' },
-  { label: '自动同意(AUTO_APPROVE)', value: 'AUTO_APPROVE' },
-  { label: '自动拒绝(AUTO_REJECT)', value: 'AUTO_REJECT' }
+  { label: '通知', value: '通知' },
+  { label: '自动同意', value: '自动同意' },
+  { label: '自动拒绝', value: '自动拒绝' }
 ];
 
 // 是否需要审批人配置(START/END 不需要)
 const needApprover = computed(() => {
   const t = formData.value.节点类型;
-  return t === 'APPROVAL' || t === 'CC';
+  return t === '审批' || t === '抄送';
 });
 
 // 审批人配置输入提示(根据审批人类型)
 const approverConfigPlaceholder = computed(() => {
   switch (formData.value.审批人类型) {
-    case 'ROLE':
+    case '角色':
       return 'JSON 数组,如:["R-APPROVER","R-MANAGER"]\n或逗号分隔:R-APPROVER,R-MANAGER';
-    case 'DEPT':
+    case '部门':
       return '单个部门编码字符串,如:"D001"\n留空时自动使用发起人部门';
-    case 'ASSIGN':
+    case '指定人':
       return 'JSON 数组(工号),如:["E001","E002"]\n或逗号分隔:E001,E002';
-    case 'SUPERIOR':
-    case 'SPONSOR':
+    case '上级':
+    case '发起人':
       return '此类型无需配置,留空即可';
     default:
       return '请先选择审批人类型';
@@ -102,7 +102,7 @@ const approverConfigPlaceholder = computed(() => {
 // 审批人配置是否禁用
 const approverConfigDisabled = computed(() => {
   const t = formData.value.审批人类型;
-  return t === 'SUPERIOR' || t === 'SPONSOR' || t === '';
+  return t === '上级' || t === '发起人' || t === '';
 });
 
 function parseApproverConfig(value: any): string {
@@ -123,24 +123,24 @@ watch(
       formData.value = {
         节点编码: props.node.节点编码 || '',
         节点名称: props.node.节点名称 || '',
-        节点类型: props.node.节点类型 || 'APPROVAL',
+        节点类型: props.node.节点类型 || '审批',
         审批人类型: props.node.审批人类型 || '',
         审批人配置: parseApproverConfig(props.node.审批人配置),
-        会签或签: props.node.会签或签 || 'OR',
+        会签或签: props.node.会签或签 || '或签',
         超时天数: Number(props.node.超时天数) || 0,
-        超时处理: props.node.超时处理 || 'NOTIFY',
+        超时处理: props.node.超时处理 || '通知',
         排序: Number(props.node.排序) || 0
       };
     } else {
       formData.value = {
         节点编码: '',
         节点名称: '',
-        节点类型: 'APPROVAL',
+        节点类型: '审批',
         审批人类型: '',
         审批人配置: '',
-        会签或签: 'OR',
+        会签或签: '或签',
         超时天数: 0,
-        超时处理: 'NOTIFY',
+        超时处理: '通知',
         排序: 0
       };
     }
@@ -209,12 +209,12 @@ function handleOpenTemplateSelector() {
 
 function handleTemplateSelect(template: Record<string, any>) {
   // 从模板导入字段(节点编码、节点名称、排序 不覆盖,由用户填写)
-  formData.value.节点类型 = template.节点类型 || 'APPROVAL';
+  formData.value.节点类型 = template.节点类型 || '审批';
   formData.value.审批人类型 = template.审批人类型 || '';
   formData.value.审批人配置 = parseApproverConfig(template.审批人配置);
-  formData.value.会签或签 = template.会签或签 || 'OR';
+  formData.value.会签或签 = template.会签或签 || '或签';
   formData.value.超时天数 = Number(template.超时天数) || 0;
-  formData.value.超时处理 = template.超时处理 || 'NOTIFY';
+  formData.value.超时处理 = template.超时处理 || '通知';
   message.success(`已从模板「${template.模板名称}」导入配置`);
 }
 
@@ -375,11 +375,11 @@ async function handleSaveAsTemplate() {
         />
         <div class="form-tip" v-if="needApprover && formData.审批人类型">
           <NIcon size="14"><icon-mdi-information-outline /></NIcon>
-          <span v-if="formData.审批人类型 === 'ROLE'">查 def_role_group 表,匹配角色编码字段</span>
-          <span v-else-if="formData.审批人类型 === 'DEPT'">单个部门编码字符串(如 "D001"),留空自动用发起人部门</span>
-          <span v-else-if="formData.审批人类型 === 'ASSIGN'">按工号指定,JSON 数组或逗号分隔</span>
-          <span v-else-if="formData.审批人类型 === 'SUPERIOR'">当前为占位实现,硬编码返回 admin(慎用)</span>
-          <span v-else-if="formData.审批人类型 === 'SPONSOR'">直接使用发起人作为审批人</span>
+          <span v-if="formData.审批人类型 === '角色'">查 def_role_group 表,匹配角色编码字段</span>
+          <span v-else-if="formData.审批人类型 === '部门'">单个部门编码字符串(如 "D001"),留空自动用发起人部门</span>
+          <span v-else-if="formData.审批人类型 === '指定人'">按工号指定,JSON 数组或逗号分隔</span>
+          <span v-else-if="formData.审批人类型 === '上级'">当前为占位实现,硬编码返回 admin(慎用)</span>
+          <span v-else-if="formData.审批人类型 === '发起人'">直接使用发起人作为审批人</span>
         </div>
       </div>
     </NSpace>
@@ -394,7 +394,6 @@ async function handleSaveAsTemplate() {
     <!-- 模板选择器弹窗 -->
     <WorkflowNodeTemplateSelector
       v-model:visible="showTemplateSelector"
-      :business-type="businessType"
       @select="handleTemplateSelect"
     />
 

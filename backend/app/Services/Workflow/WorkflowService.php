@@ -51,13 +51,13 @@ class WorkflowService
 
         $startNode = null;
         foreach ($nodes as $node) {
-            if (($node['节点类型'] ?? '') === 'START') {
+            if (($node['节点类型'] ?? '') === '开始') {
                 $startNode = $node;
                 break;
             }
         }
         if (!$startNode) {
-            throw new \RuntimeException('流程定义缺少 START 节点');
+            throw new \RuntimeException('流程定义缺少开始节点');
         }
 
         $startNodeCode = $startNode['节点编码'];
@@ -182,11 +182,11 @@ class WorkflowService
         $taskType = $task['任务类型'] ?? '';
         if ($action === '拒绝') {
             // 抄送任务是通知性质，拒绝语义不适用，防止误终止/误退回流程
-            if ($taskType === 'CC') {
+            if ($taskType === '抄送') {
                 throw new \RuntimeException('抄送任务不支持驳回');
             }
             // 退回任务仅支持发起人重新提交，不存在再次拒绝
-            if ($taskType === 'RETURN') {
+            if ($taskType === '退回') {
                 throw new \RuntimeException('退回任务仅支持重新提交');
             }
         }
@@ -213,7 +213,7 @@ class WorkflowService
         return $this->withTransaction(function () use ($taskId, $approver, $approverName, $opinion, $action, $rejectMode, $task, $taskType, $instance, $instanceId, $nodeCode) {
             $now = date('Y-m-d H:i:s');
             // 退回任务的处理语义是"重新提交"，处理结果与流水动作均按此口径记录
-            $actionResult = ($taskType === 'RETURN') ? '重新提交' : (($action === '同意') ? '同意' : '拒绝');
+            $actionResult = ($taskType === '退回') ? '重新提交' : (($action === '同意') ? '同意' : '拒绝');
 
             $sql = sprintf(
                 'update `def_workflow_task`
@@ -549,7 +549,7 @@ class WorkflowService
             where `实例ID`=%d and `删除标识`=%s and `任务类型`=%s and `任务状态`=%s',
             $instanceId,
             $this->model->quote('0'),
-            $this->model->quote('APPROVAL'),
+            $this->model->quote('审批'),
             $this->model->quote('已处理')
         );
         $result = $this->model->query($sql);
@@ -607,7 +607,7 @@ class WorkflowService
         if (empty($task)) {
             throw new \RuntimeException('任务不存在');
         }
-        if (($task['任务类型'] ?? '') !== 'CC') {
+        if (($task['任务类型'] ?? '') !== '抄送') {
             throw new \RuntimeException('仅抄送任务支持已读操作');
         }
         if (($task['任务状态'] ?? '') !== '待处理') {
@@ -688,7 +688,7 @@ class WorkflowService
         }
 
         $nodeType = $node['节点类型'] ?? '';
-        if ($nodeType === 'END' || $nodeType === 'START') {
+        if ($nodeType === '结束' || $nodeType === '开始') {
             return [];
         }
 
@@ -712,11 +712,11 @@ class WorkflowService
 
         $now = date('Y-m-d H:i:s');
         $tasks = [];
-        $taskType = $nodeType === 'CC' ? 'CC' : 'APPROVAL';
+        $taskType = $nodeType === '抄送' ? '抄送' : '审批';
 
         // 节点重入（退回重审 / 重新提交 / 流程环回）时作废该节点旧轮审批任务，开启新一轮：
         // 若旧轮的"已处理-拒绝/同意"记录保留在统计口径内，会签节点将永远无法满足通过条件
-        if ($taskType === 'APPROVAL') {
+        if ($taskType === '审批') {
             $sql = sprintf(
                 'update `def_workflow_task`
                 set `任务状态`=%s, `更新人`=%s, `更新时间`=%s
@@ -727,7 +727,7 @@ class WorkflowService
                 $this->model->quote($now),
                 $instanceId,
                 $this->model->quote($nodeCode),
-                $this->model->quote('APPROVAL'),
+                $this->model->quote('审批'),
                 $this->model->quote('待处理'),
                 $this->model->quote('已处理'),
                 $this->model->quote('0')
@@ -829,7 +829,7 @@ class WorkflowService
             $this->model->quote($now),
             $instanceId,
             $this->model->quote($nodeCode),
-            $this->model->quote('APPROVAL'),
+            $this->model->quote('审批'),
             $this->model->quote('待处理'),
             $this->model->quote('0'),
             $excludeTaskId
@@ -854,7 +854,7 @@ class WorkflowService
             $instanceId,
             $this->model->quote($nodeCode),
             $this->model->quote($nodeName),
-            $this->model->quote('RETURN'),
+            $this->model->quote('退回'),
             $this->model->quote($instance['发起人'] ?? ''),
             $this->model->quote($instance['发起人姓名'] ?? ''),
             $this->model->quote('待处理'),
@@ -928,21 +928,21 @@ class WorkflowService
         for ($i = 0; $i < 50; $i++) {
             $next = $this->findNextNode($defId, $from, $variables);
 
-            if (!$next || $next === 'END') {
+            if (!$next || $next === '结束') {
                 $sql = sprintf(
                     'update `def_workflow_instance`
                     set `实例状态`=%s, `当前节点编码`=%s, `结束时间`=%s,
                         `更新人`=%s, `更新时间`=%s
                     where `GUID`=%d',
                     $this->model->quote('已完成'),
-                    $this->model->quote('END'),
+                    $this->model->quote('结束'),
                     $this->model->quote($now),
                     $this->model->quote($operator),
                     $this->model->quote($now),
                     $instanceId
                 );
                 $this->model->exec($sql);
-                return ['end' => true, 'currentNode' => 'END', 'instanceStatus' => '已完成', 'tasks' => $allTasks];
+                return ['end' => true, 'currentNode' => '结束', 'instanceStatus' => '已完成', 'tasks' => $allTasks];
             }
 
             $sql = sprintf(
@@ -956,7 +956,7 @@ class WorkflowService
             );
             $this->model->exec($sql);
 
-            if ($this->getNodeType($defId, $next) === 'CC') {
+            if ($this->getNodeType($defId, $next) === '抄送') {
                 // 抄送节点不阻塞推进：生成抄送任务后继续找下一节点
                 $ccTasks = $this->createTasksForNode($instanceId, $next);
                 $allTasks = array_merge($allTasks, $ccTasks);
@@ -1001,20 +1001,20 @@ class WorkflowService
         $approvers = [];
 
         switch ($approverType) {
-            case 'ROLE':
+            case '角色':
                 $approvers = $this->getApproversByRole($approverConfig);
                 break;
-            case 'DEPT':
+            case '部门':
                 $dept = $approverConfig ?: $deptCode;
                 $approvers = $this->getApproversByDept($dept);
                 break;
-            case 'SUPERIOR':
+            case '上级':
                 $approvers = $this->getApproversBySuperior($sponsor);
                 break;
-            case 'ASSIGN':
+            case '指定人':
                 $approvers = $this->getApproversByAssign($approverConfig);
                 break;
-            case 'SPONSOR':
+            case '发起人':
                 $approvers[] = [
                     'work_id' => $sponsor,
                     'user_name' => $sponsorName,
@@ -1285,7 +1285,7 @@ class WorkflowService
         );
         $result = $this->model->select($sql);
         $node = $result ? ($result->getRowArray() ?: []) : [];
-        $approvalMode = $node['会签或签'] ?? 'OR';
+        $approvalMode = $node['会签或签'] ?? '或签';
 
         // 仅统计 APPROVAL 任务：抄送(CC)任务不参与节点推进判定（CC 非阻塞）
         // total_count 仅计活跃任务（待处理/已处理）：退回重审后旧轮任务已置"已作废"，
@@ -1308,7 +1308,7 @@ class WorkflowService
             $instanceId,
             $this->model->quote($nodeCode),
             $this->model->quote('0'),
-            $this->model->quote('APPROVAL')
+            $this->model->quote('审批')
         );
         // 统计读必须走无缓存查询：本方法在 approve 事务内调用，需读到同事务刚写入的任务状态
         $result = $this->model->query($sql);
@@ -1322,7 +1322,7 @@ class WorkflowService
             return true;
         }
 
-        if ($approvalMode === 'AND') {
+        if ($approvalMode === '会签') {
             return $pendingCount === 0 && $approveCount === $totalCount;
         } else {
             return $approveCount > 0;
@@ -1395,7 +1395,7 @@ class WorkflowService
         if (($task['处理人'] ?? '') !== $approver) {
             throw new \RuntimeException('无权操作此任务');
         }
-        if (($task['任务类型'] ?? '') !== 'APPROVAL') {
+        if (($task['任务类型'] ?? '') !== '审批') {
             throw new \RuntimeException('仅审批任务可加签');
         }
 
@@ -1441,7 +1441,7 @@ class WorkflowService
                 values (%d, %s, %s, %s, %s, %s, %d, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
                 $instanceId,
                 $this->model->quote($nodeCode),
-                $this->model->quote('APPROVAL'),
+                $this->model->quote('审批'),
                 $this->model->quote($signWorkId),
                 $this->model->quote($signName),
                 $this->model->quote('待处理'),
@@ -1498,7 +1498,7 @@ class WorkflowService
         if (($task['处理人'] ?? '') !== $approver) {
             throw new \RuntimeException('无权操作此任务');
         }
-        if (($task['任务类型'] ?? '') !== 'APPROVAL') {
+        if (($task['任务类型'] ?? '') !== '审批') {
             throw new \RuntimeException('仅审批任务可转签');
         }
 

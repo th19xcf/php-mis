@@ -736,9 +736,9 @@ class WorkflowApi extends BaseApiController
                 $this->model->quote((string) $data['节点类型']),
                 $approverType ? $this->model->quote((string) $approverType) : 'null',
                 $approverConfig ? $this->model->quote($approverConfig) : 'null',
-                $this->model->quote((string) ($data['会签或签'] ?? 'OR')),
+                $this->model->quote((string) ($data['会签或签'] ?? '或签')),
                 (int) ($data['超时天数'] ?? 0),
-                $this->model->quote((string) ($data['超时处理'] ?? 'NOTIFY')),
+                $this->model->quote((string) ($data['超时处理'] ?? '通知')),
                 $sort,
                 $this->model->quote('WEB'),
                 $this->model->quote($operator),
@@ -1320,9 +1320,9 @@ class WorkflowApi extends BaseApiController
                 $this->model->quote((string) $data['节点类型']),
                 $approverType ? $this->model->quote((string) $approverType) : 'null',
                 $approverConfig ? $this->model->quote($approverConfig) : 'null',
-                $this->model->quote((string) ($data['会签或签'] ?? 'OR')),
+                $this->model->quote((string) ($data['会签或签'] ?? '或签')),
                 (int) ($data['超时天数'] ?? 0),
-                $this->model->quote((string) ($data['超时处理'] ?? 'NOTIFY')),
+                $this->model->quote((string) ($data['超时处理'] ?? '通知')),
                 !empty($data['适用业务类型']) ? $this->model->quote((string) $data['适用业务类型']) : 'null',
                 !empty($data['模板说明']) ? $this->model->quote((string) $data['模板说明']) : 'null',
                 $this->model->quote('WEB'),
@@ -1488,17 +1488,17 @@ class WorkflowApi extends BaseApiController
         }
 
         $nodeCodes = array_column($nodes, '节点编码');
-        $startNodes = array_values(array_filter($nodes, fn ($n) => ($n['节点类型'] ?? '') === 'START'));
-        $endNodes = array_values(array_filter($nodes, fn ($n) => ($n['节点类型'] ?? '') === 'END'));
+        $startNodes = array_values(array_filter($nodes, fn ($n) => ($n['节点类型'] ?? '') === '开始'));
+        $endNodes = array_values(array_filter($nodes, fn ($n) => ($n['节点类型'] ?? '') === '结束'));
 
         if (count($startNodes) === 0) {
-            return '缺少 START（开始）节点';
+            return '缺少开始节点';
         }
         if (count($startNodes) > 1) {
-            return '存在多个 START（开始）节点，只能有一个';
+            return '存在多个开始节点，只能有一个';
         }
         if (count($endNodes) === 0) {
-            return '缺少 END（结束）节点';
+            return '缺少结束节点';
         }
 
         // 连通性校验：从 START 出发沿连线 BFS，必须能到达至少一个 END
@@ -1542,7 +1542,7 @@ class WorkflowApi extends BaseApiController
         }
 
         if (!$reachableEnd) {
-            return '从 START 节点无法沿连线到达任何 END 节点，流程不连通';
+            return '从开始节点无法沿连线到达任何结束节点，流程不连通';
         }
 
         return null;

@@ -440,23 +440,29 @@ function handleDeleteEdge(edge: any) {
 
 // 节点类型展示辅助
 const nodeTypeTextMap: Record<string, string> = {
-  START: '开始',
-  APPROVAL: '审批',
-  CC: '抄送',
-  END: '结束'
+  '开始': '开始',
+  '审批': '审批',
+  '抄送': '抄送',
+  '结束': '结束'
 };
 
 const approverTypeTextMap: Record<string, string> = {
-  ROLE: '角色',
-  DEPT: '部门',
-  SUPERIOR: '上级',
-  ASSIGN: '指定人',
-  SPONSOR: '发起人'
+  '角色': '角色',
+  '部门': '部门',
+  '上级': '上级',
+  '指定人': '指定人',
+  '发起人': '发起人'
 };
 
 const signModeTextMap: Record<string, string> = {
-  OR: '或签',
-  AND: '会签'
+  '或签': '或签',
+  '会签': '会签'
+};
+
+const timeoutActionTextMap: Record<string, string> = {
+  '通知': '通知',
+  '自动同意': '自动同意',
+  '自动拒绝': '自动拒绝'
 };
 
 function getNodeTypeText(type: string): string {
@@ -471,6 +477,11 @@ function getApproverTypeText(type?: string): string {
 function getSignModeText(mode?: string): string {
   if (!mode) return '-';
   return signModeTextMap[mode] || mode;
+}
+
+function getTimeoutActionText(action?: string): string {
+  if (!action) return '通知';
+  return timeoutActionTextMap[action] || action;
 }
 
 function getApproverConfigPreview(node: any): string {
@@ -731,11 +742,11 @@ onMounted(async () => {
             <div class="task-header">
               <span class="task-title">{{ task.业务标题 }}</span>
               <div class="task-header-actions">
-                <NTag size="small" :type="task.任务类型 === 'CC' ? 'info' : 'warning'">
-                  {{ task.任务类型 === 'CC' ? `抄送 · ${task.节点名称}` : task.节点名称 }}
+                <NTag size="small" :type="task.任务类型 === '抄送' ? 'info' : 'warning'">
+                  {{ task.任务类型 === '抄送' ? `抄送 · ${task.节点名称}` : task.节点名称 }}
                 </NTag>
                 <NButton
-                  v-if="task.任务类型 === 'CC'"
+                  v-if="task.任务类型 === '抄送'"
                   size="tiny"
                   type="primary"
                   @click.stop="handleAckCc(task)"
@@ -757,8 +768,8 @@ onMounted(async () => {
           <div v-for="task in doneTasks" :key="task.任务ID" class="task-item done">
             <div class="task-header">
               <span class="task-title">{{ task.业务标题 }}</span>
-              <NTag size="small" :type="task.任务类型 === 'CC' ? 'info' : getTaskResultType(task.处理结果)">
-                {{ task.任务类型 === 'CC' ? (task.处理结果 || '-') : getTaskResultText(task.处理结果) }}
+              <NTag size="small" :type="task.任务类型 === '抄送' ? 'info' : getTaskResultType(task.处理结果)">
+                {{ task.任务类型 === '抄送' ? (task.处理结果 || '-') : getTaskResultText(task.处理结果) }}
               </NTag>
             </div>
             <div class="task-info">
@@ -865,7 +876,7 @@ onMounted(async () => {
             >
               <div class="node-header">
                 <div class="node-title">
-                  <NTag size="small" :type="node.节点类型 === 'START' ? 'success' : node.节点类型 === 'END' ? 'error' : node.节点类型 === 'CC' ? 'warning' : 'info'">
+                  <NTag size="small" :type="node.节点类型 === '开始' ? 'success' : node.节点类型 === '结束' ? 'error' : node.节点类型 === '抄送' ? 'warning' : 'info'">
                     {{ getNodeTypeText(node.节点类型) }}
                   </NTag>
                   <span class="node-name">{{ node.节点名称 }}</span>
@@ -885,7 +896,7 @@ onMounted(async () => {
               <div class="node-info">
                 <span>审批人类型:<b>{{ getApproverTypeText(node.审批人类型) }}</b></span>
                 <span>审批模式:<b>{{ getSignModeText(node.会签或签) }}</b></span>
-                <span>超时:{{ node.超时天数 || 0 }}天 ({{ node.超时处理 }})</span>
+                <span>超时:{{ node.超时天数 || 0 }}天 ({{ getTimeoutActionText(node.超时处理) }})</span>
               </div>
               <div class="node-config" v-if="node.审批人类型">
                 <span class="config-label">审批人配置:</span>

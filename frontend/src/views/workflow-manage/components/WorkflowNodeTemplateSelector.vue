@@ -75,18 +75,29 @@ function handleDelete(template: any) {
 
 // 节点类型展示
 const nodeTypeTextMap: Record<string, string> = {
-  START: '开始',
-  APPROVAL: '审批',
-  CC: '抄送',
-  END: '结束'
+  '开始': '开始',
+  '审批': '审批',
+  '抄送': '抄送',
+  '结束': '结束'
 };
 
 const approverTypeTextMap: Record<string, string> = {
-  ROLE: '角色',
-  DEPT: '部门',
-  SUPERIOR: '上级',
-  ASSIGN: '指定人',
-  SPONSOR: '发起人'
+  '角色': '角色',
+  '部门': '部门',
+  '上级': '上级',
+  '指定人': '指定人',
+  '发起人': '发起人'
+};
+
+const signModeTextMap: Record<string, string> = {
+  '或签': '或签',
+  '会签': '会签'
+};
+
+const timeoutActionTextMap: Record<string, string> = {
+  '通知': '通知',
+  '自动同意': '自动同意',
+  '自动拒绝': '自动拒绝'
 };
 
 function getNodeTypeText(type: string): string {
@@ -96,6 +107,16 @@ function getNodeTypeText(type: string): string {
 function getApproverTypeText(type?: string): string {
   if (!type) return '-';
   return approverTypeTextMap[type] || type;
+}
+
+function getSignModeText(mode?: string): string {
+  if (!mode) return '-';
+  return signModeTextMap[mode] || mode;
+}
+
+function getTimeoutActionText(action?: string): string {
+  if (!action) return '通知';
+  return timeoutActionTextMap[action] || action;
 }
 
 function getConfigPreview(cfg: any): string {
@@ -148,7 +169,7 @@ function getConfigPreview(cfg: any): string {
         >
           <div class="card-header">
             <div class="card-title">
-              <NTag size="small" :type="tpl.节点类型 === 'START' ? 'success' : tpl.节点类型 === 'END' ? 'error' : tpl.节点类型 === 'CC' ? 'warning' : 'info'">
+              <NTag size="small" :type="tpl.节点类型 === '开始' ? 'success' : tpl.节点类型 === '结束' ? 'error' : tpl.节点类型 === '抄送' ? 'warning' : 'info'">
                 {{ getNodeTypeText(tpl.节点类型) }}
               </NTag>
               <span class="tpl-name">{{ tpl.模板名称 }}</span>
@@ -161,8 +182,8 @@ function getConfigPreview(cfg: any): string {
           </div>
           <div class="card-body">
             <span class="info-item">审批人类型:<b>{{ getApproverTypeText(tpl.审批人类型) }}</b></span>
-            <span class="info-item">审批模式:{{ tpl.会签或签 || '-' }}</span>
-            <span class="info-item">超时:{{ tpl.超时天数 || 0 }}天({{ tpl.超时处理 || 'NOTIFY' }})</span>
+            <span class="info-item">审批模式:{{ getSignModeText(tpl.会签或签) }}</span>
+            <span class="info-item">超时:{{ tpl.超时天数 || 0 }}天({{ getTimeoutActionText(tpl.超时处理) }})</span>
           </div>
           <div class="card-config" v-if="tpl.审批人类型">
             <span class="config-label">审批人配置:</span>
@@ -286,7 +307,7 @@ function getConfigPreview(cfg: any): string {
 }
 
 // 暗黑模式
-.system-dark .template-card {
+html.dark .template-card {
   background: rgba(255, 255, 255, 0.05);
 
   &:hover {

@@ -55,7 +55,7 @@ class WorkflowTimeout extends BaseCommand
                 left join `def_workflow_node` n on n.`节点编码` = t.`节点编码`
                   and n.`流程定义ID` = (select i.`流程定义ID` from `def_workflow_instance` i where i.`GUID` = t.`实例ID`)
                 where t.`任务状态` = \'待处理\'
-                  and t.`任务类型` = \'APPROVAL\'
+                  and t.`任务类型` = \'审批\'
                   and t.`删除标识` = \'0\'';
         $result = $model->select($sql);
         $tasks = $result ? ($result->getResultArray() ?: []) : [];
