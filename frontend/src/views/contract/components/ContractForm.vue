@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { h, ref, watch, computed, reactive } from 'vue';
-import { NButton, useDialog } from 'naive-ui';
+import { NModal, NForm, NFormItem, NInput, NSelect, NInputNumber, NDatePicker, NSpace, NButton, useDialog } from 'naive-ui';
 import { useContractStore } from '@/store/modules/contract';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
@@ -485,171 +485,122 @@ defineExpose({
   </div>
 
   <!-- 弹窗模式（新建合同等） -->
-  <div v-else-if="!inline && visible" class="modal-overlay" @click.self="requestClose">
-    <div class="modal-container">
-      <div class="modal-header">
-        <h3>{{ mode === 'create' ? '新建合同' : '编辑合同' }}</h3>
-        <button class="close-btn" @click="requestClose">×</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-grid">
-          <div class="form-item">
-            <label>合同名称 <span class="required">*</span></label>
-            <input v-model="formData.合同名称" placeholder="请输入合同名称" />
-          </div>
-          <div class="form-item">
-            <label>合同类型</label>
-            <select v-model="formData.合同类型">
-              <option value="">请选择</option>
-              <option v-for="opt in options.合同类型" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
-          <div class="form-item">
-            <label>甲方名称 <span class="required">*</span></label>
-            <input v-model="formData.甲方名称" placeholder="请输入甲方名称" />
-          </div>
-          <div class="form-item">
-            <label>甲方联系人</label>
-            <input v-model="formData.甲方联系人" placeholder="请输入甲方联系人" />
-          </div>
-          <div class="form-item">
-            <label>甲方电话</label>
-            <input v-model="formData.甲方电话" placeholder="请输入甲方电话" />
-          </div>
-          <div class="form-item">
-            <label>乙方名称 <span class="required">*</span></label>
-            <input v-model="formData.乙方名称" placeholder="请输入乙方名称" />
-          </div>
-          <div class="form-item">
-            <label>乙方联系人</label>
-            <input v-model="formData.乙方联系人" placeholder="请输入乙方联系人" />
-          </div>
-          <div class="form-item">
-            <label>乙方电话</label>
-            <input v-model="formData.乙方电话" placeholder="请输入乙方电话" />
-          </div>
-          <div class="form-item">
-            <label>合同金额</label>
-            <input type="number" v-model.number="formData.合同金额" placeholder="请输入合同金额" />
-          </div>
-          <div class="form-item">
-            <label>付款方式</label>
-            <select v-model="formData.付款方式">
-              <option value="">请选择</option>
-              <option v-for="opt in options.付款方式" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
-          <div class="form-item">
-            <label>币别</label>
-            <select v-model="formData.币别">
-              <option value="">请选择</option>
-              <option v-for="opt in options.币别" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
-          <div class="form-item">
-            <label>汇率</label>
-            <input type="number" v-model.number="formData.汇率" step="0.0001" placeholder="请输入汇率" />
-          </div>
-          <div class="form-item">
-            <label>签订日期</label>
-            <input type="date" v-model="formData.签订日期" />
-          </div>
-          <div class="form-item">
-            <label>开始日期</label>
-            <input type="date" v-model="formData.开始日期" />
-          </div>
-          <div class="form-item">
-            <label>结束日期</label>
-            <input type="date" v-model="formData.结束日期" />
-          </div>
-          <div class="form-item full">
-            <label>备注</label>
-            <textarea v-model="formData.备注" rows="3" placeholder="请输入备注"></textarea>
-          </div>
+  <NModal
+    v-else-if="!inline && visible"
+    :show="visible"
+    preset="card"
+    :title="mode === 'create' ? '新建合同' : '编辑合同'"
+    :mask-closable="false"
+    @update:show="val => !val && requestClose()"
+    style="width: 600px"
+  >
+    <NForm label-placement="left" :label-width="90">
+      <NFormItem label="合同名称" required>
+        <NInput v-model:value="formData.合同名称" placeholder="请输入合同名称" />
+      </NFormItem>
+      <NFormItem label="合同类型">
+        <NSelect v-model:value="formData.合同类型" :options="合同类型Options" placeholder="请选择" clearable />
+      </NFormItem>
+      <NFormItem label="甲方名称" required>
+        <NInput v-model:value="formData.甲方名称" placeholder="请输入甲方名称" />
+      </NFormItem>
+      <NFormItem label="甲方联系人">
+        <NInput v-model:value="formData.甲方联系人" placeholder="请输入甲方联系人" />
+      </NFormItem>
+      <NFormItem label="甲方电话">
+        <NInput v-model:value="formData.甲方电话" placeholder="请输入甲方电话" />
+      </NFormItem>
+      <NFormItem label="乙方名称" required>
+        <NInput v-model:value="formData.乙方名称" placeholder="请输入乙方名称" />
+      </NFormItem>
+      <NFormItem label="乙方联系人">
+        <NInput v-model:value="formData.乙方联系人" placeholder="请输入乙方联系人" />
+      </NFormItem>
+      <NFormItem label="乙方电话">
+        <NInput v-model:value="formData.乙方电话" placeholder="请输入乙方电话" />
+      </NFormItem>
+      <NFormItem label="合同金额">
+        <NInputNumber v-model:value="formData.合同金额" placeholder="请输入合同金额" :precision="2" style="width: 100%" />
+      </NFormItem>
+      <NFormItem label="付款方式">
+        <NSelect v-model:value="formData.付款方式" :options="付款方式Options" placeholder="请选择" clearable />
+      </NFormItem>
+      <NFormItem label="币别">
+        <NSelect v-model:value="formData.币别" :options="币别Options" placeholder="请选择" clearable />
+      </NFormItem>
+      <NFormItem label="汇率">
+        <NInputNumber v-model:value="formData.汇率" placeholder="请输入汇率" :precision="4" :step="0.0001" style="width: 100%" />
+      </NFormItem>
+      <NFormItem label="签订日期">
+        <NDatePicker v-model:value="签订日期Ts" type="date" clearable style="width: 100%" />
+      </NFormItem>
+      <NFormItem label="开始日期">
+        <NDatePicker v-model:value="开始日期Ts" type="date" clearable style="width: 100%" />
+      </NFormItem>
+      <NFormItem label="结束日期">
+        <NDatePicker v-model:value="结束日期Ts" type="date" clearable style="width: 100%" />
+      </NFormItem>
+      <NFormItem label="备注">
+        <NInput v-model:value="formData.备注" type="textarea" :rows="2" placeholder="请输入备注" />
+      </NFormItem>
 
-          <div class="form-item full">
-            <label>合同文件</label>
-            <div class="file-upload-section">
-              <div v-if="mode === 'create'" class="upload-tip">
-                请先保存合同基础信息后再上传文件
-              </div>
-              <div v-else class="upload-area">
-                <label class="upload-btn">
-                  <input
-                    type="file"
-                    :disabled="uploading"
-                    @change="e => handleFileUpload(e, 'MAIN')"
-                  />
-                  <span>{{ uploading ? '上传中...' : '+ 上传合同文件' }}</span>
-                </label>
-                <div class="file-list">
-                  <div
-                    v-for="file in contractFiles"
-                    :key="file.GUID"
-                    class="file-item"
-                  >
-                    <span class="file-name">{{ file.文档名称 }}</span>
-                    <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
-                    <div class="file-actions">
-                      <NButton v-if="isEditableDoc(file)" size="tiny" quaternary type="info" @click="handleEditFile(file)">编辑</NButton>
-                      <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
-                      <NButton size="tiny" quaternary type="error" @click="handleDeleteFile(file, 'MAIN')">删除</NButton>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-item full">
-            <label>合同审批表</label>
-            <div class="file-upload-section">
-              <div v-if="mode === 'create'" class="upload-tip">
-                请先保存合同基础信息后再上传文件
-              </div>
-              <div v-else class="upload-area">
-                <label class="upload-btn">
-                  <input
-                    type="file"
-                    :disabled="uploading"
-                    @change="e => handleFileUpload(e, 'APPROVAL_FORM')"
-                  />
-                  <span>{{ uploading ? '上传中...' : '+ 上传审批表' }}</span>
-                </label>
-                <div class="file-list">
-                  <div
-                    v-for="file in approvalFiles"
-                    :key="file.GUID"
-                    class="file-item"
-                  >
-                    <span class="file-name">{{ file.文档名称 }}</span>
-                    <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
-                    <div class="file-actions">
-                      <NButton v-if="isEditableDoc(file)" size="tiny" quaternary type="info" @click="handleEditFile(file)">编辑</NButton>
-                      <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
-                      <NButton size="tiny" quaternary type="error" @click="handleDeleteFile(file, 'APPROVAL_FORM')">删除</NButton>
-                    </div>
-                  </div>
+      <NFormItem label="合同文件">
+        <div class="file-upload-section">
+          <div v-if="mode === 'create'" class="upload-tip">请先保存合同基础信息后再上传文件</div>
+          <div v-else class="upload-area">
+            <NButton size="small" :loading="uploading" @click="triggerUpload('MAIN')">
+              <template #icon><icon-mdi-upload /></template>
+              上传合同文件
+            </NButton>
+            <input ref="mainFileInput" type="file" class="hidden-file-input" :disabled="uploading" @change="e => handleFileUpload(e, 'MAIN')" />
+            <div class="file-list">
+              <div v-for="file in contractFiles" :key="file.GUID" class="file-item">
+                <span class="file-name">{{ file.文档名称 }}</span>
+                <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
+                <div class="file-actions">
+                  <NButton v-if="isEditableDoc(file)" size="tiny" quaternary type="info" @click="handleEditFile(file)">编辑</NButton>
+                  <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
+                  <NButton size="tiny" quaternary type="error" @click="handleDeleteFile(file, 'MAIN')">删除</NButton>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-default" @click="requestClose">取消</button>
-        <button class="btn btn-primary" :disabled="loading" @click="handleSubmit">
+      </NFormItem>
+
+      <NFormItem label="合同审批表">
+        <div class="file-upload-section">
+          <div v-if="mode === 'create'" class="upload-tip">请先保存合同基础信息后再上传文件</div>
+          <div v-else class="upload-area">
+            <NButton size="small" :loading="uploading" @click="triggerUpload('APPROVAL_FORM')">
+              <template #icon><icon-mdi-upload /></template>
+              上传审批表
+            </NButton>
+            <input ref="approvalFileInput" type="file" class="hidden-file-input" :disabled="uploading" @change="e => handleFileUpload(e, 'APPROVAL_FORM')" />
+            <div class="file-list">
+              <div v-for="file in approvalFiles" :key="file.GUID" class="file-item">
+                <span class="file-name">{{ file.文档名称 }}</span>
+                <span class="file-size">{{ formatFileSize(file.文件大小) }}</span>
+                <div class="file-actions">
+                  <NButton v-if="isEditableDoc(file)" size="tiny" quaternary type="info" @click="handleEditFile(file)">编辑</NButton>
+                  <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
+                  <NButton size="tiny" quaternary type="error" @click="handleDeleteFile(file, 'APPROVAL_FORM')">删除</NButton>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </NFormItem>
+    </NForm>
+    <template #footer>
+      <NSpace justify="end">
+        <NButton @click="requestClose">取消</NButton>
+        <NButton type="primary" :loading="loading" @click="handleSubmit">
           {{ loading ? '提交中...' : '确定' }}
-        </button>
-      </div>
-    </div>
-  </div>
+        </NButton>
+      </NSpace>
+    </template>
+  </NModal>
 </template>
 
 <style scoped lang="scss">
@@ -832,214 +783,8 @@ defineExpose({
   }
 }
 
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal-container {
-  width: 720px;
-  max-height: 85vh;
-  background: #fff;
-  border-radius: 6px;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-
-  h3 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 500;
-    color: rgb(31, 34, 37);
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
-    color: rgb(118, 124, 130);
-    line-height: 1;
-
-    &:hover {
-      color: rgb(51, 54, 57);
-    }
-  }
-}
-
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  color: rgb(51, 54, 57);
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-
-  .form-item {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-
-    &.full {
-      grid-column: span 2;
-    }
-
-    label {
-      font-size: 13px;
-      color: rgb(51, 54, 57);
-
-      .required {
-        color: #ff4d4f;
-      }
-    }
-
-    input,
-    select,
-    textarea {
-      padding: 8px 12px;
-      border: 1px solid rgb(224, 224, 230);
-      border-radius: 4px;
-      font-size: 14px;
-      outline: none;
-      background: #fff;
-      color: rgb(51, 54, 57);
-      transition: border-color 0.2s;
-
-      &::placeholder {
-        color: rgb(158, 164, 170);
-      }
-
-      &:focus {
-        border-color: #646cff;
-      }
-    }
-
-    textarea {
-      resize: vertical;
-      font-family: inherit;
-    }
-  }
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 20px;
-}
-
-.btn {
-  padding: 8px 20px;
-  border-radius: 4px;
-  font-size: 14px;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-
-  &.btn-primary {
-    background: #646cff;
-    color: #fff;
-
-    &:hover {
-      background: #7e86ff;
-    }
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  }
-
-  &.btn-default {
-    background: transparent;
-    color: rgb(51, 54, 57);
-    border: 1px solid rgb(224, 224, 230);
-
-    &:hover {
-      border-color: #7e86ff;
-      color: #7e86ff;
-    }
-  }
-}
-
-/* 暗色模式：弹窗配色对齐 naive-ui NModal（待办中心新建待办弹窗） */
+/* 暗色模式：上传区域适配 */
 .system-dark {
-  .modal-overlay {
-    background: rgba(0, 0, 0, 0.4);
-  }
-
-  .modal-container {
-    background: #2c2c32;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  }
-
-  .modal-header {
-    border-bottom-color: rgba(255, 255, 255, 0.09);
-
-    h3 {
-      color: rgba(255, 255, 255, 0.9);
-    }
-
-    .close-btn {
-      color: rgba(255, 255, 255, 0.52);
-
-      &:hover {
-        color: rgba(255, 255, 255, 0.82);
-      }
-    }
-  }
-
-  .modal-body {
-    color: rgba(255, 255, 255, 0.82);
-  }
-
-  .form-grid .form-item {
-    label {
-      color: rgba(255, 255, 255, 0.9);
-    }
-
-    input,
-    select,
-    textarea {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: transparent;
-      color: rgba(255, 255, 255, 0.82);
-      color-scheme: dark;
-
-      &::placeholder {
-        color: rgba(255, 255, 255, 0.38);
-      }
-
-      &:focus {
-        border-color: #646cff;
-      }
-
-      option {
-        background: #2c2c32;
-        color: rgba(255, 255, 255, 0.82);
-      }
-    }
-  }
-
   .upload-tip {
     color: rgba(255, 255, 255, 0.52);
     background: rgba(255, 255, 255, 0.05);
@@ -1055,33 +800,6 @@ defineExpose({
 
     .file-size {
       color: rgba(255, 255, 255, 0.52);
-    }
-  }
-
-  .modal-footer {
-    border-top-color: rgba(255, 255, 255, 0.09);
-  }
-
-  .btn {
-    &.btn-primary {
-      background: #646cff;
-      color: rgb(0, 0, 0);
-
-      &:hover {
-        background: #7e86ff;
-      }
-    }
-
-    &.btn-default {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.24);
-      color: rgba(255, 255, 255, 0.82);
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.14);
-        border-color: rgba(255, 255, 255, 0.4);
-        color: rgba(255, 255, 255, 0.9);
-      }
     }
   }
 }

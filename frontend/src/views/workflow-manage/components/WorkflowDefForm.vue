@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
-import {  } from 'naive-ui';
+import { NModal, NForm, NFormItem, NInput, NSelect, NSpace, NButton } from 'naive-ui';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
   fetchWorkflowDefinitionCreate,
@@ -225,71 +225,60 @@ defineExpose({
   </div>
 
   <!-- 弹窗模式(新建流程) -->
-  <div v-else-if="!inline && visible" class="modal-overlay" @click.self="handleClose">
-    <div class="modal-container">
-      <div class="modal-header">
-        <h3>{{ mode === 'create' ? '新建流程' : '编辑流程' }}</h3>
-        <button class="close-btn" @click="handleClose">×</button>
-      </div>
-      <div class="modal-body">
-        <div class="form-grid">
-          <div class="form-item">
-            <label>流程编码 <span class="required">*</span></label>
-            <input v-model="formData.流程编码" placeholder="请输入流程编码" :disabled="mode === 'edit'" />
-          </div>
-          <div class="form-item">
-            <label>流程名称 <span class="required">*</span></label>
-            <input v-model="formData.流程名称" placeholder="请输入流程名称" />
-          </div>
-          <div class="form-item">
-            <label>业务类型</label>
-            <select v-model="formData.业务类型">
-              <option v-for="opt in businessTypeOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
-          <div class="form-item" v-if="mode === 'create'">
-            <label>流程状态</label>
-            <select v-model="formData.流程状态">
-              <option v-for="opt in statusOptions" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
-          </div>
-          <div class="form-item full">
-            <label>流程描述</label>
-            <textarea v-model="formData.流程描述" rows="3" placeholder="请输入流程描述"></textarea>
-          </div>
-          <div class="form-item full">
-            <label>审批人配置 (JSON)</label>
-            <textarea
-              v-model="formData.审批人配置"
-              rows="6"
-              placeholder='例如:{"nodes":[{"code":"start","name":"开始"}]}'
-              class="json-textarea"
-            ></textarea>
-          </div>
-          <div class="form-item full">
-            <label>超时规则 (JSON)</label>
-            <textarea
-              v-model="formData.超时规则"
-              rows="4"
-              placeholder='例如:{"timeoutMinutes":1440,"action":"NOTIFY"}'
-              class="json-textarea"
-            ></textarea>
-          </div>
-        </div>
-        <div class="notice">
-          <p>提示:流程节点和连线配置请在流程设计器中完成。</p>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-default" @click="handleClose">取消</button>
-        <button class="btn btn-primary" @click="handleSubmit">确定</button>
-      </div>
+  <NModal
+    v-else-if="!inline && visible"
+    :show="visible"
+    preset="card"
+    :title="mode === 'create' ? '新建流程' : '编辑流程'"
+    :mask-closable="false"
+    @update:show="val => !val && handleClose()"
+    style="width: 560px"
+  >
+    <NForm label-placement="left" :label-width="90">
+      <NFormItem label="流程编码" required>
+        <NInput v-model:value="formData.流程编码" placeholder="请输入流程编码" :disabled="mode === 'edit'" />
+      </NFormItem>
+      <NFormItem label="流程名称" required>
+        <NInput v-model:value="formData.流程名称" placeholder="请输入流程名称" />
+      </NFormItem>
+      <NFormItem label="业务类型">
+        <NSelect v-model:value="formData.业务类型" :options="businessTypeOptions" />
+      </NFormItem>
+      <NFormItem v-if="mode === 'create'" label="流程状态">
+        <NSelect v-model:value="formData.流程状态" :options="statusOptions" />
+      </NFormItem>
+      <NFormItem label="流程描述">
+        <NInput v-model:value="formData.流程描述" type="textarea" :rows="2" placeholder="请输入流程描述" />
+      </NFormItem>
+      <NFormItem label="审批人配置">
+        <NInput
+          v-model:value="formData.审批人配置"
+          type="textarea"
+          :rows="5"
+          placeholder='JSON 格式,例如:{"nodes":[{"code":"start","name":"开始"}]}'
+          class="json-textarea"
+        />
+      </NFormItem>
+      <NFormItem label="超时规则">
+        <NInput
+          v-model:value="formData.超时规则"
+          type="textarea"
+          :rows="4"
+          placeholder='JSON 格式,例如:{"timeoutMinutes":1440,"action":"NOTIFY"}'
+          class="json-textarea"
+        />
+      </NFormItem>
+    </NForm>
+    <div class="modal-notice">
+      提示:流程节点和连线配置请在流程设计器中完成。
     </div>
-  </div>
+    <template #footer>
+      <NSpace justify="end">
+        <NButton @click="handleClose">取消</NButton>
+        <NButton type="primary" @click="handleSubmit">确定</NButton>
+      </NSpace>
+    </template>
+  </NModal>
 </template>
 
 <style scoped lang="scss">
@@ -381,265 +370,20 @@ defineExpose({
   }
 }
 
-/* 暗色模式：弹窗配色对齐 naive-ui NModal（待办中心新建待办弹窗） */
-.system-dark {
-  .modal-overlay {
-    background: rgba(0, 0, 0, 0.4);
-  }
-
-  .modal-container {
-    background: #2c2c32;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-  }
-
-  .modal-header {
-    h3 {
-      color: rgba(255, 255, 255, 0.9);
-    }
-
-    .close-btn {
-      color: rgba(255, 255, 255, 0.52);
-
-      &:hover {
-        color: rgba(255, 255, 255, 0.82);
-      }
-    }
-  }
-
-  .modal-body {
-    color: rgba(255, 255, 255, 0.82);
-  }
-
-  .form-grid .form-item {
-    label {
-      color: rgba(255, 255, 255, 0.9);
-    }
-
-    input,
-    select,
-    textarea {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: transparent;
-      color: rgba(255, 255, 255, 0.82);
-      color-scheme: dark;
-
-      &::placeholder {
-        color: rgba(255, 255, 255, 0.38);
-      }
-
-      &:focus {
-        border-color: #646cff;
-      }
-
-      option {
-        background: #2c2c32;
-        color: rgba(255, 255, 255, 0.82);
-      }
-
-      &:disabled {
-        background: rgba(255, 255, 255, 0.04);
-      }
-    }
-  }
-
-  .notice {
-    background: rgba(240, 160, 32, 0.15);
-    border-color: rgba(240, 160, 32, 0.35);
-
-    p {
-      color: #f0a020;
-    }
-  }
-
-  .btn {
-    &.btn-primary {
-      background: #646cff;
-      color: rgb(0, 0, 0);
-
-      &:hover {
-        background: #7e86ff;
-      }
-    }
-
-    &.btn-default {
-      background: rgba(255, 255, 255, 0.08);
-      border-color: rgba(255, 255, 255, 0.24);
-      color: rgba(255, 255, 255, 0.82);
-
-      &:hover {
-        background: rgba(255, 255, 255, 0.14);
-        border-color: rgba(255, 255, 255, 0.4);
-        color: rgba(255, 255, 255, 0.9);
-      }
-    }
-  }
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal-container {
-  width: 600px;
-  max-height: 85vh;
-  background: #fff;
-  border-radius: 6px;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-
-  h3 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 500;
-    color: rgb(31, 34, 37);
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    font-size: 24px;
-    cursor: pointer;
-    color: rgb(118, 124, 130);
-    line-height: 1;
-
-    &:hover {
-      color: rgb(51, 54, 57);
-    }
-  }
-}
-
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  color: rgb(51, 54, 57);
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-
-  .form-item {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-
-    &.full {
-      grid-column: span 2;
-    }
-
-    label {
-      font-size: 13px;
-      color: rgb(51, 54, 57);
-
-      .required {
-        color: #ff4d4f;
-      }
-    }
-
-    input,
-    select,
-    textarea {
-      padding: 8px 12px;
-      border: 1px solid rgb(224, 224, 230);
-      border-radius: 4px;
-      font-size: 14px;
-      outline: none;
-      background: #fff;
-      color: rgb(51, 54, 57);
-      transition: border-color 0.2s;
-
-      &::placeholder {
-        color: rgb(158, 164, 170);
-      }
-
-      &:focus {
-        border-color: #646cff;
-      }
-
-      &:disabled {
-        background: rgb(250, 250, 252);
-        cursor: not-allowed;
-      }
-    }
-
-    textarea {
-      resize: vertical;
-      font-family: inherit;
-
-      &.json-textarea {
-        font-family: 'Consolas', 'Monaco', monospace;
-        font-size: 12px;
-      }
-    }
-  }
-}
-
-.notice {
-  margin-top: 16px;
-  padding: 12px 16px;
-  background: #fffbe6;
+// 弹窗提示条（对齐 naive-ui 风格）
+.modal-notice {
+  margin-top: 4px;
+  padding: 8px 12px;
+  background: rgb(255, 251, 230);
   border-radius: 4px;
-  border: 1px solid #ffe58f;
-
-  p {
-    margin: 0;
-    font-size: 13px;
-    color: #d48806;
-  }
+  border: 1px solid rgb(255, 229, 143);
+  font-size: 13px;
+  color: rgb(212, 136, 6);
 }
 
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 16px 20px;
-}
-
-.btn {
-  padding: 8px 20px;
-  border-radius: 4px;
-  font-size: 14px;
-  cursor: pointer;
-  border: none;
-  transition: all 0.2s;
-
-  &.btn-primary {
-    background: #646cff;
-    color: #fff;
-
-    &:hover {
-      background: #7e86ff;
-    }
-  }
-
-  &.btn-default {
-    background: transparent;
-    color: rgb(51, 54, 57);
-    border: 1px solid rgb(224, 224, 230);
-
-    &:hover {
-      border-color: #7e86ff;
-      color: #7e86ff;
-    }
-  }
+// JSON 文本框等宽字体（应用于 NInput textarea）
+.json-textarea :deep(textarea) {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
 }
 </style>
