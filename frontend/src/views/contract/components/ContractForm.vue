@@ -492,9 +492,10 @@ defineExpose({
     :title="mode === 'create' ? '新建合同' : '编辑合同'"
     :mask-closable="false"
     @update:show="val => !val && requestClose()"
-    style="width: 600px"
+    :style="{ width: '600px' }"
   >
-    <NForm label-placement="left" :label-width="80">
+    <div class="contract-modal-body">
+    <NForm label-placement="left" :label-width="90" class="contract-form">
       <NFormItem label="合同名称" required>
         <NInput v-model:value="formData.合同名称" placeholder="请输入合同名称" />
       </NFormItem>
@@ -592,6 +593,7 @@ defineExpose({
         </div>
       </NFormItem>
     </NForm>
+    </div>
     <template #footer>
       <NSpace justify="end">
         <NButton @click="requestClose">取消</NButton>
@@ -705,6 +707,21 @@ defineExpose({
     background: rgba(255, 255, 255, 0.05);
     border-color: rgba(255, 255, 255, 0.15);
   }
+}
+
+// 弹窗表单：左侧字段名称不换行，单行显示
+.contract-form {
+  :deep(.n-form-item-label__text) {
+    white-space: nowrap;
+  }
+}
+
+// 弹窗内容区：超出时在弹窗内滚动，不滚动主窗口
+// 80vh 减去标题栏(~56px)和底部按钮区(~60px)的高度
+.contract-modal-body {
+  max-height: calc(80vh - 130px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .upload-tip {
