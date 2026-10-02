@@ -739,10 +739,21 @@ class ContractService
             ['value' => '年结', 'label' => '年结'],
         ];
 
+        $currencyOptions = [
+            ['value' => 'CNY', 'label' => '人民币'],
+            ['value' => 'USD', 'label' => '美元'],
+            ['value' => 'EUR', 'label' => '欧元'],
+            ['value' => 'JPY', 'label' => '日元'],
+            ['value' => 'HKD', 'label' => '港币'],
+            ['value' => 'GBP', 'label' => '英镑'],
+        ];
+
+        // key 必须为中文，与前端 ContractOptions 类型契约保持一致
         return [
-            'contractTypes' => $contractTypes,
-            'statusOptions' => $statusOptions,
-            'paymentOptions' => $paymentOptions,
+            '合同类型' => $contractTypes,
+            '合同状态' => $statusOptions,
+            '付款方式' => $paymentOptions,
+            '币别' => $currencyOptions,
         ];
     }
 

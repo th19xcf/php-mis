@@ -72,6 +72,19 @@ const rules = {
   乙方名称: { required: true, message: '请输入乙方名称' }
 };
 
+/** 表单快照（用于判断是否有未保存的修改） */
+// 必须在下方 watch(immediate: true) 之前声明，否则 watcher 同步执行时 formSnapshot 处于 TDZ，
+// 抛出 ReferenceError: Cannot access 'formSnapshot' before initialization，导致组件 setup 崩溃、内联编辑表单无法渲染
+const formSnapshot = ref('');
+
+function serializeForm() {
+  return JSON.stringify({ ...formData.value, contractFiles: contractFiles.value, approvalFiles: approvalFiles.value });
+}
+
+function formDirty() {
+  return serializeForm() !== formSnapshot.value;
+}
+
 watch(
   () => props.visible,
   (val) => {
@@ -125,17 +138,6 @@ watch(
   },
   { immediate: true }
 );
-
-/** 表单快照（用于判断是否有未保存的修改） */
-const formSnapshot = ref('');
-
-function serializeForm() {
-  return JSON.stringify({ ...formData.value, contractFiles: contractFiles.value, approvalFiles: approvalFiles.value });
-}
-
-function formDirty() {
-  return serializeForm() !== formSnapshot.value;
-}
 
 function handleClose() {
   emit('update:visible', false);
