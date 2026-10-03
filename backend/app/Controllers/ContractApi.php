@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Services\Contract\ContractService;
+use App\Services\Workflow\WorkflowConstants;
 use App\Services\Workflow\WorkflowService;
 
 class ContractApi extends BaseApiController
@@ -244,7 +245,7 @@ class ContractApi extends BaseApiController
 
             $approver = $this->getUserWorkId();
 
-            $result = $this->workflowService->getPendingTasks($approver, $page, $pageSize);
+            $result = $this->workflowService->getPendingTasks($approver, $page, $pageSize, WorkflowConstants::BUSINESS_TYPE_CONTRACT);
 
             return $this->success($result);
         } catch (\Throwable $e) {
@@ -262,7 +263,7 @@ class ContractApi extends BaseApiController
 
             $approver = $this->getUserWorkId();
 
-            $result = $this->workflowService->getDoneTasks($approver, $page, $pageSize);
+            $result = $this->workflowService->getDoneTasks($approver, $page, $pageSize, WorkflowConstants::BUSINESS_TYPE_CONTRACT);
 
             return $this->success($result);
         } catch (\Throwable $e) {
@@ -280,7 +281,7 @@ class ContractApi extends BaseApiController
 
             $sponsor = $this->getUserWorkId();
 
-            $result = $this->workflowService->getMyInstances($sponsor, $page, $pageSize);
+            $result = $this->workflowService->getMyInstances($sponsor, $page, $pageSize, WorkflowConstants::BUSINESS_TYPE_CONTRACT);
 
             return $this->success($result);
         } catch (\Throwable $e) {

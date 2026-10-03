@@ -40,14 +40,17 @@ CREATE TABLE IF NOT EXISTS `def_contract_type` (
 
 -- =========================================
 -- 初始化合同类型数据
+-- 类型编码 与 类型名称 保持一致（均使用中文），便于下拉 value/label 直接对应、
+-- 也避免 def_contract_master_new.合同类型 引用英文编码带来的二次翻译。
 -- =========================================
 INSERT INTO `def_contract_type` (`类型编码`, `类型名称`, `公司ID`, `排序`, `状态`) VALUES
-('PURCHASE', '采购合同', 'ALL', 1, 'ACTIVE'),
-('SALE', '销售合同', 'ALL', 2, 'ACTIVE'),
-('LEASE', '租赁合同', 'ALL', 3, 'ACTIVE'),
-('SERVICE', '服务合同', 'ALL', 4, 'ACTIVE'),
-('LABOR', '劳动合同', 'ALL', 5, 'ACTIVE'),
-('OTHER', '其他合同', 'ALL', 99, 'ACTIVE');
+('销售合同', '销售合同', 'ALL', 1, 'ACTIVE'),
+('采购合同', '采购合同', 'ALL', 2, 'ACTIVE'),
+('服务合同', '服务合同', 'ALL', 3, 'ACTIVE'),
+('劳动合同', '劳动合同', 'ALL', 4, 'ACTIVE'),
+('租赁合同', '租赁合同', 'ALL', 5, 'ACTIVE'),
+('借款合同', '借款合同', 'ALL', 6, 'ACTIVE'),
+('其他合同', '其他合同', 'ALL', 99, 'ACTIVE');
 
 -- =========================================
 -- 完成

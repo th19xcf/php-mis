@@ -45,3 +45,26 @@ UPDATE `def_contract_master_new`
 SET `合同类型` = 'SALES',
     `更新人` = 'system', `更新时间` = NOW()
 WHERE `GUID` = 16 AND `合同类型` = '销售合同';
+
+-- =============================================================================
+-- 2026-10-02 追加：类型编码全量中文化后路由口径同步
+--   def_contract_type.类型编码 已统一改为与 类型名称 一致（采购合同/销售合同/服务合同
+--   /劳动合同/租赁合同/借款合同/其他合同），def_contract_master_new.合同类型 也已
+--   同步迁移为中文，故 def_workflow_routing.匹配条件 必须改用中文口径才能命中。
+--   下面的 UPDATE 在 2026-10-02 已通过临时 PHP 脚本执行（事务提交），此处存档备查。
+--   口径约束已同步写入 workflow_routing_examples.sql 第 5-13 行说明。
+-- =============================================================================
+-- UPDATE `def_workflow_routing`
+-- SET `匹配条件` = JSON_OBJECT('合同类型', '采购合同', '合同金额', JSON_OBJECT('>=', 1000000)),
+--     `更新人` = 'system', `更新时间` = NOW()
+-- WHERE `GUID` = 1 AND `删除标识` = '0';
+--
+-- UPDATE `def_workflow_routing`
+-- SET `匹配条件` = JSON_OBJECT('合同类型', '采购合同', '合同金额', JSON_OBJECT('<', 1000000)),
+--     `更新人` = 'system', `更新时间` = NOW()
+-- WHERE `GUID` = 2 AND `删除标识` = '0';
+--
+-- UPDATE `def_workflow_routing`
+-- SET `匹配条件` = JSON_OBJECT('合同类型', '销售合同'),
+--     `更新人` = 'system', `更新时间` = NOW()
+-- WHERE `GUID` = 3 AND `删除标识` = '0';

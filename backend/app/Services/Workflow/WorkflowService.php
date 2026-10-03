@@ -341,18 +341,21 @@ class WorkflowService
         });
     }
 
-    public function getPendingTasks(string $approver, int $page = 1, int $pageSize = 20): array
+    public function getPendingTasks(string $approver, int $page = 1, int $pageSize = 20, string $businessType = ''): array
     {
         $offset = ($page - 1) * $pageSize;
+
+        $bizFilter = $businessType !== '' ? sprintf(' and i.`业务类型`=%s', $this->model->quote($businessType)) : '';
 
         $countSql = sprintf(
             'select count(*) as `total`
             from `def_workflow_task` t
             inner join `def_workflow_instance` i on t.`实例ID` = i.`GUID`
-            where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s',
+            where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s%s',
             $this->model->quote($approver),
             $this->model->quote('待处理'),
-            $this->model->quote('0')
+            $this->model->quote('0'),
+            $bizFilter
         );
         $result = $this->model->select($countSql);
         $row = $result ? ($result->getRowArray() ?: []) : [];
@@ -366,12 +369,13 @@ class WorkflowService
                    i.`实例状态`
             from `def_workflow_task` t
             inner join `def_workflow_instance` i on t.`实例ID` = i.`GUID`
-            where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s
+            where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s%s
             order by t.`创建时间` desc
             limit %d offset %d',
             $this->model->quote($approver),
             $this->model->quote('待处理'),
             $this->model->quote('0'),
+            $bizFilter,
             $pageSize,
             $offset
         );
@@ -386,18 +390,21 @@ class WorkflowService
         ];
     }
 
-    public function getDoneTasks(string $approver, int $page = 1, int $pageSize = 20): array
+    public function getDoneTasks(string $approver, int $page = 1, int $pageSize = 20, string $businessType = ''): array
     {
         $offset = ($page - 1) * $pageSize;
+
+        $bizFilter = $businessType !== '' ? sprintf(' and i.`业务类型`=%s', $this->model->quote($businessType)) : '';
 
         $countSql = sprintf(
             'select count(*) as `total`
             from `def_workflow_task` t
             inner join `def_workflow_instance` i on t.`实例ID` = i.`GUID`
-            where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s',
+            where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s%s',
             $this->model->quote($approver),
             $this->model->quote('已处理'),
-            $this->model->quote('0')
+            $this->model->quote('0'),
+            $bizFilter
         );
         $result = $this->model->select($countSql);
         $row = $result ? ($result->getRowArray() ?: []) : [];
@@ -412,12 +419,13 @@ class WorkflowService
                    i.`实例状态`
             from `def_workflow_task` t
             inner join `def_workflow_instance` i on t.`实例ID` = i.`GUID`
-            where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s
+            where t.`处理人`=%s and t.`任务状态`=%s and t.`删除标识`=%s%s
             order by t.`处理时间` desc
             limit %d offset %d',
             $this->model->quote($approver),
             $this->model->quote('已处理'),
             $this->model->quote('0'),
+            $bizFilter,
             $pageSize,
             $offset
         );
@@ -432,16 +440,19 @@ class WorkflowService
         ];
     }
 
-    public function getMyInstances(string $sponsor, int $page = 1, int $pageSize = 20): array
+    public function getMyInstances(string $sponsor, int $page = 1, int $pageSize = 20, string $businessType = ''): array
     {
         $offset = ($page - 1) * $pageSize;
+
+        $bizFilter = $businessType !== '' ? sprintf(' and `业务类型`=%s', $this->model->quote($businessType)) : '';
 
         $countSql = sprintf(
             'select count(*) as `total`
             from `def_workflow_instance`
-            where `发起人`=%s and `删除标识`=%s',
+            where `发起人`=%s and `删除标识`=%s%s',
             $this->model->quote($sponsor),
-            $this->model->quote('0')
+            $this->model->quote('0'),
+            $bizFilter
         );
         $result = $this->model->select($countSql);
         $row = $result ? ($result->getRowArray() ?: []) : [];
@@ -452,11 +463,12 @@ class WorkflowService
                    `发起人`, `发起人姓名`, `实例状态`, `当前节点编码`,
                    `创建时间`, `结束时间`, `发起时间`
             from `def_workflow_instance`
-            where `发起人`=%s and `删除标识`=%s
+            where `发起人`=%s and `删除标识`=%s%s
             order by `创建时间` desc
             limit %d offset %d',
             $this->model->quote($sponsor),
             $this->model->quote('0'),
+            $bizFilter,
             $pageSize,
             $offset
         );
@@ -707,7 +719,17 @@ class WorkflowService
 
         $approvers = $this->resolveApprovers($node, $sponsor, $sponsorName, $sponsorDept);
         if (empty($approvers)) {
-            return [];
+            // 审批人解析为空属于流程定义/用户表配置错误，必须抛异常触发事务回滚：
+            // 否则实例已落库但任务表 0 条记录，流程死锁且无任何错误日志，
+            // 发起人收到"提交成功"响应后无法理解为何待办里没有该合同，会反复重新提交生成孤儿实例。
+            // 与 SUPERIOR 解析失败抛异常的设计标准保持一致。
+            throw new \RuntimeException(sprintf(
+                '节点[%s(%s)]审批人解析为空：审批人类型=%s, 配置=%s；请检查 def_role_group / def_user / def_dept 等配置',
+                $nodeCode,
+                $node['节点名称'] ?? '',
+                $node['审批人类型'] ?? '',
+                $node['审批人配置'] ?? ''
+            ));
         }
 
         $now = date('Y-m-d H:i:s');
