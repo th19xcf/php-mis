@@ -19,6 +19,55 @@ const deptDetail = computed(() => deptStore.deptDetail);
 const isAddingMode = computed(() => deptStore.isAddingMode);
 const isEditingMode = computed(() => deptStore.isEditingMode);
 
+// 部门架构树搜索（客户端过滤，按 部门名称 / 部门编码 模糊匹配，不分大小写）
+const searchKeyword = ref('');
+
+// 过滤后的树：保留命中节点 + 其所有祖先节点（祖先裁剪掉未命中分支）
+const filteredTreeData = computed<TreeOption[]>(() => {
+  const kw = searchKeyword.value.trim().toLowerCase();
+  if (!kw) return treeData.value;
+
+  const filter = (items: TreeOption[]): TreeOption[] => {
+    const out: TreeOption[] = [];
+    for (const n of items) {
+      const selfMatch = n.label ? String(n.label).toLowerCase().includes(kw) : false;
+      const children = n.children ? filter(n.children as TreeOption[]) : [];
+      if (selfMatch) {
+        // 自身命中：保留原始节点（含全部子树，方便用户查看下游上下文）
+        out.push(n);
+      } else if (children.length > 0) {
+        // 自身未命中但有子孙命中：作为祖先保留，仅接命中分支
+        out.push({ ...n, children });
+      }
+    }
+    return out;
+  };
+  return filter(treeData.value);
+});
+
+// 搜索时自动展开所有过滤后树的非叶子节点，让命中节点全部可见
+const searchExpandedKeys = computed<string[]>(() => {
+  const kw = searchKeyword.value.trim().toLowerCase();
+  if (!kw) return [];
+
+  const keys: string[] = [];
+  const walk = (items: TreeOption[]) => {
+    for (const n of items) {
+      if (n.children && (n.children as TreeOption[]).length > 0) {
+        keys.push(String(n.key));
+        walk(n.children as TreeOption[]);
+      }
+    }
+  };
+  walk(filteredTreeData.value);
+  return Array.from(new Set(keys));
+});
+
+// NTree 绑定值：搜索时切换为过滤树 + 自动展开键；非搜索时使用原 treeData + store expandedKeys
+const treeExpandedKeys = computed<string[]>(() =>
+  searchKeyword.value.trim() ? searchExpandedKeys.value : deptStore.expandedKeys
+);
+
 // 字段配置：从 def_query_column 读取
 const FUNCTION_CODE = '1010';
 const { addFields, detailFields, loadFields } = useWorkbenchFields();
@@ -376,14 +425,29 @@ onMounted(async () => {
         </NButton>
       </div>
       <div class="panel-content">
+        <div class="mb-2">
+          <NInput
+            v-model:value="searchKeyword"
+            placeholder="搜索部门名称/编码..."
+            clearable
+          >
+            <template #suffix>
+              <NButton text size="small" @click="searchKeyword = ''">
+                <template #icon>
+                  <icon-mdi-magnify />
+                </template>
+              </NButton>
+            </template>
+          </NInput>
+        </div>
         <NTree
-          :data="treeData"
+          :data="filteredTreeData"
           :render-prefix="renderPrefix"
           selectable
           block-line
           block-node
           :selected-keys="selectedGuid ? [selectedGuid] : []"
-          :expanded-keys="deptStore.expandedKeys"
+          :expanded-keys="treeExpandedKeys"
           @update:selected-keys="handleSelect"
           @update:expanded-keys="deptStore.setExpandedKeys"
         />

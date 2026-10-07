@@ -192,18 +192,13 @@ class DeptApi extends BaseApiController
 
             if ($newGuidRow && !empty($parent['部门路径'])) {
                 $newPath = $parent['部门路径'] . '>>' . $newGuidRow['GUID'];
-                $this->model->exec(sprintf(
-                    'UPDATE def_dept SET 部门路径 = %s WHERE GUID = %d',
-                    $this->model->quote($newPath),
-                    (int) $newGuidRow['GUID']
-                ));
+                $pathData = $this->buildUpdateData(['部门路径' => $newPath], '新增下级回填路径');
+                $this->updateRecord('def_dept', $pathData, sprintf('GUID = %d', (int) $newGuidRow['GUID']));
             }
 
-            // 上级部门标记为非末级
-            $this->model->exec(sprintf(
-                'UPDATE def_dept SET 有无下级部门 = "有", 是否末级部门 = "0" WHERE 部门编码 = %s',
-                $this->model->quote((string) $parentCode)
-            ));
+            // 上级部门标记为非末级（走 updateRecord 以写入 def_audit_log）
+            $parentData = $this->buildUpdateData(['有无下级部门' => '有', '是否末级部门' => '0'], '新增下级');
+            $this->updateRecord('def_dept', $parentData, sprintf('部门编码 = %s', $this->model->quote((string) $parentCode)));
 
             return $this->success(['deptCode' => $newCode], '新增部门成功');
         }
@@ -311,10 +306,9 @@ class DeptApi extends BaseApiController
                 $remainRow = $this->model->select($remainSql)->getRowArray();
 
                 if ($remainRow && (int) $remainRow['cnt'] === 0) {
-                    $resetSql = sprintf('
-                        UPDATE def_dept SET 有无下级部门 = "无", 是否末级部门 = "1" WHERE 部门编码 = %s
-                    ', $this->model->quote((string) $parentCode));
-                    $this->model->exec($resetSql);
+                    // 上级部门重置为末级（走 updateRecord 以写入 def_audit_log）
+                    $resetData = $this->buildUpdateData(['有无下级部门' => '无', '是否末级部门' => '1'], '删除下级');
+                    $this->updateRecord('def_dept', $resetData, sprintf('部门编码 = %s', $this->model->quote((string) $parentCode)));
                 }
             }
 

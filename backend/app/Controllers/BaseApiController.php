@@ -25,6 +25,15 @@ class BaseApiController extends BaseController
 {
     use AuditFieldsTrait;
 
+    /** 审计日志忽略的系统字段（由 buildInsertData/buildUpdateData 注入，对业务追溯无意义） */
+    protected const AUDIT_NOISE_FIELDS = [
+        '操作记录',
+        '操作来源',
+        '操作人员',
+        '开始操作时间',
+        '结束操作时间',
+    ];
+
     protected Mcommon $model;
     protected SessionUserContext $userContext;
     protected string $traceId;
@@ -447,6 +456,10 @@ class BaseApiController extends BaseController
             return 0;
         }
 
+        // 审计用键集：排除系统审计字段（操作记录/操作来源/操作人员/开始操作时间/结束操作时间），
+        // 这些由 buildUpdateData 自动注入，对业务追溯无意义，只记业务字段变更
+        $auditKeys = array_values(array_diff($effectiveUpdateKeys, self::AUDIT_NOISE_FIELDS));
+
         $quote = fn (string $v) => $this->model->quote($v);
 
         // === 写入前：读取旧值快照（GUID/UUID/受影响字段；人员审计表含定位键） ===
@@ -478,7 +491,7 @@ class BaseApiController extends BaseController
                 );
             } else {
                 try {
-                    foreach (RecordSqlBuilder::collectUpdateAuditEntries($oldRows, $data, $effectiveUpdateKeys) as $entry) {
+                    foreach (RecordSqlBuilder::collectUpdateAuditEntries($oldRows, $data, $auditKeys) as $entry) {
                         $this->writeAuditLog(
                             $table,
                             $entry['guid'],

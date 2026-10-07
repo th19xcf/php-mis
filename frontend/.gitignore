@@ -45,6 +45,9 @@ commit-msg-temp.txt
 .commit-msg-temp.txt
 .git_commit_msg.txt
 
+# TRAE 工作目录（含临时 commit message 文件等）
+.trae/
+
 # Auto-generated type declarations
 src/typings/components.d.ts
 src/typings/elegant-router.d.ts
