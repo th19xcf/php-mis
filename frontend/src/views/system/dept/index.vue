@@ -514,7 +514,10 @@ onMounted(async () => {
             </thead>
             <tbody>
               <tr v-for="field in detailFields" :key="field.columnName">
-                <td>{{ field.fieldName }}</td>
+                <td>
+                  {{ field.fieldName }}
+                  <span v-if="field.required" class="text-red-500 ml-1">*</span>
+                </td>
                 <td>
                   <NTag :type="field.editable ? 'success' : 'default'" size="small">
                     {{ field.editable ? '是' : '否' }}

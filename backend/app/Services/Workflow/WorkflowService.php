@@ -1243,12 +1243,11 @@ class WorkflowService
             throw new \RuntimeException('部门「' . $deptName . '」未配置负责人，无法解析 SUPERIOR 审批人');
         }
 
-        // def_dept.负责人 存姓名；def_user 中工号与姓名基本同值，按工号/姓名双口径匹配并去重
+        // def_dept.负责人 存工号；按工号唯一匹配（工号在 def_user 中唯一，无需姓名兜底）
         $sql = sprintf(
-            'select distinct `工号` as `work_id`, `姓名` as `user_name`
+            'select `工号` as `work_id`, `姓名` as `user_name`
             from `def_user`
-            where (`工号`=%s or `姓名`=%s) and `有效标识`=%s',
-            $this->model->quote($head),
+            where `工号`=%s and `有效标识`=%s',
             $this->model->quote($head),
             $this->model->quote('1')
         );
