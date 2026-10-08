@@ -29,7 +29,7 @@ class OnlyOfficeService
      * @return array 编辑器配置数组
      * @throws \RuntimeException
      */
-    public function getEditorConfig(int $documentId, string $userId, string $userName, string $callbackUrl): array
+    public function getEditorConfig(int $documentId, string $userId, string $userName, string $callbackUrl, string $uiTheme = 'default'): array
     {
         $t0 = hrtime(true);
         $steps = [];
@@ -102,6 +102,9 @@ class OnlyOfficeService
                     'name' => $userName,
                 ],
                 'callbackUrl' => $callbackUrl,
+                'customization' => [
+                    'uiTheme' => $uiTheme,
+                ],
             ],
             'height' => '100%',
             'width' => '100%',

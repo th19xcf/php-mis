@@ -452,14 +452,17 @@ function handleApprovalSuccess() {
 
 function getActionButtons() {
   if (!selectedContract.value) return [];
-  const status = selectedContract.value.合同状态;
+  // 优先用 store 详情（含 canApprove），列表行数据作 fallback
+  const detail = currentContract.value;
+  const status = detail?.合同状态 ?? selectedContract.value.合同状态;
+  const canApprove = detail?.canApprove ?? false;
   const buttons: Array<{ label: string; key: string; type: string }> = [];
   if (status === '草稿' || status === '已驳回') {
     buttons.push({ label: '编辑', key: 'edit', type: 'primary' });
     buttons.push({ label: '删除', key: 'delete', type: 'error' });
     buttons.push({ label: '提交审批', key: 'submit', type: 'warning' });
   }
-  if (status === '审批中') {
+  if (status === '审批中' && canApprove) {
     buttons.push({ label: '审核', key: 'approve', type: 'warning' });
   }
   // 已退回：流程挂起等待发起人重新提交（可先编辑修改，再经弹窗重新提交）
@@ -541,6 +544,16 @@ const contractFiles = computed(() => {
 
 const approvalFiles = computed(() => {
   return (currentContract.value?.documents || []).filter(d => d.文档类型 === 'APPROVAL_FORM');
+});
+
+// 是否可编辑文档：草稿/已驳回/已退回 时所有用户可编辑（创建人编辑场景）；
+// 审批中 时仅审核人（canApprove=true）可编辑文档（审核人修订文档场景）；
+// 其他状态（已通过/已签署/履行中/已终止等）不可编辑。
+const canEditDocument = computed(() => {
+  const status = currentContract.value?.合同状态 ?? selectedContract.value?.合同状态 ?? '';
+  if (status === '草稿' || status === '已驳回' || status === '已退回') return true;
+  if (status === '审批中') return currentContract.value?.canApprove ?? false;
+  return false;
 });
 
 // 列定义配置是否已加载（避免 KeepAlive 场景下重复请求）
@@ -861,6 +874,7 @@ watch(columnDefs, (newDefs) => {
               <span class="detail-file-name">{{ file.文档名称 }}</span>
               <span class="detail-file-size">{{ formatFileSize(file.文件大小) }}</span>
               <div class="detail-file-actions">
+                <NButton v-if="canEditDocument" size="tiny" quaternary type="primary" @click="handleOpenEditor(file.GUID, file.文档名称)">编辑</NButton>
                 <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
               </div>
             </div>
@@ -874,6 +888,7 @@ watch(columnDefs, (newDefs) => {
               <span class="detail-file-name">{{ file.文档名称 }}</span>
               <span class="detail-file-size">{{ formatFileSize(file.文件大小) }}</span>
               <div class="detail-file-actions">
+                <NButton v-if="canEditDocument" size="tiny" quaternary type="primary" @click="handleOpenEditor(file.GUID, file.文档名称)">编辑</NButton>
                 <NButton size="tiny" quaternary type="primary" @click="handleExportFile(file)">导出</NButton>
               </div>
             </div>
@@ -915,6 +930,7 @@ watch(columnDefs, (newDefs) => {
       <div
         v-if="showEditorModal"
         class="editor-modal-mask"
+        :class="{ 'is-dark': isDarkMode }"
         @click.self="handleCloseEditor"
       >
         <div
@@ -1314,6 +1330,21 @@ watch(columnDefs, (newDefs) => {
     cursor: move;
     opacity: 0.95;
   }
+}
+
+/* dark 模式：编辑器弹窗 Teleport 到 body 脱离 .system-dark 上下文，需要单独覆盖 */
+.editor-modal-mask.is-dark .editor-modal {
+  background: #1f1f1f;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+.editor-modal-mask.is-dark .editor-modal-header {
+  background: #2a2a2a;
+  border-bottom-color: #383838;
+}
+
+.editor-modal-mask.is-dark .editor-modal-title {
+  color: #e5e5e5;
 }
 
 .editor-modal-header {

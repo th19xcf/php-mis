@@ -53,6 +53,10 @@ class ContractApi extends BaseApiController
                 return $this->notFound('合同不存在');
             }
 
+            // 计算当前用户是否可审批：仅当合同状态=审批中 且 流程实例ID>0 时，
+            // 查 def_workflow_task 是否存在 实例ID=流程实例ID AND 任务状态='待处理' AND 处理人=当前用户工号
+            $result['canApprove'] = $this->computeCanApprove($result);
+
             return $this->success($result);
         } catch (\Throwable $e) {
             log_message('error', '[ContractApi::detail] ' . $e->getMessage());
@@ -401,5 +405,38 @@ class ContractApi extends BaseApiController
             log_message('error', '[ContractApi::downloadDocument] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
+    }
+
+    /**
+     * 计算当前用户是否可审批该合同
+     * 仅当合同状态=审批中 且 流程实例ID>0 时，查询 def_workflow_task
+     * 是否存在 实例ID=流程实例ID AND 任务状态='待处理' AND 处理人=当前用户工号 的任务
+     */
+    private function computeCanApprove(array $contract): bool
+    {
+        $status = $contract['合同状态'] ?? '';
+        $instanceId = (int) ($contract['流程实例ID'] ?? 0);
+        if ($status !== '审批中' || $instanceId <= 0) {
+            return false;
+        }
+
+        $workId = $this->getUserWorkId();
+        if ($workId === '') {
+            return false;
+        }
+
+        $sql = sprintf(
+            'select count(*) as cnt from `def_workflow_task`
+             where `实例ID`=%s and `任务状态`=%s and `处理人`=%s
+             and `删除标识`=%s and `有效标识`=%s limit 1',
+            $instanceId,
+            $this->model->quote('待处理'),
+            $this->model->quote($workId),
+            $this->model->quote('0'),
+            $this->model->quote('1')
+        );
+        $result = $this->model->select($sql);
+        $row = $result ? ($result->getRowArray() ?: []) : [];
+        return (int) ($row['cnt'] ?? 0) > 0;
     }
 }

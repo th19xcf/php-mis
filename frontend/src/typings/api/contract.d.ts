@@ -52,6 +52,8 @@ declare namespace Api {
       删除标识: string;
       有效标识: string;
       documents?: ContractDocument[];
+      /** 当前用户是否可审批（仅当合同状态=审批中 且 用户是当前节点待处理任务的处理人） */
+      canApprove?: boolean;
     }
 
     interface ContractDocument {

@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import {  } from 'naive-ui';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
@@ -157,8 +157,12 @@ async function loadEditor() {
   try {
     console.log('[OnlyOfficeEditor] Step 1: Fetching OnlyOffice config from backend...');
     const { fetchOnlyOfficeConfig } = await import('@/service/api/onlyoffice');
+    const { useThemeStore } = await import('@/store/modules/theme');
     perfMark('动态导入API模块');
-    const result = await fetchOnlyOfficeConfig(props.documentId);
+    // 由 isDarkMode 推导 uiTheme，传给后端注入 OnlyOffice customization.uiTheme
+    const themeStore = useThemeStore();
+    const uiTheme = themeStore.darkMode ? 'dark' : 'default';
+    const result = await fetchOnlyOfficeConfig(props.documentId, uiTheme as 'dark' | 'default');
     perfMark('请求/onlyoffice/config');
     console.log('[OnlyOfficeEditor] Step 1 completed: Config response:', result);
 

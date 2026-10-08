@@ -74,6 +74,12 @@ class OnlyOfficeCallback extends BaseApiController
         try {
             $data = $this->getJsonInput();
             $documentId = (int) ($data['documentId'] ?? $this->request->getGet('documentId') ?? 0);
+            // UI 主题：default | dark | light | auto，前端由 isDarkMode 推导
+            $uiTheme = (string) ($data['uiTheme'] ?? $this->request->getGet('uiTheme') ?? 'default');
+            $allowedThemes = ['default', 'dark', 'light', 'auto'];
+            if (!in_array($uiTheme, $allowedThemes, true)) {
+                $uiTheme = 'default';
+            }
             $steps['解析参数'] = hrtime(true);
 
             if ($documentId <= 0) {
@@ -100,10 +106,11 @@ class OnlyOfficeCallback extends BaseApiController
             }
             $steps['构建callbackUrl'] = hrtime(true);
 
-            $config = $this->onlyOfficeService->getEditorConfig($documentId, $userId, $userName, $callbackUrl);
+            $config = $this->onlyOfficeService->getEditorConfig($documentId, $userId, $userName, $callbackUrl, $uiTheme);
             $steps['getEditorConfig'] = hrtime(true);
+            log_message('debug', '[OnlyOfficeCallback::config] customization=' . json_encode($config['editorConfig']['customization'] ?? [], JSON_UNESCAPED_UNICODE));
 
-            $logMsg = $this->buildPerformanceTable('[OnlyOfficeCallback::config]', '成功', 'docId=' . $documentId, $steps, $t0);
+            $logMsg = $this->buildPerformanceTable('[OnlyOfficeCallback::config]', '成功', 'docId=' . $documentId . ' uiTheme=' . $uiTheme, $steps, $t0);
             log_message('debug', $logMsg);
 
             return $this->success($config);

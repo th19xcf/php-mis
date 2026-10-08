@@ -1,7 +1,7 @@
 import { request } from '../request';
 
-export function fetchOnlyOfficeConfig(documentId: number) {
-  return request({ url: '/onlyoffice/config', params: { documentId } });
+export function fetchOnlyOfficeConfig(documentId: number, uiTheme: 'default' | 'dark' | 'light' | 'auto' = 'default') {
+  return request({ url: '/onlyoffice/config', params: { documentId, uiTheme } });
 }
 
 export function fetchOnlyOfficeDownloadUrl(documentId: number, token: string) {
