@@ -1147,4 +1147,186 @@ class OnlyOfficeService
         }
         return $headers;
     }
+
+    /**
+     * 获取合同文档修改时间线
+     * 合并文档上传记录和 OnlyOffice 回调日志
+     *
+     * @param string $contractNo 合同编号
+     * @return array 时间线数组（按时间升序）
+     */
+    public function getDocumentTimeline(string $contractNo): array
+    {
+        $timeline = [];
+
+        // 1. 文档上传记录
+        $uploadSql = sprintf(
+            'SELECT d.`GUID`, d.`文档名称`, d.`文档类型`, d.`创建人`, d.`创建时间`,
+                    u.`姓名` as `创建人姓名`
+             FROM `def_contract_document` d
+             LEFT JOIN `def_user` u ON d.`创建人` = u.`工号` AND u.`有效标识` = %s
+             WHERE d.`合同编号`=%s AND d.`删除标识`=%s
+             ORDER BY d.`创建时间` ASC',
+            $this->model->quote('1'),
+            $this->model->quote($contractNo),
+            $this->model->quote('0')
+        );
+        $uploadResult = $this->model->select($uploadSql);
+        $uploads = $uploadResult ? $uploadResult->getResultArray() : [];
+
+        foreach ($uploads as $upload) {
+            $timeline[] = [
+                '事件类型'   => 'UPLOAD',
+                '事件名称'   => '上传文档',
+                '文档名称'   => $upload['文档名称'] ?? '',
+                '文档类型'   => $upload['文档类型'] ?? '',
+                '操作人'     => $upload['创建人姓名'] ?: $upload['创建人'] ?: '',
+                '操作人工号' => $upload['创建人'] ?? '',
+                '操作时间'   => $upload['创建时间'] ?? '',
+                '版本号'     => 1,
+                '处理状态'   => 'SUCCESS',
+                '处理结果'   => '',
+            ];
+        }
+
+        // 2. OnlyOffice 回调日志（编辑/保存/关闭）
+        $logSql = sprintf(
+            'SELECT l.`回调事件`, l.`用户ID`, l.`回调时间`, l.`处理状态`, l.`处理结果`,
+                    l.`文档ID`, l.`回调数据`, d.`文档名称`, d.`文档类型`, d.`版本号`,
+                    d.`创建人` as `文档创建人`, d.`最后编辑人` as `文档编辑人`,
+                    u.`姓名` as `操作人姓名`
+             FROM `def_onlyoffice_callback_log` l
+             LEFT JOIN `def_contract_document` d ON l.`文档ID` = d.`GUID`
+             LEFT JOIN `def_user` u ON l.`用户ID` = u.`工号` AND u.`有效标识` = %s
+             WHERE d.`合同编号`=%s AND l.`删除标识`=%s AND l.`处理状态`=%s
+             ORDER BY l.`回调时间` ASC',
+            $this->model->quote('1'),
+            $this->model->quote($contractNo),
+            $this->model->quote('0'),
+            $this->model->quote('SUCCESS')
+        );
+        $logResult = $this->model->select($logSql);
+        $logs = $logResult ? $logResult->getResultArray() : [];
+
+        $eventMap = [
+            'EDITING'          => '开始编辑',
+            'SAVE'             => '保存文档',
+            'SAVE_ERROR'       => '保存失败',
+            'CLOSED'           => '关闭编辑',
+            'FORCE_SAVE'       => '强制保存',
+            'FORCE_SAVE_RESULT'=> '强制保存',
+            'FORCE_SAVE_ERROR' => '强制保存失败',
+            'NOT_FOUND'        => '文档未找到',
+        ];
+
+        foreach ($logs as $log) {
+            $eventName = $log['回调事件'] ?? 'UNKNOWN';
+            // 跳过 CLOSED 事件，过于频繁且无实际意义
+            if ($eventName === 'CLOSED') {
+                continue;
+            }
+
+            // 优先使用 JOIN 出的姓名，其次从回调数据 JSON 中提取用户，最后用文档创建人
+            $operatorName = $log['操作人姓名'] ?? '';
+            $operatorId = $log['用户ID'] ?? '';
+
+            // 从回调数据 JSON 中提取用户信息
+            $callbackJson = $log['回调数据'] ?? '';
+            if (!empty($callbackJson)) {
+                $callbackData = json_decode($callbackJson, true);
+                if (is_array($callbackData)) {
+                    // 从 history.changes[0].user 中获取真实用户名
+                    $history = $callbackData['history'] ?? [];
+                    $changes = $history['changes'] ?? [];
+                    if (is_array($changes) && !empty($changes)) {
+                        $userObj = $changes[0]['user'] ?? [];
+                        if (is_array($userObj)) {
+                            $historyUserName = $userObj['name'] ?? '';
+                            $historyUserId = $userObj['id'] ?? '';
+                            // 只在不是 system 时才用
+                            if (!empty($historyUserName) && $historyUserName !== '系统用户') {
+                                $operatorName = $historyUserName;
+                            }
+                            if (!empty($historyUserId) && $historyUserId !== 'system' && ($operatorId === 'system' || empty($operatorId))) {
+                                $operatorId = $historyUserId;
+                            }
+                        }
+                    }
+                    // users 字段
+                    $users = $callbackData['users'] ?? [];
+                    if (is_array($users) && !empty($users)) {
+                        $firstUser = $users[0] ?? '';
+                        if (!empty($firstUser) && $firstUser !== 'system' && ($operatorId === 'system' || empty($operatorId))) {
+                            $operatorId = $firstUser;
+                        }
+                    }
+                    // actions 字段
+                    $actions = $callbackData['actions'] ?? [];
+                    if (is_array($actions) && !empty($actions)) {
+                        $actionUser = $actions[0]['userid'] ?? '';
+                        if (!empty($actionUser) && $actionUser !== 'system' && ($operatorId === 'system' || empty($operatorId))) {
+                            $operatorId = $actionUser;
+                        }
+                    }
+                }
+            }
+
+            // 有工号但没姓名时查 def_user
+            if (empty($operatorName) && !empty($operatorId) && $operatorId !== 'system') {
+                $nameSql = sprintf(
+                    'SELECT `姓名` FROM `def_user` WHERE `工号`=%s AND `有效标识`=%s LIMIT 1',
+                    $this->model->quote($operatorId),
+                    $this->model->quote('1')
+                );
+                $nameResult = $this->model->select($nameSql);
+                $nameRow = $nameResult ? ($nameResult->getRowArray() ?: []) : [];
+                $operatorName = $nameRow['姓名'] ?? '';
+            }
+
+            // 如果仍然只有 system，用文档创建人/最后编辑人代替
+            if (($operatorId === 'system' || empty($operatorId)) && empty($operatorName)) {
+                // 优先用最后编辑人，其次创建人
+                $fallbackId = $log['文档编辑人'] ?? '';
+                if (empty($fallbackId)) {
+                    $fallbackId = $log['文档创建人'] ?? '';
+                }
+                if (!empty($fallbackId)) {
+                    $operatorId = $fallbackId;
+                    $fbNameSql = sprintf(
+                        'SELECT `姓名` FROM `def_user` WHERE `工号`=%s AND `有效标识`=%s LIMIT 1',
+                        $this->model->quote($fallbackId),
+                        $this->model->quote('1')
+                    );
+                    $fbNameResult = $this->model->select($fbNameSql);
+                    $fbNameRow = $fbNameResult ? ($fbNameResult->getRowArray() ?: []) : [];
+                    $operatorName = $fbNameRow['姓名'] ?? $fallbackId;
+                }
+            }
+
+            // 最终兜底
+            if (empty($operatorName) && $operatorId === 'system') {
+                $operatorName = '系统用户';
+            }
+
+            $timeline[] = [
+                '事件类型'   => $eventName,
+                '事件名称'   => $eventMap[$eventName] ?? $eventName,
+                '文档名称'   => $log['文档名称'] ?? '',
+                '文档类型'   => $log['文档类型'] ?? '',
+                '操作人'     => $operatorName ?: $operatorId ?: '系统',
+                '操作人工号' => $operatorId,
+                '操作时间'   => $log['回调时间'] ?? '',
+                '版本号'     => (int) ($log['版本号'] ?? 0),
+                '处理状态'   => $log['处理状态'] ?? '',
+                '处理结果'   => $log['处理结果'] ?? '',
+            ];
+        }
+
+        // 按时间升序排列
+        usort($timeline, function ($a, $b) {
+            return strcmp($a['操作时间'] ?? '', $b['操作时间'] ?? '');
+        });
+
+        return $timeline;
+    }
 }

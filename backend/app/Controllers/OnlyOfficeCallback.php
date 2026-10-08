@@ -126,34 +126,51 @@ class OnlyOfficeCallback extends BaseApiController
             $token = $this->request->getGet('token') ?? '';
             $steps['解析参数'] = hrtime(true);
 
-            log_message('debug', '[OnlyOfficeCallback::download] 请求到达 - documentId=' . $documentId . ', token=' . (empty($token) ? 'empty' : 'present') . ', IP=' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'));
+            $clientIp = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+            log_message('info', '[OnlyOfficeCallback::download] 请求到达 - documentId=' . $documentId . ', token=' . (empty($token) ? 'empty' : 'present') . ', IP=' . $clientIp . ', UA=' . $userAgent);
 
             if ($documentId <= 0) {
-                log_message('debug', '[OnlyOfficeCallback::download] 参数错误 - documentId=' . $documentId);
-                return $this->paramError('documentId 不能为空');
+                log_message('error', '[OnlyOfficeCallback::download] 参数错误 - documentId=' . $documentId . ', IP=' . $clientIp);
+                return $this->response->setStatusCode(400)->setBody('Bad Request: invalid documentId');
             }
 
+            // Token 鉴权（OnlyOffice 服务器下载文件时使用）
             if (!empty($token)) {
                 $payload = $this->onlyOfficeService->verifyJwt($token);
-                if ($payload === null || ((int) ($payload['documentId'] ?? 0)) !== $documentId) {
-                    return $this->businessError('下载链接无效或已过期');
+                if ($payload === null) {
+                    log_message('error', '[OnlyOfficeCallback::download] Token 验证失败 - documentId=' . $documentId . ', IP=' . $clientIp);
+                    return $this->response->setStatusCode(403)->setBody('Forbidden: invalid token');
+                }
+                if (((int) ($payload['documentId'] ?? 0)) !== $documentId) {
+                    log_message('error', '[OnlyOfficeCallback::download] Token documentId 不匹配 - tokenDocId=' . ($payload['documentId'] ?? 'null') . ', requested=' . $documentId . ', IP=' . $clientIp);
+                    return $this->response->setStatusCode(403)->setBody('Forbidden: token documentId mismatch');
+                }
+                // 检查 token 是否过期
+                $exp = (int) ($payload['exp'] ?? 0);
+                if ($exp > 0 && $exp < time()) {
+                    log_message('error', '[OnlyOfficeCallback::download] Token 已过期 - documentId=' . $documentId . ', exp=' . date('Y-m-d H:i:s', $exp) . ', IP=' . $clientIp);
+                    return $this->response->setStatusCode(403)->setBody('Forbidden: token expired');
                 }
             } else {
+                // 无 token 时走用户登录态（浏览器直接下载时使用）
                 try {
                     $userId = $this->getUserWorkId();
                     if (empty($userId)) {
-                        return $this->businessError('请先登录');
+                        log_message('error', '[OnlyOfficeCallback::download] 未登录 - IP=' . $clientIp);
+                        return $this->response->setStatusCode(401)->setBody('Unauthorized: please login');
                     }
                 } catch (\Throwable $e) {
-                    return $this->businessError('请先登录');
+                    log_message('error', '[OnlyOfficeCallback::download] 获取用户信息失败 - ' . $e->getMessage() . ', IP=' . $clientIp);
+                    return $this->response->setStatusCode(401)->setBody('Unauthorized: please login');
                 }
             }
             $steps['鉴权'] = hrtime(true);
 
             $document = $this->getDocumentById($documentId);
             if (!$document) {
-                log_message('debug', '[OnlyOfficeCallback::download] 文档不存在 - documentId=' . $documentId);
-                return $this->notFound('文档不存在');
+                log_message('error', '[OnlyOfficeCallback::download] 文档不存在 - documentId=' . $documentId . ', IP=' . $clientIp);
+                return $this->response->setStatusCode(404)->setBody('Not Found: document not found');
             }
             $steps['查询文档'] = hrtime(true);
 
@@ -161,8 +178,8 @@ class OnlyOfficeCallback extends BaseApiController
             log_message('debug', '[OnlyOfficeCallback::download] 文件路径=' . $filePath . ', 文件存在=' . (file_exists($filePath) ? 'true' : 'false'));
 
             if (!file_exists($filePath) || !is_file($filePath)) {
-                log_message('debug', '[OnlyOfficeCallback::download] 文件不存在 - filePath=' . $filePath);
-                return $this->notFound('文档文件不存在');
+                log_message('error', '[OnlyOfficeCallback::download] 文件不存在 - filePath=' . $filePath . ', documentId=' . $documentId);
+                return $this->response->setStatusCode(404)->setBody('Not Found: file not found');
             }
 
             $fileName = $document['文档名称'] ?? 'document';
@@ -175,17 +192,46 @@ class OnlyOfficeCallback extends BaseApiController
             $fileSize = filesize($filePath);
             $steps['准备文件信息'] = hrtime(true);
 
-            log_message('debug', '[OnlyOfficeCallback::download] 准备返回文件 - fileName=' . $fileName . ', fileExt=' . $fileExt . ', mimeType=' . $mimeType . ', fileSize=' . $fileSize);
+            log_message('info', '[OnlyOfficeCallback::download] 准备返回文件 - fileName=' . $fileName . ', fileExt=' . $fileExt . ', mimeType=' . $mimeType . ', fileSize=' . $fileSize . ', IP=' . $clientIp);
+
+            // 处理 Range 请求（OnlyOffice 可能使用 Range 请求大文件）
+            $range = $this->request->getServer('HTTP_RANGE') ?? '';
+            if (!empty($range) && preg_match('/bytes=(\d+)-(\d*)?/', $range, $matches)) {
+                $start = (int) $matches[1];
+                $end = isset($matches[2]) && $matches[2] !== '' ? (int) $matches[2] : $fileSize - 1;
+                $end = min($end, $fileSize - 1);
+
+                if ($start > $end || $start >= $fileSize) {
+                    return $this->response->setStatusCode(416)->setHeader('Content-Range', 'bytes */' . $fileSize)->setBody('');
+                }
+
+                $length = $end - $start + 1;
+                $fileContent = file_get_contents($filePath, false, null, $start, $length);
+                $steps['读取文件(Range)'] = hrtime(true);
+
+                $logMsg = $this->buildPerformanceTable('[OnlyOfficeCallback::download]', '成功(Range)', 'docId=' . $documentId . ' start=' . $start . ' end=' . $end . ' size=' . $length, $steps, $t0);
+                log_message('info', $logMsg);
+
+                return $this->response
+                    ->setStatusCode(206)
+                    ->setHeader('Content-Type', $mimeType)
+                    ->setHeader('Content-Disposition', 'inline; filename*=UTF-8\'\'' . rawurlencode($fileName . '.' . $fileExt))
+                    ->setHeader('Content-Length', (string) $length)
+                    ->setHeader('Content-Range', 'bytes ' . $start . '-' . $end . '/' . $fileSize)
+                    ->setHeader('Accept-Ranges', 'bytes')
+                    ->setBody($fileContent);
+            }
 
             $fileContent = file_get_contents($filePath);
             $steps['读取文件'] = hrtime(true);
 
             $logMsg = $this->buildPerformanceTable('[OnlyOfficeCallback::download]', '成功', 'docId=' . $documentId . ' size=' . $fileSize, $steps, $t0);
-            log_message('debug', $logMsg);
+            log_message('info', $logMsg);
 
             return $this->response
+                ->setStatusCode(200)
                 ->setHeader('Content-Type', $mimeType)
-                ->setHeader('Content-Disposition', 'inline; filename="' . rawurlencode($fileName) . '"')
+                ->setHeader('Content-Disposition', 'inline; filename*=UTF-8\'\'' . rawurlencode($fileName . '.' . $fileExt))
                 ->setHeader('Content-Length', (string) $fileSize)
                 ->setHeader('Accept-Ranges', 'bytes')
                 ->setBody($fileContent);
@@ -193,8 +239,8 @@ class OnlyOfficeCallback extends BaseApiController
             $steps['异常'] = hrtime(true);
             $logMsg = $this->buildPerformanceTable('[OnlyOfficeCallback::download]', '失败', 'docId=' . ($documentId ?? 0) . ' err=' . $e->getMessage(), $steps, $t0);
             log_message('error', $logMsg);
-            log_message('error', '[OnlyOfficeCallback::download] ' . $e->getMessage());
-            return $this->serverError($e->getMessage());
+            log_message('error', '[OnlyOfficeCallback::download] 异常: ' . $e->getMessage());
+            return $this->response->setStatusCode(500)->setBody('Internal Server Error');
         }
     }
 
@@ -203,7 +249,7 @@ class OnlyOfficeCallback extends BaseApiController
         $sql = sprintf(
             'select * from `def_contract_document` where `GUID`=%d and `删除标识`=%s limit 1',
             $documentId,
-            '"0"'
+            $this->model->quote('0')
         );
 
         $result = $this->model->select($sql);
@@ -233,5 +279,49 @@ class OnlyOfficeCallback extends BaseApiController
         ];
 
         return $mimeTypes[$ext] ?? 'application/octet-stream';
+    }
+
+    /**
+     * 获取合同文档修改时间线
+     * GET /onlyoffice/timeline?contractNo=xxx
+     */
+    public function timeline()
+    {
+        $t0 = hrtime(true);
+        $steps = [];
+
+        try {
+            $contractNo = $this->request->getGet('contractNo') ?? '';
+            $steps['解析参数'] = hrtime(true);
+
+            if (empty($contractNo)) {
+                return $this->paramError('contractNo 不能为空');
+            }
+
+            $timeline = $this->onlyOfficeService->getDocumentTimeline($contractNo);
+            $steps['查询时间线'] = hrtime(true);
+
+            $logMsg = $this->buildPerformanceTable(
+                '[OnlyOfficeCallback::timeline]',
+                '成功',
+                'contractNo=' . $contractNo . ' count=' . count($timeline),
+                $steps,
+                $t0
+            );
+            log_message('debug', $logMsg);
+
+            return $this->success($timeline);
+        } catch (\Throwable $e) {
+            $steps['异常'] = hrtime(true);
+            $logMsg = $this->buildPerformanceTable(
+                '[OnlyOfficeCallback::timeline]',
+                '失败',
+                'contractNo=' . ($contractNo ?? '') . ' err=' . $e->getMessage(),
+                $steps,
+                $t0
+            );
+            log_message('error', $logMsg);
+            return $this->serverError($e->getMessage());
+        }
     }
 }

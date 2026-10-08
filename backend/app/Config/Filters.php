@@ -123,6 +123,7 @@ class Filters extends BaseFilters
                 'workflow/*',
                 'todo/*',
                 'cache/*',
+                'onlyoffice/config',
             ],
         ],
     ];

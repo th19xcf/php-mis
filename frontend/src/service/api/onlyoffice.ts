@@ -7,3 +7,7 @@ export function fetchOnlyOfficeConfig(documentId: number) {
 export function fetchOnlyOfficeDownloadUrl(documentId: number, token: string) {
   return `/onlyoffice/download?documentId=${documentId}&token=${token}`;
 }
+
+export function fetchDocumentTimeline(contractNo: string) {
+  return request({ url: '/onlyoffice/timeline', params: { contractNo } });
+}

@@ -31,6 +31,45 @@ let docEditor: any = null;
 const isLoading = ref(true);
 const loadError = ref('');
 
+/**
+ * 将 OnlyOffice 错误码转换为友好的中文提示和排查建议
+ */
+function formatOnlyOfficeError(errorCode: number | string | undefined, errorDesc: string): string {
+  const code = Number(errorCode);
+  const desc = errorDesc || '未知错误';
+
+  const errorMap: Record<number, string> = {
+    [-1]: '未知错误：发生了未分类的错误，请检查浏览器控制台和后端日志。',
+    [-2]: '无效的配置：编辑器配置格式错误，请检查 document/editorConfig 字段。',
+    [-3]: '授权错误：JWT Token 验证失败，请检查 onlyoffice.jwtSecret 配置是否一致。',
+    [-4]: `下载失败：OnlyOffice 服务器无法下载文档文件。
+排查建议：
+1. 检查 onlyoffice.backendUrl 配置的地址是否可从 OnlyOffice 服务器访问
+2. 确认 cpolar/frp 等隧道服务是否正常运行
+3. 检查文档文件是否存在于后端 writable/contract_docs/ 目录
+4. 查看后端 onlyoffice/download 接口的日志`,
+    [-5]: '保存失败：OnlyOffice 服务器无法将编辑后的文档回传给后端。请检查 callbackUrl 是否可达。',
+    [-6]: '无效的密钥：document.key 格式或长度不正确。',
+    [-7]: '文件格式不支持：该文件格式无法被 OnlyOffice 编辑器打开。',
+    [-8]: '文件已损坏：文件内容不完整或格式异常，请尝试重新上传。',
+    [-9]: '文件过大：文件大小超出了 OnlyOffice 服务器的处理限制。',
+    [-20]: 'Token 格式错误：JWT token 格式不正确，请检查 onlyoffice.jwtSecret 配置。',
+    [-30]: '并发编辑限制：已有用户正在编辑此文档，请稍后再试。',
+    [-50]: '许可证错误：OnlyOffice 服务器许可证无效或已过期。',
+    [-51]: '许可证限制：超出了 OnlyOffice 服务器的并发连接数限制。',
+    [-52]: '许可证限制：超出了 OnlyOffice 服务器的用户数限制。',
+    [-100]: '无权限：您没有编辑此文档的权限。',
+    [-101]: '文档已被锁定：文档正在被其他用户编辑，请稍后再试。',
+    [-200]: '网络错误：无法连接到 OnlyOffice 服务器，请检查服务器地址和网络连接。',
+    [-220]: '服务器错误：OnlyOffice 服务器内部错误，请联系管理员。',
+    [-300]: '连接超时：与 OnlyOffice 服务器的连接超时，请稍后重试。',
+    [-404]: '文档不存在：请求的文档未找到，请刷新页面后重试。',
+  };
+
+  const message = errorMap[code] || `加载失败（错误码: ${code}）：${desc}`;
+  return message;
+}
+
 // 性能追踪：步骤时间戳记录
 interface PerfStep {
   name: string;
@@ -221,7 +260,11 @@ async function loadEditor() {
           perfMark('onError事件');
           perfEnd('失败');
           emit('error', event);
-          loadError.value = event?.data?.message || event?.data?.errorDescription || '文档编辑器加载出错';
+
+          // 根据错误码生成更友好的中文提示和排查建议
+          const errorCode = event?.data?.errorCode ?? event?.data?.code;
+          const errorDesc = event?.data?.errorDescription ?? event?.data?.description ?? event?.data?.message ?? '';
+          loadError.value = formatOnlyOfficeError(errorCode, errorDesc);
           isLoading.value = false;
         },
         onOutdatedVersion: () => {
@@ -352,7 +395,7 @@ defineExpose({
       <p>文档编辑器加载中...</p>
     </div>
     <div v-else-if="loadError" class="editor-error">
-      <p class="error-text">{{ loadError }}</p>
+      <p class="error-text" style="white-space: pre-line; text-align: left; line-height: 1.6;">{{ loadError }}</p>
       <button class="retry-btn" @click="loadEditor">重新加载</button>
     </div>
     <div id="onlyoffice-editor-container" ref="editorContainerRef" class="editor-container" :style="{ height: height || '600px' }"></div>

@@ -228,10 +228,12 @@ const currentContractNo = computed(() => {
   return contractStore.currentContract?.合同编号 || '';
 });
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+function formatFileSize(bytes: number | string | null | undefined): string {
+  const num = Number(bytes);
+  if (!Number.isFinite(num) || num < 0) return '0 B';
+  if (num < 1024) return num + ' B';
+  if (num < 1024 * 1024) return (num / 1024).toFixed(1) + ' KB';
+  return (num / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
 async function handleFileUpload(event: Event, docType: 'MAIN' | 'APPROVAL_FORM') {
@@ -258,10 +260,11 @@ async function handleFileUpload(event: Event, docType: 'MAIN' | 'APPROVAL_FORM')
       docType,
       file
     });
+    const docData = (result as any)?.data ?? result;
     if (docType === 'MAIN') {
-      contractFiles.value.push(result as any);
+      contractFiles.value.push(docData as any);
     } else {
-      approvalFiles.value.push(result as any);
+      approvalFiles.value.push(docData as any);
     }
     message.success('上传成功');
     contractStore.loadContractDetail(currentContractNo.value);
@@ -804,6 +807,27 @@ defineExpose({
 
 /* 暗色模式：上传区域适配 */
 .system-dark {
+  .upload-tip {
+    color: rgba(255, 255, 255, 0.52);
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .upload-area .file-list .file-item {
+    background: rgba(255, 255, 255, 0.05);
+
+    .file-name {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .file-size {
+      color: rgba(255, 255, 255, 0.52);
+    }
+  }
+}
+
+/* 弹窗模式 dark 适配（NModal 通过 Teleport 渲染到 body 外，脱离 .system-dark 上下文） */
+html.dark {
   .upload-tip {
     color: rgba(255, 255, 255, 0.52);
     background: rgba(255, 255, 255, 0.05);

@@ -59,8 +59,7 @@ const nodeTypeOptions = [
 const approverTypeOptions = [
   { label: '不配置', value: '' },
   { label: '角色', value: '角色' },
-  { label: '部门', value: '部门' },
-  { label: '上级', value: '上级' },
+  { label: '部门负责人', value: '部门负责人' },
   { label: '指定人', value: '指定人' },
   { label: '发起人', value: '发起人' }
 ];
@@ -87,11 +86,9 @@ const approverConfigPlaceholder = computed(() => {
   switch (formData.value.审批人类型) {
     case '角色':
       return 'JSON 数组,如:["R-APPROVER","R-MANAGER"]\n或逗号分隔:R-APPROVER,R-MANAGER';
-    case '部门':
-      return '单个部门编码字符串,如:"D001"\n留空时自动使用发起人部门';
     case '指定人':
       return 'JSON 数组(工号),如:["E001","E002"]\n或逗号分隔:E001,E002';
-    case '上级':
+    case '部门负责人':
     case '发起人':
       return '此类型无需配置,留空即可';
     default:
@@ -102,7 +99,7 @@ const approverConfigPlaceholder = computed(() => {
 // 审批人配置是否禁用
 const approverConfigDisabled = computed(() => {
   const t = formData.value.审批人类型;
-  return t === '上级' || t === '发起人' || t === '';
+  return t === '部门负责人' || t === '发起人' || t === '';
 });
 
 function parseApproverConfig(value: any): string {
@@ -376,9 +373,8 @@ async function handleSaveAsTemplate() {
         <div class="form-tip" v-if="needApprover && formData.审批人类型">
           <NIcon size="14"><icon-mdi-information-outline /></NIcon>
           <span v-if="formData.审批人类型 === '角色'">查 def_role_group 表,匹配角色编码字段</span>
-          <span v-else-if="formData.审批人类型 === '部门'">单个部门编码字符串(如 "D001"),留空自动用发起人部门</span>
+          <span v-else-if="formData.审批人类型 === '部门负责人'">自动解析发起人所在部门的负责人(def_dept.负责人)</span>
           <span v-else-if="formData.审批人类型 === '指定人'">按工号指定,JSON 数组或逗号分隔</span>
-          <span v-else-if="formData.审批人类型 === '上级'">当前为占位实现,硬编码返回 admin(慎用)</span>
           <span v-else-if="formData.审批人类型 === '发起人'">直接使用发起人作为审批人</span>
         </div>
       </div>

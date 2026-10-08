@@ -260,6 +260,7 @@ $routes->group('onlyoffice', static function ($routes) {
 	$routes->post('config', 'OnlyOfficeCallback::config');
 	$routes->get('download', 'OnlyOfficeCallback::download');
 	$routes->head('download', 'OnlyOfficeCallback::download');
+	$routes->get('timeline', 'OnlyOfficeCallback::timeline');
 });
 
 $routes->group('cache', static function ($routes) {

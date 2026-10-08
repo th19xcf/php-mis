@@ -20,6 +20,7 @@ import ContractForm from './components/ContractForm.vue';
 import ContractApproval from './components/ContractApproval.vue';
 import ContractFlowTimeline from './components/ContractFlowTimeline.vue';
 import OnlyOfficeEditor from './components/OnlyOfficeEditor.vue';
+import DocumentTimeline from './components/DocumentTimeline.vue';
 
 const dialog = useDialog();
 const message = useMessageWithConsole();
@@ -509,10 +510,12 @@ function isEditableDoc(doc: Api.Contract.ContractDocument): boolean {
   return editableExts.includes(ext);
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+function formatFileSize(bytes: number | string | null | undefined): string {
+  const num = Number(bytes);
+  if (!Number.isFinite(num) || num < 0) return '0 B';
+  if (num < 1024) return num + ' B';
+  if (num < 1024 * 1024) return (num / 1024).toFixed(1) + ' KB';
+  return (num / (1024 * 1024)).toFixed(2) + ' MB';
 }
 
 async function handleExportFile(doc: Api.Contract.ContractDocument) {
@@ -880,6 +883,10 @@ watch(columnDefs, (newDefs) => {
           <NDivider>审批流程</NDivider>
 
           <ContractFlowTimeline v-if="currentContract.合同编号" :contract-no="currentContract.合同编号" />
+
+          <NDivider>文档修改记录</NDivider>
+
+          <DocumentTimeline v-if="currentContract.合同编号" :contract-no="currentContract.合同编号" />
         </template>
 
         <NEmpty v-else description="请选择左侧合同查看详情" class="py-20" />

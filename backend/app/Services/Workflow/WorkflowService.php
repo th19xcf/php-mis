@@ -1026,12 +1026,8 @@ class WorkflowService
             case '角色':
                 $approvers = $this->getApproversByRole($approverConfig);
                 break;
-            case '部门':
-                $dept = $approverConfig ?: $deptCode;
-                $approvers = $this->getApproversByDept($dept);
-                break;
-            case '上级':
-                $approvers = $this->getApproversBySuperior($sponsor);
+            case '部门负责人':
+                $approvers = $this->getApproversByDeptHead($sponsor);
                 break;
             case '指定人':
                 $approvers = $this->getApproversByAssign($approverConfig);
@@ -1174,27 +1170,10 @@ class WorkflowService
         return $approvers;
     }
 
-    private function getApproversByDept(string $deptCode): array
-    {
-        if (!$deptCode) {
-            return [];
-        }
-
-        $sql = sprintf(
-            'select `工号` as `work_id`, `姓名` as `user_name`
-            from `def_user`
-            where `员工部门编码`=%s and `有效标识`=%s',
-            $this->model->quote($deptCode),
-            $this->model->quote('1')
-        );
-        $result = $this->model->select($sql);
-        return $result ? $result->getResultArray() : [];
-    }
-
     /**
-     * SUPERIOR 审批人解析：发起人所在部门的负责人
+     * 部门负责人审批人解析：发起人所在部门的负责人
      *
-     * 解析链：def_user.员工部门编码 → def_dept.负责人 → def_user（工号/姓名双口径匹配，需有效）
+     * 解析链：def_user.员工部门编码 → def_dept.负责人 → def_user（工号匹配，需有效）
      * 任一环节缺失直接抛异常（事务回滚、流程发起/推进整体失败）：
      * 禁止回落到 admin 等兜底账号，避免审批任务被静默路由到无关人员
      * 注：负责人若即发起人本人，按原样返回（部门负责人自审场景由流程定义规避）
@@ -1203,10 +1182,10 @@ class WorkflowService
      * @return array 审批人列表（单元素：['work_id' => 工号, 'user_name' => 姓名]）
      * @throws \RuntimeException
      */
-    private function getApproversBySuperior(string $sponsor): array
+    private function getApproversByDeptHead(string $sponsor): array
     {
         if (!$sponsor) {
-            throw new \RuntimeException('发起人为空，无法解析部门负责人（SUPERIOR）审批人');
+            throw new \RuntimeException('发起人为空，无法解析部门负责人审批人');
         }
 
         $sql = sprintf(
@@ -1218,11 +1197,11 @@ class WorkflowService
         $result = $this->model->select($sql);
         $row = $result ? ($result->getRowArray() ?: []) : [];
         if (empty($row)) {
-            throw new \RuntimeException('发起人不是有效用户，无法解析部门负责人（SUPERIOR）审批人：' . $sponsor);
+            throw new \RuntimeException('发起人不是有效用户，无法解析部门负责人审批人：' . $sponsor);
         }
         $deptCode = $row['员工部门编码'] ?? '';
         if ($deptCode === '') {
-            throw new \RuntimeException('发起人未配置员工部门编码，无法解析部门负责人（SUPERIOR）审批人：' . $sponsor);
+            throw new \RuntimeException('发起人未配置员工部门编码，无法解析部门负责人审批人：' . $sponsor);
         }
 
         $sql = sprintf(
@@ -1235,15 +1214,14 @@ class WorkflowService
         $result = $this->model->select($sql);
         $dept = $result ? ($result->getRowArray() ?: []) : [];
         if (empty($dept)) {
-            throw new \RuntimeException('发起人部门不存在或已失效，无法解析部门负责人（SUPERIOR）审批人：' . $deptCode);
+            throw new \RuntimeException('发起人部门不存在或已失效，无法解析部门负责人审批人：' . $deptCode);
         }
         $deptName = $dept['部门名称'] ?? $deptCode;
         $head = trim((string) ($dept['负责人'] ?? ''));
         if ($head === '') {
-            throw new \RuntimeException('部门「' . $deptName . '」未配置负责人，无法解析 SUPERIOR 审批人');
+            throw new \RuntimeException('部门「' . $deptName . '」未配置负责人，无法解析部门负责人审批人');
         }
 
-        // def_dept.负责人 存工号；按工号唯一匹配（工号在 def_user 中唯一，无需姓名兜底）
         $sql = sprintf(
             'select `工号` as `work_id`, `姓名` as `user_name`
             from `def_user`
@@ -1254,10 +1232,10 @@ class WorkflowService
         $result = $this->model->select($sql);
         $heads = $result ? $result->getResultArray() : [];
         if (empty($heads)) {
-            throw new \RuntimeException('部门「' . $deptName . '」的负责人「' . $head . '」不是有效用户，无法解析 SUPERIOR 审批人');
+            throw new \RuntimeException('部门「' . $deptName . '」的负责人「' . $head . '」不是有效用户，无法解析部门负责人审批人');
         }
         if (count($heads) > 1) {
-            throw new \RuntimeException('部门「' . $deptName . '」的负责人「' . $head . '」匹配到多个有效用户，存在歧义，无法解析 SUPERIOR 审批人');
+            throw new \RuntimeException('部门「' . $deptName . '」的负责人「' . $head . '」匹配到多个有效用户，存在歧义，无法解析部门负责人审批人');
         }
 
         return $heads;

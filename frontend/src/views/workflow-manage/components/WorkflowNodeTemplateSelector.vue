@@ -83,8 +83,7 @@ const nodeTypeTextMap: Record<string, string> = {
 
 const approverTypeTextMap: Record<string, string> = {
   '角色': '角色',
-  '部门': '部门',
-  '上级': '上级',
+  '部门负责人': '部门负责人',
   '指定人': '指定人',
   '发起人': '发起人'
 };
