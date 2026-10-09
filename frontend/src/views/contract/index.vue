@@ -10,7 +10,8 @@ import {
   fetchContractPendingTasks,
   fetchContractDoneTasks,
   fetchContractMyContracts,
-  fetchContractDownloadDocument
+  fetchContractDownloadDocument,
+  fetchContractDebugList
 } from '@/service/api/contract';
 import { fetchWorkflowAckCc } from '@/service/api/workflow';
 import { useConfigDrivenGrid, useSplitter, useConditionPanel } from '@/hooks/business';
@@ -40,6 +41,9 @@ const showFormModal = ref(false);
 const showApprovalModal = ref(false);
 const formMode = ref<'create' | 'edit'>('create');
 const isEditMode = ref(false);
+
+// 调试按钮可见性：def_user.调试赋权=1 或代理登录
+const canDebug = ref(false);
 
 // OnlyOffice 编辑器
 const showEditorModal = ref(false);
@@ -322,6 +326,36 @@ function handleCreate() {
   showFormModal.value = true;
 }
 
+// 调试：打印合同列表 SQL + 部门赋权 + 耗时到浏览器控制台
+async function handleDebugList() {
+  try {
+    const { data } = await fetchContractDebugList();
+    if (!data) {
+      message.error('调试信息为空');
+      return;
+    }
+    console.group('%c[调试] 合同列表 SQL 追踪', 'color: #fa8c16; font-weight: bold');
+    console.log('%c列表 SQL：', 'color: #1890ff; font-weight: bold');
+    console.log(data.listSql);
+    console.log('%c计数 SQL：', 'color: #722ed1; font-weight: bold');
+    console.log(data.countSql);
+    console.log('%cWHERE 条件：', 'color: #52c41a; font-weight: bold');
+    console.log(data.whereSql);
+    console.log('%c部门编码赋权：', 'color: #eb2f96; font-weight: bold');
+    console.log(data.deptAuthz);
+    console.log('%c部门全称赋权：', 'color: #13c2c2; font-weight: bold');
+    console.log(data.deptNameAuthz);
+    console.log('%c查询行数：', 'color: #faad14; font-weight: bold');
+    console.log(data.rowCount, `(第 ${data.page} 页, 每页 ${data.pageSize})`);
+    console.log('%c分段耗时（ms）：', 'color: #ff4d4f; font-weight: bold');
+    console.table(data.timing);
+    console.groupEnd();
+    message.success('调试信息已输出到控制台（F12 查看）');
+  } catch {
+    message.error('调试信息获取失败');
+  }
+}
+
 function handleEdit() {
   if (!selectedContract.value) {
     message.warning('请先选择一条合同记录');
@@ -571,6 +605,7 @@ async function loadColumnConfig() {
   try {
     console.log('[Contract] 开始加载 def_query_column 配置, functionCode=', CONTRACT_FUNCTION_CODE);
     const res = await fetchWorkbenchPage(CONTRACT_FUNCTION_CODE);
+    canDebug.value = (res as any)?.data?.meta?.toolbar?.debugSql === true;
     const columns = (res as any)?.data?.meta?.columns || [];
     console.log('[Contract] def_query_column 返回列数:', columns.length, columns);
     console.log('[Contract] 列字段名:', columns.map((c: any) => c.field));
@@ -675,6 +710,12 @@ watch(columnDefs, (newDefs) => {
               <icon-mdi-plus />
             </template>
             新建合同
+          </NButton>
+          <NButton v-if="canDebug" type="warning" size="small" @click="handleDebugList">
+            <template #icon>
+              <icon-mdi-bug />
+            </template>
+            调试
           </NButton>
         </div>
       </div>

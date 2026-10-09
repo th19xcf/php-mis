@@ -213,6 +213,8 @@ class Auth extends BaseApiController
                     'roles' => $roles,
                     'buttons' => $buttons,
                     'region' => $user['region'],
+                    'deptCode' => trim((string) ($decoded->deptCode ?? '')),
+                    'deptName' => trim((string) ($decoded->deptName ?? '')),
                     'menuLevel1' => $menuData['level1'],
                     'menuLevel2' => $menuData['level2'],
                     'menus' => $menuData['menus'],

@@ -27,6 +27,7 @@ import {
   fetchTodoUpload,
   fetchTodoOptions,
   fetchTodoUserOptions,
+  fetchTodoDebugCenter,
   type TodoCenterItem,
   type TodoStats,
   type TodoUserOption,
@@ -83,6 +84,9 @@ const categories = [
 
 // 筛选
 const keyword = ref('');
+
+// 调试按钮可见性
+const canDebug = ref(false);
 
 // 下拉选项（从接口获取，供新建/编辑表单使用）
 const sourceOptions = ref([{ label: '手动', value: '手动' }]);
@@ -577,6 +581,38 @@ function openCreateModal() {
   showCreateModal.value = true;
 }
 
+// 调试：打印待办中心 SQL + 耗时到浏览器控制台
+async function handleDebugCenter() {
+  try {
+    const { data } = await fetchTodoDebugCenter();
+    if (!data) {
+      message.error('调试信息为空');
+      return;
+    }
+    console.group('%c[调试] 待办中心 SQL 追踪', 'color: #fa8c16; font-weight: bold');
+    console.log('%cUNION SQL：', 'color: #1890ff; font-weight: bold');
+    console.log(data.unionSql);
+    console.log('%c任务待办 SQL：', 'color: #52c41a; font-weight: bold');
+    console.log(data.taskSql);
+    console.log('%c审批待办 SQL：', 'color: #722ed1; font-weight: bold');
+    console.log(data.workflowSql);
+    console.log('%c任务 WHERE：', 'color: #13c2c2; font-weight: bold');
+    console.log(data.taskWhereSql);
+    console.log('%c审批 WHERE：', 'color: #eb2f96; font-weight: bold');
+    console.log(data.workflowWhereSql);
+    console.log('%c当前用户工号：', 'color: #faad14; font-weight: bold');
+    console.log(data.workId);
+    console.log('%c查询行数：', 'color: #ff4d4f; font-weight: bold');
+    console.log(data.rowCount);
+    console.log('%c分段耗时（ms）：', 'color: #fa541c; font-weight: bold');
+    console.table(data.timing);
+    console.groupEnd();
+    message.success('调试信息已输出到控制台（F12 查看）');
+  } catch {
+    message.error('调试信息获取失败');
+  }
+}
+
 function handleEdit(item: TodoCenterItem) {
   isEditMode.value = true;
   createForm.value = {
@@ -1027,10 +1063,18 @@ async function loadUserMap() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadOptions();
   loadUserMap();
   loadData();
+  // 拉取调试权限
+  try {
+    const { fetchWorkbenchPage } = await import('@/service/api/workbench');
+    const res = await fetchWorkbenchPage('oa-todo-center');
+    canDebug.value = (res as any)?.data?.meta?.toolbar?.debugSql === true;
+  } catch {
+    canDebug.value = false;
+  }
 });
 
 // KeepAlive 场景：切回标签页时 onMounted 不会再次触发，用 onActivated 刷新。
@@ -1058,6 +1102,12 @@ onActivated(() => {
           </NButton>
           <NButton type="primary" size="small" @click="openCreateModal">
             + 新建待办
+          </NButton>
+          <NButton v-if="canDebug" type="warning" size="small" @click="handleDebugCenter">
+            <template #icon>
+              <icon-mdi-bug />
+            </template>
+            调试
           </NButton>
         </div>
       </div>

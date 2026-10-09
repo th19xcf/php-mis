@@ -69,6 +69,63 @@ class WorkflowApi extends BaseApiController
         }
     }
 
+    /**
+     * 调试：打印流程定义列表 SQL + 耗时
+     * 权限：hasDebugSqlAuth
+     */
+    public function debugDefinitionList()
+    {
+        if (! $this->hasDebugSqlAuth()) {
+            return $this->serverError('无调试权限');
+        }
+
+        $totalStart = hrtime(true);
+
+        $params = $this->request->getGet() + ($this->request->getJSON(true) ?? []);
+        $page = (int) ($params['page'] ?? 1);
+        $pageSize = (int) ($params['pageSize'] ?? 20);
+
+        $where = ['`删除标识`=' . $this->model->quote('0')];
+        if (!empty($params['businessType'])) {
+            $where[] = '`业务类型`=' . $this->model->quote($params['businessType']);
+        }
+        if (!empty($params['workflowCode'])) {
+            $where[] = '`流程编码` like ' . $this->model->quote('%' . $params['workflowCode'] . '%');
+        }
+        if (!empty($params['workflowName'])) {
+            $where[] = '`流程名称` like ' . $this->model->quote('%' . $params['workflowName'] . '%');
+        }
+        if (!empty($params['status'])) {
+            $where[] = '`流程状态`=' . $this->model->quote($params['status']);
+        }
+
+        $whereSql = implode(' and ', $where);
+        $offset = ($page - 1) * $pageSize;
+
+        $countSql = sprintf('select count(*) as `total` from `def_workflow_definition` where %s', $whereSql);
+        $listSql = sprintf('select * from `def_workflow_definition` where %s order by `创建时间` desc limit %d offset %d', $whereSql, $pageSize, $offset);
+
+        $queryStart = hrtime(true);
+        $result = $this->model->select($listSql);
+        $list = $result ? $result->getResultArray() : [];
+        $queryEnd = hrtime(true);
+
+        $totalEnd = hrtime(true);
+
+        return $this->success([
+            'countSql' => $countSql,
+            'listSql' => $listSql,
+            'whereSql' => $whereSql,
+            'rowCount' => count($list),
+            'page' => $page,
+            'pageSize' => $pageSize,
+            'timing' => [
+                'queryMs' => round(($queryEnd - $queryStart) / 1e6, 2),
+                'totalMs' => round(($totalEnd - $totalStart) / 1e6, 2),
+            ],
+        ]);
+    }
+
     public function definitionDetail()
     {
         try {

@@ -75,6 +75,117 @@ class TodoApi extends BaseApiController
     }
 
     /**
+     * 调试：打印待办中心 SQL + 耗时
+     * 权限：hasDebugSqlAuth
+     */
+    public function debugCenter()
+    {
+        if (! $this->hasDebugSqlAuth()) {
+            return $this->serverError('无调试权限');
+        }
+
+        $totalStart = hrtime(true);
+
+        $params = $this->request->getGet() + ($this->request->getJSON(true) ?? []);
+        $workId = $this->getUserWorkId();
+
+        $statusFilter = trim((string) ($params['status'] ?? ''));
+        $sourceFilter = trim((string) ($params['sourceType'] ?? ''));
+        $priorityFilter = trim((string) ($params['priority'] ?? ''));
+        $keyword = trim((string) ($params['keyword'] ?? ''));
+
+        // 任务待办 SQL
+        $taskWhere = ['有效标识="1"', '删除标识="0"', '(父GUID is null or 父GUID=0)'];
+        $taskWhere[] = sprintf('(FIND_IN_SET(%s, 负责人)>0 or 指派人=%s)', $this->model->quote($workId), $this->model->quote($workId));
+
+        if ($keyword !== '') {
+            $kw = $this->model->quote('%' . $keyword . '%');
+            $taskWhere[] = sprintf('(待办标题 like %s or 待办描述 like %s or 来源摘要 like %s)', $kw, $kw, $kw);
+        }
+        if ($sourceFilter !== '' && $sourceFilter !== '工作流') {
+            $taskWhere[] = '来源类型=' . $this->model->quote($sourceFilter);
+        }
+        if ($priorityFilter !== '') {
+            $taskWhere[] = '优先级=' . $this->model->quote($priorityFilter);
+        }
+        if ($statusFilter !== '' && in_array($statusFilter, ['待处理', '进行中', '已完成', '已取消'], true)) {
+            $taskWhere[] = '待办状态=' . $this->model->quote($statusFilter);
+        }
+
+        $taskWhereSql = implode(' and ', $taskWhere);
+        $taskSql = sprintf(
+            'select "task" as todoType, GUID, 待办标题 as title, 待办描述 as description,
+                    负责人 as assignee, 指派人 as assigner, 截止日期 as dueDate,
+                    优先级 as priority, 待办状态 as status,
+                    来源类型 as sourceType, 来源摘要 as sourceTitle, 来源GUID as sourceGuid,
+                    完成时间 as completedAt, 完成说明 as completedNote,
+                    关联人员编码 as personCode,
+                    置顶标识 as pinned, 重复规则 as repeatRule, 附件 as attachments,
+                    开始操作时间 as createdAt, 操作时间 as updatedAt
+             from oa_todo
+             where %s',
+            $taskWhereSql
+        );
+
+        // 审批待办 SQL
+        $wfWhere = ['t.处理人=' . $this->model->quote($workId), 't.任务状态=' . $this->model->quote('待处理'), 't.删除标识=' . $this->model->quote('0')];
+        if ($keyword !== '') {
+            $kw = $this->model->quote('%' . $keyword . '%');
+            $wfWhere[] = sprintf('(i.业务标题 like %s or d.流程名称 like %s)', $kw, $kw);
+        }
+        if ($sourceFilter !== '' && $sourceFilter !== '工作流') {
+            $wfWhere[] = '1=0';
+        }
+        if ($statusFilter !== '' && $statusFilter !== '待处理') {
+            $wfWhere[] = '1=0';
+        }
+        if ($priorityFilter !== '' && $priorityFilter !== '中') {
+            $wfWhere[] = '1=0';
+        }
+
+        $wfWhereSql = implode(' and ', $wfWhere);
+        $wfSql = sprintf(
+            'select "workflow" as todoType, t.GUID, i.业务标题 as title, "" as description,
+                    t.处理人 as assignee, i.发起人 as assigner, null as dueDate,
+                    "中" as priority, "待处理" as status,
+                    "工作流" as sourceType, d.流程名称 as sourceTitle, t.实例ID as sourceGuid,
+                    null as completedAt, "" as completedNote,
+                    "" as personCode,
+                    "0" as pinned, null as repeatRule, null as attachments,
+                    t.创建时间 as createdAt, t.更新时间 as updatedAt,
+                    i.业务类型 as bizType, i.业务ID as bizId, i.GUID as instanceId, t.节点编码 as nodeCode
+             from def_workflow_task t
+             inner join def_workflow_instance i on i.GUID = t.实例ID
+             inner join def_workflow_definition d on d.GUID = i.流程定义ID
+             where %s',
+            $wfWhereSql
+        );
+
+        $unionSql = sprintf('(%s) union all (%s) order by pinned desc, createdAt desc', $taskSql, $wfSql);
+
+        $queryStart = hrtime(true);
+        $result = $this->model->select($unionSql);
+        $list = $result ? $result->getResultArray() : [];
+        $queryEnd = hrtime(true);
+
+        $totalEnd = hrtime(true);
+
+        return $this->success([
+            'unionSql' => $unionSql,
+            'taskSql' => $taskSql,
+            'workflowSql' => $wfSql,
+            'taskWhereSql' => $taskWhereSql,
+            'workflowWhereSql' => $wfWhereSql,
+            'workId' => $workId,
+            'rowCount' => count($list),
+            'timing' => [
+                'queryMs' => round(($queryEnd - $queryStart) / 1e6, 2),
+                'totalMs' => round(($totalEnd - $totalStart) / 1e6, 2),
+            ],
+        ]);
+    }
+
+    /**
      * 统计卡计数（Header 角标用）
      * GET /todo/stats
      */

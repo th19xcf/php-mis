@@ -2,6 +2,7 @@
 import { h, ref, watch, computed, reactive } from 'vue';
 import { NModal, NForm, NFormItem, NInput, NSelect, NInputNumber, NDatePicker, NSpace, NButton, useDialog } from 'naive-ui';
 import { useContractStore } from '@/store/modules/contract';
+import { useAuthStore } from '@/store/modules/auth';
 import { useMessageWithConsole } from '@/hooks/business/use-message-with-console';
 import {
   fetchContractUploadDocument,
@@ -25,6 +26,23 @@ const emit = defineEmits<{
 const message = useMessageWithConsole();
 const dialog = useDialog();
 const contractStore = useContractStore();
+const authStore = useAuthStore();
+
+/** 所属部门编码：新建时取当前用户部门编码，编辑时取合同已有编码 */
+const displayDeptCode = computed(() => {
+  if (props.mode === 'edit' && props.contract) {
+    return props.contract.所属部门编码 || '-';
+  }
+  return authStore.userInfo.deptCode || '-';
+});
+
+/** 所属部门名称：新建时取当前用户部门名称，编辑时取合同已有名称 */
+const displayDeptName = computed(() => {
+  if (props.mode === 'edit' && props.contract) {
+    return props.contract.所属部门名称 || '-';
+  }
+  return authStore.userInfo.deptName || '-';
+});
 
 const loading = computed(() => contractStore.loading);
 
@@ -363,6 +381,14 @@ defineExpose({
         <div class="edit-cell edit-cell-value">列值</div>
       </div>
       <div class="edit-row">
+        <div class="edit-cell edit-cell-name">所属部门编码</div>
+        <div class="edit-cell edit-cell-value"><span class="readonly-text">{{ displayDeptCode }}</span></div>
+      </div>
+      <div class="edit-row">
+        <div class="edit-cell edit-cell-name">所属部门名称</div>
+        <div class="edit-cell edit-cell-value"><span class="readonly-text">{{ displayDeptName }}</span></div>
+      </div>
+      <div class="edit-row">
         <div class="edit-cell edit-cell-name">合同名称<span class="required-mark">*</span></div>
         <div class="edit-cell edit-cell-value"><NInput v-model:value="formData.合同名称" placeholder="请输入合同名称" size="small" /></div>
       </div>
@@ -507,6 +533,12 @@ defineExpose({
       <NFormItem label="合同类型">
         <NSelect v-model:value="formData.合同类型" :options="合同类型Options" />
       </NFormItem>
+      <NFormItem label="所属部门编码">
+        <span class="readonly-text">{{ displayDeptCode }}</span>
+      </NFormItem>
+      <NFormItem label="所属部门名称">
+        <span class="readonly-text">{{ displayDeptName }}</span>
+      </NFormItem>
       <NFormItem label="甲方名称" required>
         <NInput v-model:value="formData.甲方名称" placeholder="请输入甲方名称" />
       </NFormItem>
@@ -615,6 +647,11 @@ defineExpose({
   padding: 0;
 }
 
+.readonly-text {
+  font-size: 13px;
+  color: #666;
+}
+
 // 表格化布局（参照面试人员维护页面的 NTable 视觉）
 .edit-table {
   display: flex;
@@ -679,6 +716,10 @@ defineExpose({
 // 暗黑模式适配
 .system-dark .edit-table {
   border-color: rgba(255, 255, 255, 0.09);
+
+  .readonly-text {
+    color: rgba(255, 255, 255, 0.65);
+  }
 
   .edit-row {
     border-color: rgba(255, 255, 255, 0.09);
@@ -828,6 +869,10 @@ defineExpose({
 
 /* 弹窗模式 dark 适配（NModal 通过 Teleport 渲染到 body 外，脱离 .system-dark 上下文） */
 html.dark {
+  .readonly-text {
+    color: rgba(255, 255, 255, 0.65);
+  }
+
   .upload-tip {
     color: rgba(255, 255, 255, 0.52);
     background: rgba(255, 255, 255, 0.05);

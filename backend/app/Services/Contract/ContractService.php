@@ -67,7 +67,23 @@ class ContractService
             $where[] = '`创建人`=' . $this->model->quote($params['creator']);
         }
         if (!empty($params['deptCode'])) {
-            $where[] = '`所属部门`=' . $this->model->quote($params['deptCode']);
+            $where[] = '`所属部门编码`=' . $this->model->quote($params['deptCode']);
+        }
+        // 部门编码赋权过滤：管道符分隔，非空时按 IN 过滤
+        if (!empty($params['deptAuthz'])) {
+            $deptCodes = array_filter(explode('|', $params['deptAuthz']));
+            if (!empty($deptCodes)) {
+                $quoted = array_map(fn($code) => $this->model->quote($code), $deptCodes);
+                $where[] = '`所属部门编码` in (' . implode(',', $quoted) . ')';
+            }
+        }
+        // 部门全称赋权过滤：管道符分隔，用 instr 子串匹配（与编码赋权 AND 连接）
+        if (!empty($params['deptNameAuthz'])) {
+            $deptNames = array_filter(explode('|', $params['deptNameAuthz']));
+            if (!empty($deptNames)) {
+                $instrParts = array_map(fn($name) => sprintf('instr(`所属部门名称`, %s) > 0', $this->model->quote($name)), $deptNames);
+                $where[] = '(' . implode(' or ', $instrParts) . ')';
+            }
         }
 
         $whereSql = implode(' and ', $where);
@@ -181,7 +197,7 @@ class ContractService
         $contractNo = $this->generateContractNo();
         $now = date('Y-m-d H:i:s');
 
-        $fields = ['`合同编号`', '`合同名称`', '`合同类型`', '`合同状态`', '`甲方名称`', '`乙方名称`', '`签订日期`', '`开始日期`', '`结束日期`', '`合同金额`', '`付款方式`', '`所属部门`', '`所属部门名称`', '`创建人`', '`创建时间`', '`更新人`', '`更新时间`', '`版本号`', '`删除标识`', '`有效标识`'];
+        $fields = ['`合同编号`', '`合同名称`', '`合同类型`', '`合同状态`', '`甲方名称`', '`乙方名称`', '`签订日期`', '`开始日期`', '`结束日期`', '`合同金额`', '`付款方式`', '`所属部门编码`', '`所属部门名称`', '`创建人`', '`创建时间`', '`更新人`', '`更新时间`', '`版本号`', '`删除标识`', '`有效标识`'];
 
         $values = [
             $this->model->quote($contractNo),
@@ -364,7 +380,7 @@ class ContractService
             '合同分类' => $contract['合同分类'] ?? '',
             '合同金额' => $contract['合同金额'] ?? 0,
             '币种' => $contract['币种'] ?? '',
-            '所属部门' => $contract['所属部门'] ?? '',
+            '所属部门编码' => $contract['所属部门编码'] ?? '',
             '签订日期' => $contract['签订日期'] ?? '',
             '甲方名称' => $contract['甲方名称'] ?? '',
             '乙方名称' => $contract['乙方名称'] ?? '',
@@ -577,7 +593,23 @@ class ContractService
         $where = ['`删除标识`=' . $this->model->quote('0'), '`有效标识`=' . $this->model->quote('1')];
 
         if (!empty($filters['deptCode'])) {
-            $where[] = '`所属部门`=' . $this->model->quote($filters['deptCode']);
+            $where[] = '`所属部门编码`=' . $this->model->quote($filters['deptCode']);
+        }
+        // 部门编码赋权过滤：管道符分隔，非空时按 IN 过滤
+        if (!empty($filters['deptAuthz'])) {
+            $deptCodes = array_filter(explode('|', $filters['deptAuthz']));
+            if (!empty($deptCodes)) {
+                $quoted = array_map(fn($code) => $this->model->quote($code), $deptCodes);
+                $where[] = '`所属部门编码` in (' . implode(',', $quoted) . ')';
+            }
+        }
+        // 部门全称赋权过滤：管道符分隔，用 instr 子串匹配（与编码赋权 AND 连接）
+        if (!empty($filters['deptNameAuthz'])) {
+            $deptNames = array_filter(explode('|', $filters['deptNameAuthz']));
+            if (!empty($deptNames)) {
+                $instrParts = array_map(fn($name) => sprintf('instr(`所属部门名称`, %s) > 0', $this->model->quote($name)), $deptNames);
+                $where[] = '(' . implode(' or ', $instrParts) . ')';
+            }
         }
         if (!empty($filters['creator'])) {
             $where[] = '`创建人`=' . $this->model->quote($filters['creator']);

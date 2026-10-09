@@ -22,12 +22,12 @@ declare module "@elegant-router/types" {
     "500": "/500";
     "common": "/common";
     "contract": "/contract";
-    "contract-v2": "/contract-v2";
     "home": "/home";
     "iframe-page": "/iframe-page/:url";
     "login": "/login/:module(pwd-login|code-login|register|reset-pwd|bind-wechat)?";
     "match-data": "/match-data";
     "menu-bridge": "/menu-bridge";
+    "oa-todo-center": "/oa-todo-center";
     "permission-demo": "/permission-demo";
     "personnel": "/personnel";
     "personnel_employee": "/personnel/employee";
@@ -77,12 +77,12 @@ declare module "@elegant-router/types" {
     | "500"
     | "common"
     | "contract"
-    | "contract-v2"
     | "home"
     | "iframe-page"
     | "login"
     | "match-data"
     | "menu-bridge"
+    | "oa-todo-center"
     | "permission-demo"
     | "personnel"
     | "room-status"
@@ -110,11 +110,11 @@ declare module "@elegant-router/types" {
     | "iframe-page"
     | "login"
     | "common"
-    | "contract-v2"
     | "contract"
     | "home"
     | "match-data"
     | "menu-bridge"
+    | "oa-todo-center"
     | "permission-demo"
     | "personnel_employee"
     | "personnel_interview"

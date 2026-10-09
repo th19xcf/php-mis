@@ -169,6 +169,7 @@ $routes->group('contract', static function ($routes) {
 	$routes->post('deleteDocument', 'ContractApi::deleteDocument');
 	$routes->get('downloadDocument/(:num)', 'ContractApi::downloadDocument/$1');
 	$routes->get('downloadDocument', 'ContractApi::downloadDocument');
+	$routes->get('debugList', 'ContractApi::debugList');
 });
 
 $routes->group('workflow', static function ($routes) {
@@ -181,6 +182,7 @@ $routes->group('workflow', static function ($routes) {
 	$routes->post('definition/delete', 'WorkflowApi::definitionDelete');
 	$routes->post('definition/activate', 'WorkflowApi::definitionActivate');
 	$routes->post('definition/deactivate', 'WorkflowApi::definitionDeactivate');
+	$routes->get('definition/debugList', 'WorkflowApi::debugDefinitionList');
 	$routes->get('instance/list', 'WorkflowApi::instanceList');
 	$routes->post('instance/list', 'WorkflowApi::instanceList');
 	$routes->get('instance/detail', 'WorkflowApi::instanceDetail');
@@ -222,6 +224,7 @@ $routes->group('workflow', static function ($routes) {
 $routes->group('todo', static function ($routes) {
 	$routes->get('center', 'TodoApi::center');
 	$routes->post('center', 'TodoApi::center');
+	$routes->get('debugCenter', 'TodoApi::debugCenter');
 	$routes->get('stats', 'TodoApi::stats');
 	$routes->post('stats', 'TodoApi::stats');
 	$routes->post('create', 'TodoApi::create');

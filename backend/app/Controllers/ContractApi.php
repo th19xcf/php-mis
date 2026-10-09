@@ -27,6 +27,8 @@ class ContractApi extends BaseApiController
             $pageSize = (int) ($params['pageSize'] ?? 20);
 
             unset($params['page'], $params['pageSize']);
+            $params['deptAuthz'] = $this->getDeptAuthz();
+            $params['deptNameAuthz'] = $this->getDeptNameAuthz();
 
             $result = $this->contractService->getList($params, $page, $pageSize);
 
@@ -35,6 +37,103 @@ class ContractApi extends BaseApiController
             log_message('error', '[ContractApi::list] ' . $e->getMessage());
             return $this->serverError($e->getMessage());
         }
+    }
+
+    /**
+     * 调试：打印合同列表 SQL + 部门赋权条件 + 分段耗时
+     * 权限：hasDebugSqlAuth（与 pageMeta.toolbar.debugSql 同源）
+     */
+    public function debugList()
+    {
+        if (! $this->hasDebugSqlAuth()) {
+            return $this->serverError('无调试权限');
+        }
+
+        $totalStart = hrtime(true);
+
+        $params = $this->request->getGet() + ($this->request->getJSON(true) ?? []);
+        $page = (int) ($params['page'] ?? 1);
+        $pageSize = (int) ($params['pageSize'] ?? 20);
+        unset($params['page'], $params['pageSize']);
+
+        $deptAuthz = $this->getDeptAuthz();
+        $deptNameAuthz = $this->getDeptNameAuthz();
+
+        $tableName = '`def_contract_master_new`';
+        $where = ['`删除标识`=' . $this->model->quote('0'), '`有效标识`=' . $this->model->quote('1')];
+
+        if (!empty($params['contractNo'])) {
+            $where[] = '`合同编号`=' . $this->model->quote($params['contractNo']);
+        }
+        if (!empty($params['contractName'])) {
+            $where[] = '`合同名称` like ' . $this->model->quote('%' . $params['contractName'] . '%');
+        }
+        if (!empty($params['contractType'])) {
+            $where[] = '`合同类型`=' . $this->model->quote($params['contractType']);
+        }
+        if (!empty($params['contractStatus'])) {
+            $where[] = '`合同状态`=' . $this->model->quote($params['contractStatus']);
+        }
+        if (!empty($params['partyA'])) {
+            $where[] = '`甲方名称` like ' . $this->model->quote('%' . $params['partyA'] . '%');
+        }
+        if (!empty($params['partyB'])) {
+            $where[] = '`乙方名称` like ' . $this->model->quote('%' . $params['partyB'] . '%');
+        }
+        if (!empty($params['signDateStart'])) {
+            $where[] = '`签订日期` >= ' . $this->model->quote($params['signDateStart']);
+        }
+        if (!empty($params['signDateEnd'])) {
+            $where[] = '`签订日期` <= ' . $this->model->quote($params['signDateEnd']);
+        }
+        if (!empty($params['creator'])) {
+            $where[] = '`创建人`=' . $this->model->quote($params['creator']);
+        }
+        if (!empty($params['deptCode'])) {
+            $where[] = '`所属部门编码`=' . $this->model->quote($params['deptCode']);
+        }
+        if (!empty($deptAuthz)) {
+            $deptCodes = array_filter(explode('|', $deptAuthz));
+            if (!empty($deptCodes)) {
+                $quoted = array_map(fn($code) => $this->model->quote($code), $deptCodes);
+                $where[] = '`所属部门编码` in (' . implode(',', $quoted) . ')';
+            }
+        }
+        if (!empty($deptNameAuthz)) {
+            $deptNames = array_filter(explode('|', $deptNameAuthz));
+            if (!empty($deptNames)) {
+                $instrParts = array_map(fn($name) => sprintf('instr(`所属部门名称`, %s) > 0', $this->model->quote($name)), $deptNames);
+                $where[] = '(' . implode(' or ', $instrParts) . ')';
+            }
+        }
+
+        $whereSql = implode(' and ', $where);
+        $offset = ($page - 1) * $pageSize;
+
+        $countSql = sprintf('select count(*) as `total` from %s where %s', $tableName, $whereSql);
+        $listSql = sprintf('select * from %s where %s order by `创建时间` desc limit %d offset %d', $tableName, $whereSql, $pageSize, $offset);
+
+        $queryStart = hrtime(true);
+        $result = $this->model->select($listSql);
+        $list = $result ? $result->getResultArray() : [];
+        $queryEnd = hrtime(true);
+
+        $totalEnd = hrtime(true);
+
+        return $this->success([
+            'countSql' => $countSql,
+            'listSql' => $listSql,
+            'whereSql' => $whereSql,
+            'deptAuthz' => $deptAuthz ?: '(空 → 不过滤)',
+            'deptNameAuthz' => $deptNameAuthz ?: '(空 → 不过滤)',
+            'rowCount' => count($list),
+            'page' => $page,
+            'pageSize' => $pageSize,
+            'timing' => [
+                'queryMs' => round(($queryEnd - $queryStart) / 1e6, 2),
+                'totalMs' => round(($totalEnd - $totalStart) / 1e6, 2),
+            ],
+        ]);
     }
 
     public function detail()
@@ -216,6 +315,8 @@ class ContractApi extends BaseApiController
     {
         try {
             $filters = $this->request->getGet() + ($this->request->getJSON(true) ?? []);
+            $filters['deptAuthz'] = $this->getDeptAuthz();
+            $filters['deptNameAuthz'] = $this->getDeptNameAuthz();
 
             $result = $this->contractService->getStats($filters);
 

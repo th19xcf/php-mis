@@ -254,7 +254,15 @@ export function fetchTodoUserOptions(keyword = '', deptCode = '') {
   return request<TodoUserOption[]>({ url: '/todo/user-options', params: { keyword, deptCode } });
 }
 
-/** 部门树 */
 export function fetchTodoDeptTree() {
   return request<DeptTreeNode[]>({ url: '/todo/dept-tree' });
+}
+
+/** 调试：获取待办中心 SQL + 耗时（需 debugSql 权限） */
+export function fetchTodoDebugCenter(params?: Record<string, any>) {
+  return request<any>({
+    url: '/todo/debugCenter',
+    method: 'get',
+    params
+  });
 }

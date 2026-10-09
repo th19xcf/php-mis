@@ -184,6 +184,11 @@ class BaseApiController extends BaseController
         return $this->userContext->getDeptAuthz();
     }
 
+    protected function getDeptNameAuthz(): string
+    {
+        return $this->userContext->getDeptNameAuthz();
+    }
+
     /**
      * 获取 AuthorizationService 单例（请求内缓存，避免重复实例化）
      */

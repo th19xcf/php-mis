@@ -167,7 +167,7 @@ describe('useWorkbenchRightPanel（右栏状态机）', () => {
       { mode: 'add' as const, dirtyKey: 'addDirty' as const },
       { mode: 'update' as const, dirtyKey: 'updateDirty' as const },
       { mode: 'batch' as const, dirtyKey: 'batchUpdateDirty' as const }
-    ])('dirty 的 $mode 模式弹确认框：确认离开返回 true', async ({ mode, dirtyKey }) => {
+    ])('dirty 的 $mode 模式弹确认框：确认离开返回 true', async ({ mode, dirtyKey }: { mode: 'add' | 'update' | 'batch'; dirtyKey: 'addDirty' | 'updateDirty' | 'batchUpdateDirty' }) => {
       const opts = makeOptions();
       const { rightPanelMode, confirmDiscardIfDirty } = useWorkbenchRightPanel(opts);
       rightPanelMode.value = mode;

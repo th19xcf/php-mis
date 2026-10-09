@@ -177,3 +177,12 @@ export async function fetchContractDownloadDocument(
 
   return { blob, filename };
 }
+
+/** 调试：获取合同列表 SQL + 部门赋权条件 + 耗时（需 debugSql 权限） */
+export function fetchContractDebugList(params?: Record<string, any>) {
+  return request<any>({
+    url: '/contract/debugList',
+    method: 'get',
+    params
+  });
+}

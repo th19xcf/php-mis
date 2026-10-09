@@ -18,7 +18,8 @@ import {
   fetchWorkflowNodeDelete,
   fetchWorkflowNodeSort,
   fetchWorkflowEdgeList,
-  fetchWorkflowEdgeDelete
+  fetchWorkflowEdgeDelete,
+  fetchWorkflowDebugList
 } from '@/service/api/workflow';
 import { fetchContractWithdraw } from '@/service/api/contract';
 import { useConfigDrivenGrid, useSplitter } from '@/hooks/business';
@@ -44,6 +45,9 @@ const showFormModal = ref(false);
 const formMode = ref<'create' | 'edit'>('create');
 const isEditMode = ref(false);
 const inlineFormRef = ref<{ submit: () => void } | null>(null);
+
+// 调试按钮可见性
+const canDebug = ref(false);
 
 // 选中的流程定义 / 实例
 const selectedDefinition = ref<any>(null);
@@ -197,6 +201,32 @@ function handleCreate() {
   formMode.value = 'create';
   isEditMode.value = false;
   showFormModal.value = true;
+}
+
+// 调试：打印流程定义列表 SQL + 耗时到浏览器控制台
+async function handleDebugList() {
+  try {
+    const { data } = await fetchWorkflowDebugList();
+    if (!data) {
+      message.error('调试信息为空');
+      return;
+    }
+    console.group('%c[调试] 流程定义列表 SQL 追踪', 'color: #fa8c16; font-weight: bold');
+    console.log('%c列表 SQL：', 'color: #1890ff; font-weight: bold');
+    console.log(data.listSql);
+    console.log('%c计数 SQL：', 'color: #722ed1; font-weight: bold');
+    console.log(data.countSql);
+    console.log('%cWHERE 条件：', 'color: #52c41a; font-weight: bold');
+    console.log(data.whereSql);
+    console.log('%c查询行数：', 'color: #faad14; font-weight: bold');
+    console.log(data.rowCount, `(第 ${data.page} 页, 每页 ${data.pageSize})`);
+    console.log('%c分段耗时（ms）：', 'color: #ff4d4f; font-weight: bold');
+    console.table(data.timing);
+    console.groupEnd();
+    message.success('调试信息已输出到控制台（F12 查看）');
+  } catch {
+    message.error('调试信息获取失败');
+  }
 }
 
 async function handleEdit() {
@@ -631,6 +661,14 @@ onMounted(async () => {
   loadPendingTasks();
   loadDoneTasks();
   loadMyInstances();
+  // 拉取调试权限
+  try {
+    const { fetchWorkbenchPage } = await import('@/service/api/workbench');
+    const res = await fetchWorkbenchPage('workflow-manage');
+    canDebug.value = (res as any)?.data?.meta?.toolbar?.debugSql === true;
+  } catch {
+    canDebug.value = false;
+  }
 });
 </script>
 
@@ -665,6 +703,12 @@ onMounted(async () => {
               <icon-mdi-plus />
             </template>
             新建流程
+          </NButton>
+          <NButton v-if="canDebug" type="warning" size="small" @click="handleDebugList">
+            <template #icon>
+              <icon-mdi-bug />
+            </template>
+            调试
           </NButton>
         </div>
       </div>

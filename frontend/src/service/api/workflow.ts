@@ -289,3 +289,12 @@ export function fetchWorkflowTemplateDelete(templateId: number) {
     data: { templateId }
   });
 }
+
+/** 调试：获取流程定义列表 SQL + 耗时（需 debugSql 权限） */
+export function fetchWorkflowDebugList(params?: Record<string, any>) {
+  return request<any>({
+    url: '/workflow/definition/debugList',
+    method: 'get',
+    params
+  });
+}

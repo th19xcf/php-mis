@@ -60,11 +60,19 @@ class SessionUserContext
     }
 
     /**
-     * 获取当前用户部门赋权
+     * 获取当前用户部门编码赋权
      */
     public function getDeptAuthz(): string
     {
         return $this->getSessionUser()['deptAuthz'] ?? '';
+    }
+
+    /**
+     * 获取当前用户部门全称赋权
+     */
+    public function getDeptNameAuthz(): string
+    {
+        return $this->getSessionUser()['deptNameAuthz'] ?? '';
     }
 
     /**
@@ -142,6 +150,7 @@ class SessionUserContext
             'role' => trim((string) ($jwt->roleAuthz ?? $jwt->role ?? '')),
             'roleAuthz' => trim((string) ($jwt->roleAuthz ?? '')),
             'deptAuthz' => trim((string) ($jwt->deptCodeAuthz ?? '')),
+            'deptNameAuthz' => trim((string) ($jwt->deptNameAuthz ?? '')),
             'locationAuthz' => trim((string) ($jwt->locationAuthz ?? '')),
             'logSwitch' => (bool) ($jwt->logSwitch ?? true),
         ];
