@@ -483,6 +483,30 @@ defineExpose({
   }
 }
 
+/* dark mode 适配 */
+html.dark .onlyoffice-editor-wrapper {
+  .editor-loading {
+    background: rgb(36, 36, 40);
+
+    .spinner {
+      border-color: rgba(255, 255, 255, 0.12);
+      border-top-color: #1890ff;
+    }
+
+    p {
+      color: rgba(255, 255, 255, 0.55);
+    }
+  }
+
+  .editor-error {
+    background: rgb(36, 36, 40);
+
+    .error-text {
+      color: #ff7875;
+    }
+  }
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

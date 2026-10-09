@@ -55,9 +55,16 @@ class OnlyOfficeService
             $fileType = strtolower($ext);
         }
 
-        // 始终生成新的 documentKey，避免 OnlyOffice 缓存之前失败的下载
-        // OnlyOffice 使用 key 作为文档缓存标识，若之前下载失败会缓存失败状态
-        $documentKey = $this->generateDocumentKey($documentId, (int) ($document['版本号'] ?? 1));
+        // 如果文档已处于"编辑中"状态，复用已有的 documentKey，
+        // 避免覆盖旧密钥导致正在进行的编辑会话保存回调找不到文档。
+        // 仅在"空闲"状态（首次打开或上次保存完成后）才生成新密钥。
+        $editStatus = $document['编辑状态'] ?? '空闲';
+        $existingKey = $document['文档密钥'] ?? '';
+        if ($editStatus === '编辑中' && !empty($existingKey)) {
+            $documentKey = $existingKey;
+        } else {
+            $documentKey = $this->generateDocumentKey($documentId, (int) ($document['版本号'] ?? 1));
+        }
         $steps['生成documentKey'] = hrtime(true);
 
         $downloadUrl = $this->getDownloadUrl($documentId, $callbackUrl);
@@ -130,14 +137,24 @@ class OnlyOfficeService
         $steps['生成JWT'] = hrtime(true);
 
         $now = date('Y-m-d H:i:s');
-        $updateSql = sprintf(
-            'update `def_contract_document` set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s, `文档密钥`=%s where `GUID`=%d',
-            $this->model->quote('编辑中'),
-            $this->model->quote($userId),
-            $this->model->quote($now),
-            $this->model->quote($documentKey),
-            $documentId
-        );
+        // 复用密钥时不更新密钥字段（避免覆盖），仅更新编辑状态/人/时间
+        if ($editStatus === '编辑中' && !empty($existingKey)) {
+            $updateSql = sprintf(
+                'update `def_contract_document` set `最后编辑人`=%s, `最后编辑时间`=%s where `GUID`=%d',
+                $this->model->quote($userId),
+                $this->model->quote($now),
+                $documentId
+            );
+        } else {
+            $updateSql = sprintf(
+                'update `def_contract_document` set `编辑状态`=%s, `最后编辑人`=%s, `最后编辑时间`=%s, `文档密钥`=%s where `GUID`=%d',
+                $this->model->quote('编辑中'),
+                $this->model->quote($userId),
+                $this->model->quote($now),
+                $this->model->quote($documentKey),
+                $documentId
+            );
+        }
         $this->model->exec($updateSql);
         $steps['更新编辑状态'] = hrtime(true);
 
@@ -315,6 +332,14 @@ class OnlyOfficeService
         $docResult = $this->model->select($docSql);
         $document = $docResult ? ($docResult->getRowArray() ?: []) : [];
         $documentId = (int) ($document['GUID'] ?? 0);
+
+        if ($documentId === 0) {
+            log_message('error', sprintf(
+                '[OnlyOffice] 回调密钥未匹配到文档: key=%s, status=%d — 可能因重复打开编辑器导致旧密钥被覆盖',
+                $documentKey,
+                $status
+            ));
+        }
 
         if (!empty($callbackToken) && !empty($this->jwtSecret)) {
             $payload = $this->verifyJwt($callbackToken);

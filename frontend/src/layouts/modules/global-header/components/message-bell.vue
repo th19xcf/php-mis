@@ -77,7 +77,7 @@ async function handleClick(item: MessageItem) {
     }
   }
   showPopover.value = false;
-  router.push('/oa-todo-center');
+  router.push({ path: '/menu-bridge', query: { functionCode: 'oa-todo-center', frontendRoute: 'oa-todo-center' } });
 }
 
 /** 全部标记已读 */

@@ -197,4 +197,36 @@ onMounted(() => {
     }
   }
 }
+
+/* dark mode 适配 */
+html.dark .flow-timeline {
+  .loading,
+  .empty {
+    color: rgba(255, 255, 255, 0.45);
+  }
+
+  .timeline-dot::before {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .timeline-content {
+    .timeline-header .operator {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .timeline-header .action {
+      background: rgba(24, 144, 255, 0.15);
+      color: #69c0ff;
+    }
+
+    .timeline-time {
+      color: rgba(255, 255, 255, 0.45);
+    }
+
+    .timeline-remark {
+      color: rgba(255, 255, 255, 0.55);
+      background: rgba(255, 255, 255, 0.05);
+    }
+  }
+}
 </style>

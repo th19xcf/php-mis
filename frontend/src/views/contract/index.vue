@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onActivated, computed, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { AgGridVue } from 'ag-grid-vue3';
 import { AG_GRID_LOCALE_CN } from '@ag-grid-community/locale';
 import { useDialog } from 'naive-ui';
@@ -25,6 +26,7 @@ import DocumentTimeline from './components/DocumentTimeline.vue';
 const dialog = useDialog();
 const message = useMessageWithConsole();
 const contractStore = useContractStore();
+const route = useRoute();
 
 // 左右分栏（抽取为 useSplitter）
 const { leftWidth, isResizing, startResize } = useSplitter({
@@ -601,6 +603,22 @@ onMounted(async () => {
     console.log('[Contract] 第一行数据:', contractList.value[0]);
   } else {
     console.warn('[Contract] loadList 返回空数据');
+  }
+
+  // 从待办中心跳转：携带 businessId 参数时切换到"待我审批"并打开审批弹窗
+  const businessId = route.query.businessId as string;
+  if (businessId) {
+    activeTab.value = 'pending';
+    await loadPending();
+    const task = pendingTasks.value.find((t: any) => t.业务ID === businessId);
+    if (task) {
+      handleApproval(task);
+    } else {
+      // 待办列表中未找到对应任务，退而求其次：加载详情并打开审批弹窗
+      selectedContract.value = { 合同编号: businessId } as any;
+      contractStore.loadContractDetail(businessId);
+      showApprovalModal.value = true;
+    }
   }
 });
 

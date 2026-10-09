@@ -286,6 +286,7 @@ async function handleTransfer() {
   display: flex;
   flex-direction: column;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  color-scheme: light;
 }
 
 .modal-header {
@@ -390,8 +391,11 @@ async function handleTransfer() {
         cursor: pointer;
         font-size: 14px;
 
-        input {
+        input[type='radio'] {
           cursor: pointer;
+          width: 16px;
+          height: 16px;
+          accent-color: #1890ff;
         }
       }
     }
@@ -406,6 +410,28 @@ async function handleTransfer() {
       resize: vertical;
       font-family: inherit;
       box-sizing: border-box;
+      background: #fff;
+      color: #333;
+
+      &:focus {
+        border-color: #1890ff;
+      }
+    }
+
+    input[type='text'] {
+      padding: 8px 12px;
+      border: 1px solid #d9d9d9;
+      border-radius: 4px;
+      font-size: 14px;
+      outline: none;
+      font-family: inherit;
+      box-sizing: border-box;
+      background: #fff;
+      color: #333;
+
+      &::placeholder {
+        color: #bfbfbf;
+      }
 
       &:focus {
         border-color: #1890ff;
@@ -478,5 +504,115 @@ async function handleTransfer() {
 }
 .btn-sign {
   margin-left: 4px;
+}
+
+/* dark mode 适配 */
+html.dark .modal-container {
+  background: rgb(36, 36, 40);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+html.dark .modal-header {
+  border-bottom-color: rgba(255, 255, 255, 0.09);
+
+  h3 {
+    color: #e0e0e0;
+  }
+
+  .close-btn {
+    color: #999;
+
+    &:hover {
+      color: #e0e0e0;
+    }
+  }
+}
+
+html.dark .modal-body {
+  background: rgb(36, 36, 40);
+}
+
+html.dark .contract-info {
+  background: rgba(255, 255, 255, 0.05);
+
+  .info-row label {
+    color: rgba(255, 255, 255, 0.45);
+  }
+
+  .info-row span {
+    color: rgba(255, 255, 255, 0.85);
+
+    &.amount {
+      color: #69c0ff;
+    }
+  }
+}
+
+html.dark .return-tip {
+  background: rgba(250, 173, 20, 0.1);
+  border-color: rgba(250, 173, 20, 0.3);
+  color: #ffc53d;
+}
+
+html.dark .form-section .form-item label {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+html.dark .form-section .form-item textarea {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  &:focus {
+    border-color: #1890ff;
+  }
+}
+
+html.dark .form-section .form-item input[type='text'] {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.85);
+  padding: 8px 12px;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  &:focus {
+    border-color: #1890ff;
+  }
+}
+
+html.dark .radio-item span {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+html.dark .modal-footer {
+  border-top-color: rgba(255, 255, 255, 0.09);
+}
+
+html.dark .btn-default {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.15);
+
+  &:hover {
+    border-color: #1890ff;
+    color: #69c0ff;
+  }
+}
+
+html.dark .sign-panel {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 </style>
