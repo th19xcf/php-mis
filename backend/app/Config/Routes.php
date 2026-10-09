@@ -269,6 +269,12 @@ $routes->group('cache', static function ($routes) {
 	$routes->get('status', 'CacheController::status');
 });
 
+$routes->group('dashboard', static function ($routes) {
+	$routes->get('widgets', 'DashboardApi::widgets');
+	$routes->post('widgets', 'DashboardApi::saveWidgets');
+	$routes->get('todo', 'DashboardApi::todo');
+});
+
 // 临时迁移 API（不纳入 JWT 过滤器，执行完后建议删除）
 $routes->group('migration', static function ($routes) {
 	$routes->get('status', 'MigrationApi::status');

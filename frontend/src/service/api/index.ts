@@ -8,3 +8,4 @@ export * from './personnel';
 export * from './person';
 export * from './contract';
 export * from './oa-todo';
+export * from './dashboard';
